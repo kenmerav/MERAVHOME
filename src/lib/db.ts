@@ -246,12 +246,12 @@ export const db = {
   listProcurement: async () => {
     const { data } = await supabase
       .from("procurement_items")
-      .select("*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(name, client_name)))")
+      .select("*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status)))")
       .order("updated_at", { ascending: false });
     const items = (data ?? []) as Array<ProcurementItem & {
       room_product: RoomProduct & {
         product: Product;
-        room: Room & { project: { name: string; client_name: string } };
+        room: Room & { project: Pick<Project, "id" | "name" | "client_name" | "status"> };
       };
     }>;
 
@@ -275,7 +275,7 @@ export const db = {
     return items as Array<ProcurementItem & {
       room_product: RoomProduct & {
         product: Product;
-        room: Room & { project: { name: string; client_name: string } };
+        room: Room & { project: Pick<Project, "id" | "name" | "client_name" | "status"> };
       };
       material?: { client_product_name: string | null; quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null; notes: string | null } | null;
     }>;

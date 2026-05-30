@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db } from "@/lib/db";
 import { Check, ExternalLink } from "lucide-react";
@@ -12,20 +13,36 @@ export const Route = createFileRoute("/procurement")({
 
 function ProcurementPage() {
   const qc = useQueryClient();
+  const [projectFilter, setProjectFilter] = useState("__overall");
   const { data: items = [] } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
   });
+  const projectOptions = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; client_name: string; status: string }>();
+    items.forEach((item) => {
+      const project = item.room_product?.room?.project;
+      if (project?.id) map.set(project.id, project);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.status === "Complete" && b.status !== "Complete") return 1;
+      if (a.status !== "Complete" && b.status === "Complete") return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [items]);
+  const visibleItems = projectFilter === "__overall"
+    ? items
+    : items.filter((item) => item.room_product?.room?.project?.id === projectFilter);
 
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
     await db.updateProcurement(id, { [key]: value });
     qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
-  const total = items.length;
-  const ordered = items.filter(i => i.ordered).length;
-  const received = items.filter(i => i.received).length;
-  const installed = items.filter(i => i.installed).length;
+  const total = visibleItems.length;
+  const ordered = visibleItems.filter(i => i.ordered).length;
+  const received = visibleItems.filter(i => i.received).length;
+  const installed = visibleItems.filter(i => i.installed).length;
 
   return (
     <AppShell>
@@ -43,6 +60,27 @@ function ProcurementPage() {
           <Stat label="Ordered" n={ordered} total={total} />
           <Stat label="Received" n={received} total={total} />
           <Stat label="Installed" n={installed} total={total} />
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4 mb-6">
+          <div className="min-w-[280px]">
+            <label className="eyebrow block mb-2">Project</label>
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="__overall">Overall · All Projects</option>
+              {projectOptions.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name} · {project.client_name}{project.status === "Complete" ? " · Archived" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="text-xs text-muted-foreground pb-2">
+            Room, category, and vendor filters are next; this starts procurement as project-based with an overall view.
+          </div>
         </div>
 
         <div className="border border-border overflow-x-auto">
@@ -64,12 +102,12 @@ function ProcurementPage() {
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 && (
+              {visibleItems.length === 0 && (
                 <tr><td colSpan={12} className="py-20 text-center text-sm text-muted-foreground">
-                  No procurement items yet. Add products to a room to populate.
+                  No procurement items for this view yet. Add products to a room to populate.
                 </td></tr>
               )}
-              {items.map(item => {
+              {visibleItems.map(item => {
                 const p = item.room_product?.product;
                 const r = item.room_product?.room;
                 const m = (item as any).material as { client_product_name: string | null; quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null } | null;
