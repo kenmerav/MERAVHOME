@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type ProjectStatus = "Design" | "Presentation" | "Approved" | "Procurement" | "Complete";
+export type UserRole = "Admin" | "Employee" | "Contractor" | "Client";
 export type ProjectType = "Kitchen" | "Bathroom" | "Whole Home" | "New Build" | "Furnishings" | "Commercial";
 export type ProductCategory = "Lighting" | "Plumbing" | "Hardware" | "Appliances" | "Flooring" | "Tile" | "Paint" | "Furniture" | "Decor";
 export type MaterialCategory = "Cabinet Finish" | "Countertop" | "Flooring" | "Tile" | "Fabric" | "Paint";
@@ -156,6 +157,16 @@ export interface MaterialItem {
   created_at: string;
   updated_at: string;
   product?: Product | null;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 

@@ -456,6 +456,36 @@ export type Database = {
           },
         ]
       }
+      user_profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          is_active: boolean
+          role: Database["public"]["Enums"]["app_user_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name: string
+          id: string
+          is_active?: boolean
+          role?: Database["public"]["Enums"]["app_user_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          is_active?: boolean
+          role?: Database["public"]["Enums"]["app_user_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -464,6 +494,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      app_user_role: "Admin" | "Employee" | "Contractor" | "Client"
       image_kind: "sketchup" | "rendering"
       material_category:
         | "Cabinet Finish"
@@ -623,6 +654,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_user_role: ["Admin", "Employee", "Contractor", "Client"],
       image_kind: ["sketchup", "rendering"],
       material_category: [
         "Cabinet Finish",

@@ -1,7 +1,10 @@
-import { Link, useLocation } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen } from "lucide-react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { UserProfile } from "@/lib/db";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
@@ -11,12 +14,62 @@ const nav: NavItem[] = [
   { to: "/presentations", label: "Presentation Boards", icon: LayoutTemplate },
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
   { to: "/procurement", label: "Procurement", icon: Truck },
+  { to: "/users", label: "Users", icon: UserCog },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
+  const navigate = useNavigate();
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!active) return;
+      if (!data.session) {
+        navigate({ to: "/login" });
+        return;
+      }
+
+      const { data: userProfile } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("id", data.session.user.id)
+        .maybeSingle();
+      if (!active) return;
+      setProfile((userProfile as UserProfile | null) ?? null);
+      setLoadingAuth(false);
+    };
+
+    loadSession();
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) navigate({ to: "/login" });
+    });
+
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [navigate]);
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  };
+
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">
+        Loading MERAV Studio...
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-background">
       <aside className="hidden lg:flex w-64 flex-col border-r border-border bg-sidebar sticky top-0 h-screen print:hidden">
@@ -45,6 +98,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="px-7 py-6 border-t border-border">
+          {profile && (
+            <div className="mb-5">
+              <div className="text-sm text-ink truncate">{profile.full_name}</div>
+              <div className="eyebrow mt-1">{profile.role}</div>
+              <button
+                type="button"
+                onClick={signOut}
+                className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-ink"
+              >
+                <LogOut className="w-3 h-3" /> Sign out
+              </button>
+            </div>
+          )}
           <div className="eyebrow mb-3 flex items-center gap-2"><Sparkles className="w-3 h-3" /> Coming Soon</div>
           <ul className="space-y-1.5 text-[13px] text-muted-foreground">
             <li>Client Portal</li>

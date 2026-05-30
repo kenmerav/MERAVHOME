@@ -11,13 +11,16 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProcurementRouteImport } from './routes/procurement'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as SpecbooksIndexRouteImport } from './routes/specbooks.index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as PresentationsIndexRouteImport } from './routes/presentations.index'
 import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
+import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
@@ -37,6 +40,11 @@ const ProcurementRoute = ProcurementRouteImport.update({
   path: '/procurement',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CatalogRoute = CatalogRouteImport.update({
   id: '/catalog',
   path: '/catalog',
@@ -45,6 +53,11 @@ const CatalogRoute = CatalogRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersIndexRoute = UsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpecbooksIndexRoute = SpecbooksIndexRouteImport.update({
@@ -70,6 +83,11 @@ const SpecbooksIdRoute = SpecbooksIdRouteImport.update({
 const PresentationsIdRoute = PresentationsIdRouteImport.update({
   id: '/presentations/$id',
   path: '/presentations/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUsersRoute = ApiUsersRouteImport.update({
+  id: '/api/users',
+  path: '/api/users',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
@@ -116,16 +134,19 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/users': typeof ApiUsersRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/presentations/': typeof PresentationsIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
+  '/users/': typeof UsersIndexRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -135,16 +156,19 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/users': typeof ApiUsersRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/presentations': typeof PresentationsIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/specbooks': typeof SpecbooksIndexRoute
+  '/users': typeof UsersIndexRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -155,16 +179,19 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/users': typeof ApiUsersRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/presentations/': typeof PresentationsIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
+  '/users/': typeof UsersIndexRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -176,16 +203,19 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/catalog'
+    | '/login'
     | '/procurement'
     | '/settings'
     | '/api/generate-rendering'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/users'
     | '/presentations/$id'
     | '/specbooks/$id'
     | '/presentations/'
     | '/projects/'
     | '/specbooks/'
+    | '/users/'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
@@ -195,16 +225,19 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/catalog'
+    | '/login'
     | '/procurement'
     | '/settings'
     | '/api/generate-rendering'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/users'
     | '/presentations/$id'
     | '/specbooks/$id'
     | '/presentations'
     | '/projects'
     | '/specbooks'
+    | '/users'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
@@ -214,16 +247,19 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/catalog'
+    | '/login'
     | '/procurement'
     | '/settings'
     | '/api/generate-rendering'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/users'
     | '/presentations/$id'
     | '/specbooks/$id'
     | '/presentations/'
     | '/projects/'
     | '/specbooks/'
+    | '/users/'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
@@ -234,16 +270,19 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
+  LoginRoute: typeof LoginRoute
   ProcurementRoute: typeof ProcurementRoute
   SettingsRoute: typeof SettingsRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
+  ApiUsersRoute: typeof ApiUsersRoute
   PresentationsIdRoute: typeof PresentationsIdRoute
   SpecbooksIdRoute: typeof SpecbooksIdRoute
   PresentationsIndexRoute: typeof PresentationsIndexRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
+  UsersIndexRoute: typeof UsersIndexRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
   ProjectsIdRenderingsRoute: typeof ProjectsIdRenderingsRoute
@@ -267,6 +306,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProcurementRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/catalog': {
       id: '/catalog'
       path: '/catalog'
@@ -279,6 +325,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/users/': {
+      id: '/users/'
+      path: '/users'
+      fullPath: '/users/'
+      preLoaderRoute: typeof UsersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/specbooks/': {
@@ -314,6 +367,13 @@ declare module '@tanstack/react-router' {
       path: '/presentations/$id'
       fullPath: '/presentations/$id'
       preLoaderRoute: typeof PresentationsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/users': {
+      id: '/api/users'
+      path: '/api/users'
+      fullPath: '/api/users'
+      preLoaderRoute: typeof ApiUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/scrape-url': {
@@ -378,16 +438,19 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
+  LoginRoute: LoginRoute,
   ProcurementRoute: ProcurementRoute,
   SettingsRoute: SettingsRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
+  ApiUsersRoute: ApiUsersRoute,
   PresentationsIdRoute: PresentationsIdRoute,
   SpecbooksIdRoute: SpecbooksIdRoute,
   PresentationsIndexRoute: PresentationsIndexRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
   SpecbooksIndexRoute: SpecbooksIndexRoute,
+  UsersIndexRoute: UsersIndexRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
   ProjectsIdRenderingsRoute: ProjectsIdRenderingsRoute,
