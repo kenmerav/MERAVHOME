@@ -346,7 +346,7 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, o
 
 function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomData; view: RoomData["views"][number]; showSketch?: boolean; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
   const editing = !!onPick;
-  const paletteItems = data.paletteMaterials.slice(0, 4);
+  const paletteItems = data.paletteMaterials.filter((material) => material.product?.image_url).slice(0, 4);
   const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
   const hasCounter = !!data.counter;
   const hasFaucet = !!data.faucet?.item_label || !!data.faucet?.product;
