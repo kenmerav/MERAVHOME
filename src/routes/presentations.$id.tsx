@@ -346,6 +346,7 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, o
 
 function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomData; view: RoomData["views"][number]; showSketch?: boolean; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
   const editing = !!onPick;
+  const paletteItems = data.paletteMaterials.slice(0, 4);
   const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
   const hasCounter = !!data.counter;
   const hasFaucet = !!data.faucet?.item_label || !!data.faucet?.product;
@@ -374,18 +375,20 @@ function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomDa
       <div className="grid grid-cols-2 gap-6 print:gap-3">
         <Card label="Material Palette">
           <div className="grid grid-cols-2 gap-1.5">
-            {Array.from({ length: 4 }).map((_, i) => {
-              const m = data.paletteMaterials[i];
-              return (
-              <div key={m?.id ?? `palette-${i}`} className="space-y-1">
-                <div className="aspect-square bg-bone overflow-hidden">
-                  {m?.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, { name: "" })} className="w-full h-full object-cover" />}
-                </div>
-                {onPick && <PresentationPickSelect value={m?.id ?? ""} materials={data.materials} onChange={(id) => setPaletteSlot(i, id)} />}
+            {paletteItems.map((m) => (
+              <div key={m.id} className="aspect-square bg-bone overflow-hidden">
+                {m.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, { name: "" })} className="w-full h-full object-cover" />}
               </div>
-              );
-            })}
+            ))}
+            {!paletteItems.length && <div className="col-span-2 text-[11px] text-muted-foreground">No palette selections yet.</div>}
           </div>
+          {onPick && (
+            <div className="mt-3 space-y-1 print:hidden">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <PresentationPickSelect key={`palette-pick-${i}`} value={data.paletteMaterials[i]?.id ?? ""} materials={data.materials} onChange={(id) => setPaletteSlot(i, id)} />
+              ))}
+            </div>
+          )}
         </Card>
         {(editing || hasCabinetry) && (
           <Card label="Cabinetry & Hardware">
