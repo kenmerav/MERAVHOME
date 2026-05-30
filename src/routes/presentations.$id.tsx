@@ -117,6 +117,7 @@ function PresentationPage() {
 
   const [presenting, setPresenting] = useState(false);
   const [slide, setSlide] = useState(0);
+  const [editingPicks, setEditingPicks] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || presenting) return;
@@ -205,6 +206,9 @@ function PresentationPage() {
             <ArrowLeft className="w-3.5 h-3.5" /> Back to project
           </Link>
           <div className="flex items-center gap-2">
+            <button onClick={() => setEditingPicks((value) => !value)} className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors">
+              {editingPicks ? "Done Editing" : "Edit Picks"}
+            </button>
             <button onClick={enterPresent} className="inline-flex items-center gap-2 px-5 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <Maximize2 className="w-4 h-4" /> Present
             </button>
@@ -250,7 +254,7 @@ function PresentationPage() {
                 viewIndex={vi}
                 viewCount={data.views.length}
                 anchor={vi === 0 ? `room-${room.id}` : undefined}
-                onPick={(patch) => updatePresentationPicks(room.id, patch)}
+                onPick={editingPicks ? (patch) => updatePresentationPicks(room.id, patch) : undefined}
               />
             ))
           )}
