@@ -2,25 +2,103 @@ import { createFileRoute } from "@tanstack/react-router";
 
 const RENDERING_PROMPT = `Use the uploaded SketchUp rendering as the exact architectural and design reference.
 
-The final image must preserve: exact room proportions, exact cabinetry layout, exact ceiling heights, exact window placement, exact door placement, exact furniture scale and spacing, exact camera angle, exact camera height, exact perspective, exact material placement, exact architectural details, exact millwork details, exact trim details, exact appliance locations, and exact lighting locations.
+The final image must preserve:
 
-Do not redesign. Do not reinterpret. Do not change the floorplan. Do not move walls. Do not modify architecture. Do not change cabinetry design. Do not introduce new architectural features. Do not replace specified products. Do not add random decor.
+* exact room proportions
+* exact cabinetry layout
+* exact ceiling heights
+* exact window and door placement
+* exact furniture scale and spacing
+* exact camera angle and perspective
+* exact material placement
+* exact architectural details
 
-The purpose is not to create a new design. The purpose is to transform the SketchUp image into a believable completed luxury residential photograph. The final image should look like a professionally photographed completed project by a top-tier residential interior design firm. It should not look like CGI. It should not look AI-generated. It should look like a real completed home.
+Do not redesign, reinterpret, or add random decor elements.
+Do not change the floorplan or styling direction.
 
-STYLE + QUALITY: ultra photorealistic luxury interior photography, Architectural Digest quality, luxury residential editorial photography, natural daylight, physically accurate materials, realistic shadows and reflections, realistic ambient lighting, subtle imperfections, believable lived-in realism, premium finish quality, warm elevated aesthetic, refined styling, timeless design, realistic depth of field, professional full-frame camera look, shot on a 35mm architectural photography lens, accurate white balance, accurate exposure, soft dynamic range, magazine-quality realism.
+This should look like a professionally photographed completed luxury residential project by a top-tier interior design studio in a real home — not CGI and not AI-generated.
 
-MATERIAL ACCURACY: All finishes must match the actual project selections — cabinet color, cabinet finish, wood species, stain tone, paint color, countertop material, countertop edge profile, backsplash material, backsplash pattern, flooring material, flooring stain, plumbing finish, lighting finish, appliance finish, hardware finish, stone veining, upholstery colors, fabric textures. Do not oversaturate colors. Do not stylize materials. Keep materials sophisticated, warm, and believable. Avoid exaggerated contrast and unrealistic luxury staging.
+STYLE + QUALITY:
 
-PRODUCT ACCURACY: When products are provided, use them as the design reference — match fixture shape, fixture scale, fixture finish, hardware profile and finish, plumbing silhouette and finish, and appliance appearance. When product images are referenced, treat them as visual reference. Do not substitute or invent alternative products. Use the actual selected products wherever visible.
+* ultra photorealistic
+* luxury editorial interior photography
+* natural lighting
+* physically accurate materials
+* realistic shadows and reflections
+* true-to-life textures
+* subtle imperfections for realism
+* soft dynamic range
+* architectural digest quality
+* warm, elevated, timeless aesthetic
+* refined styling
+* high-end residential interior design
+* premium finish quality
+* realistic depth of field
+* professional full-frame camera look
+* shot on 35mm lens
+* accurate white balance
+* realistic exposure
 
-LIGHTING: natural sunlight entering through the actual windows with realistic direction, soft indirect bounce lighting, practical fixtures glowing naturally, subtle ambient shadows, realistic brightness and interior exposure. Avoid blown highlights, muddy shadows, HDR effects, dramatic artificial lighting, or cinematic exaggeration. The image should feel naturally photographed.
+MATERIAL ACCURACY:
+All finishes must match the rendering exactly:
 
-STYLING: minimal intentional styling, luxury lived-in realism, clean surfaces, tasteful restrained accessories, believable organic materials, realistic fabric folds, cushions, bedding, books and accessories. Styling supports the design and never overpowers the architecture.
+* cabinetry colors
+* paint colors
+* flooring tones
+* countertop materials
+* backsplash materials
+* plumbing finishes
+* lighting finishes
+* wood species and stain tones
+* upholstery colors
+* stone veining
+* hardware finishes
 
-REALISM REQUIREMENTS: perfectly straight architectural and cabinetry lines, accurate geometry, accurate scale, realistic proportions. Avoid warped walls or cabinetry, distorted windows or furniture, floating objects, AI artifacts, incorrect scale, surreal styling, exaggerated luxury, plastic-looking materials, fake reflections, or fake shadows. Every object should appear physically believable.
+Do not oversaturate colors.
+Do not stylize materials.
+Keep tones sophisticated, warm, and believable.
 
-OUTPUT: ultra high resolution, client presentation quality, photorealistic luxury interior photography, magazine-quality realism, true-to-scale architectural visualization, presentation board quality. The final image should convince a homeowner that this is a real completed project photograph.`;
+LIGHTING:
+
+* natural sunlight entering realistically through windows
+* soft indirect bounce lighting
+* practical lighting fixtures glowing naturally
+* no blown highlights
+* no overly dark shadows
+* cinematic but realistic brightness
+
+STYLING:
+
+* minimal but intentional styling
+* luxury lived-in feel
+* tasteful accessories only
+* high-end designer aesthetic
+* clean surfaces
+* realistic fabric folds
+* realistic pillows and bedding
+* believable organic textures
+
+REALISM REQUIREMENTS:
+
+* perfectly straight architectural lines
+* no warped geometry
+* no floating objects
+* no distorted furniture
+* no incorrect scale
+* no fake AI artifacts
+* no surreal styling
+* no exaggerated lighting
+* no plastic-looking textures
+
+The image should convince a client this is a real completed project photograph.
+
+OUTPUT:
+
+* ultra high resolution
+* photorealistic luxury interior photography
+* client presentation quality
+* magazine-quality realism
+* true-to-scale architectural visualization`;
 
 class ImageInputError extends Error {}
 
@@ -92,7 +170,7 @@ export const Route = createFileRoute("/api/generate-rendering")({
             : RENDERING_PROMPT;
 
           const form = new FormData();
-          form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-1");
+          form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
           form.append("image", image);
           form.append("prompt", userText);
           form.append("size", "1536x1024");
