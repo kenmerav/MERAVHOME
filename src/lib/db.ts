@@ -57,6 +57,10 @@ export interface Room {
   sort_order: number;
   design_concept: string | null;
   design_notes: string | null;
+  presentation_palette_item_ids: string[] | null;
+  presentation_cabinet_item_id: string | null;
+  presentation_counter_item_id: string | null;
+  presentation_faucet_item_id: string | null;
   created_at: string;
   updated_at: string;
 }

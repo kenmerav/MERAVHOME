@@ -410,6 +410,10 @@ export type Database = {
           design_notes: string | null
           id: string
           name: string
+          presentation_cabinet_item_id: string | null
+          presentation_counter_item_id: string | null
+          presentation_faucet_item_id: string | null
+          presentation_palette_item_ids: string[] | null
           project_id: string
           sort_order: number
           updated_at: string
@@ -420,6 +424,10 @@ export type Database = {
           design_notes?: string | null
           id?: string
           name: string
+          presentation_cabinet_item_id?: string | null
+          presentation_counter_item_id?: string | null
+          presentation_faucet_item_id?: string | null
+          presentation_palette_item_ids?: string[] | null
           project_id: string
           sort_order?: number
           updated_at?: string
@@ -430,6 +438,10 @@ export type Database = {
           design_notes?: string | null
           id?: string
           name?: string
+          presentation_cabinet_item_id?: string | null
+          presentation_counter_item_id?: string | null
+          presentation_faucet_item_id?: string | null
+          presentation_palette_item_ids?: string[] | null
           project_id?: string
           sort_order?: number
           updated_at?: string

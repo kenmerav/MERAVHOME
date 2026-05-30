@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem } from "@/lib/db";
@@ -14,13 +14,14 @@ export const Route = createFileRoute("/presentations/$id")({
 type RoomData = {
   views: { hero?: any; sketch?: any; label?: string }[];
   materials: MaterialItem[];
+  paletteMaterials: MaterialItem[];
   cabinetProduct: any;
-  cabinetMaterial: any;
-  counter: any;
-  faucet: any;
+  cabinetMaterial: MaterialItem | null;
+  counter: MaterialItem | null;
+  faucet: MaterialItem | any;
 };
 
-function buildRoomData(images: any[], selections: any[], materials: MaterialItem[]): RoomData {
+function buildRoomData(room: any, images: any[], selections: any[], materials: MaterialItem[]): RoomData {
   const approvedRenders = images.filter(i => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false);
   approvedRenders.sort((a, b) => {
     // Heroes first, then favorites, then sort_order
@@ -53,19 +54,26 @@ function buildRoomData(images: any[], selections: any[], materials: MaterialItem
     return materials.find(m => wanted.includes(m.item_label.toLowerCase()))
       || materials.find(m => wanted.some(label => m.category?.toLowerCase().includes(label)));
   };
+  const materialById = new Map(materials.map((m) => [m.id, m]));
+  const pickById = (id?: string | null) => id ? materialById.get(id) ?? null : null;
+  const paletteMaterials = room.presentation_palette_item_ids?.length
+    ? room.presentation_palette_item_ids.map((id: string) => materialById.get(id)).filter(Boolean).slice(0, 4) as MaterialItem[]
+    : materials.slice(0, 4);
 
   return {
     views,
     materials,
+    paletteMaterials,
     cabinetProduct: pickProduct("Hardware"),
-    cabinetMaterial: pickMaterialItem("Cabinet Finish", "Cabinet Hardware"),
-    counter: pickMaterialItem("Countertop", "Countertops"),
-    faucet: pickMaterialItem("Faucet") || pickProduct("Plumbing"),
+    cabinetMaterial: pickById(room.presentation_cabinet_item_id) || pickMaterialItem("Cabinet Finish", "Cabinet Hardware") || null,
+    counter: pickById(room.presentation_counter_item_id) || pickMaterialItem("Countertop", "Countertops") || null,
+    faucet: pickById(room.presentation_faucet_item_id) || pickMaterialItem("Faucet") || pickProduct("Plumbing"),
   };
 }
 
 function PresentationPage() {
   const { id: projectId } = Route.useParams();
+  const qc = useQueryClient();
   const { data: project } = useQuery({ queryKey: ["project", projectId], queryFn: () => db.getProject(projectId) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", projectId], queryFn: async () => (await db.listRooms(projectId)) ?? [] });
   const { data: materialItems = [] } = useQuery({
@@ -86,10 +94,15 @@ function PresentationPage() {
       const images = (roomQueries[idx * 2]?.data as any[]) || [];
       const selections = (roomQueries[idx * 2 + 1]?.data as any[]) || [];
       const materials = materialItems.filter((m) => m.room_id === r.id && !m.not_needed);
-      return { room: r, data: buildRoomData(images, selections, materials) };
+      return { room: r, data: buildRoomData(r, images, selections, materials) };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rooms, materialItems, roomQueries.map(q => q.dataUpdatedAt).join(",")]);
+
+  const updatePresentationPicks = async (roomId: string, patch: Record<string, string | string[] | null>) => {
+    await db.updateRoom(roomId, patch as any);
+    qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+  };
 
   // Flat list of slides: cover + every view in every room
   const slides = useMemo(() => {
@@ -237,6 +250,7 @@ function PresentationPage() {
                 viewIndex={vi}
                 viewCount={data.views.length}
                 anchor={vi === 0 ? `room-${room.id}` : undefined}
+                onPick={(patch) => updatePresentationPicks(room.id, patch)}
               />
             ))
           )}
@@ -289,7 +303,7 @@ function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { projec
   );
 }
 
-function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor }: { project: any; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number; anchor?: string }) {
+function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, onPick }: { project: any; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number; anchor?: string; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
   return (
     <section id={anchor} className="bg-background border border-border print:border-0 print-page scroll-mt-24">
@@ -320,13 +334,21 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor }:
             </div>
           )}
         </div>
-        <SpreadSidebar data={data} view={view} showSketch={showSketchInCard} />
+        <SpreadSidebar data={data} view={view} showSketch={showSketchInCard} onPick={onPick} />
       </div>
     </section>
   );
 }
 
-function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view: RoomData["views"][number]; showSketch?: boolean }) {
+function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomData; view: RoomData["views"][number]; showSketch?: boolean; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
+  const setPaletteSlot = (index: number, id: string) => {
+    const ids = Array.from({ length: 4 }, (_, i) => data.paletteMaterials[i]?.id ?? "");
+    ids[index] = id;
+    const trimmed = ids.map((value) => value || null);
+    while (trimmed.length && !trimmed[trimmed.length - 1]) trimmed.pop();
+    onPick?.({ presentation_palette_item_ids: trimmed.length ? trimmed.filter(Boolean) as string[] : null });
+  };
+
   return (
     <div className="flex flex-col gap-6 print:gap-3">
       {showSketch && (
@@ -344,14 +366,17 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
       <div className="grid grid-cols-2 gap-6 print:gap-3">
         <Card label="Material Palette">
           <div className="grid grid-cols-2 gap-1.5">
-            {data.materials.slice(0, 4).map(m => (
-              <div key={m.id} className="aspect-square bg-bone overflow-hidden">
-                {m.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, { name: "" })} className="w-full h-full object-cover" />}
+            {Array.from({ length: 4 }).map((_, i) => {
+              const m = data.paletteMaterials[i];
+              return (
+              <div key={m?.id ?? `palette-${i}`} className="space-y-1">
+                <div className="aspect-square bg-bone overflow-hidden">
+                  {m?.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, { name: "" })} className="w-full h-full object-cover" />}
+                </div>
+                {onPick && <PresentationPickSelect value={m?.id ?? ""} materials={data.materials} onChange={(id) => setPaletteSlot(i, id)} />}
               </div>
-            ))}
-            {Array.from({ length: Math.max(0, 4 - data.materials.length) }).map((_, i) => (
-              <div key={`e${i}`} className="aspect-square bg-bone" />
-            ))}
+              );
+            })}
           </div>
         </Card>
         <Card label="Cabinetry & Hardware">
@@ -361,6 +386,7 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
             fallbackName={data.cabinetMaterial ? clientProductName(data.cabinetMaterial, { name: "" }) : "Cabinet finish + hardware"}
             fallbackSub={data.cabinetMaterial?.product?.vendor || data.cabinetMaterial?.color}
           />
+          {onPick && <PresentationPickSelect value={data.cabinetMaterial?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_cabinet_item_id: id || null })} />}
         </Card>
       </div>
 
@@ -379,6 +405,7 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
               )}
             </div>
           </div>
+          {onPick && <PresentationPickSelect value={data.counter?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_counter_item_id: id || null })} />}
         </Card>
         <Card label="Faucet">
           <Detail
@@ -387,9 +414,35 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
             fallbackName={data.faucet?.item_label ? clientProductName(data.faucet, { name: "" }) : "Bridge faucet"}
             fallbackSub={data.faucet?.product?.vendor || data.faucet?.color}
           />
+          {onPick && <PresentationPickSelect value={data.faucet?.item_label ? data.faucet.id : ""} materials={data.materials} onChange={(id) => onPick({ presentation_faucet_item_id: id || null })} />}
         </Card>
       </div>
     </div>
+  );
+}
+
+function PresentationPickSelect({
+  value,
+  materials,
+  onChange,
+}: {
+  value: string;
+  materials: MaterialItem[];
+  onChange: (id: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="mt-2 w-full border border-border bg-background px-2 py-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground print:hidden"
+    >
+      <option value="">Default / blank</option>
+      {materials.map((m) => (
+        <option key={m.id} value={m.id}>
+          {clientProductName(m, { name: "" })}
+        </option>
+      ))}
+    </select>
   );
 }
 
