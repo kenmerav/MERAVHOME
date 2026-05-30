@@ -1,0 +1,286 @@
+import { supabase } from "@/integrations/supabase/client";
+
+export type ProjectStatus = "Design" | "Presentation" | "Approved" | "Procurement" | "Complete";
+export type ProjectType = "Kitchen" | "Bathroom" | "Whole Home" | "New Build" | "Furnishings" | "Commercial";
+export type ProductCategory = "Lighting" | "Plumbing" | "Hardware" | "Appliances" | "Flooring" | "Tile" | "Paint" | "Furniture" | "Decor";
+export type MaterialCategory = "Cabinet Finish" | "Countertop" | "Flooring" | "Tile" | "Fabric" | "Paint";
+
+export const PRODUCT_CATEGORIES: ProductCategory[] = ["Lighting","Plumbing","Hardware","Appliances","Flooring","Tile","Paint","Furniture","Decor"];
+export const MATERIAL_CATEGORIES: MaterialCategory[] = ["Cabinet Finish","Countertop","Flooring","Tile","Fabric","Paint"];
+export const PROJECT_TYPES: ProjectType[] = ["Kitchen","Bathroom","Whole Home","New Build","Furnishings","Commercial"];
+export const PROJECT_STATUSES: ProjectStatus[] = ["Design","Presentation","Approved","Procurement","Complete"];
+
+// Subcategories per the product spec
+export const SUBCATEGORIES: Record<ProductCategory, string[]> = {
+  Lighting: ["Pendants", "Sconces", "Recessed Lighting", "Chandeliers", "Flush Mount", "Lamps"],
+  Plumbing: ["Faucets", "Pot Fillers", "Shower Systems", "Tubs", "Sinks", "Toilets"],
+  Hardware: ["Pulls", "Knobs", "Hinges", "Latches"],
+  Appliances: ["Refrigerators", "Ranges", "Dishwashers", "Hoods", "Microwaves", "Ovens"],
+  Flooring: ["Wood", "Stone", "Tile", "Carpet"],
+  Tile: ["Wall", "Floor", "Backsplash", "Shower"],
+  Paint: ["Wall", "Trim", "Ceiling", "Cabinet"],
+  Furniture: ["Seating", "Tables", "Storage", "Beds"],
+  Decor: ["Art", "Textiles", "Accessories", "Mirrors"],
+};
+
+export const WORKFLOW_STAGES = [
+  "Create Project",
+  "Create Rooms",
+  "Upload SketchUp",
+  "Design Selections",
+  "AI Renderings",
+  "Presentation Boards",
+  "Client Approval",
+  "Spec Book",
+  "Procurement",
+] as const;
+
+export interface Project {
+  id: string;
+  name: string;
+  client_name: string;
+  project_type: ProjectType;
+  status: ProjectStatus;
+  design_notes: string | null;
+  cover_image_url: string | null;
+  project_summary: string | null;
+  design_concept: string | null;
+  key_design_elements: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Room {
+  id: string;
+  project_id: string;
+  name: string;
+  sort_order: number;
+  design_concept: string | null;
+  design_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RenderingStatus = "not_generated" | "queued" | "processing" | "complete" | "failed";
+export type RenderingRole = "hero" | "secondary" | "detail";
+
+export interface RoomImage {
+  id: string;
+  room_id: string;
+  kind: "sketchup" | "rendering";
+  url: string;
+  caption: string | null;
+  linked_sketchup_id: string | null;
+  sort_order: number;
+  status: RenderingStatus;
+  role: RenderingRole | null;
+  is_favorite: boolean;
+  is_approved: boolean;
+  error_message: string | null;
+}
+
+export interface Product {
+  id: string;
+  category: ProductCategory;
+  subcategory: string | null;
+  name: string;
+  vendor: string | null;
+  product_url: string | null;
+  image_url: string | null;
+  finish: string | null;
+  sku: string | null;
+  notes: string | null;
+  dimensions: string | null;
+  price: string | null;
+  unit_cost: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoomProduct {
+  id: string;
+  room_id: string;
+  product_id: string;
+  is_key_selection: boolean;
+  sort_order: number;
+  room_notes: string | null;
+  approved: boolean;
+  product?: Product;
+}
+
+export interface Material {
+  id: string;
+  room_id: string;
+  category: MaterialCategory;
+  name: string;
+  image_url: string | null;
+  vendor: string | null;
+  product_url: string | null;
+  sku: string | null;
+  notes: string | null;
+  sort_order: number;
+}
+
+export interface ProcurementItem {
+  id: string;
+  room_product_id: string;
+  ordered: boolean;
+  received: boolean;
+  installed: boolean;
+  notes: string | null;
+}
+
+export interface MaterialItem {
+  id: string;
+  room_id: string;
+  project_id: string;
+  item_label: string;
+  category: string | null;
+  is_required: boolean;
+  sort_order: number;
+  cad_label: string | null;
+  product_url: string | null;
+  quantity: number | null;
+  color: string | null;
+  notes: string | null;
+  not_needed: boolean;
+  product_id: string | null;
+  scrape_status: string;
+  scrape_error: string | null;
+  created_at: string;
+  updated_at: string;
+  product?: Product | null;
+}
+
+
+export const db = {
+  /* PROJECTS */
+  listProjects: async () =>
+    (await supabase.from("projects").select("*").order("updated_at", { ascending: false })).data as Project[] | null,
+  getProject: async (id: string) =>
+    (await supabase.from("projects").select("*").eq("id", id).maybeSingle()).data as Project | null,
+  createProject: async (p: { name: string; client_name: string; project_type: ProjectType; design_notes?: string }) =>
+    (await supabase.from("projects").insert(p).select().single()).data as Project | null,
+  updateProject: async (id: string, p: Partial<Project>) =>
+    (await supabase.from("projects").update(p).eq("id", id).select().single()).data as Project | null,
+
+  /* ROOMS */
+  listRooms: async (projectId: string) =>
+    (await supabase.from("rooms").select("*").eq("project_id", projectId).order("sort_order").order("created_at")).data as Room[] | null,
+  getRoom: async (id: string) =>
+    (await supabase.from("rooms").select("*").eq("id", id).maybeSingle()).data as Room | null,
+  createRoom: async (r: { project_id: string; name: string }) =>
+    (await supabase.from("rooms").insert(r).select().single()).data as Room | null,
+  updateRoom: async (id: string, r: Partial<Room>) =>
+    (await supabase.from("rooms").update(r).eq("id", id).select().single()).data as Room | null,
+  deleteRoom: async (id: string) =>
+    supabase.from("rooms").delete().eq("id", id),
+
+  /* ROOM IMAGES */
+  listRoomImages: async (roomId: string) =>
+    (await supabase.from("room_images").select("*").eq("room_id", roomId).order("sort_order")).data as RoomImage[] | null,
+  addRoomImage: async (img: { room_id: string; kind: "sketchup" | "rendering"; url: string; caption?: string; linked_sketchup_id?: string | null; status?: RenderingStatus; role?: RenderingRole | null; is_approved?: boolean }) =>
+    (await supabase.from("room_images").insert(img).select().single()).data as RoomImage | null,
+  updateRoomImage: async (id: string, patch: Partial<RoomImage>) =>
+    (await supabase.from("room_images").update(patch as any).eq("id", id).select().single()).data as RoomImage | null,
+  deleteRoomImage: async (id: string) =>
+    supabase.from("room_images").delete().eq("id", id),
+  listProjectRoomImages: async (projectId: string) => {
+    const { data: rooms } = await supabase.from("rooms").select("id").eq("project_id", projectId);
+    const ids = (rooms ?? []).map((r: any) => r.id);
+    if (!ids.length) return [] as RoomImage[];
+    const { data } = await supabase.from("room_images").select("*").in("room_id", ids).order("sort_order");
+    return (data ?? []) as RoomImage[];
+  },
+
+  /* PRODUCT CATALOG (global) */
+  listCatalog: async (search?: string) => {
+    let q = supabase.from("products").select("*").order("updated_at", { ascending: false });
+    if (search?.trim()) q = q.ilike("name", `%${search.trim()}%`);
+    return (await q).data as Product[] | null;
+  },
+  createProduct: async (p: Partial<Omit<Product, "id" | "created_at" | "updated_at">> & Pick<Product, "name" | "category">) =>
+    (await supabase.from("products").insert(p).select().single()).data as Product | null,
+  updateProduct: async (id: string, p: Partial<Product>) =>
+    (await supabase.from("products").update(p).eq("id", id).select().single()).data as Product | null,
+  deleteProduct: async (id: string) =>
+    supabase.from("products").delete().eq("id", id),
+
+  /* ROOM PRODUCTS (selections) */
+  listRoomProducts: async (roomId: string) =>
+    (await supabase.from("room_products").select("*, product:products(*)").eq("room_id", roomId).order("sort_order")).data as RoomProduct[] | null,
+  addRoomProduct: async (rp: { room_id: string; product_id: string; is_key_selection?: boolean }) =>
+    (await supabase.from("room_products").insert(rp).select().single()).data,
+  updateRoomProduct: async (id: string, rp: Partial<RoomProduct>) =>
+    supabase.from("room_products").update(rp as any).eq("id", id),
+  removeRoomProduct: async (id: string) =>
+    supabase.from("room_products").delete().eq("id", id),
+
+  /* MATERIALS */
+  listMaterials: async (roomId: string) =>
+    (await supabase.from("materials").select("*").eq("room_id", roomId).order("sort_order")).data as Material[] | null,
+  addMaterial: async (m: { room_id: string; category: MaterialCategory; name: string; image_url?: string | null; vendor?: string | null; product_url?: string | null; sku?: string | null; notes?: string | null }) =>
+    (await supabase.from("materials").insert(m).select().single()).data,
+  deleteMaterial: async (id: string) =>
+    supabase.from("materials").delete().eq("id", id),
+
+  /* PROCUREMENT */
+  listProcurement: async () => {
+    const { data } = await supabase
+      .from("procurement_items")
+      .select("*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(name, client_name)))")
+      .order("updated_at", { ascending: false });
+    const items = (data ?? []) as Array<ProcurementItem & {
+      room_product: RoomProduct & {
+        product: Product;
+        room: Room & { project: { name: string; client_name: string } };
+      };
+    }>;
+
+    // Enrich with material_item details (qty / color / link / cad)
+    const pairs = items
+      .map(i => ({ room_id: i.room_product?.room?.id, product_id: i.room_product?.product?.id }))
+      .filter(p => p.room_id && p.product_id);
+    if (pairs.length) {
+      const productIds = Array.from(new Set(pairs.map(p => p.product_id!)));
+      const { data: mats } = await supabase
+        .from("material_items")
+        .select("room_id, product_id, quantity, color, product_url, cad_label, notes")
+        .in("product_id", productIds);
+      const matMap = new Map<string, any>();
+      (mats ?? []).forEach((m: any) => matMap.set(`${m.room_id}::${m.product_id}`, m));
+      items.forEach((i: any) => {
+        const key = `${i.room_product?.room?.id}::${i.room_product?.product?.id}`;
+        i.material = matMap.get(key) ?? null;
+      });
+    }
+    return items as Array<ProcurementItem & {
+      room_product: RoomProduct & {
+        product: Product;
+        room: Room & { project: { name: string; client_name: string } };
+      };
+      material?: { quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null; notes: string | null } | null;
+    }>;
+  },
+  updateProcurement: async (id: string, p: Partial<ProcurementItem>) =>
+    supabase.from("procurement_items").update(p).eq("id", id),
+
+  /* MATERIAL ITEMS (guided checklist) */
+  listMaterialItemsByProject: async (projectId: string) =>
+    (await supabase
+      .from("material_items")
+      .select("*, product:products(*)")
+      .eq("project_id", projectId)
+      .order("sort_order")
+      .order("created_at")).data as MaterialItem[] | null,
+  bulkInsertMaterialItems: async (items: Array<Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product">>) =>
+    supabase.from("material_items").insert(items as any),
+  updateMaterialItem: async (id: string, patch: Partial<MaterialItem>) =>
+    supabase.from("material_items").update(patch as any).eq("id", id),
+  deleteMaterialItem: async (id: string) =>
+    supabase.from("material_items").delete().eq("id", id),
+  findProductByUrl: async (url: string) =>
+    (await supabase.from("products").select("*").eq("product_url", url).maybeSingle()).data as Product | null,
+};
+

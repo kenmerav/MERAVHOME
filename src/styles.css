@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap');
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ──────────────────────────────────────────────────────────────
+   MERAV Studio — Editorial Luxury Design System
+   White space, serif display, near-black text, brass accent.
+   Inspired by Architectural Digest, Amber Interiors, Apple.
+   ────────────────────────────────────────────────────────────── */
+
+@theme inline {
+  --font-display: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 10px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brass: var(--brass);
+  --color-bone: var(--bone);
+  --color-ink: var(--ink);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+}
+
+:root {
+  /* Surfaces — paper white, never pure */
+  --background: oklch(0.995 0.002 80);
+  --foreground: oklch(0.18 0.01 60);
+  --ink: oklch(0.18 0.01 60);
+  --bone: oklch(0.97 0.006 80);
+
+  --card: oklch(1 0 0);
+  --card-foreground: var(--ink);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--ink);
+
+  /* Primary = ink */
+  --primary: oklch(0.2 0.01 60);
+  --primary-foreground: oklch(0.99 0.003 80);
+
+  --secondary: oklch(0.96 0.006 80);
+  --secondary-foreground: var(--ink);
+
+  --muted: oklch(0.96 0.006 80);
+  --muted-foreground: oklch(0.48 0.012 60);
+
+  --accent: oklch(0.95 0.01 75);
+  --accent-foreground: var(--ink);
+
+  /* Brass — single editorial accent */
+  --brass: oklch(0.62 0.09 75);
+
+  --destructive: oklch(0.55 0.18 28);
+  --destructive-foreground: oklch(0.99 0.003 80);
+
+  --border: oklch(0.9 0.006 80);
+  --input: oklch(0.9 0.006 80);
+  --ring: oklch(0.62 0.09 75);
+
+  --sidebar: oklch(0.99 0.003 80);
+  --sidebar-foreground: var(--ink);
+  --sidebar-border: oklch(0.92 0.005 80);
+
+  --radius: 4px;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html { font-feature-settings: "ss01", "cv11"; }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+    font-weight: 500;
+  }
+  .editorial-hero {
+    font-family: var(--font-display);
+    font-weight: 300;
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+}
+
+
+@media print {
+  @page { size: letter landscape; margin: 0.4in; }
+  html, body { background: white !important; }
+  .print\:hidden { display: none !important; }
+  .print-page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
+  img { break-inside: avoid; page-break-inside: avoid; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+
+/* Fullscreen present mode */
+.present-mode {
+  position: fixed; inset: 0; z-index: 50;
+  background: var(--color-background);
+  overflow: hidden;
+}
