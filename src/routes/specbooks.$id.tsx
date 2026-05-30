@@ -5,6 +5,7 @@ import { ArrowLeft, Printer, ExternalLink } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Room } from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/roomTemplates";
+import { clientProductName } from "@/lib/clientProductName";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -163,7 +164,7 @@ function SpecBookPage() {
                 <tr className="border-b border-border text-left">
                   <th className="eyebrow font-normal py-3 pr-4">Room</th>
                   <th className="eyebrow font-normal py-3 pr-4">Category</th>
-                  <th className="eyebrow font-normal py-3 pr-4">Product</th>
+                  <th className="eyebrow font-normal py-3 pr-4">Client Product Name</th>
                   <th className="eyebrow font-normal py-3 pr-4">Vendor</th>
                   <th className="eyebrow font-normal py-3 pr-4">Qty</th>
                 </tr>
@@ -175,7 +176,7 @@ function SpecBookPage() {
                     <tr key={it.id} className="border-b border-border/60 align-top">
                       <td className="py-3 pr-4 font-display">{room.name}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{it.category || "—"}</td>
-                      <td className="py-3 pr-4">{it.product?.name || "—"}</td>
+                      <td className="py-3 pr-4">{clientProductName(it, room)}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{it.product?.vendor || "—"}</td>
                       <td className="py-3 pr-4">{it.quantity ?? "—"}</td>
                     </tr>
@@ -275,7 +276,7 @@ function CategorySpec({
           <div key={room!.id}>
             <div className="eyebrow mb-6">{room!.name}</div>
             <div className="space-y-10">
-              {list.map((it) => <SpecCard key={it.id} item={it} />)}
+              {list.map((it) => <SpecCard key={it.id} item={it} room={room!} />)}
             </div>
           </div>
         ))}
@@ -318,7 +319,7 @@ function RoomSpec({ num, room, items, projectName }: { num: string; room: Room; 
           <div key={g.label}>
             <div className="eyebrow mb-6">{g.label}</div>
             <div className="space-y-10">
-              {g.list.map((it) => <SpecCard key={it.id} item={it} />)}
+              {g.list.map((it) => <SpecCard key={it.id} item={it} room={room} />)}
             </div>
           </div>
         ))}
@@ -327,16 +328,17 @@ function RoomSpec({ num, room, items, projectName }: { num: string; room: Room; 
   );
 }
 
-function SpecCard({ item }: { item: MaterialItem }) {
+function SpecCard({ item, room }: { item: MaterialItem; room: Room }) {
   const p = item.product;
+  const displayName = clientProductName(item, room);
   return (
     <article className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:break-inside-avoid">
       <div className="aspect-square bg-bone overflow-hidden">
         {p?.image_url ? (
-          <img src={p.image_url} alt={p?.name ?? item.item_label} className="w-full h-full object-cover" loading="lazy" />
+          <img src={p.image_url} alt={p?.name ?? displayName} className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full grid place-items-center text-muted-foreground font-display text-4xl">
-            {item.item_label.charAt(0)}
+            {displayName.charAt(0)}
           </div>
         )}
       </div>
@@ -347,7 +349,8 @@ function SpecCard({ item }: { item: MaterialItem }) {
             <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-0.5 border border-border">{item.cad_label}</span>
           )}
         </div>
-        <h3 className="font-display text-3xl leading-tight">{p?.name || "—"}</h3>
+        <h3 className="font-display text-3xl leading-tight">{displayName}</h3>
+        {p?.name && <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.name}</p>}
         {p?.vendor && <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.vendor}</p>}
 
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6">

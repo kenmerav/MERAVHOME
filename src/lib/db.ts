@@ -136,6 +136,7 @@ export interface MaterialItem {
   room_id: string;
   project_id: string;
   item_label: string;
+  client_product_name: string | null;
   category: string | null;
   is_required: boolean;
   sort_order: number;
@@ -246,7 +247,7 @@ export const db = {
       const productIds = Array.from(new Set(pairs.map(p => p.product_id!)));
       const { data: mats } = await supabase
         .from("material_items")
-        .select("room_id, product_id, quantity, color, product_url, cad_label, notes")
+        .select("room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes")
         .in("product_id", productIds);
       const matMap = new Map<string, any>();
       (mats ?? []).forEach((m: any) => matMap.set(`${m.room_id}::${m.product_id}`, m));
@@ -260,7 +261,7 @@ export const db = {
         product: Product;
         room: Room & { project: { name: string; client_name: string } };
       };
-      material?: { quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null; notes: string | null } | null;
+      material?: { client_product_name: string | null; quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null; notes: string | null } | null;
     }>;
   },
   updateProcurement: async (id: string, p: Partial<ProcurementItem>) =>
@@ -283,4 +284,3 @@ export const db = {
   findProductByUrl: async (url: string) =>
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle()).data as Product | null,
 };
-

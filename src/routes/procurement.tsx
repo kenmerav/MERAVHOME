@@ -49,7 +49,7 @@ function ProcurementPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border bg-bone/30">
-                <th className="px-3 py-3 min-w-[240px]">Product</th>
+                <th className="px-3 py-3 min-w-[240px]">Client Product Name</th>
                 <th className="px-3 py-3">Vendor</th>
                 <th className="px-3 py-3">Link</th>
                 <th className="px-3 py-3 text-center w-[60px]">Qty</th>
@@ -72,8 +72,9 @@ function ProcurementPage() {
               {items.map(item => {
                 const p = item.room_product?.product;
                 const r = item.room_product?.room;
-                const m = (item as any).material as { quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null } | null;
+                const m = (item as any).material as { client_product_name: string | null; quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null } | null;
                 const link = m?.product_url || p?.product_url || null;
+                const clientName = m?.client_product_name || [r?.name, p?.category].filter(Boolean).join(" ") || p?.name || "—";
                 return (
                   <tr key={item.id} className="border-b border-border align-top">
                     <td className="px-3 py-3">
@@ -82,9 +83,9 @@ function ProcurementPage() {
                           {p?.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-display text-base leading-tight truncate max-w-[220px]" title={p?.name}>{p?.name}</div>
+                          <div className="font-display text-base leading-tight truncate max-w-[220px]" title={clientName}>{clientName}</div>
                           <div className="text-[10px] text-muted-foreground truncate max-w-[220px]">
-                            {[p?.category, m?.cad_label, p?.sku && `SKU ${p.sku}`].filter(Boolean).join(" · ")}
+                            {[p?.name, m?.cad_label, p?.sku && `SKU ${p.sku}`].filter(Boolean).join(" · ")}
                           </div>
                         </div>
                       </div>

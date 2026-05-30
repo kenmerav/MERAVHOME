@@ -5,6 +5,7 @@ import { ArrowLeft, Plus, Sparkles, Trash2, X, Check } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES } from "@/lib/roomTemplates";
+import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -203,7 +204,7 @@ function RoomMaterialsSection({
             {done} of {items.length} completed
           </span>
         </div>
-        <AddCustomItemButton roomId={room.id} projectId={projectId} sortStart={items.length} />
+        <AddCustomItemButton roomId={room.id} roomName={room.name} projectId={projectId} sortStart={items.length} />
       </div>
 
       {items.length === 0 ? (
@@ -216,6 +217,7 @@ function RoomMaterialsSection({
             <thead>
               <tr className="text-left text-[11px] tracking-[0.15em] uppercase text-muted-foreground">
                 <th className="px-6 py-3 w-[180px]">Item</th>
+                <th className="py-3 w-[220px]">Client Product Name</th>
                 <th className="py-3 w-[140px]">Category</th>
                 <th className="py-3 w-[120px]">CAD Label</th>
                 <th className="py-3">Product Link</th>
@@ -262,6 +264,14 @@ function RoomMaterialsSection({
                           </div>
                         </div>
                       )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <InlineInput
+                        value={clientProductName(it, room)}
+                        onSave={(v) => update(it.id, { client_product_name: v || buildClientProductName(room.name, it.item_label) })}
+                        disabled={it.not_needed}
+                        placeholder="Kitchen Pendant"
+                      />
                     </td>
                     <td className="py-2 pr-3">
                       <Select
@@ -392,7 +402,7 @@ function NotesPopover({ value, onSave }: { value: string; onSave: (v: string) =>
   );
 }
 
-function AddCustomItemButton({ roomId, projectId, sortStart }: { roomId: string; projectId: string; sortStart: number }) {
+function AddCustomItemButton({ roomId, roomName, projectId, sortStart }: { roomId: string; roomName: string; projectId: string; sortStart: number }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
@@ -404,6 +414,7 @@ function AddCustomItemButton({ roomId, projectId, sortStart }: { roomId: string;
       room_id: roomId,
       project_id: projectId,
       item_label: label.trim(),
+      client_product_name: buildClientProductName(roomName, label.trim()),
       category,
       is_required: false,
       sort_order: sortStart,
@@ -495,7 +506,7 @@ function ReviewDialog({
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
-                    <span className="eyebrow">{item?.item_label}</span>
+                    <span className="eyebrow">{item?.client_product_name || item?.item_label}</span>
                     {row.existing_product_id && (
                       <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-bone">Reused from catalog</span>
                     )}

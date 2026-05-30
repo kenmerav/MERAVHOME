@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           cad_label: string | null
           category: string | null
+          client_product_name: string | null
           color: string | null
           created_at: string
           id: string
@@ -38,6 +39,7 @@ export type Database = {
         Insert: {
           cad_label?: string | null
           category?: string | null
+          client_product_name?: string | null
           color?: string | null
           created_at?: string
           id?: string
@@ -58,6 +60,7 @@ export type Database = {
         Update: {
           cad_label?: string | null
           category?: string | null
+          client_product_name?: string | null
           color?: string | null
           created_at?: string
           id?: string

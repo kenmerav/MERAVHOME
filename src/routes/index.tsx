@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
+import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
 
 
@@ -150,6 +151,7 @@ export function NewProjectDialog() {
               room_id: room.id,
               project_id: p.id,
               item_label: t.label,
+              client_product_name: buildClientProductName(rn, t.label),
               category: t.category,
               is_required: true,
               sort_order: idx,
@@ -249,4 +251,3 @@ export function NewProjectDialog() {
     </Dialog>
   );
 }
-
