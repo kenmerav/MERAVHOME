@@ -77,6 +77,28 @@ function UsersPage() {
     await loadUsers();
   };
 
+  const updateUser = async (user: UserProfile, patch: Partial<UserProfile> & { password?: string }) => {
+    setBusy(true);
+    const res = await authedFetch("/api/users", {
+      method: "PATCH",
+      body: JSON.stringify({
+        id: user.id,
+        full_name: patch.full_name ?? user.full_name,
+        role: patch.role ?? user.role,
+        is_active: patch.is_active ?? user.is_active,
+        password: patch.password,
+      }),
+    });
+    const body = await res.json();
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(body.error || "Unable to update user.");
+      return;
+    }
+    toast.success("User updated");
+    await loadUsers();
+  };
+
   return (
     <AppShell>
       <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1200px]">
@@ -126,20 +148,93 @@ function UsersPage() {
             ) : users.length === 0 ? (
               <div className="py-12 text-sm text-muted-foreground">No users yet.</div>
             ) : users.map((user) => (
-              <div key={user.id} className="grid grid-cols-[1fr_auto] gap-4 py-5 border-b border-border">
-                <div>
-                  <div className="font-display text-xl">{user.full_name}</div>
-                  <div className="text-sm text-muted-foreground">{user.email}</div>
-                </div>
-                <div className="self-center text-right">
-                  <div className="eyebrow">{user.role}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{user.is_active ? "Active" : "Inactive"}</div>
-                </div>
-              </div>
+              <UserRow key={user.id} user={user} busy={busy} onSave={updateUser} />
             ))}
           </div>
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function UserRow({
+  user,
+  busy,
+  onSave,
+}: {
+  user: UserProfile;
+  busy: boolean;
+  onSave: (user: UserProfile, patch: Partial<UserProfile> & { password?: string }) => void;
+}) {
+  const [fullName, setFullName] = useState(user.full_name);
+  const [role, setRole] = useState<UserRole>(user.role);
+  const [isActive, setIsActive] = useState(user.is_active);
+  const [password, setPassword] = useState("");
+  const isKen = user.email.toLowerCase() === "ken@meravinteriors.com";
+
+  useEffect(() => {
+    setFullName(user.full_name);
+    setRole(user.role);
+    setIsActive(user.is_active);
+    setPassword("");
+  }, [user]);
+
+  return (
+    <div className="py-5 border-b border-border space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="font-display text-xl">{user.full_name}</div>
+          <div className="text-sm text-muted-foreground">{user.email}</div>
+        </div>
+        <div className="text-right">
+          <div className="eyebrow">{user.is_owner ? "Overall Admin" : user.role}</div>
+          <div className="text-xs text-muted-foreground mt-1">{user.is_active ? "Active" : "Inactive"}</div>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-[1.2fr_0.8fr_0.8fr] gap-3">
+        <div>
+          <Label className="eyebrow">Name</Label>
+          <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </div>
+        <div>
+          <Label className="eyebrow">Role</Label>
+          <select
+            value={role}
+            disabled={isKen}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+            className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm disabled:opacity-60"
+          >
+            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        <div>
+          <Label className="eyebrow">Status</Label>
+          <select
+            value={isActive ? "active" : "inactive"}
+            disabled={isKen}
+            onChange={(e) => setIsActive(e.target.value === "active")}
+            className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm disabled:opacity-60"
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
+        <div>
+          <Label className="eyebrow">Reset Password</Label>
+          <Input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current password" />
+        </div>
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() => onSave(user, { full_name: fullName, role, is_active: isActive, password: password || undefined })}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
   );
 }

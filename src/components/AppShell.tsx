@@ -81,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex-1 px-3 space-y-0.5">
           {nav.map(({ to, label, icon: Icon, exact }) => {
+            if (to === "/users" && !profile?.is_owner) return null;
             const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
             return (
               <Link
@@ -101,7 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {profile && (
             <div className="mb-5">
               <div className="text-sm text-ink truncate">{profile.full_name}</div>
-              <div className="eyebrow mt-1">{profile.role}</div>
+              <div className="eyebrow mt-1">{profile.is_owner ? "Overall Admin" : profile.role}</div>
               <button
                 type="button"
                 onClick={signOut}
