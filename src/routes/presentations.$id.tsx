@@ -345,6 +345,10 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, o
 }
 
 function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomData; view: RoomData["views"][number]; showSketch?: boolean; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
+  const editing = !!onPick;
+  const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
+  const hasCounter = !!data.counter;
+  const hasFaucet = !!data.faucet?.item_label || !!data.faucet?.product;
   const setPaletteSlot = (index: number, id: string) => {
     const ids = Array.from({ length: 4 }, (_, i) => data.paletteMaterials[i]?.id ?? "");
     ids[index] = id;
@@ -383,44 +387,52 @@ function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomDa
             })}
           </div>
         </Card>
-        <Card label="Cabinetry & Hardware">
-          <Detail
-            product={data.cabinetProduct?.product}
-            fallbackImage={data.cabinetMaterial?.product?.image_url}
-            fallbackName={data.cabinetMaterial ? clientProductName(data.cabinetMaterial, { name: "" }) : "Cabinet finish + hardware"}
-            fallbackSub={data.cabinetMaterial?.product?.vendor || data.cabinetMaterial?.color}
-          />
-          {onPick && <PresentationPickSelect value={data.cabinetMaterial?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_cabinet_item_id: id || null })} />}
-        </Card>
+        {(editing || hasCabinetry) && (
+          <Card label="Cabinetry & Hardware">
+            <Detail
+              product={data.cabinetProduct?.product}
+              fallbackImage={data.cabinetMaterial?.product?.image_url}
+              fallbackName={data.cabinetMaterial ? clientProductName(data.cabinetMaterial, { name: "" }) : "Cabinet finish + hardware"}
+              fallbackSub={data.cabinetMaterial?.product?.vendor || data.cabinetMaterial?.color}
+            />
+            {onPick && <PresentationPickSelect value={data.cabinetMaterial?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_cabinet_item_id: id || null })} />}
+          </Card>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-6 print:gap-3">
-        <Card label="Countertop">
-          <div className="flex gap-3">
-            <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-              {data.counter?.product?.image_url && <img src={data.counter.product.image_url} alt="" className="w-full h-full object-cover" />}
-            </div>
-            <div className="min-w-0 self-center">
-              <div className="font-display text-sm leading-tight">{data.counter ? clientProductName(data.counter, { name: "" }) : "—"}</div>
-              {(data.counter?.product?.name || data.counter?.product?.vendor || data.counter?.color) && (
-                <div className="text-[10px] text-muted-foreground mt-0.5">
-                  {[data.counter?.product?.name, data.counter?.product?.vendor, data.counter?.color].filter(Boolean).join(" · ")}
+      {(editing || hasCounter || hasFaucet) && (
+        <div className="grid grid-cols-2 gap-6 print:gap-3">
+          {(editing || hasCounter) && (
+            <Card label="Countertop">
+              <div className="flex gap-3">
+                <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
+                  {data.counter?.product?.image_url && <img src={data.counter.product.image_url} alt="" className="w-full h-full object-cover" />}
                 </div>
-              )}
-            </div>
-          </div>
-          {onPick && <PresentationPickSelect value={data.counter?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_counter_item_id: id || null })} />}
-        </Card>
-        <Card label="Faucet">
-          <Detail
-            product={data.faucet?.product}
-            fallbackImage={data.faucet?.product?.image_url}
-            fallbackName={data.faucet?.item_label ? clientProductName(data.faucet, { name: "" }) : "Bridge faucet"}
-            fallbackSub={data.faucet?.product?.vendor || data.faucet?.color}
-          />
-          {onPick && <PresentationPickSelect value={data.faucet?.item_label ? data.faucet.id : ""} materials={data.materials} onChange={(id) => onPick({ presentation_faucet_item_id: id || null })} />}
-        </Card>
-      </div>
+                <div className="min-w-0 self-center">
+                  <div className="font-display text-sm leading-tight">{data.counter ? clientProductName(data.counter, { name: "" }) : "—"}</div>
+                  {(data.counter?.product?.name || data.counter?.product?.vendor || data.counter?.color) && (
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      {[data.counter?.product?.name, data.counter?.product?.vendor, data.counter?.color].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {onPick && <PresentationPickSelect value={data.counter?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_counter_item_id: id || null })} />}
+            </Card>
+          )}
+          {(editing || hasFaucet) && (
+            <Card label="Faucet">
+              <Detail
+                product={data.faucet?.product}
+                fallbackImage={data.faucet?.product?.image_url}
+                fallbackName={data.faucet?.item_label ? clientProductName(data.faucet, { name: "" }) : "Bridge faucet"}
+                fallbackSub={data.faucet?.product?.vendor || data.faucet?.color}
+              />
+              {onPick && <PresentationPickSelect value={data.faucet?.item_label ? data.faucet.id : ""} materials={data.materials} onChange={(id) => onPick({ presentation_faucet_item_id: id || null })} />}
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }
