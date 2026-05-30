@@ -24,27 +24,51 @@ OUTPUT: ultra high resolution, client presentation quality, photorealistic luxur
 
 class ImageInputError extends Error {}
 
-async function urlToDataUrl(url: string, origin: string): Promise<string> {
-  if (url.startsWith("data:")) return url;
-  const absoluteUrl = url.startsWith("http://") || url.startsWith("https://")
-    ? url
-    : new URL(url, origin).toString();
+function extensionForContentType(contentType: string) {
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
+  if (contentType.includes("webp")) return "webp";
+  return "png";
+}
+
+function dataUrlToImageFile(dataUrl: string) {
+  const match = dataUrl.match(/^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/);
+  if (!match) {
+    throw new ImageInputError("SketchUp source must be a PNG, JPG, or WebP image.");
+  }
+
+  const contentType = match[1];
+  const bytes = Buffer.from(match[2], "base64");
+  return new File([bytes], `sketchup.${extensionForContentType(contentType)}`, {
+    type: contentType,
+  });
+}
+
+async function urlToImageFile(url: string, origin: string): Promise<File> {
+  if (url.startsWith("data:")) return dataUrlToImageFile(url);
+  const absoluteUrl =
+    url.startsWith("http://") || url.startsWith("https://") ? url : new URL(url, origin).toString();
   let res: Response;
   try {
     res = await fetch(absoluteUrl, { headers: { Accept: "image/*" } });
   } catch {
-    throw new ImageInputError("SketchUp image could not be reached. Please replace it with a working direct image URL or re-add the image.");
+    throw new ImageInputError(
+      "SketchUp image could not be reached. Please replace it with a working direct image URL or re-add the image.",
+    );
   }
   if (!res.ok) {
-    throw new ImageInputError(`SketchUp image could not be reached (${res.status}). Please replace it with a working direct image URL or re-add the image.`);
+    throw new ImageInputError(
+      `SketchUp image could not be reached (${res.status}). Please replace it with a working direct image URL or re-add the image.`,
+    );
   }
   const contentType = res.headers.get("content-type") || "image/png";
   if (!contentType.startsWith("image/")) {
     throw new ImageInputError("SketchUp source must be a direct image file URL.");
   }
+  if (!/^image\/(?:png|jpe?g|webp)/.test(contentType)) {
+    throw new ImageInputError("SketchUp source must be a PNG, JPG, or WebP image.");
+  }
   const buf = await res.arrayBuffer();
-  const b64 = Buffer.from(buf).toString("base64");
-  return `data:${contentType};base64,${b64}`;
+  return new File([buf], `sketchup.${extensionForContentType(contentType)}`, { type: contentType });
 }
 
 export const Route = createFileRoute("/api/generate-rendering")({
@@ -58,47 +82,46 @@ export const Route = createFileRoute("/api/generate-rendering")({
           };
           if (!sketchupUrl) return new Response("sketchupUrl is required", { status: 400 });
 
-          const apiKey = process.env.LOVABLE_API_KEY;
-          if (!apiKey) return new Response("LOVABLE_API_KEY not configured", { status: 500 });
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (!apiKey) return new Response("OPENAI_API_KEY not configured", { status: 500 });
 
           const origin = new URL(request.url).origin;
-          const imageDataUrl = await urlToDataUrl(sketchupUrl, origin);
-          const userText = extraContext ? `${RENDERING_PROMPT}\n\nAdditional design context:\n${extraContext}` : RENDERING_PROMPT;
+          const image = await urlToImageFile(sketchupUrl, origin);
+          const userText = extraContext
+            ? `${RENDERING_PROMPT}\n\nAdditional design context:\n${extraContext}`
+            : RENDERING_PROMPT;
 
-          const gatewayRes = await fetch("https://ai.gateway.lovable.dev/v1/images/generations", {
+          const form = new FormData();
+          form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-1");
+          form.append("image", image);
+          form.append("prompt", userText);
+          form.append("size", "1536x1024");
+          form.append("quality", "high");
+
+          const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              model: "google/gemini-3-pro-image-preview",
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: userText },
-                    { type: "image_url", image_url: { url: imageDataUrl } },
-                  ],
-                },
-              ],
-              modalities: ["image", "text"],
-            }),
+            body: form,
           });
 
-          if (!gatewayRes.ok) {
-            const errText = await gatewayRes.text();
-            return new Response(`Gateway error: ${errText}`, { status: gatewayRes.status });
+          if (!imageRes.ok) {
+            const errText = await imageRes.text();
+            return new Response(`OpenAI image error: ${errText}`, { status: imageRes.status });
           }
 
-          const json = (await gatewayRes.json()) as { data?: Array<{ b64_json?: string }> };
+          const json = (await imageRes.json()) as { data?: Array<{ b64_json?: string }> };
           const b64 = json.data?.[0]?.b64_json;
           if (!b64) return new Response("No image returned by model", { status: 502 });
 
           return Response.json({ imageDataUrl: `data:image/png;base64,${b64}` });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          return Response.json({ error: msg }, { status: e instanceof ImageInputError ? 400 : 500 });
+          return Response.json(
+            { error: msg },
+            { status: e instanceof ImageInputError ? 400 : 500 },
+          );
         }
       },
     },

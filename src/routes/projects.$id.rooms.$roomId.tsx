@@ -607,7 +607,7 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
           <div className="flex-1">
             <h3 className="font-display text-2xl mb-2">AI Rendering Generator</h3>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Generates photoreal interior photography from each SketchUp image, preserving exact proportions, layout, camera angle, and architectural details. Powered by Lovable AI — no API key required.
+              Generates photoreal interior photography from each SketchUp image, preserving exact proportions, layout, camera angle, and architectural details.
             </p>
             <ul className="text-xs text-muted-foreground space-y-1 mb-5">
               <li>· {sketchups.length} SketchUp image{sketchups.length === 1 ? "" : "s"} ready to render</li>
