@@ -5,10 +5,11 @@ import { ArrowLeft, BookOpen, LayoutTemplate, Plus, Sparkles, Trash2, ExternalLi
 import { AppShell } from "@/components/AppShell";
 import { resolveImage } from "@/lib/local-assets";
 import {
-  db, PRODUCT_CATEGORIES, MATERIAL_CATEGORIES, SUBCATEGORIES,
-  type ProductCategory, type MaterialCategory, type Product, type RoomProduct,
-  type Material, type Room, type Project,
+  db, PRODUCT_CATEGORIES, SUBCATEGORIES,
+  type ProductCategory, type Product, type RoomProduct,
+  type MaterialItem, type Room, type Project,
 } from "@/lib/db";
+import { clientProductName } from "@/lib/clientProductName";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,7 +62,10 @@ function RoomPage() {
   const { data: room } = useQuery({ queryKey: ["room", roomId], queryFn: () => db.getRoom(roomId) });
   const { data: images = [] } = useQuery({ queryKey: ["roomImages", roomId], queryFn: async () => (await db.listRoomImages(roomId)) ?? [] });
   const { data: selections = [] } = useQuery({ queryKey: ["roomProducts", roomId], queryFn: async () => (await db.listRoomProducts(roomId)) ?? [] });
-  const { data: materials = [] } = useQuery({ queryKey: ["materials", roomId], queryFn: async () => (await db.listMaterials(roomId)) ?? [] });
+  const { data: projectMaterials = [] } = useQuery({
+    queryKey: ["materialItems", id],
+    queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
+  });
 
   if (!project || !room) {
     return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
@@ -69,6 +73,7 @@ function RoomPage() {
 
   const sketchups = images.filter(i => i.kind === "sketchup");
   const renderings = images.filter(i => i.kind === "rendering");
+  const roomMaterialItems = projectMaterials.filter((it) => it.room_id === roomId && !it.not_needed);
 
   const saveNotes = async (concept: string, notes: string) => {
     await db.updateRoom(roomId, { design_concept: concept, design_notes: notes });
@@ -103,7 +108,7 @@ function RoomPage() {
             {[
               ["sketchup", `SketchUp (${sketchups.length})`],
               ["selections", `Design Selections (${selections.length})`],
-              ["materials", `Materials (${materials.length})`],
+              ["materials", `Materials (${roomMaterialItems.length})`],
               ["renderings", `AI Renderings (${renderings.length})`],
               ["concept", "Concept & Notes"],
             ].map(([v, l]) => (
@@ -126,12 +131,12 @@ function RoomPage() {
           </TabsContent>
 
           <TabsContent value="materials" className="pt-10">
-            <MaterialPalette roomId={roomId} materials={materials} />
+            <ProjectMaterialsPanel projectId={id} room={room} items={roomMaterialItems} />
           </TabsContent>
 
           <TabsContent value="renderings" className="pt-10">
             <RenderingsPanel roomId={roomId} images={renderings} sketchups={sketchups}
-              selections={selections} materials={materials} room={room} project={project} />
+              selections={selections} materials={roomMaterialItems} room={room} project={project} />
           </TabsContent>
 
           <TabsContent value="concept" className="pt-10">
@@ -407,81 +412,33 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
 }
 
 /* ─────────── Materials ─────────── */
-function MaterialPalette({ roomId, materials }: { roomId: string; materials: any[] }) {
-  const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ category: "Cabinet Finish" as MaterialCategory, name: "", image_url: "", vendor: "", product_url: "", sku: "", notes: "" });
-
-  const submit = async () => {
-    if (!f.name.trim()) return;
-    await db.addMaterial({
-      room_id: roomId, category: f.category, name: f.name,
-      image_url: f.image_url || null, vendor: f.vendor || null, product_url: f.product_url || null, sku: f.sku || null, notes: f.notes || null,
-    });
-    qc.invalidateQueries({ queryKey: ["materials", roomId] });
-    setOpen(false);
-    setF({ category: "Cabinet Finish", name: "", image_url: "", vendor: "", product_url: "", sku: "", notes: "" });
-    toast.success("Material added");
-  };
-
-  const remove = async (id: string) => {
-    await db.deleteMaterial(id);
-    qc.invalidateQueries({ queryKey: ["materials", roomId] });
-  };
-
+function ProjectMaterialsPanel({ projectId, room, items }: { projectId: string; room: Room; items: MaterialItem[] }) {
   return (
     <div>
       <div className="flex items-end justify-between mb-6">
         <div>
-          <div className="eyebrow">{materials.length} swatches</div>
-          <h2 className="font-display text-3xl mt-1">Material Palette</h2>
+          <div className="eyebrow">{items.length} material item{items.length === 1 ? "" : "s"}</div>
+          <h2 className="font-display text-3xl mt-1">Project Materials</h2>
+          <p className="text-sm text-muted-foreground mt-2 max-w-xl">
+            Materials are now managed from the project Materials page so presentation boards, spec books, procurement, and renderings all use the same source.
+          </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <button className="text-sm inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Add Material</button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Add Material</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div>
-                <Label className="eyebrow">Category</Label>
-                <Select value={f.category} onValueChange={v => setF({ ...f, category: v as MaterialCategory })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{MATERIAL_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              {([["name","Name"],["vendor","Vendor"],["product_url","Product URL"],["image_url","Image URL"],["sku","SKU"]] as const).map(([k, l]) => (
-                <div key={k}>
-                  <Label className="eyebrow">{l}</Label>
-                  <div className="flex gap-2">
-                    <Input value={(f as any)[k]} onChange={e => setF({ ...f, [k]: e.target.value })} />
-                    {k === "product_url" && (
-                      <button type="button" onClick={async () => { const s = await scrapeProductUrl(f.product_url); if (s) setF(prev => mergeScraped(prev, s)); }} className="px-3 text-xs border border-border whitespace-nowrap hover:border-ink">Scrape</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <div><Label className="eyebrow">Notes</Label><Textarea rows={2} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
-              <button onClick={submit} className="w-full py-3 bg-ink text-primary-foreground text-sm">Add</button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Link to="/projects/$id/materials" params={{ id: projectId }} className="text-sm inline-flex items-center gap-1.5 px-4 py-2.5 bg-ink text-primary-foreground">
+          Edit project materials
+        </Link>
       </div>
-      {materials.length === 0 ? (
-        <p className="text-sm text-muted-foreground border border-dashed border-border p-12 text-center">No materials yet.</p>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground border border-dashed border-border p-12 text-center">No material items for this room yet.</p>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {materials.map(m => (
+          {items.map(m => (
             <div key={m.id} className="group">
               <div className="aspect-square bg-bone overflow-hidden mb-3 relative">
-                {m.image_url && <img src={m.image_url} alt={m.name} className="w-full h-full object-cover" loading="lazy" />}
-                <button onClick={() => remove(m.id)} className="absolute top-2 right-2 bg-background/90 p-1.5 opacity-0 group-hover:opacity-100">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {m.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, room)} className="w-full h-full object-cover" loading="lazy" />}
               </div>
               <div className="eyebrow mb-1">{m.category}</div>
-              <h4 className="font-display text-lg leading-tight">{m.name}</h4>
-              {m.vendor && <p className="text-xs text-muted-foreground mt-1">{m.vendor}</p>}
+              <h4 className="font-display text-lg leading-tight">{clientProductName(m, room)}</h4>
+              {m.product?.name && <p className="text-xs text-muted-foreground mt-1">{m.product.name}</p>}
             </div>
           ))}
         </div>
@@ -493,7 +450,7 @@ function MaterialPalette({ roomId, materials }: { roomId: string; materials: any
 /* ─────────── Renderings ─────────── */
 function RenderingsPanel({ roomId, images, sketchups, selections, materials, room, project }: {
   roomId: string; images: any[]; sketchups: any[];
-  selections: RoomProduct[]; materials: Material[]; room: Room; project: Project;
+  selections: RoomProduct[]; materials: MaterialItem[]; room: Room; project: Project;
 }) {
   const qc = useQueryClient();
   const [generatingId, setGeneratingId] = useState<string | null>(null);
@@ -507,11 +464,14 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
     if (materials.length) {
       lines.push("MATERIALS");
       for (const m of materials) {
-        const bits = [`${m.category}: ${m.name}`];
-        if (m.vendor) bits.push(`Vendor: ${m.vendor}`);
-        if (m.sku) bits.push(`SKU: ${m.sku}`);
+        const bits = [`${m.category}: ${clientProductName(m, room)}`];
+        if (m.product?.name) bits.push(`Product: ${m.product.name}`);
+        if (m.product?.vendor) bits.push(`Vendor: ${m.product.vendor}`);
+        if (m.product?.sku) bits.push(`SKU: ${m.product.sku}`);
+        if (m.color) bits.push(`Color/Finish: ${m.color}`);
+        if (m.quantity) bits.push(`Quantity: ${m.quantity}`);
         if (m.notes) bits.push(`Notes: ${m.notes}`);
-        if (m.image_url) bits.push(`Image: ${m.image_url}`);
+        if (m.product?.image_url) bits.push(`Image: ${m.product.image_url}`);
         lines.push("- " + bits.join(" | "));
       }
       lines.push("");

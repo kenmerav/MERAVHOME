@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db } from "@/lib/db";
+import { db, type MaterialItem } from "@/lib/db";
+import { clientProductName } from "@/lib/clientProductName";
 import { useEffect, useState, useCallback, useMemo } from "react";
 
 export const Route = createFileRoute("/presentations/$id")({
@@ -12,14 +13,14 @@ export const Route = createFileRoute("/presentations/$id")({
 
 type RoomData = {
   views: { hero?: any; sketch?: any; label?: string }[];
-  materials: any[];
+  materials: MaterialItem[];
   cabinetProduct: any;
   cabinetMaterial: any;
   counter: any;
   faucet: any;
 };
 
-function buildRoomData(images: any[], selections: any[], materials: any[]): RoomData {
+function buildRoomData(images: any[], selections: any[], materials: MaterialItem[]): RoomData {
   const approvedRenders = images.filter(i => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false);
   approvedRenders.sort((a, b) => {
     // Heroes first, then favorites, then sort_order
@@ -47,14 +48,19 @@ function buildRoomData(images: any[], selections: any[], materials: any[]): Room
   const key = selections.filter(s => s.is_key_selection);
   const pickProduct = (cat: string) =>
     key.find(s => s.product?.category === cat) || selections.find(s => s.product?.category === cat);
+  const pickMaterialItem = (...labels: string[]) => {
+    const wanted = labels.map(label => label.toLowerCase());
+    return materials.find(m => wanted.includes(m.item_label.toLowerCase()))
+      || materials.find(m => wanted.some(label => m.category?.toLowerCase().includes(label)));
+  };
 
   return {
     views,
     materials,
     cabinetProduct: pickProduct("Hardware"),
-    cabinetMaterial: materials.find(m => m.category === "Cabinet Finish"),
-    counter: materials.find(m => m.category === "Countertop"),
-    faucet: pickProduct("Plumbing"),
+    cabinetMaterial: pickMaterialItem("Cabinet Finish", "Cabinet Hardware"),
+    counter: pickMaterialItem("Countertop", "Countertops"),
+    faucet: pickMaterialItem("Faucet") || pickProduct("Plumbing"),
   };
 }
 
@@ -62,25 +68,28 @@ function PresentationPage() {
   const { id: projectId } = Route.useParams();
   const { data: project } = useQuery({ queryKey: ["project", projectId], queryFn: () => db.getProject(projectId) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", projectId], queryFn: async () => (await db.listRooms(projectId)) ?? [] });
+  const { data: materialItems = [] } = useQuery({
+    queryKey: ["materialItems", projectId],
+    queryFn: async () => (await db.listMaterialItemsByProject(projectId)) ?? [],
+  });
 
   // Fetch data for all rooms in parallel
   const roomQueries = useQueries({
     queries: rooms.flatMap(r => [
       { queryKey: ["roomImages", r.id], queryFn: async () => (await db.listRoomImages(r.id)) ?? [] },
       { queryKey: ["roomProducts", r.id], queryFn: async () => (await db.listRoomProducts(r.id)) ?? [] },
-      { queryKey: ["materials", r.id], queryFn: async () => (await db.listMaterials(r.id)) ?? [] },
     ]),
   });
 
   const roomData = useMemo(() => {
     return rooms.map((r, idx) => {
-      const images = (roomQueries[idx * 3]?.data as any[]) || [];
-      const selections = (roomQueries[idx * 3 + 1]?.data as any[]) || [];
-      const materials = (roomQueries[idx * 3 + 2]?.data as any[]) || [];
+      const images = (roomQueries[idx * 2]?.data as any[]) || [];
+      const selections = (roomQueries[idx * 2 + 1]?.data as any[]) || [];
+      const materials = materialItems.filter((m) => m.room_id === r.id && !m.not_needed);
       return { room: r, data: buildRoomData(images, selections, materials) };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rooms, roomQueries.map(q => q.dataUpdatedAt).join(",")]);
+  }, [rooms, materialItems, roomQueries.map(q => q.dataUpdatedAt).join(",")]);
 
   // Flat list of slides: cover + every view in every room
   const slides = useMemo(() => {
@@ -337,7 +346,7 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
           <div className="grid grid-cols-2 gap-1.5">
             {data.materials.slice(0, 4).map(m => (
               <div key={m.id} className="aspect-square bg-bone overflow-hidden">
-                {m.image_url && <img src={m.image_url} alt={m.name} className="w-full h-full object-cover" />}
+                {m.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, { name: "" })} className="w-full h-full object-cover" />}
               </div>
             ))}
             {Array.from({ length: Math.max(0, 4 - data.materials.length) }).map((_, i) => (
@@ -348,9 +357,9 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
         <Card label="Cabinetry & Hardware">
           <Detail
             product={data.cabinetProduct?.product}
-            fallbackImage={data.cabinetMaterial?.image_url}
-            fallbackName={data.cabinetMaterial?.name || "Cabinet finish + hardware"}
-            fallbackSub={data.cabinetMaterial?.vendor}
+            fallbackImage={data.cabinetMaterial?.product?.image_url}
+            fallbackName={data.cabinetMaterial ? clientProductName(data.cabinetMaterial, { name: "" }) : "Cabinet finish + hardware"}
+            fallbackSub={data.cabinetMaterial?.product?.vendor || data.cabinetMaterial?.color}
           />
         </Card>
       </div>
@@ -359,16 +368,25 @@ function SpreadSidebar({ data, view, showSketch = true }: { data: RoomData; view
         <Card label="Countertop">
           <div className="flex gap-3">
             <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-              {data.counter?.image_url && <img src={data.counter.image_url} alt="" className="w-full h-full object-cover" />}
+              {data.counter?.product?.image_url && <img src={data.counter.product.image_url} alt="" className="w-full h-full object-cover" />}
             </div>
             <div className="min-w-0 self-center">
-              <div className="font-display text-sm leading-tight">{data.counter?.name || "—"}</div>
-              {data.counter?.vendor && <div className="text-[10px] text-muted-foreground mt-0.5">{data.counter.vendor}</div>}
+              <div className="font-display text-sm leading-tight">{data.counter ? clientProductName(data.counter, { name: "" }) : "—"}</div>
+              {(data.counter?.product?.name || data.counter?.product?.vendor || data.counter?.color) && (
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  {[data.counter?.product?.name, data.counter?.product?.vendor, data.counter?.color].filter(Boolean).join(" · ")}
+                </div>
+              )}
             </div>
           </div>
         </Card>
         <Card label="Faucet">
-          <Detail product={data.faucet?.product} fallbackName="Bridge faucet" />
+          <Detail
+            product={data.faucet?.product}
+            fallbackImage={data.faucet?.product?.image_url}
+            fallbackName={data.faucet?.item_label ? clientProductName(data.faucet, { name: "" }) : "Bridge faucet"}
+            fallbackSub={data.faucet?.product?.vendor || data.faucet?.color}
+          />
         </Card>
       </div>
     </div>
