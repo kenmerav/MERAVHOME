@@ -10,7 +10,7 @@ export const Route = createFileRoute("/specbooks/")({
 });
 
 function SpecBooksIndex() {
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [], isLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await db.listProjects()) ?? [],
   });
@@ -23,6 +23,11 @@ function SpecBooksIndex() {
           <h1 className="editorial-hero text-5xl lg:text-7xl">Spec Books</h1>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {isLoading && (
+            <div className="text-sm text-muted-foreground border border-dashed border-border p-10 md:col-span-2 lg:col-span-3">
+              Loading spec books...
+            </div>
+          )}
           {activeProjects.map(p => (
             <Link key={p.id} to="/specbooks/$id" params={{ id: p.id }} className="block border border-border p-6 hover:border-ink transition-colors">
               <BookOpen className="w-5 h-5 text-brass mb-6" />
@@ -30,7 +35,7 @@ function SpecBooksIndex() {
               <p className="text-sm text-muted-foreground mt-1">{p.client_name}</p>
             </Link>
           ))}
-          {activeProjects.length === 0 && (
+          {!isLoading && activeProjects.length === 0 && (
             <div className="text-sm text-muted-foreground border border-dashed border-border p-10 md:col-span-2 lg:col-span-3">
               No active spec books. Completed projects are kept out of this working list.
             </div>

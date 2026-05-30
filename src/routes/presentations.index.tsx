@@ -11,7 +11,7 @@ export const Route = createFileRoute("/presentations/")({
 });
 
 function PresentationsIndex() {
-  const { data: projects = [] } = useQuery({ queryKey: ["projects"], queryFn: async () => (await db.listProjects()) ?? [] });
+  const { data: projects = [], isLoading } = useQuery({ queryKey: ["projects"], queryFn: async () => (await db.listProjects()) ?? [] });
   const activeProjects = projects.filter((project) => project.status !== "Complete");
   const { data: allRooms = [] } = useQuery({
     queryKey: ["allRooms"],
@@ -27,6 +27,11 @@ function PresentationsIndex() {
           <p className="mt-4 text-muted-foreground">One presentation per project — scroll to see each room.</p>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {isLoading && (
+            <div className="text-sm text-muted-foreground border border-dashed border-border p-10 md:col-span-2 lg:col-span-3">
+              Loading presentation boards...
+            </div>
+          )}
           {activeProjects.map(p => {
             const rooms = (allRooms as any[]).filter(r => r.project_id === p.id);
             return (
@@ -38,7 +43,7 @@ function PresentationsIndex() {
               </Link>
             );
           })}
-          {activeProjects.length === 0 && (
+          {!isLoading && activeProjects.length === 0 && (
             <div className="text-sm text-muted-foreground border border-dashed border-border p-10 md:col-span-2 lg:col-span-3">
               No active presentation boards. Completed projects are kept out of this working list.
             </div>
