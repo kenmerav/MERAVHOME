@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
@@ -13,10 +14,14 @@ export const Route = createFileRoute("/projects/")({
 });
 
 function ProjectsListPage() {
+  const [filter, setFilter] = useState<"active" | "archive">("active");
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await db.listProjects()) ?? [],
   });
+  const activeProjects = projects.filter((p) => p.status !== "Complete");
+  const archivedProjects = projects.filter((p) => p.status === "Complete");
+  const visibleProjects = filter === "archive" ? archivedProjects : activeProjects;
 
   return (
     <AppShell>
@@ -29,8 +34,33 @@ function ProjectsListPage() {
           <NewProjectDialog />
         </div>
 
+        <div className="flex gap-2 mb-8">
+          <button
+            type="button"
+            onClick={() => setFilter("active")}
+            className={`px-4 py-2 text-[10px] tracking-[0.18em] uppercase border transition-colors ${
+              filter === "active" ? "bg-ink text-primary-foreground border-ink" : "border-border text-muted-foreground hover:bg-bone"
+            }`}
+          >
+            Active ({activeProjects.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter("archive")}
+            className={`px-4 py-2 text-[10px] tracking-[0.18em] uppercase border transition-colors ${
+              filter === "archive" ? "bg-ink text-primary-foreground border-ink" : "border-border text-muted-foreground hover:bg-bone"
+            }`}
+          >
+            Archive ({archivedProjects.length})
+          </button>
+        </div>
+
         <div className="border-t border-border">
-          {projects.map((p) => (
+          {visibleProjects.length === 0 ? (
+            <div className="py-16 text-sm text-muted-foreground">
+              {filter === "archive" ? "No completed projects in the archive yet." : "No active projects. Completed projects live in Archive."}
+            </div>
+          ) : visibleProjects.map((p) => (
             <Link
               key={p.id}
               to="/projects/$id"

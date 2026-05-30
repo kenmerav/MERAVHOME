@@ -30,6 +30,7 @@ function DashboardPage() {
     queryKey: ["projects"],
     queryFn: async () => (await db.listProjects()) ?? [],
   });
+  const activeProjects = projects.filter((p) => p.status !== "Complete");
 
   return (
     <AppShell>
@@ -47,11 +48,11 @@ function DashboardPage() {
 
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
-        ) : projects.length === 0 ? (
+        ) : activeProjects.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-14">
-            {projects.map((p) => <ProjectCard key={p.id} p={p} />)}
+            {activeProjects.map((p) => <ProjectCard key={p.id} p={p} />)}
           </div>
         )}
       </div>
