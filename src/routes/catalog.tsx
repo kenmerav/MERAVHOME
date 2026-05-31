@@ -79,7 +79,7 @@ function CatalogCard({ p }: { p: any }) {
     <div className="group">
       <div className="aspect-square bg-bone overflow-hidden mb-3 relative">
         <Link to="/catalog/$productId" params={{ productId: p.id }} className="block w-full h-full" title={`Open ${p.name}`}>
-          {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" /> : <div className="w-full h-full" />}
+          {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" /> : <div className="w-full h-full" />}
         </Link>
         <button onClick={remove} className="absolute top-2 right-2 bg-background/90 p-1.5 opacity-0 group-hover:opacity-100">
           <Trash2 className="w-3.5 h-3.5" />

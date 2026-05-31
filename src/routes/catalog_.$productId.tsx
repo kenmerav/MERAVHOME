@@ -235,7 +235,7 @@ function ProductImageEditor({
         title="Edit product image"
       >
         {form.image_url ? (
-          <img src={form.image_url} alt={form.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" />
+          <img src={form.image_url} alt={form.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
         ) : (
           <div className="w-full h-full grid place-items-center text-center text-sm text-muted-foreground">
             <div>
