@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Upload, X } from "lucide-react";
+import { ArrowLeft, FileText, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -38,6 +38,7 @@ function FinancialsPage() {
   const qc = useQueryClient();
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   const [review, setReview] = useState<ReviewInvoice | null>(null);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
@@ -172,6 +173,22 @@ function FinancialsPage() {
     qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
   };
 
+  const deleteInvoice = async (invoice: FinancialInvoice) => {
+    const label = invoice.file_name || "this invoice";
+    if (!window.confirm(`Delete ${label} and all of its payment lines? This cannot be undone.`)) return;
+    setDeletingInvoiceId(invoice.id);
+    try {
+      await db.deleteFinancialInvoice(invoice.id);
+      toast.success("Invoice deleted");
+      qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Could not delete invoice.");
+    } finally {
+      setDeletingInvoiceId(null);
+    }
+  };
+
   if (loadingProfile || !project) return <AppShell><div className="p-16 text-muted-foreground">Loading...</div></AppShell>;
 
   if (!allowed) {
@@ -254,7 +271,7 @@ function FinancialsPage() {
               No invoices yet. Upload the first invoice PDF to start tracking payment lines.
             </div>
           ) : invoices.map((invoice) => (
-            <InvoiceCard key={invoice.id} invoice={invoice} onStatus={updatePaymentStatus} />
+            <InvoiceCard key={invoice.id} invoice={invoice} onStatus={updatePaymentStatus} onDelete={deleteInvoice} deleting={deletingInvoiceId === invoice.id} />
           ))}
         </div>
       </div>
@@ -262,7 +279,17 @@ function FinancialsPage() {
   );
 }
 
-function InvoiceCard({ invoice, onStatus }: { invoice: FinancialInvoice; onStatus: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void }) {
+function InvoiceCard({
+  invoice,
+  onStatus,
+  onDelete,
+  deleting,
+}: {
+  invoice: FinancialInvoice;
+  onStatus: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void;
+  onDelete: (invoice: FinancialInvoice) => void;
+  deleting?: boolean;
+}) {
   const payments = [...(invoice.payments ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   return (
     <section className="border border-border">
@@ -274,11 +301,16 @@ function InvoiceCard({ invoice, onStatus }: { invoice: FinancialInvoice; onStatu
             {[invoice.client_name, invoice.provider_name, invoice.balance_due != null && `Balance ${formatMoney(invoice.balance_due)}`].filter(Boolean).join(" - ")}
           </p>
         </div>
-        {invoice.pdf_data_url && (
-          <button type="button" onClick={() => openInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
-            <FileText className="w-4 h-4" /> PDF
+        <div className="flex items-center gap-2">
+          {invoice.pdf_data_url && (
+            <button type="button" onClick={() => openInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+              <FileText className="w-4 h-4" /> PDF
+            </button>
+          )}
+          <button type="button" onClick={() => onDelete(invoice)} disabled={deleting} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border text-muted-foreground hover:border-destructive hover:text-destructive disabled:opacity-50">
+            <Trash2 className="w-4 h-4" /> {deleting ? "Deleting..." : "Delete"}
           </button>
-        )}
+        </div>
       </div>
       <PaymentTable payments={payments} onStatus={onStatus} />
     </section>

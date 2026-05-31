@@ -366,4 +366,6 @@ export const db = {
   },
   updateFinancialPayment: async (id: string, patch: Partial<FinancialInvoicePayment>) =>
     (await supabase.from("financial_invoice_payments").update(patch as any).eq("id", id).select().single()).data as FinancialInvoicePayment | null,
+  deleteFinancialInvoice: async (id: string) =>
+    supabase.from("financial_invoices").delete().eq("id", id),
 };
