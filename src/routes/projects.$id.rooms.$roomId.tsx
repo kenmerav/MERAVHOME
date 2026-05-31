@@ -682,8 +682,28 @@ function RenderingRevisionGrid({ roomId, renderings, sketchups, generatingId, ge
   const sorted = sortRenderings(renderings);
 
   const update = async (rendering: RoomImage, patch: Partial<RoomImage>) => {
-    await db.updateRoomImage(rendering.id, patch);
-    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+    const queryKey = ["roomImages", roomId];
+    const previous = qc.getQueryData<RoomImage[]>(queryKey);
+    const optimistic = { ...rendering, ...patch };
+
+    qc.setQueryData<RoomImage[]>(queryKey, (current) =>
+      current?.map((img) => img.id === rendering.id ? optimistic : img) ?? current
+    );
+
+    try {
+      const saved = await db.updateRoomImage(rendering.id, patch);
+      if (saved) {
+        qc.setQueryData<RoomImage[]>(queryKey, (current) =>
+          current?.map((img) => img.id === rendering.id ? saved : img) ?? current
+        );
+      }
+    } catch (error) {
+      if (previous) qc.setQueryData(queryKey, previous);
+      toast.error("Could not save rendering status");
+      throw error;
+    } finally {
+      qc.invalidateQueries({ queryKey });
+    }
   };
 
   const remove = async (rendering: RoomImage) => {

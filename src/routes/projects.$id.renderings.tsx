@@ -278,9 +278,34 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
   const reviewStatus = rendering.review_status || (rendering.is_approved ? "approved" : "draft");
 
   const update = async (patch: Partial<RoomImage>) => {
-    await db.updateRoomImage(rendering.id, patch);
-    qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
-    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+    const projectImagesKey = ["projectRoomImages", projectId];
+    const roomImagesKey = ["roomImages", roomId];
+    const previousProjectImages = qc.getQueryData<RoomImage[]>(projectImagesKey);
+    const previousRoomImages = qc.getQueryData<RoomImage[]>(roomImagesKey);
+    const optimistic = { ...rendering, ...patch };
+    const applyOptimistic = (current?: RoomImage[]) =>
+      current?.map((img) => img.id === rendering.id ? optimistic : img) ?? current;
+
+    qc.setQueryData<RoomImage[]>(projectImagesKey, applyOptimistic);
+    qc.setQueryData<RoomImage[]>(roomImagesKey, applyOptimistic);
+
+    try {
+      const saved = await db.updateRoomImage(rendering.id, patch);
+      if (saved) {
+        const applySaved = (current?: RoomImage[]) =>
+          current?.map((img) => img.id === rendering.id ? saved : img) ?? current;
+        qc.setQueryData<RoomImage[]>(projectImagesKey, applySaved);
+        qc.setQueryData<RoomImage[]>(roomImagesKey, applySaved);
+      }
+    } catch (error) {
+      if (previousProjectImages) qc.setQueryData(projectImagesKey, previousProjectImages);
+      if (previousRoomImages) qc.setQueryData(roomImagesKey, previousRoomImages);
+      toast.error("Could not save rendering status");
+      throw error;
+    } finally {
+      qc.invalidateQueries({ queryKey: projectImagesKey });
+      qc.invalidateQueries({ queryKey: roomImagesKey });
+    }
   };
   const remove = async () => {
     await db.deleteRoomImage(rendering.id);
