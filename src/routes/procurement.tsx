@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -85,6 +85,13 @@ function ProcurementPage() {
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
     await db.updateProcurement(id, { [key]: value });
     qc.invalidateQueries({ queryKey: ["procurement"] });
+  };
+
+  const updateProductMoney = async (productId: string, key: "price" | "unit_cost" | "shipping", value: string) => {
+    await db.updateProduct(productId, { [key]: value.trim() || null });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
+    qc.invalidateQueries({ queryKey: ["catalog"] });
+    qc.invalidateQueries({ queryKey: ["product", productId] });
   };
 
   const total = visibleItems.length;
@@ -219,7 +226,7 @@ function ProcurementPage() {
                 return (
                   <tr key={item.id} className="border-b border-border align-top">
                     <td className="px-3 py-3">
-                      <div className="flex items-start gap-3">
+                      <ProductCell productId={p?.id} clientName={clientName}>
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
                           {p?.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
                         </div>
@@ -229,7 +236,7 @@ function ProcurementPage() {
                             {[p?.name, m?.cad_label, p?.sku && `SKU ${p.sku}`].filter(Boolean).join(" · ")}
                           </div>
                         </div>
-                      </div>
+                      </ProductCell>
                     </td>
                     <td className="px-3 py-3 text-xs">{p?.vendor || "—"}</td>
                     <td className="px-3 py-3 text-xs">
@@ -242,9 +249,15 @@ function ProcurementPage() {
                     <td className="px-3 py-3 text-center font-display text-base">{m?.quantity ?? "—"}</td>
                     <td className="px-3 py-3 text-xs">{m?.color || p?.finish || "—"}</td>
                     <td className="px-3 py-3 text-xs">{p?.dimensions || "—"}</td>
-                    <td className="px-3 py-3 text-right text-xs">{p?.price || "—"}</td>
-                    <td className="px-3 py-3 text-right text-xs">{p?.unit_cost || "—"}</td>
-                    <td className="px-3 py-3 text-right text-xs">{p?.shipping || "—"}</td>
+                    <td className="px-3 py-3 text-right text-xs">
+                      <EditableMoneyCell value={p?.price ?? ""} disabled={!p?.id} onSave={(value) => p?.id && updateProductMoney(p.id, "price", value)} />
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs">
+                      <EditableMoneyCell value={p?.unit_cost ?? ""} disabled={!p?.id} onSave={(value) => p?.id && updateProductMoney(p.id, "unit_cost", value)} />
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs">
+                      <EditableMoneyCell value={p?.shipping ?? ""} disabled={!p?.id} onSave={(value) => p?.id && updateProductMoney(p.id, "shipping", value)} />
+                    </td>
                     <td className="px-3 py-3 text-xs text-muted-foreground">
                       <div className="truncate max-w-[140px]">{r?.project?.name}</div>
                       <div className="text-ink truncate max-w-[140px]">{r?.name}</div>
@@ -272,6 +285,75 @@ function ProcurementPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function ProductCell({ productId, clientName, children }: { productId?: string; clientName: string; children: ReactNode }) {
+  const className = "flex items-start gap-3 text-left group";
+  if (!productId) return <div className={className}>{children}</div>;
+  return (
+    <Link to="/catalog/$productId" params={{ productId }} className={className} title={`Open ${clientName}`}>
+      {children}
+    </Link>
+  );
+}
+
+function EditableMoneyCell({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  disabled?: boolean;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const save = async () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next === (value || "").trim()) return;
+    await onSave(next);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setEditing(true)}
+        className={cn(
+          "min-w-20 text-right underline-offset-4",
+          disabled ? "text-muted-foreground" : "hover:underline hover:text-ink"
+        )}
+        title={disabled ? undefined : "Click to edit"}
+      >
+        {value || "—"}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setDraft(value);
+          setEditing(false);
+        }
+      }}
+      className="h-8 w-24 border border-input bg-background px-2 text-right text-xs"
+      placeholder="$0.00"
+    />
   );
 }
 

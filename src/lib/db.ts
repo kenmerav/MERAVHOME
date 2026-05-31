@@ -218,6 +218,8 @@ export const db = {
     if (search?.trim()) q = q.ilike("name", `%${search.trim()}%`);
     return (await q).data as Product[] | null;
   },
+  getProduct: async (id: string) =>
+    (await supabase.from("products").select("*").eq("id", id).maybeSingle()).data as Product | null,
   createProduct: async (p: Partial<Omit<Product, "id" | "created_at" | "updated_at">> & Pick<Product, "name" | "category">) =>
     (await supabase.from("products").insert(p).select().single()).data as Product | null,
   updateProduct: async (id: string, p: Partial<Product>) =>

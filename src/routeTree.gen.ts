@@ -20,6 +20,7 @@ import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as PresentationsIndexRouteImport } from './routes/presentations.index'
 import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
+import { Route as CatalogProductIdRouteImport } from './routes/catalog.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
@@ -85,6 +86,11 @@ const PresentationsIdRoute = PresentationsIdRouteImport.update({
   path: '/presentations/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
+  id: '/$productId',
+  path: '/$productId',
+  getParentRoute: () => CatalogRoute,
+} as any)
 const ApiUsersRoute = ApiUsersRouteImport.update({
   id: '/api/users',
   path: '/api/users',
@@ -133,7 +139,7 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/catalog': typeof CatalogRoute
+  '/catalog': typeof CatalogRouteWithChildren
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
+  '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/presentations/': typeof PresentationsIndexRoute
@@ -155,7 +162,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/catalog': typeof CatalogRoute
+  '/catalog': typeof CatalogRouteWithChildren
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
+  '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/presentations': typeof PresentationsIndexRoute
@@ -178,7 +186,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/catalog': typeof CatalogRoute
+  '/catalog': typeof CatalogRouteWithChildren
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
+  '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/presentations/': typeof PresentationsIndexRoute
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
+    | '/catalog/$productId'
     | '/presentations/$id'
     | '/specbooks/$id'
     | '/presentations/'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
+    | '/catalog/$productId'
     | '/presentations/$id'
     | '/specbooks/$id'
     | '/presentations'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
+    | '/catalog/$productId'
     | '/presentations/$id'
     | '/specbooks/$id'
     | '/presentations/'
@@ -269,7 +281,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  CatalogRoute: typeof CatalogRoute
+  CatalogRoute: typeof CatalogRouteWithChildren
   LoginRoute: typeof LoginRoute
   ProcurementRoute: typeof ProcurementRoute
   SettingsRoute: typeof SettingsRoute
@@ -369,6 +381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PresentationsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/catalog/$productId': {
+      id: '/catalog/$productId'
+      path: '/$productId'
+      fullPath: '/catalog/$productId'
+      preLoaderRoute: typeof CatalogProductIdRouteImport
+      parentRoute: typeof CatalogRoute
+    }
     '/api/users': {
       id: '/api/users'
       path: '/api/users'
@@ -435,9 +454,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface CatalogRouteChildren {
+  CatalogProductIdRoute: typeof CatalogProductIdRoute
+}
+
+const CatalogRouteChildren: CatalogRouteChildren = {
+  CatalogProductIdRoute: CatalogProductIdRoute,
+}
+
+const CatalogRouteWithChildren =
+  CatalogRoute._addFileChildren(CatalogRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  CatalogRoute: CatalogRoute,
+  CatalogRoute: CatalogRouteWithChildren,
   LoginRoute: LoginRoute,
   ProcurementRoute: ProcurementRoute,
   SettingsRoute: SettingsRoute,
