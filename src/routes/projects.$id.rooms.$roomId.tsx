@@ -7,7 +7,7 @@ import { resolveImage } from "@/lib/local-assets";
 import {
   db, PRODUCT_CATEGORIES, SUBCATEGORIES,
   type ProductCategory, type Product, type RoomProduct,
-  type MaterialItem, type Room, type Project, type RoomImage, type RenderingRole, type RenderingReviewStatus,
+  type MaterialItem, type Room, type Project, type RoomImage, type RenderingReviewStatus,
 } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -804,19 +804,7 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
         <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
           <img src={rendering.url} alt="" className="w-full" />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-            <div>
-              <Label className="eyebrow">Role</Label>
-              <Select value={rendering.role || "__none"} onValueChange={v => onUpdate({ role: v === "__none" ? null : (v as RenderingRole) })}>
-                <SelectTrigger><SelectValue placeholder="Assign role" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">None</SelectItem>
-                  <SelectItem value="hero">Hero Rendering</SelectItem>
-                  <SelectItem value="secondary">Secondary Rendering</SelectItem>
-                  <SelectItem value="detail">Detail Rendering</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
             <div>
               <Label className="eyebrow">Review Status</Label>
               <Select value={reviewStatus} onValueChange={v => setReviewStatus(v as RenderingReviewStatus)}>
@@ -836,7 +824,7 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
                   checked={rendering.is_approved}
                   onChange={e => onUpdate({ is_approved: e.target.checked, review_status: e.target.checked ? "approved" : "draft" })}
                 />
-                Approved for presentation
+                Approved
               </label>
             </div>
           </div>

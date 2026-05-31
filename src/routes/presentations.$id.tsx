@@ -24,8 +24,7 @@ type RoomData = {
 function buildRoomData(room: any, images: any[], selections: any[], materials: MaterialItem[]): RoomData {
   const approvedRenders = images.filter(i => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false);
   approvedRenders.sort((a, b) => {
-    // Heroes first, then favorites, then sort_order
-    const score = (x: any) => (x.role === "hero" ? 0 : 1) + (x.is_favorite ? 0 : 0.1);
+    const score = (x: any) => (x.is_favorite ? 0 : 0.1);
     return score(a) - score(b) || (a.sort_order ?? 0) - (b.sort_order ?? 0);
   });
   const sketchups = images.filter(i => i.kind === "sketchup");

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type RoomImage, type RenderingRole, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type Material } from "@/lib/db";
+import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type Material } from "@/lib/db";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -340,9 +340,9 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
       {rendering.is_favorite && (
         <div className="absolute top-1 left-1 bg-brass text-ink p-1"><Star className="w-2.5 h-2.5" fill="currentColor" /></div>
       )}
-      {(rendering.role || reviewStatus) && (
+      {reviewStatus && (
         <div className="absolute bottom-1 left-1 right-1 text-[9px] uppercase tracking-wider bg-background/85 text-ink px-1.5 py-0.5 text-center truncate">
-          {[rendering.role, reviewLabel(reviewStatus)].filter(Boolean).join(" · ")}
+          {reviewLabel(reviewStatus)}
         </div>
       )}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -354,19 +354,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
             <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
               <img src={rendering.url} alt="" className="w-full" />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                <div>
-                  <Label className="eyebrow">Role</Label>
-                  <Select value={rendering.role || "__none"} onValueChange={v => update({ role: v === "__none" ? null : (v as RenderingRole) })}>
-                    <SelectTrigger><SelectValue placeholder="Assign role" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">None</SelectItem>
-                      <SelectItem value="hero">Hero Rendering</SelectItem>
-                      <SelectItem value="secondary">Secondary Rendering</SelectItem>
-                      <SelectItem value="detail">Detail Rendering</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                 <div>
                   <Label className="eyebrow">Review Status</Label>
                   <Select value={reviewStatus} onValueChange={v => setReviewStatus(v as RenderingReviewStatus)}>
@@ -386,7 +374,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
                       checked={rendering.is_approved}
                       onChange={e => update({ is_approved: e.target.checked, review_status: e.target.checked ? "approved" : "draft" })}
                     />
-                    Approved for presentation
+                    Approved
                   </label>
                 </div>
               </div>
