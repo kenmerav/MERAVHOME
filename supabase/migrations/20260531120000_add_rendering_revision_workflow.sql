@@ -16,3 +16,9 @@ BEGIN
       CHECK (review_status IN ('draft', 'needs_revision', 'approved', 'rejected'));
   END IF;
 END $$;
+
+UPDATE public.room_images
+SET review_status = 'approved'
+WHERE kind = 'rendering'
+  AND is_approved = true
+  AND review_status = 'draft';
