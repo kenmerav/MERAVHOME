@@ -675,6 +675,7 @@ function InvoiceCard({
   deleting?: boolean;
 }) {
   const payments = [...(invoice.payments ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+  const printableDataUrl = printableInvoiceDataUrl(invoice);
   return (
     <section className="border border-border">
       <div className="p-6 border-b border-border flex items-start justify-between gap-4">
@@ -686,13 +687,13 @@ function InvoiceCard({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {invoice.pdf_data_url && (
-            <button type="button" onClick={() => openInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+          {printableDataUrl && (
+            <button type="button" onClick={() => openInvoicePdf(printableDataUrl, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
               <FileText className="w-4 h-4" /> PDF
             </button>
           )}
-          {invoice.pdf_data_url && (
-            <button type="button" onClick={() => downloadInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+          {printableDataUrl && (
+            <button type="button" onClick={() => downloadInvoicePdf(printableDataUrl, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
               <FileText className="w-4 h-4" /> Download PDF
             </button>
           )}
@@ -1082,6 +1083,38 @@ function htmlDataUrl(html: string) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
+function printableInvoiceDataUrl(invoice: FinancialInvoice) {
+  const generatedHtml = serviceInvoiceHtmlFromInvoice(invoice);
+  return generatedHtml ? htmlDataUrl(generatedHtml) : invoice.pdf_data_url;
+}
+
+function serviceInvoiceHtmlFromInvoice(invoice: FinancialInvoice) {
+  try {
+    const raw = JSON.parse(invoice.raw_text || "{}") as Partial<ServiceInvoiceDraft> & { type?: string };
+    if (raw.type !== "design_service_invoice") return null;
+    const draft = raw as ServiceInvoiceDraft;
+    const fee = invoice.total_amount ?? calculatedDesignFee(draft);
+    const payments = (invoice.payments?.length ? invoice.payments : draft.phases.map((phase, index) => ({
+      label: `Phase ${index + 1} - ${phase.name}`,
+      amount: phaseAmount(fee, phase.percent),
+      due_date: phase.dueDate || null,
+      status: "due",
+      notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
+      sort_order: index,
+    }))).map((payment) => ({
+      label: payment.label,
+      amount: payment.amount ?? 0,
+      due_date: payment.due_date,
+      status: payment.status,
+      notes: payment.notes,
+      sort_order: payment.sort_order,
+    }));
+    return buildServiceInvoiceHtml(draft, fee, payments);
+  } catch {
+    return null;
+  }
+}
+
 function buildServiceInvoiceHtml(
   draft: ServiceInvoiceDraft,
   fee: number,
@@ -1119,11 +1152,15 @@ function buildServiceInvoiceHtml(
     th { background: #e9e7de; text-align: left; }
     .center { text-align: center; }
     .right { text-align: right; }
-    .line-table td { height: 0.65in; }
-    .summary { width: 3.2in; margin-left: auto; margin-top: 0.85in; font-size: 14px; }
-    .fee-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 0.18in; }
-    .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.12in 0.18in; font-size: 20px; font-weight: 700; }
-    .summary-row { display: grid; grid-template-columns: 1fr 1.1in; text-align: right; gap: 0.1in; margin: 0.06in 0; }
+    .line-table { table-layout: fixed; }
+    .line-table .item-row td { height: 0.7in; }
+    .line-table .subtotal-row td { height: 0.28in; padding: 0.08in; }
+    .line-table .subtotal-spacer { border: 0; height: 0; padding: 0; background: transparent; }
+    .summary { width: 3.35in; margin-left: auto; margin-top: 0.32in; font-size: 14px; }
+    .fee-row { display: grid; grid-template-columns: 1fr 1.35in; align-items: stretch; margin-bottom: 0.16in; }
+    .fee-label { align-self: center; padding-right: 0.06in; text-align: right; font-size: 22px; }
+    .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.11in 0.08in; text-align: right; font-size: 20px; font-weight: 700; }
+    .summary-row { display: grid; grid-template-columns: 1fr 1.35in; text-align: right; gap: 0.06in; margin: 0.055in 0; }
     .pay { display: grid; grid-template-columns: 1fr 1.35in; border: 2px solid #000; margin: 0.22in 0 0.55in; }
     .pay div { background: #e9e7de; padding: 0.04in 0.08in; font-weight: 700; text-align: center; }
     .pay div + div { border-left: 1px solid #000; text-align: right; }
@@ -1157,19 +1194,19 @@ function buildServiceInvoiceHtml(
     <table class="line-table">
       <thead>
         <tr><th colspan="3" class="center">Renovation Design</th></tr>
-        <tr><th style="width:30%">Location</th><th>Description</th><th style="width:18%">Subtotal</th></tr>
+        <tr><th style="width:30%">Location</th><th style="width:56%">Description</th><th style="width:14%">Subtotal</th></tr>
       </thead>
       <tbody>
-        <tr>
+        <tr class="item-row">
           <td class="center"><strong>${escapeHtml(invoiceLocation(draft))}</strong></td>
           <td class="center">${escapeHtml(invoiceDescription(draft))}</td>
           <td class="right">${formatMoney(fee)}</td>
         </tr>
-        <tr><td></td><td></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(fee)}</strong></td></tr>
+        <tr class="subtotal-row"><td class="subtotal-spacer" colspan="2"></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(fee)}</strong></td></tr>
       </tbody>
     </table>
     <section class="summary">
-      <div class="fee-row"><strong style="font-size:22px">Total Design Fee:</strong><span class="fee-box">${formatMoney(fee)}</span></div>
+      <div class="fee-row"><strong class="fee-label">Total Design Fee:</strong><span class="fee-box">${formatMoney(fee)}</span></div>
       <div class="summary-row"><strong>Paid:</strong><span>${paid ? formatMoney(paid) : ""}</span></div>
       <div class="summary-row"><strong><u>Design Fee Due:</u></strong><strong><u>${formatMoney(Math.max(fee - paid, 0))}</u></strong></div>
       ${phaseLines}
