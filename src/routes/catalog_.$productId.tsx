@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Save } from "lucide-react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { ArrowLeft, ExternalLink, ImagePlus, Save, Trash2, Upload } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PRODUCT_CATEGORIES, SUBCATEGORIES, type Product, type ProductCategory } from "@/lib/db";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/catalog_/$productId")({
   head: () => ({ meta: [{ title: "Product — MERAV Studio" }] }),
@@ -18,6 +19,8 @@ export const Route = createFileRoute("/catalog_/$productId")({
 type ProductForm = Pick<Product,
   "name" | "category" | "subcategory" | "vendor" | "product_url" | "image_url" | "finish" | "sku" | "dimensions" | "price" | "unit_cost" | "shipping" | "notes" | "description"
 >;
+
+const PRODUCT_IMAGE_BUCKET = "product-images";
 
 function ProductPage() {
   const { productId } = Route.useParams();
@@ -89,13 +92,7 @@ function ProductPage() {
 
         <div className="grid lg:grid-cols-[360px_1fr] gap-12 items-start">
           <div>
-            <div className="aspect-square bg-bone border border-border overflow-hidden">
-              {form.image_url ? (
-                <img src={form.image_url} alt={form.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full grid place-items-center text-sm text-muted-foreground">No image</div>
-              )}
-            </div>
+            <ProductImageEditor productId={productId} form={form} onChange={update} />
             {form.product_url && (
               <a href={form.product_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm hover:underline">
                 Vendor product page <ExternalLink className="w-3.5 h-3.5" />
@@ -146,6 +143,152 @@ function ProductPage() {
   );
 }
 
+function ProductImageEditor({
+  productId,
+  form,
+  onChange,
+}: {
+  productId: string;
+  form: ProductForm;
+  onChange: (patch: Partial<ProductForm>) => void;
+}) {
+  const qc = useQueryClient();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [working, setWorking] = useState(false);
+
+  const syncImageUrl = async (imageUrl: string | null) => {
+    await db.updateProduct(productId, { image_url: imageUrl });
+    onChange({ image_url: imageUrl });
+    qc.invalidateQueries({ queryKey: ["product", productId] });
+    qc.invalidateQueries({ queryKey: ["catalog"] });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
+  };
+
+  const uploadFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be smaller than 10MB.");
+      return;
+    }
+
+    setWorking(true);
+    try {
+      const extension = file.name.split(".").pop()?.toLowerCase() || file.type.split("/").pop() || "jpg";
+      const safeName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "product-image";
+      const path = `${productId}/${Date.now()}-${safeName}.${extension}`;
+      const { error } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).upload(path, file, {
+        cacheControl: "3600",
+        contentType: file.type,
+        upsert: false,
+      });
+      if (error) throw error;
+
+      const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
+      await syncImageUrl(data.publicUrl);
+      toast.success("Product image updated");
+    } catch (e: any) {
+      toast.error(e?.message || "Unable to upload image.");
+    } finally {
+      setWorking(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const removeImage = async () => {
+    if (!form.image_url) return;
+    setWorking(true);
+    try {
+      const storagePath = getProductImageStoragePath(form.image_url);
+      await syncImageUrl(null);
+      if (storagePath) await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([storagePath]);
+      toast.success("Product image removed");
+    } catch (e: any) {
+      toast.error(e?.message || "Unable to remove image.");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleDrop = async (event: DragEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) await uploadFile(file);
+  };
+
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        disabled={working}
+        className={`group relative aspect-square w-full overflow-hidden border bg-bone text-left transition-colors disabled:cursor-wait disabled:opacity-70 ${dragging ? "border-ink" : "border-border hover:border-ink"}`}
+        title="Replace product image"
+      >
+        {form.image_url ? (
+          <img src={form.image_url} alt={form.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" />
+        ) : (
+          <div className="w-full h-full grid place-items-center text-center text-sm text-muted-foreground">
+            <div>
+              <ImagePlus className="w-8 h-8 mx-auto mb-3 text-ink" />
+              <div className="font-display text-2xl text-ink">Add product image</div>
+              <p className="mt-2 px-8">Click to upload or drag a screenshot/image here.</p>
+            </div>
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/80 to-transparent p-4 text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="flex items-center gap-2 text-sm">
+            <Upload className="w-4 h-4" />
+            {working ? "Updating image..." : "Click or drag to replace image"}
+          </div>
+        </div>
+      </button>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) uploadFile(file);
+        }}
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={working}
+          className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-sm text-ink hover:bg-ink hover:text-primary-foreground transition-colors disabled:opacity-50"
+        >
+          <ImagePlus className="w-4 h-4" /> Replace image
+        </button>
+        {form.image_url && (
+          <button
+            type="button"
+            onClick={removeImage}
+            disabled={working}
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-destructive/40 text-sm text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" /> Remove image
+          </button>
+        )}
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Tip: drag a saved screenshot onto the image box. The image updates everywhere this product appears.
+      </p>
+    </div>
+  );
+}
+
 function Field({ label, value, onChange, className = "" }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {
   return (
     <div className={className}>
@@ -166,4 +309,11 @@ function LongField({ label, value, onChange }: { label: string; value: string; o
 
 function clean(value?: string | null) {
   return value?.trim() || null;
+}
+
+function getProductImageStoragePath(imageUrl: string) {
+  const marker = `/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET}/`;
+  const index = imageUrl.indexOf(marker);
+  if (index === -1) return null;
+  return decodeURIComponent(imageUrl.slice(index + marker.length));
 }
