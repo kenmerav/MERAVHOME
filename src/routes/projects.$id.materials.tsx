@@ -270,21 +270,25 @@ function RoomMaterialsSection({
                         )}
                       </div>
                       {it.product && (
-                        <div className="mt-2 flex items-center gap-2 pl-3.5">
+                        <Link
+                          to="/catalog_/$productId"
+                          params={{ productId: it.product.id }}
+                          className="mt-2 flex items-center gap-2 pl-3.5 group/product"
+                        >
                           {it.product.image_url ? (
-                            <img src={it.product.image_url} alt="" className="w-10 h-10 object-cover bg-bone border border-border" />
+                            <img src={it.product.image_url} alt="" className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           ) : (
-                            <div className="w-10 h-10 bg-bone border border-border" />
+                            <div className="w-10 h-10 bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           )}
                           <div className="min-w-0">
-                            <div className="text-xs text-ink truncate max-w-[200px]" title={it.product.name}>
+                            <div className="text-xs text-ink truncate max-w-[200px] underline-offset-4 group-hover/product:underline" title={it.product.name}>
                               {it.product.name}
                             </div>
                             <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">
                               {[it.product.vendor, it.product.price, it.product.dimensions].filter(Boolean).join(" · ")}
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       )}
                     </td>
                     <td className="py-2 pr-3">
