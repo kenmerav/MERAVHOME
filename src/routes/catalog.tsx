@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus, Search, ExternalLink, Trash2 } from "lucide-react";
@@ -78,21 +78,25 @@ function CatalogCard({ p }: { p: any }) {
   return (
     <div className="group">
       <div className="aspect-square bg-bone overflow-hidden mb-3 relative">
-        {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" loading="lazy" /> : <div className="w-full h-full" />}
+        <Link to="/catalog/$productId" params={{ productId: p.id }} className="block w-full h-full" title={`Open ${p.name}`}>
+          {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" /> : <div className="w-full h-full" />}
+        </Link>
         <button onClick={remove} className="absolute top-2 right-2 bg-background/90 p-1.5 opacity-0 group-hover:opacity-100">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="eyebrow mb-1">{p.category}{p.subcategory ? ` · ${p.subcategory}` : ""}</div>
-      <h4 className="font-display text-lg leading-tight">{p.name}</h4>
-      {p.vendor && <p className="text-xs text-muted-foreground mt-1">{p.vendor}</p>}
-      {p.finish && <p className="text-xs text-muted-foreground">{p.finish}</p>}
-      {(p.price || p.unit_cost || p.shipping) && (
-        <p className="text-[11px] text-muted-foreground mt-1">
-          {[p.price && `Client ${p.price}`, p.unit_cost && `Cost ${p.unit_cost}`, p.shipping && `Ship ${p.shipping}`].filter(Boolean).join(" · ")}
-        </p>
-      )}
-      {p.sku && <p className="text-[11px] text-muted-foreground mt-0.5">SKU: {p.sku}</p>}
+      <Link to="/catalog/$productId" params={{ productId: p.id }} className="block hover:text-ink/70 transition-colors">
+        <div className="eyebrow mb-1">{p.category}{p.subcategory ? ` · ${p.subcategory}` : ""}</div>
+        <h4 className="font-display text-lg leading-tight">{p.name}</h4>
+        {p.vendor && <p className="text-xs text-muted-foreground mt-1">{p.vendor}</p>}
+        {p.finish && <p className="text-xs text-muted-foreground">{p.finish}</p>}
+        {(p.price || p.unit_cost || p.shipping) && (
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {[p.price && `Client ${p.price}`, p.unit_cost && `Cost ${p.unit_cost}`, p.shipping && `Ship ${p.shipping}`].filter(Boolean).join(" · ")}
+          </p>
+        )}
+        {p.sku && <p className="text-[11px] text-muted-foreground mt-0.5">SKU: {p.sku}</p>}
+      </Link>
       {p.product_url && (
         <a href={p.product_url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-2 hover:text-ink">
           View <ExternalLink className="w-2.5 h-2.5" />
