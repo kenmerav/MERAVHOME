@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowLeft, BookOpen, LayoutTemplate, Plus, Sparkles, Trash2, ExternalLink, Star, Search } from "lucide-react";
+import { ArrowLeft, BookOpen, LayoutTemplate, Plus, Sparkles, Trash2, ExternalLink, Star, Search, Eye, Download, GitBranch } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { resolveImage } from "@/lib/local-assets";
 import {
   db, PRODUCT_CATEGORIES, SUBCATEGORIES,
   type ProductCategory, type Product, type RoomProduct,
-  type MaterialItem, type Room, type Project,
+  type MaterialItem, type Room, type Project, type RoomImage, type RenderingRole, type RenderingReviewStatus,
 } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -451,7 +451,7 @@ function ProjectMaterialsPanel({ projectId, room, items }: { projectId: string; 
 
 /* ─────────── Renderings ─────────── */
 function RenderingsPanel({ roomId, images, sketchups, selections, materials, room, project }: {
-  roomId: string; images: any[]; sketchups: any[];
+  roomId: string; images: RoomImage[]; sketchups: RoomImage[];
   selections: RoomProduct[]; materials: MaterialItem[]; room: Room; project: Project;
 }) {
   const qc = useQueryClient();
@@ -512,7 +512,7 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
     return lines.join("\n");
   };
 
-  const generateOne = async (sk: any) => {
+  const generateOne = async (sk: RoomImage, options: GenerateRevisionOptions = {}) => {
     setGeneratingId(sk.id);
     try {
       const resolvedUrl = resolveImage(sk.url);
@@ -526,12 +526,23 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
           r.readAsDataURL(blob);
         });
       }
+      const revisionContext = options.revisionNotes
+        ? [
+            "REVISION REQUEST",
+            "Create a new version that corrects only the requested issues. Keep unchanged areas as close as possible to the previous rendering and the original SketchUp reference.",
+            options.revisionNotes,
+          ].join("\n")
+        : "";
       const selectionsBlock = buildSelectionsContext();
-      const extraContext = [sk.caption, selectionsBlock].filter(Boolean).join("\n\n");
+      const extraContext = [sk.caption, selectionsBlock, revisionContext].filter(Boolean).join("\n\n");
       const res = await fetch("/api/generate-rendering", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sketchupUrl, extraContext }),
+        body: JSON.stringify({
+          sketchupUrl,
+          referenceImageUrl: options.baseRendering?.url,
+          extraContext,
+        }),
       });
       if (!res.ok) {
         const message = res.headers.get("content-type")?.includes("application/json")
@@ -542,11 +553,18 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
       const { imageDataUrl } = (await res.json()) as { imageDataUrl: string };
       await db.addRoomImage({
         room_id: roomId, kind: "rendering", url: imageDataUrl,
-        caption: `Rendering from ${sk.caption || "SketchUp"}`, linked_sketchup_id: sk.id,
-        is_approved: false, review_status: "draft",
+        caption: options.baseRendering
+          ? `Revision ${options.revisionNumber || 2} from ${sk.caption || "SketchUp"}`
+          : `Rendering from ${sk.caption || "SketchUp"}`,
+        linked_sketchup_id: sk.id,
+        is_approved: false,
+        review_status: "draft",
+        revision_parent_id: options.baseRendering?.id ?? null,
+        revision_number: options.revisionNumber || 1,
+        revision_notes: options.revisionNotes || null,
       });
       qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-      toast.success("Rendering generated");
+      toast.success(options.baseRendering ? "Revision generated" : "Rendering generated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -628,9 +646,245 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
         </div>
       )}
 
-      <ImageGrid title="Renderings" roomId={roomId} kind="rendering" images={images} />
+      <RenderingRevisionGrid
+        roomId={roomId}
+        renderings={images}
+        sketchups={sketchups}
+        generatingId={generatingId}
+        generatingAll={generatingAll}
+        onRevise={generateOne}
+      />
     </div>
   );
+}
+
+type GenerateRevisionOptions = {
+  baseRendering?: RoomImage;
+  revisionNotes?: string;
+  revisionNumber?: number;
+};
+
+function RenderingRevisionGrid({ roomId, renderings, sketchups, generatingId, generatingAll, onRevise }: {
+  roomId: string;
+  renderings: RoomImage[];
+  sketchups: RoomImage[];
+  generatingId: string | null;
+  generatingAll: boolean;
+  onRevise: (sk: RoomImage, options: GenerateRevisionOptions) => Promise<void>;
+}) {
+  const qc = useQueryClient();
+  const sketchupById = new Map(sketchups.map(sk => [sk.id, sk]));
+  const sorted = sortRenderings(renderings);
+
+  const update = async (rendering: RoomImage, patch: Partial<RoomImage>) => {
+    await db.updateRoomImage(rendering.id, patch);
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+  };
+
+  const remove = async (rendering: RoomImage) => {
+    if (!confirm("Delete this rendering?")) return;
+    await db.deleteRoomImage(rendering.id);
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+  };
+
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-6">
+        <div>
+          <div className="eyebrow">{renderings.length} rendering{renderings.length === 1 ? "" : "s"}</div>
+          <h2 className="font-display text-3xl mt-1">Renderings</h2>
+        </div>
+      </div>
+      {sorted.length === 0 ? (
+        <div className="text-sm text-muted-foreground border border-dashed border-border p-12 text-center">No renderings yet.</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {sorted.map(rendering => {
+            const sketchup = rendering.linked_sketchup_id ? sketchupById.get(rendering.linked_sketchup_id) : undefined;
+            const siblings = rendering.linked_sketchup_id
+              ? renderings.filter(r => r.linked_sketchup_id === rendering.linked_sketchup_id)
+              : [rendering];
+            return (
+              <RoomRenderingCard
+                key={rendering.id}
+                rendering={rendering}
+                sketchup={sketchup}
+                siblings={siblings}
+                disabled={generatingAll || Boolean(generatingId)}
+                onUpdate={patch => update(rendering, patch)}
+                onRemove={() => remove(rendering)}
+                onRevise={onRevise}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, onRemove, onRevise }: {
+  rendering: RoomImage;
+  sketchup?: RoomImage;
+  siblings: RoomImage[];
+  disabled: boolean;
+  onUpdate: (patch: Partial<RoomImage>) => Promise<void>;
+  onRemove: () => Promise<void>;
+  onRevise: (sk: RoomImage, options: GenerateRevisionOptions) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState("");
+  const [revising, setRevising] = useState(false);
+  const version = rendering.revision_number || 1;
+  const reviewStatus = rendering.review_status || (rendering.is_approved ? "approved" : "draft");
+
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = rendering.url;
+    a.download = `rendering-${rendering.id}.png`;
+    a.click();
+  };
+
+  const setReviewStatus = async (next: RenderingReviewStatus) => {
+    await onUpdate({ review_status: next, is_approved: next === "approved" });
+  };
+
+  const createRevision = async () => {
+    if (!sketchup) return toast.error("This rendering is not linked to a SketchUp source");
+    const notes = revisionNotes.trim();
+    if (!notes) return toast.error("Add the revision notes first");
+    setRevising(true);
+    try {
+      await onRevise(sketchup, {
+        baseRendering: rendering,
+        revisionNotes: notes,
+        revisionNumber: nextRevisionNumber(siblings),
+      });
+      setRevisionNotes("");
+      setOpen(false);
+    } finally {
+      setRevising(false);
+    }
+  };
+
+  return (
+    <div className="group">
+      <button type="button" onClick={() => setOpen(true)} className="block w-full text-left">
+        <div className="aspect-[4/3] bg-bone overflow-hidden mb-3 relative">
+          <img src={rendering.url} alt={rendering.caption || ""} className="w-full h-full object-cover" loading="lazy" />
+          <div className="absolute top-2 left-2 bg-background/90 text-[9px] uppercase tracking-wider px-2 py-1">V{version}</div>
+          <div className="absolute bottom-2 left-2 right-2 bg-background/90 text-[9px] uppercase tracking-wider px-2 py-1 text-center truncate">
+            {reviewLabel(reviewStatus)}
+          </div>
+        </div>
+      </button>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="eyebrow mb-1">{reviewLabel(reviewStatus)}</div>
+          <h4 className="font-display text-lg leading-tight truncate">{rendering.caption || `Rendering Version ${version}`}</h4>
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button title="View" onClick={() => setOpen(true)} className="bg-background border border-border p-1.5"><Eye className="w-3 h-3" /></button>
+          <button title="Download" onClick={download} className="bg-background border border-border p-1.5"><Download className="w-3 h-3" /></button>
+          <button title="Delete" onClick={onRemove} className="bg-background border border-border p-1.5"><Trash2 className="w-3 h-3" /></button>
+        </div>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
+          <img src={rendering.url} alt="" className="w-full" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+            <div>
+              <Label className="eyebrow">Role</Label>
+              <Select value={rendering.role || "__none"} onValueChange={v => onUpdate({ role: v === "__none" ? null : (v as RenderingRole) })}>
+                <SelectTrigger><SelectValue placeholder="Assign role" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">None</SelectItem>
+                  <SelectItem value="hero">Hero Rendering</SelectItem>
+                  <SelectItem value="secondary">Secondary Rendering</SelectItem>
+                  <SelectItem value="detail">Detail Rendering</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="eyebrow">Review Status</Label>
+              <Select value={reviewStatus} onValueChange={v => setReviewStatus(v as RenderingReviewStatus)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="needs_revision">Needs Revision</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end gap-3 text-xs">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={rendering.is_approved}
+                  onChange={e => onUpdate({ is_approved: e.target.checked, review_status: e.target.checked ? "approved" : "draft" })}
+                />
+                Approved for presentation
+              </label>
+            </div>
+          </div>
+          {(rendering.revision_notes || rendering.revision_parent_id) && (
+            <div className="border border-border bg-bone/40 p-3 text-sm">
+              <div className="eyebrow mb-1">Revision Notes</div>
+              <p className="text-muted-foreground whitespace-pre-wrap">{rendering.revision_notes || "Revision created from an earlier rendering."}</p>
+            </div>
+          )}
+          <div className="border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <GitBranch className="w-4 h-4" />
+              <div>
+                <div className="eyebrow">Create Revision</div>
+                <p className="text-xs text-muted-foreground">Keep this version, then generate a new one with only the correction notes below.</p>
+              </div>
+            </div>
+            <Textarea
+              value={revisionNotes}
+              onChange={e => setRevisionNotes(e.target.value)}
+              placeholder="Example: reduce the pendant size, keep cabinetry and camera angle unchanged, warm up the wall color..."
+              rows={4}
+            />
+            <button
+              type="button"
+              disabled={disabled || revising || !sketchup}
+              onClick={createRevision}
+              className="px-4 py-2 bg-ink text-primary-foreground text-sm disabled:opacity-50"
+            >
+              {revising ? "Starting revision..." : "Create Revision"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function sortRenderings(renderings: RoomImage[]) {
+  return [...renderings].sort((a, b) => {
+    const versionDiff = (b.revision_number || 1) - (a.revision_number || 1);
+    if (versionDiff !== 0) return versionDiff;
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function nextRevisionNumber(renderings: RoomImage[]) {
+  return Math.max(1, ...renderings.map(r => r.revision_number || 1)) + 1;
+}
+
+function reviewLabel(status: RenderingReviewStatus) {
+  const labels: Record<RenderingReviewStatus, string> = {
+    draft: "Draft",
+    needs_revision: "Needs Revision",
+    approved: "Approved",
+    rejected: "Rejected",
+  };
+  return labels[status];
 }
 
 /* ─────────── Concept ─────────── */
