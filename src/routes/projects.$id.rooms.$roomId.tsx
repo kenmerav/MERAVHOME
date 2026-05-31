@@ -543,6 +543,7 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
       await db.addRoomImage({
         room_id: roomId, kind: "rendering", url: imageDataUrl,
         caption: `Rendering from ${sk.caption || "SketchUp"}`, linked_sketchup_id: sk.id,
+        is_approved: false, review_status: "draft",
       });
       qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
       toast.success("Rendering generated");

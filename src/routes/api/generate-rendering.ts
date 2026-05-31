@@ -108,7 +108,7 @@ function extensionForContentType(contentType: string) {
   return "png";
 }
 
-function dataUrlToImageFile(dataUrl: string) {
+function dataUrlToImageFile(dataUrl: string, fallbackName = "sketchup") {
   const match = dataUrl.match(/^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/);
   if (!match) {
     throw new ImageInputError("SketchUp source must be a PNG, JPG, or WebP image.");
@@ -116,13 +116,13 @@ function dataUrlToImageFile(dataUrl: string) {
 
   const contentType = match[1];
   const bytes = Buffer.from(match[2], "base64");
-  return new File([bytes], `sketchup.${extensionForContentType(contentType)}`, {
+  return new File([bytes], `${fallbackName}.${extensionForContentType(contentType)}`, {
     type: contentType,
   });
 }
 
-async function urlToImageFile(url: string, origin: string): Promise<File> {
-  if (url.startsWith("data:")) return dataUrlToImageFile(url);
+async function urlToImageFile(url: string, origin: string, fallbackName = "sketchup"): Promise<File> {
+  if (url.startsWith("data:")) return dataUrlToImageFile(url, fallbackName);
   const absoluteUrl =
     url.startsWith("http://") || url.startsWith("https://") ? url : new URL(url, origin).toString();
   let res: Response;
@@ -146,7 +146,7 @@ async function urlToImageFile(url: string, origin: string): Promise<File> {
     throw new ImageInputError("SketchUp source must be a PNG, JPG, or WebP image.");
   }
   const buf = await res.arrayBuffer();
-  return new File([buf], `sketchup.${extensionForContentType(contentType)}`, { type: contentType });
+  return new File([buf], `${fallbackName}.${extensionForContentType(contentType)}`, { type: contentType });
 }
 
 export const Route = createFileRoute("/api/generate-rendering")({
@@ -154,8 +154,9 @@ export const Route = createFileRoute("/api/generate-rendering")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const { sketchupUrl, extraContext } = (await request.json()) as {
+          const { sketchupUrl, referenceImageUrl, extraContext } = (await request.json()) as {
             sketchupUrl: string;
+            referenceImageUrl?: string;
             extraContext?: string;
           };
           if (!sketchupUrl) return new Response("sketchupUrl is required", { status: 400 });
@@ -164,14 +165,18 @@ export const Route = createFileRoute("/api/generate-rendering")({
           if (!apiKey) return new Response("OPENAI_API_KEY not configured", { status: 500 });
 
           const origin = new URL(request.url).origin;
-          const image = await urlToImageFile(sketchupUrl, origin);
+          const image = await urlToImageFile(sketchupUrl, origin, "sketchup-reference");
+          const referenceImage = referenceImageUrl
+            ? await urlToImageFile(referenceImageUrl, origin, "previous-rendering")
+            : null;
           const userText = extraContext
-            ? `${RENDERING_PROMPT}\n\nAdditional design context:\n${extraContext}`
+            ? `${RENDERING_PROMPT}\n\nIf a second image is included, use it only as the previous AI rendering reference for the requested revisions. The first uploaded SketchUp image remains the exact architectural source of truth.\n\nAdditional design context:\n${extraContext}`
             : RENDERING_PROMPT;
 
           const form = new FormData();
           form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
           form.append("image", image);
+          if (referenceImage) form.append("image", referenceImage);
           form.append("prompt", userText);
           form.append("size", "1536x1024");
           form.append("quality", "high");

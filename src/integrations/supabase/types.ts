@@ -421,6 +421,10 @@ export type Database = {
           is_favorite: boolean
           kind: Database["public"]["Enums"]["image_kind"]
           linked_sketchup_id: string | null
+          review_status: string
+          revision_notes: string | null
+          revision_number: number
+          revision_parent_id: string | null
           role: string | null
           room_id: string
           sort_order: number
@@ -436,6 +440,10 @@ export type Database = {
           is_favorite?: boolean
           kind: Database["public"]["Enums"]["image_kind"]
           linked_sketchup_id?: string | null
+          review_status?: string
+          revision_notes?: string | null
+          revision_number?: number
+          revision_parent_id?: string | null
           role?: string | null
           room_id: string
           sort_order?: number
@@ -451,6 +459,10 @@ export type Database = {
           is_favorite?: boolean
           kind?: Database["public"]["Enums"]["image_kind"]
           linked_sketchup_id?: string | null
+          review_status?: string
+          revision_notes?: string | null
+          revision_number?: number
+          revision_parent_id?: string | null
           role?: string | null
           room_id?: string
           sort_order?: number

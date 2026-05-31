@@ -71,6 +71,7 @@ export interface Room {
 
 export type RenderingStatus = "not_generated" | "queued" | "processing" | "complete" | "failed";
 export type RenderingRole = "hero" | "secondary" | "detail";
+export type RenderingReviewStatus = "draft" | "needs_revision" | "approved" | "rejected";
 
 export interface RoomImage {
   id: string;
@@ -84,6 +85,10 @@ export interface RoomImage {
   role: RenderingRole | null;
   is_favorite: boolean;
   is_approved: boolean;
+  review_status: RenderingReviewStatus;
+  revision_notes: string | null;
+  revision_parent_id: string | null;
+  revision_number: number;
   error_message: string | null;
 }
 
@@ -236,7 +241,20 @@ export const db = {
   /* ROOM IMAGES */
   listRoomImages: async (roomId: string) =>
     (await supabase.from("room_images").select("*").eq("room_id", roomId).order("sort_order")).data as RoomImage[] | null,
-  addRoomImage: async (img: { room_id: string; kind: "sketchup" | "rendering"; url: string; caption?: string; linked_sketchup_id?: string | null; status?: RenderingStatus; role?: RenderingRole | null; is_approved?: boolean }) =>
+  addRoomImage: async (img: {
+    room_id: string;
+    kind: "sketchup" | "rendering";
+    url: string;
+    caption?: string;
+    linked_sketchup_id?: string | null;
+    status?: RenderingStatus;
+    role?: RenderingRole | null;
+    is_approved?: boolean;
+    review_status?: RenderingReviewStatus;
+    revision_notes?: string | null;
+    revision_parent_id?: string | null;
+    revision_number?: number;
+  }) =>
     (await supabase.from("room_images").insert(img).select().single()).data as RoomImage | null,
   updateRoomImage: async (id: string, patch: Partial<RoomImage>) =>
     (await supabase.from("room_images").update(patch as any).eq("id", id).select().single()).data as RoomImage | null,

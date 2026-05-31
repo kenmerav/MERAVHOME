@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock } from "lucide-react";
+import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type RoomImage, type RenderingRole, type RenderingStatus, type RoomProduct, type Material } from "@/lib/db";
+import { db, type RoomImage, type RenderingRole, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type Material } from "@/lib/db";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -185,7 +186,7 @@ function RoomRenderingSection({ room, projectId, sketchups, renderings, disableA
               sk={sk}
               roomId={room.id}
               projectId={projectId}
-              renderings={renderings.filter(r => r.linked_sketchup_id === sk.id)}
+              renderings={sortRenderings(renderings.filter(r => r.linked_sketchup_id === sk.id))}
               disableActions={disableActions}
               qc={qc}
             />
@@ -251,7 +252,7 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
       {renderings.length > 0 && (
         <div className="grid grid-cols-2 gap-2 pt-3 border-t border-border">
           {renderings.map(r => (
-            <RenderingTile key={r.id} rendering={r} projectId={projectId} roomId={roomId} qc={qc} />
+            <RenderingTile key={r.id} rendering={r} sketchup={sk} renderings={renderings} projectId={projectId} roomId={roomId} qc={qc} />
           ))}
         </div>
       )}
@@ -259,10 +260,19 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
   );
 }
 
-function RenderingTile({ rendering, projectId, roomId, qc }: {
-  rendering: RoomImage; projectId: string; roomId: string; qc: ReturnType<typeof useQueryClient>;
+function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc }: {
+  rendering: RoomImage;
+  sketchup: RoomImage;
+  renderings: RoomImage[];
+  projectId: string;
+  roomId: string;
+  qc: ReturnType<typeof useQueryClient>;
 }) {
   const [open, setOpen] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState("");
+  const [revising, setRevising] = useState(false);
+  const version = rendering.revision_number || 1;
+  const reviewStatus = rendering.review_status || (rendering.is_approved ? "approved" : "draft");
 
   const update = async (patch: Partial<RoomImage>) => {
     await db.updateRoomImage(rendering.id, patch);
@@ -280,10 +290,32 @@ function RenderingTile({ rendering, projectId, roomId, qc }: {
     a.download = `rendering-${rendering.id}.png`;
     a.click();
   };
+  const setReviewStatus = async (next: RenderingReviewStatus) => {
+    await update({ review_status: next, is_approved: next === "approved" });
+  };
+  const createRevision = async () => {
+    if (revising) return;
+    const notes = revisionNotes.trim();
+    if (!notes) return toast.error("Add the revision notes first");
+    setRevising(true);
+    try {
+      await generateRendering(roomId, sketchup, qc, projectId, {
+        baseRendering: rendering,
+        revisionNotes: notes,
+        revisionNumber: nextRevisionNumber(renderings),
+      });
+      setRevisionNotes("");
+      setOpen(false);
+      toast.success("Revision started");
+    } finally {
+      setRevising(false);
+    }
+  };
 
   if (rendering.status !== "complete") {
     return (
-      <div className="aspect-[4/3] bg-bone flex items-center justify-center text-[10px] text-muted-foreground p-2 text-center">
+      <div className="aspect-[4/3] bg-bone flex flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground p-2 text-center">
+        <span className="eyebrow text-[9px]">Version {version}</span>
         {rendering.status === "failed" ? (
           <span className="text-destructive">Failed: {rendering.error_message || "unknown"}</span>
         ) : (
@@ -296,12 +328,15 @@ function RenderingTile({ rendering, projectId, roomId, qc }: {
   return (
     <div className="group relative aspect-[4/3] bg-bone overflow-hidden">
       <img src={rendering.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+      <div className="absolute top-1 right-1 bg-background/90 text-[9px] uppercase tracking-wider px-1.5 py-0.5">
+        V{version}
+      </div>
       {rendering.is_favorite && (
         <div className="absolute top-1 left-1 bg-brass text-ink p-1"><Star className="w-2.5 h-2.5" fill="currentColor" /></div>
       )}
-      {rendering.role && (
+      {(rendering.role || reviewStatus) && (
         <div className="absolute bottom-1 left-1 right-1 text-[9px] uppercase tracking-wider bg-background/85 text-ink px-1.5 py-0.5 text-center truncate">
-          {rendering.role}
+          {[rendering.role, reviewLabel(reviewStatus)].filter(Boolean).join(" · ")}
         </div>
       )}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -311,9 +346,9 @@ function RenderingTile({ rendering, projectId, roomId, qc }: {
               <button title="View" className="bg-background/95 p-1.5"><Eye className="w-3 h-3" /></button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl">
-              <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
               <img src={rendering.url} alt="" className="w-full" />
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
                 <div>
                   <Label className="eyebrow">Role</Label>
                   <Select value={rendering.role || "__none"} onValueChange={v => update({ role: v === "__none" ? null : (v as RenderingRole) })}>
@@ -326,12 +361,61 @@ function RenderingTile({ rendering, projectId, roomId, qc }: {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-end gap-3 text-xs">
-                  <label className="inline-flex items-center gap-2"><input type="checkbox" checked={rendering.is_approved} onChange={e => update({ is_approved: e.target.checked })} /> Approved for presentation</label>
+                <div>
+                  <Label className="eyebrow">Review Status</Label>
+                  <Select value={reviewStatus} onValueChange={v => setReviewStatus(v as RenderingReviewStatus)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="needs_revision">Needs Revision</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="rejected">Rejected</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+                <div className="flex items-end gap-3 text-xs">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={rendering.is_approved}
+                      onChange={e => update({ is_approved: e.target.checked, review_status: e.target.checked ? "approved" : "draft" })}
+                    />
+                    Approved for presentation
+                  </label>
+                </div>
+              </div>
+              {(rendering.revision_notes || rendering.revision_parent_id) && (
+                <div className="border border-border bg-bone/40 p-3 text-sm">
+                  <div className="eyebrow mb-1">Revision Notes</div>
+                  <p className="text-muted-foreground whitespace-pre-wrap">{rendering.revision_notes || "Revision created from an earlier rendering."}</p>
+                </div>
+              )}
+              <div className="border border-border p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4" />
+                  <div>
+                    <div className="eyebrow">Create Revision</div>
+                    <p className="text-xs text-muted-foreground">Keep this version, then generate a new one with only the correction notes below.</p>
+                  </div>
+                </div>
+                <Textarea
+                  value={revisionNotes}
+                  onChange={e => setRevisionNotes(e.target.value)}
+                  placeholder="Example: make the pendant scale slightly smaller, keep cabinetry and camera angle unchanged, warm up the wall color..."
+                  rows={4}
+                />
+                <button
+                  type="button"
+                  disabled={revising}
+                  onClick={createRevision}
+                  className="px-4 py-2 bg-ink text-primary-foreground text-sm disabled:opacity-50"
+                >
+                  {revising ? "Starting revision..." : "Create Revision"}
+                </button>
               </div>
             </DialogContent>
           </Dialog>
+          <button title="Revise" onClick={() => setOpen(true)} className="bg-background/95 p-1.5"><GitBranch className="w-3 h-3" /></button>
           <button title="Favorite" onClick={() => update({ is_favorite: !rendering.is_favorite })} className="bg-background/95 p-1.5">
             <Star className="w-3 h-3" fill={rendering.is_favorite ? "currentColor" : "none"} />
           </button>
@@ -437,12 +521,55 @@ function sketchupStatus(skId: string, renderings: RoomImage[]): RenderingStatus 
   return "not_generated";
 }
 
-async function generateRendering(roomId: string, sk: RoomImage, qc: ReturnType<typeof useQueryClient>, projectId: string) {
+function sortRenderings(renderings: RoomImage[]) {
+  return [...renderings].sort((a, b) => {
+    const versionDiff = (b.revision_number || 1) - (a.revision_number || 1);
+    if (versionDiff !== 0) return versionDiff;
+    return b.id.localeCompare(a.id);
+  });
+}
+
+function nextRevisionNumber(renderings: RoomImage[]) {
+  return Math.max(1, ...renderings.map(r => r.revision_number || 1)) + 1;
+}
+
+function reviewLabel(status: RenderingReviewStatus) {
+  const labels: Record<RenderingReviewStatus, string> = {
+    draft: "Draft",
+    needs_revision: "Needs Revision",
+    approved: "Approved",
+    rejected: "Rejected",
+  };
+  return labels[status];
+}
+
+type GenerateOptions = {
+  baseRendering?: RoomImage;
+  revisionNotes?: string;
+  revisionNumber?: number;
+};
+
+async function generateRendering(
+  roomId: string,
+  sk: RoomImage,
+  qc: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  options: GenerateOptions = {},
+) {
+  const isRevision = Boolean(options.baseRendering);
   // Create a placeholder rendering row in 'processing' state
   const placeholder = await db.addRoomImage({
     room_id: roomId, kind: "rendering", url: sk.url,
-    caption: `Rendering from ${sk.caption || "SketchUp"}`,
-    linked_sketchup_id: sk.id, status: "processing", is_approved: false,
+    caption: isRevision
+      ? `Revision ${options.revisionNumber || 2} from ${sk.caption || "SketchUp"}`
+      : `Rendering from ${sk.caption || "SketchUp"}`,
+    linked_sketchup_id: sk.id,
+    status: "processing",
+    is_approved: false,
+    review_status: "draft",
+    revision_parent_id: options.baseRendering?.id ?? null,
+    revision_number: options.revisionNumber || 1,
+    revision_notes: options.revisionNotes || null,
   });
   qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
   qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
@@ -467,10 +594,21 @@ async function generateRendering(roomId: string, sk: RoomImage, qc: ReturnType<t
         r.readAsDataURL(blob);
       });
     }
-    const extraContext = [sk.caption, ctx].filter(Boolean).join("\n\n");
+    const revisionContext = options.revisionNotes
+      ? [
+          "REVISION REQUEST",
+          "Create a new version that corrects only the requested issues. Keep unchanged areas as close as possible to the previous rendering and the original SketchUp reference.",
+          options.revisionNotes,
+        ].join("\n")
+      : "";
+    const extraContext = [sk.caption, ctx, revisionContext].filter(Boolean).join("\n\n");
     const res = await fetch("/api/generate-rendering", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sketchupUrl, extraContext }),
+      body: JSON.stringify({
+        sketchupUrl,
+        referenceImageUrl: options.baseRendering?.url,
+        extraContext,
+      }),
     });
     if (!res.ok) {
       const message = res.headers.get("content-type")?.includes("application/json")
@@ -480,7 +618,7 @@ async function generateRendering(roomId: string, sk: RoomImage, qc: ReturnType<t
     }
     const { imageDataUrl } = (await res.json()) as { imageDataUrl: string };
     if (placeholder) {
-      await db.updateRoomImage(placeholder.id, { url: imageDataUrl, status: "complete", is_approved: true });
+      await db.updateRoomImage(placeholder.id, { url: imageDataUrl, status: "complete", is_approved: false, review_status: "draft" });
     }
   } catch (e: any) {
     if (placeholder) {
