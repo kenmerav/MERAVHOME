@@ -272,7 +272,7 @@ function BrandCover({ project, roomCount }: { project: any; roomCount?: number }
   return (
     <div className="w-full h-full min-h-[inherit] flex items-center justify-center bg-white px-8 py-20 text-center">
       <div className="w-full">
-        <div className="font-display text-ink uppercase leading-none tracking-[-0.075em] text-[clamp(4rem,11vw,12rem)] whitespace-nowrap">
+        <div className="font-display text-ink uppercase leading-none tracking-[-0.065em] text-[clamp(3.25rem,5.8vw,8.25rem)] whitespace-nowrap">
           MERAV INTERIORS
         </div>
         <div className="mt-7 text-[#9b9793] uppercase tracking-[0.42em] text-[clamp(1.05rem,2vw,2.25rem)] font-light">
