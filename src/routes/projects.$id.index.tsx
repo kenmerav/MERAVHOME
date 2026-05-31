@@ -87,7 +87,14 @@ function ProjectDetailPage() {
         <div className="flex items-start lg:items-end justify-between mb-12 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">{project.project_type} · {project.client_name}</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">{project.name}</h1>
+            <EditableProjectName
+              projectId={id}
+              name={project.name}
+              onSaved={() => {
+                qc.invalidateQueries({ queryKey: ["project", id] });
+                qc.invalidateQueries({ queryKey: ["projects"] });
+              }}
+            />
           </div>
           <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
             <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
@@ -166,6 +173,87 @@ function ProjectDetailPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function EditableProjectName({
+  projectId,
+  name,
+  onSaved,
+}: {
+  projectId: string;
+  name: string;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const [saving, setSaving] = useState(false);
+
+  const cancel = () => {
+    setValue(name);
+    setEditing(false);
+  };
+
+  const saveName = async () => {
+    const nextName = value.trim();
+    if (!nextName) {
+      toast.error("Project name cannot be blank.");
+      setValue(name);
+      return;
+    }
+    if (nextName === name) {
+      setEditing(false);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await db.updateProject(projectId, { name: nextName });
+      toast.success("Project name updated");
+      setEditing(false);
+      onSaved();
+    } catch (e: any) {
+      toast.error(e?.message || "Unable to update project name.");
+      setValue(name);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        aria-label="Project name"
+        autoFocus
+        value={value}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={saveName}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        className="block w-full bg-transparent border-0 border-b border-ink px-0 py-1 font-display text-5xl lg:text-7xl leading-none text-ink outline-none disabled:opacity-60"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      title="Edit project name"
+      onClick={() => setEditing(true)}
+      className="block max-w-full text-left editorial-hero text-5xl lg:text-7xl transition-colors hover:text-ink/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+    >
+      {name}
+    </button>
   );
 }
 
