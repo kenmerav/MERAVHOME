@@ -623,6 +623,9 @@ function FinancialsPage() {
                   <button type="button" onClick={createStripeLink} disabled={creatingStripeLink} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-50">
                     {creatingStripeLink ? "Creating Stripe Link..." : "Generate Payment Link"}
                   </button>
+                  <button type="button" onClick={() => printServiceInvoiceDraft(serviceDraft)} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
+                    <FileText className="w-4 h-4" /> Download PDF
+                  </button>
                   <button onClick={saveServiceInvoice} disabled={savingServiceInvoice} className="px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
                     {savingServiceInvoice ? "Saving..." : "Save Invoice"}
                   </button>
@@ -686,6 +689,11 @@ function InvoiceCard({
           {invoice.pdf_data_url && (
             <button type="button" onClick={() => openInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
               <FileText className="w-4 h-4" /> PDF
+            </button>
+          )}
+          {invoice.pdf_data_url && (
+            <button type="button" onClick={() => downloadInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+              <FileText className="w-4 h-4" /> Download PDF
             </button>
           )}
           <button type="button" onClick={() => onDelete(invoice)} disabled={deleting} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border text-muted-foreground hover:border-destructive hover:text-destructive disabled:opacity-50">
@@ -975,6 +983,9 @@ function ServiceInvoicePreview({
           <button type="button" onClick={onCreateStripeLink} disabled={creatingStripeLink} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold disabled:opacity-50">
             {creatingStripeLink ? "Creating Payment Link..." : "Generate Payment Link"}
           </button>
+          <button type="button" onClick={() => printServiceInvoiceDraft(draft)} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
+            Download PDF
+          </button>
           <button type="button" onClick={() => toast.info("QuickBooks invoice creation needs the rotated QuickBooks keys added to Vercel.")} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
             Generate QuickBooks Invoice
           </button>
@@ -1181,6 +1192,74 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function invoicePdfFileName(fileName?: string | null) {
+  const safeName = (fileName || "Invoice").replace(/\.(html?|pdf)$/i, "").trim() || "Invoice";
+  return `${safeName}.pdf`;
+}
+
+async function downloadInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
+  if (!pdfDataUrl) return;
+  try {
+    if (pdfDataUrl.startsWith("data:")) {
+      const blob = await (await fetch(pdfDataUrl)).blob();
+      if (blob.type === "text/html") {
+        printHtmlAsPdf(await blob.text(), fileName);
+        return;
+      }
+
+      const url = URL.createObjectURL(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
+      triggerDownload(url, invoicePdfFileName(fileName));
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return;
+    }
+
+    triggerDownload(pdfDataUrl, invoicePdfFileName(fileName));
+  } catch {
+    toast.error("Could not download invoice PDF.");
+  }
+}
+
+function printServiceInvoiceDraft(draft: ServiceInvoiceDraft) {
+  const fee = calculatedDesignFee(draft);
+  if (fee <= 0) return toast.error("Enter square feet and the matching price per sq/ft first.");
+  const payments = draft.phases.map((phase, index) => ({
+    label: `Phase ${index + 1} - ${phase.name}`,
+    amount: phaseAmount(fee, phase.percent),
+    due_date: phase.dueDate || null,
+    status: "due",
+    notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
+    sort_order: index,
+  }));
+  printHtmlAsPdf(buildServiceInvoiceHtml(draft, fee, payments), `${draft.projectName || "Project"} Design Service Invoice`);
+}
+
+function printHtmlAsPdf(html: string, fileName?: string | null) {
+  const target = window.open("", "_blank");
+  if (!target) {
+    toast.error("Could not open the PDF window. Please allow popups for Studio.");
+    return;
+  }
+
+  target.opener = null;
+  target.document.open();
+  target.document.write(html);
+  target.document.close();
+  target.document.title = invoicePdfFileName(fileName);
+  target.setTimeout(() => {
+    target.focus();
+    target.print();
+  }, 350);
+}
+
+function triggerDownload(url: string, fileName: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 async function openInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
