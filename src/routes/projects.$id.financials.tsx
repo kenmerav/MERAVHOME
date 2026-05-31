@@ -177,7 +177,7 @@ function FinancialsPage() {
   if (!allowed) {
     return (
       <AppShell>
-        <div className="px-8 lg:px-16 py-16 max-w-[900px]">
+        <div className="page-pad max-w-[900px]">
           <div className="eyebrow mb-3">Restricted</div>
           <h1 className="editorial-hero text-5xl lg:text-6xl">Financials</h1>
           <p className="mt-4 text-muted-foreground max-w-xl">
@@ -190,12 +190,12 @@ function FinancialsPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-10 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <Link to="/projects/$id" params={{ id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
           <ArrowLeft className="w-3.5 h-3.5" /> Project
         </Link>
 
-        <div className="flex items-end justify-between gap-6 flex-wrap mb-10">
+        <div className="flex items-start lg:items-end justify-between gap-6 flex-wrap mb-10">
           <div>
             <div className="eyebrow mb-3">{project.name} - {project.client_name}</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">Financials</h1>
@@ -203,13 +203,13 @@ function FinancialsPage() {
               Upload invoice PDFs, review the extracted payment schedule, and track every payment due for the project.
             </p>
           </div>
-          <label className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm cursor-pointer">
+          <label className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm cursor-pointer">
             <Upload className="w-4 h-4" /> {parsing ? "Reading PDF..." : "Upload Invoice PDF"}
             <input type="file" accept="application/pdf" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} disabled={parsing} />
           </label>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-10">
           <Stat label="Invoice Revenue" value={formatMoney(totals.total)} />
           <Stat label="Paid" value={formatMoney(totals.paid)} />
           <Stat label="Due" value={formatMoney(totals.due)} />
@@ -231,7 +231,7 @@ function FinancialsPage() {
               <button onClick={() => setReview(null)} className="text-muted-foreground hover:text-ink"><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="grid md:grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
               <ReviewField label="Invoice Date" value={review.invoice.invoice_date ?? ""} onChange={(value) => setReview({ ...review, invoice: { ...review.invoice, invoice_date: value || null } })} />
               <ReviewField label="Client" value={review.invoice.client_name ?? ""} onChange={(value) => setReview({ ...review, invoice: { ...review.invoice, client_name: value || null } })} />
               <ReviewField label="Total Fee" value={String(review.invoice.total_amount ?? "")} onChange={(value) => setReview({ ...review, invoice: { ...review.invoice, total_amount: numberValue(value) } })} />
@@ -239,7 +239,7 @@ function FinancialsPage() {
             </div>
 
             <PaymentTable payments={review.invoice.payments} editable onChange={updatePayment} onRemove={removePayment} />
-            <div className="flex items-center justify-between gap-4 mt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-6">
               <button onClick={addPayment} className="text-sm px-4 py-2 border border-border hover:border-ink">Add Payment Line</button>
               <button onClick={saveReview} disabled={saving} className="px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
                 {saving ? "Saving..." : "Save Invoice"}
@@ -299,7 +299,7 @@ function PaymentTable({
   onStatus?: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="mobile-card-scroll">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border">

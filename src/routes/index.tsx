@@ -34,7 +34,7 @@ function DashboardPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <div className="flex items-end justify-between mb-12 lg:mb-16 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">The Studio</div>

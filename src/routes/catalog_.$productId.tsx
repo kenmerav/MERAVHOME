@@ -82,7 +82,7 @@ function ProductPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-10 max-w-[1400px]">
+      <div className="page-pad max-w-[1400px]">
         <Link to="/catalog" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
           <ArrowLeft className="w-3.5 h-3.5" /> Product Catalog
         </Link>

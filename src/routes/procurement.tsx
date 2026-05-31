@@ -121,7 +121,7 @@ function ProcurementPage() {
   if (!allowed) {
     return (
       <AppShell>
-        <div className="px-8 lg:px-16 py-16 max-w-[900px]">
+        <div className="page-pad max-w-[900px]">
           <div className="eyebrow mb-3">Restricted</div>
           <h1 className="editorial-hero text-5xl lg:text-6xl">Procurement</h1>
           <p className="mt-4 text-muted-foreground max-w-xl">
@@ -134,7 +134,7 @@ function ProcurementPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1700px]">
+      <div className="page-pad max-w-[1700px]">
         <div className="mb-12">
           <div className="eyebrow mb-3">Workflow</div>
           <h1 className="editorial-hero text-5xl lg:text-7xl">Procurement</h1>
@@ -143,7 +143,7 @@ function ProcurementPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <MoneyStat label="Client Cost" value={money.client} />
           <MoneyStat label="Costs" value={money.cost} />
           <MoneyStat label="Tax" value={money.tax}>
@@ -162,7 +162,7 @@ function ProcurementPage() {
           <MoneyStat label="Profit" value={money.profit} />
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-12">
           <Stat label="Total Items" n={total} />
           <Stat label="Ordered" n={ordered} total={total} />
           <Stat label="Received" n={received} total={total} />
@@ -170,7 +170,7 @@ function ProcurementPage() {
         </div>
 
         <div className="flex flex-wrap items-end gap-4 mb-6">
-          <div className="min-w-[280px]">
+          <div className="w-full sm:min-w-[280px] sm:w-auto">
             <label className="eyebrow block mb-2">Project</label>
             <select
               value={projectFilter}
@@ -190,21 +190,21 @@ function ProcurementPage() {
               ))}
             </select>
           </div>
-          <div className="min-w-[200px]">
+          <div className="w-full sm:min-w-[200px] sm:w-auto">
             <label className="eyebrow block mb-2">Room</label>
             <select value={roomFilter} onChange={(e) => setRoomFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
               <option value="__all">All Rooms</option>
               {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
             </select>
           </div>
-          <div className="min-w-[200px]">
+          <div className="w-full sm:min-w-[200px] sm:w-auto">
             <label className="eyebrow block mb-2">Category</label>
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
               <option value="__all">All Categories</option>
               {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
             </select>
           </div>
-          <div className="min-w-[220px]">
+          <div className="w-full sm:min-w-[220px] sm:w-auto">
             <label className="eyebrow block mb-2">Vendor</label>
             <select value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
               <option value="__all">All Vendors</option>
@@ -213,7 +213,7 @@ function ProcurementPage() {
           </div>
         </div>
 
-        <div className="border border-border overflow-x-auto">
+        <div className="mobile-card-scroll border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border bg-bone/30">

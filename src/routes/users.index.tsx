@@ -101,7 +101,7 @@ function UsersPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1200px]">
+      <div className="page-pad max-w-[1200px]">
         <div className="mb-12">
           <div className="eyebrow mb-3">Access</div>
           <h1 className="editorial-hero text-5xl lg:text-6xl">Users</h1>

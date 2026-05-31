@@ -118,6 +118,40 @@
     letter-spacing: -0.025em;
     line-height: 1;
   }
+  .page-pad {
+    padding: 2rem 1.25rem;
+  }
+  .mobile-card-scroll {
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-card-scroll table {
+    min-width: 760px;
+  }
+  @media (min-width: 1024px) {
+    .page-pad {
+      padding: 3rem 4rem;
+    }
+    .mobile-card-scroll {
+      margin-left: 0;
+      margin-right: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+  }
+  @media (max-width: 640px) {
+    .editorial-hero {
+      font-size: clamp(3rem, 16vw, 4.5rem) !important;
+    }
+    .eyebrow {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+    }
+  }
 }
 
 

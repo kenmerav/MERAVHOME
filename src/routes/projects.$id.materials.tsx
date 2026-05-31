@@ -119,7 +119,7 @@ function MaterialsPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-10 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <Link to="/projects/$id" params={{ id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
           <ArrowLeft className="w-3.5 h-3.5" /> Project
         </Link>
@@ -214,7 +214,7 @@ function RoomMaterialsSection({
           No required items for this room. Add custom items above.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="mobile-card-scroll">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] tracking-[0.15em] uppercase text-muted-foreground">
@@ -498,7 +498,7 @@ function ReviewDialog({
             const item = itemById.get(row.material_item_id);
             const failed = !!row.scraped.error;
             return (
-              <div key={row.material_item_id} className="border border-border p-4 grid grid-cols-[120px_1fr_auto] gap-4">
+              <div key={row.material_item_id} className="border border-border p-4 grid grid-cols-1 sm:grid-cols-[120px_1fr_auto] gap-4">
                 <div className="aspect-square bg-bone overflow-hidden">
                   {row.scraped.image_url ? (
                     <img src={row.scraped.image_url} alt="" className="w-full h-full object-cover" />

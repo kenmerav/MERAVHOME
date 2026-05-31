@@ -91,7 +91,7 @@ function ProjectRenderingsPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-10 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <Link to="/projects/$id" params={{ id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
           <ArrowLeft className="w-3.5 h-3.5" /> {project.name}
         </Link>

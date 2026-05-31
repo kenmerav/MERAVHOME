@@ -200,7 +200,7 @@ function PresentationPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-14 py-8 print:p-0">
+      <div className="page-pad print:p-0">
         <div className="flex items-center justify-between mb-8 print:hidden">
           <Link to="/projects/$id" params={{ id: project.id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
             <ArrowLeft className="w-3.5 h-3.5" /> Back to project

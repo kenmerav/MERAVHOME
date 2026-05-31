@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut, DollarSign } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -26,6 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -64,6 +65,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       navigate({ to: "/" });
     }
   }, [loadingAuth, loc.pathname, navigate, profile]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [loc.pathname]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -132,9 +137,57 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <header className="lg:hidden fixed top-0 inset-x-0 z-40 bg-background/90 backdrop-blur border-b border-border px-5 h-14 flex items-center">
+      <header className="lg:hidden fixed top-0 inset-x-0 z-40 bg-background/90 backdrop-blur border-b border-border px-5 h-14 flex items-center justify-between print:hidden">
         <Link to="/" className="font-display text-xl">MERAV Studio</Link>
+        <button
+          type="button"
+          onClick={() => setMobileOpen((open) => !open)}
+          className="inline-flex h-10 w-10 items-center justify-center border border-border text-ink"
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
+        >
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
       </header>
+
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-x-0 top-14 z-40 max-h-[calc(100vh-3.5rem)] overflow-y-auto border-b border-border bg-background/98 px-5 py-5 shadow-sm print:hidden">
+          <nav className="grid grid-cols-1 gap-1">
+            {nav.map(({ to, label, icon: Icon, exact }) => {
+              if (to === "/users" && !profile?.is_owner) return null;
+              if (to === "/procurement" && !canViewProcurement(profile)) return null;
+              if (to === "/financials" && !canViewFinancials(profile)) return null;
+              const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 text-sm rounded-sm transition-colors",
+                    active ? "bg-bone text-ink font-medium" : "text-muted-foreground hover:text-ink hover:bg-bone/60"
+                  )}
+                >
+                  <Icon className="w-[15px] h-[15px] stroke-[1.5]" />
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+          {profile && (
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="text-sm text-ink">{profile.full_name}</div>
+              <div className="eyebrow mt-1">{profile.is_owner ? "Overall Admin" : profile.role}</div>
+              <button
+                type="button"
+                onClick={signOut}
+                className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-ink"
+              >
+                <LogOut className="w-3 h-3" /> Sign out
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <main className="flex-1 min-w-0 pt-14 lg:pt-0">{children}</main>
     </div>

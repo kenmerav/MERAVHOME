@@ -69,17 +69,17 @@ function ProjectDetailPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-10 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
           <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
         </Link>
 
-        <div className="flex items-end justify-between mb-12 flex-wrap gap-6">
+        <div className="flex items-start lg:items-end justify-between mb-12 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">{project.project_type} · {project.client_name}</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">{project.name}</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
             <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
             <Select value={project.status} onValueChange={v => setStatus(v as ProjectStatus)}>
               <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
@@ -87,18 +87,18 @@ function ProjectDetailPage() {
                 {PROJECT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Link to="/projects/$id/materials" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+            <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <ClipboardList className="w-4 h-4" /> Materials
             </Link>
-            <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+            <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <Sparkles className="w-4 h-4" /> Renderings
             </Link>
             {canViewFinancials(profile) && (
-              <Link to="/projects/$id/financials" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <Link to="/projects/$id/financials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
                 <DollarSign className="w-4 h-4" /> Financials
               </Link>
             )}
-            <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
+            <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
               <LayoutTemplate className="w-4 h-4" /> Presentation
             </Link>
 
@@ -108,7 +108,7 @@ function ProjectDetailPage() {
         {/* Workflow strip */}
         <WorkflowStrip completed={completed} />
 
-        <div className="mt-14 mb-6 flex items-end justify-between">
+        <div className="mt-14 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
             <div className="eyebrow mb-2">Rooms</div>
             <h2 className="font-display text-3xl">Project rooms</h2>

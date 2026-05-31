@@ -28,7 +28,7 @@ function CatalogPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <div className="flex items-end justify-between mb-10 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">Single source of truth</div>
@@ -58,7 +58,7 @@ function CatalogPage() {
         {filtered.length === 0 ? (
           <div className="border border-dashed border-border py-20 text-center text-sm text-muted-foreground">No products yet.</div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
             {filtered.map(p => <CatalogCard key={p.id} p={p} />)}
           </div>
         )}

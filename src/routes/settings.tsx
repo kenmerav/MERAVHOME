@@ -22,7 +22,7 @@ function SettingsPage() {
   ];
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1100px]">
+      <div className="page-pad max-w-[1100px]">
         <div className="mb-12">
           <div className="eyebrow mb-3">Studio</div>
           <h1 className="editorial-hero text-5xl lg:text-7xl">Settings</h1>

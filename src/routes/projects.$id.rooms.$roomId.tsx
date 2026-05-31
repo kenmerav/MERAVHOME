@@ -83,7 +83,7 @@ function RoomPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-10 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <Link to="/projects/$id" params={{ id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
           <ArrowLeft className="w-3.5 h-3.5" /> {project.name}
         </Link>
@@ -259,7 +259,7 @@ function SelectionCategory({ category, roomId, selections }: { category: Product
       {selections.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6">No {category.toLowerCase()} yet. Add from the catalog or create new.</p>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
           {selections.map(s => <SelectionCard key={s.id} sel={s} roomId={roomId} />)}
         </div>
       )}
@@ -367,7 +367,7 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
             {filtered.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">No {category.toLowerCase()} in catalog. Create one in the next tab.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filtered.map(p => (
                   <button key={p.id} onClick={() => link(p.id)} className="text-left border border-border p-3 hover:border-ink flex gap-3">
                     <div className="w-14 h-14 bg-bone flex-shrink-0 overflow-hidden">
@@ -416,7 +416,7 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
 function ProjectMaterialsPanel({ projectId, room, items }: { projectId: string; room: Room; items: MaterialItem[] }) {
   return (
     <div>
-      <div className="flex items-end justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
         <div>
           <div className="eyebrow">{items.length} material item{items.length === 1 ? "" : "s"}</div>
           <h2 className="font-display text-3xl mt-1">Project Materials</h2>
@@ -431,7 +431,7 @@ function ProjectMaterialsPanel({ projectId, room, items }: { projectId: string; 
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground border border-dashed border-border p-12 text-center">No material items for this room yet.</p>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {items.map(m => (
             <div key={m.id} className="group">
               <div className="aspect-square bg-bone overflow-hidden mb-3 relative">

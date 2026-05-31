@@ -25,7 +25,7 @@ function ProjectsListPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1500px]">
+      <div className="page-pad max-w-[1500px]">
         <div className="flex items-end justify-between mb-12 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">Index</div>
@@ -34,7 +34,7 @@ function ProjectsListPage() {
           <NewProjectDialog />
         </div>
 
-        <div className="flex gap-2 mb-8">
+        <div className="flex flex-wrap gap-2 mb-8">
           <button
             type="button"
             onClick={() => setFilter("active")}
@@ -65,7 +65,7 @@ function ProjectsListPage() {
               key={p.id}
               to="/projects/$id"
               params={{ id: p.id }}
-              className="grid grid-cols-[80px_1fr_auto] lg:grid-cols-[100px_2fr_1.5fr_1fr_auto] items-center gap-6 py-5 border-b border-border hover:bg-bone/40 transition-colors group"
+              className="grid grid-cols-[72px_1fr] sm:grid-cols-[80px_1fr_auto] lg:grid-cols-[100px_2fr_1.5fr_1fr_auto] items-center gap-4 sm:gap-6 py-5 border-b border-border hover:bg-bone/40 transition-colors group"
             >
               <div className="aspect-[4/5] bg-bone overflow-hidden">
                 {p.cover_image_url && (
@@ -73,8 +73,8 @@ function ProjectsListPage() {
                 )}
               </div>
               <div className="min-w-0">
-                <h3 className="font-display text-2xl leading-tight">{p.name}</h3>
-                <div className="eyebrow mt-1">{p.project_type}</div>
+                <h3 className="font-display text-xl sm:text-2xl leading-tight">{p.name}</h3>
+                <div className="eyebrow mt-1">{p.project_type}<span className="lg:hidden"> · {p.client_name}</span></div>
               </div>
               <div className="hidden lg:block text-sm text-muted-foreground">{p.client_name}</div>
               <div className="hidden lg:block"><StatusBadge status={p.status} /></div>

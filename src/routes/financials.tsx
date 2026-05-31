@@ -82,7 +82,7 @@ function FinancialsOverviewPage() {
   if (!allowed) {
     return (
       <AppShell>
-        <div className="px-8 lg:px-16 py-16 max-w-[900px]">
+        <div className="page-pad max-w-[900px]">
           <div className="eyebrow mb-3">Restricted</div>
           <h1 className="editorial-hero text-5xl lg:text-6xl">Financials</h1>
           <p className="mt-4 text-muted-foreground max-w-xl">
@@ -95,7 +95,7 @@ function FinancialsOverviewPage() {
 
   return (
     <AppShell>
-      <div className="px-8 lg:px-16 py-12 lg:py-16 max-w-[1600px]">
+      <div className="page-pad max-w-[1600px]">
         <div className="mb-12">
           <div className="eyebrow mb-3">Studio</div>
           <h1 className="editorial-hero text-5xl lg:text-7xl">Financials</h1>
@@ -104,7 +104,7 @@ function FinancialsOverviewPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
           <MoneyStat label="Revenue" value={totals.revenue} />
           <MoneyStat label="Paid" value={totals.paid} />
           <MoneyStat label="Due" value={totals.due} />
@@ -112,7 +112,7 @@ function FinancialsOverviewPage() {
           <MoneyStat label="Total Profit" value={totals.totalProfit} />
         </div>
 
-        <div className="border border-border overflow-x-auto">
+        <div className="mobile-card-scroll border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border bg-bone/30">
