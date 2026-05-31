@@ -271,7 +271,7 @@ function RoomMaterialsSection({
                       </div>
                       {it.product && (
                         <Link
-                          to="/catalog_/$productId"
+                          to="/catalog/$productId"
                           params={{ productId: it.product.id }}
                           className="mt-2 flex items-center gap-2 pl-3.5 group/product"
                         >
