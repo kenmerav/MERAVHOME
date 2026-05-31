@@ -28,6 +28,7 @@ import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-mate
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
+import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
@@ -130,6 +131,12 @@ const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
   path: '/api/generate-rendering',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCreateStripePaymentLinkRoute =
+  ApiCreateStripePaymentLinkRouteImport.update({
+    id: '/api/create-stripe-payment-link',
+    path: '/api/create-stripe-payment-link',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
   id: '/projects/$id/',
   path: '/projects/$id/',
@@ -168,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
+  '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -195,6 +203,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
+  '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -223,6 +232,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
+  '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -252,6 +262,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/procurement'
     | '/settings'
+    | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
@@ -279,6 +290,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/procurement'
     | '/settings'
+    | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
@@ -306,6 +318,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/procurement'
     | '/settings'
+    | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
@@ -334,6 +347,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ProcurementRoute: typeof ProcurementRoute
   SettingsRoute: typeof SettingsRoute
+  ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
@@ -490,6 +504,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGenerateRenderingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/create-stripe-payment-link': {
+      id: '/api/create-stripe-payment-link'
+      path: '/api/create-stripe-payment-link'
+      fullPath: '/api/create-stripe-payment-link'
+      preLoaderRoute: typeof ApiCreateStripePaymentLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/': {
       id: '/projects/$id/'
       path: '/projects/$id'
@@ -542,6 +563,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ProcurementRoute: ProcurementRoute,
   SettingsRoute: SettingsRoute,
+  ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiProjectsRoute: ApiProjectsRoute,

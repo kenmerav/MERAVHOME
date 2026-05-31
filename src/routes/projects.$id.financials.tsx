@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Mail, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -99,6 +99,7 @@ function FinancialsPage() {
   const [review, setReview] = useState<ReviewInvoice | null>(null);
   const [serviceDraft, setServiceDraft] = useState<ServiceInvoiceDraft | null>(null);
   const [savingServiceInvoice, setSavingServiceInvoice] = useState(false);
+  const [creatingStripeLink, setCreatingStripeLink] = useState(false);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -318,6 +319,34 @@ function FinancialsPage() {
       toast.error(e?.message || "Could not save service invoice.");
     } finally {
       setSavingServiceInvoice(false);
+    }
+  };
+
+  const createStripeLink = async () => {
+    if (!serviceDraft) return;
+    const fee = calculatedDesignFee(serviceDraft);
+    const amount = serviceDraft.phases.find((phase) => phase.name === serviceDraft.currentPhase);
+    const paymentAmount = amount ? phaseAmount(fee, amount.percent) : 0;
+    if (paymentAmount <= 0) return toast.error("Enter square feet, rate, and phase percent before creating the Stripe link.");
+    setCreatingStripeLink(true);
+    try {
+      const res = await fetch("/api/create-stripe-payment-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `${serviceDraft.projectName || "Design Service"} ${serviceDraft.currentPhase}`,
+          amount: paymentAmount,
+          description: `${serviceDraft.clientName || "Client"} - ${serviceDraft.projectType}`,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body?.url) throw new Error(body?.error || "Could not create payment link.");
+      setServiceDraft({ ...serviceDraft, stripeLink: body.url });
+      toast.success("Stripe payment link added");
+    } catch (e: any) {
+      toast.error(e?.message || "Could not create Stripe payment link.");
+    } finally {
+      setCreatingStripeLink(false);
     }
   };
 
@@ -591,8 +620,8 @@ function FinancialsPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <button type="button" onClick={() => openServiceEmailDraft(serviceDraft)} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
-                    <Mail className="w-4 h-4" /> Draft Email
+                  <button type="button" onClick={createStripeLink} disabled={creatingStripeLink} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-50">
+                    {creatingStripeLink ? "Creating Stripe Link..." : "Generate Payment Link"}
                   </button>
                   <button onClick={saveServiceInvoice} disabled={savingServiceInvoice} className="px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
                     {savingServiceInvoice ? "Saving..." : "Save Invoice"}
@@ -600,7 +629,7 @@ function FinancialsPage() {
                 </div>
               </div>
 
-              <ServiceInvoicePreview draft={serviceDraft} />
+              <ServiceInvoicePreview draft={serviceDraft} onCreateStripeLink={createStripeLink} creatingStripeLink={creatingStripeLink} />
             </div>
           </section>
         )}
@@ -839,7 +868,15 @@ function CheckboxGroup({ title, options, values, onToggle }: { title: string; op
   );
 }
 
-function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
+function ServiceInvoicePreview({
+  draft,
+  onCreateStripeLink,
+  creatingStripeLink,
+}: {
+  draft: ServiceInvoiceDraft;
+  onCreateStripeLink: () => void;
+  creatingStripeLink: boolean;
+}) {
   const fee = calculatedDesignFee(draft);
   const paid = numberValue(draft.paid) ?? 0;
   const phaseRows = draft.phases.map((phase, index) => ({
@@ -935,11 +972,8 @@ function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
         </div>
 
         <div className="space-y-4">
-          <button type="button" onClick={() => toast.info("Stripe payment-link generation is the next connection step.")} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
-            Generate Payment Link
-          </button>
-          <button type="button" onClick={() => openServiceEmailDraft(draft)} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
-            Draft Invoice Email
+          <button type="button" onClick={onCreateStripeLink} disabled={creatingStripeLink} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold disabled:opacity-50">
+            {creatingStripeLink ? "Creating Payment Link..." : "Generate Payment Link"}
           </button>
           <button type="button" onClick={() => toast.info("QuickBooks invoice creation needs the rotated QuickBooks keys added to Vercel.")} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
             Generate QuickBooks Invoice
@@ -1035,21 +1069,6 @@ function formatDateForInvoice(value: string) {
 
 function htmlDataUrl(html: string) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-}
-
-function openServiceEmailDraft(draft: ServiceInvoiceDraft) {
-  const subject = `Invoice & Timeline for ${draft.projectName || "your project"}`;
-  const body = [
-    `Hi ${draft.clientName || ""},`,
-    "",
-    "Attached please find your invoice and service timeline.",
-    draft.stripeLink ? `Payment link: ${draft.stripeLink}` : "",
-    "",
-    "Thank you,",
-    "MERAV Interiors",
-  ].filter(Boolean).join("\n");
-  const url = `mailto:${encodeURIComponent(draft.clientEmail)}?cc=${encodeURIComponent("katie@meravinteriors.com")}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = url;
 }
 
 function buildServiceInvoiceHtml(
