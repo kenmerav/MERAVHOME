@@ -33,7 +33,10 @@ export const Route = createFileRoute("/api/scrape-url")({
               name: { type: "string", description: "Product or material name" },
               vendor: { type: "string", description: "Brand or manufacturer" },
               sku: { type: "string", description: "SKU, model number, or product code" },
+              color: { type: "string", description: "Selected color, selected swatch, or colorway for this exact product URL" },
+              selected_color: { type: "string", description: "Selected color option when the page shows one" },
               finish: { type: "string", description: "Finish, color, or material variant" },
+              selected_variant: { type: "string", description: "Selected variant or option when the page shows one" },
               image_url: { type: "string", description: "Absolute URL of the primary product image" },
               notes: { type: "string", description: "Brief 1-2 sentence description" },
             },
@@ -48,7 +51,11 @@ export const Route = createFileRoute("/api/scrape-url")({
             body: JSON.stringify({
               url,
               formats: [
-                { type: "json", schema, prompt: "Extract product details from this page." },
+                {
+                  type: "json",
+                  schema,
+                  prompt: "Extract product details from this page. If the URL or page has a selected color, selected swatch, finish, or variant already chosen, capture that exact selected value. Do not invent a color when only a list of options is visible.",
+                },
               ],
               onlyMainContent: true,
             }),
@@ -68,7 +75,7 @@ export const Route = createFileRoute("/api/scrape-url")({
             name: firstString(extracted.name, metadata.title, metadata.ogTitle),
             vendor: firstString(extracted.vendor, metadata.ogSiteName, metadata["og:site_name"]),
             sku: firstString(extracted.sku, extracted.model, extracted.model_number),
-            finish: firstString(extracted.finish, extracted.color, extracted.variant),
+            finish: firstString(extracted.finish, extracted.color, extracted.selected_color, extracted.selected_variant, extracted.variant),
             image_url: firstString(extracted.image_url, extracted.image, metadata.ogImage, metadata["og:image"]),
             notes: firstString(extracted.notes, extracted.description, metadata.description, metadata.ogDescription),
           };

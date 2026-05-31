@@ -19,6 +19,7 @@ type Scraped = {
   name?: string;
   vendor?: string;
   image_url?: string;
+  color?: string;
   finish?: string;
   sku?: string;
   dimensions?: string;
@@ -36,7 +37,15 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       name: { type: "string" },
       vendor: { type: "string" },
       sku: { type: "string" },
+      color: {
+        type: "string",
+        description: "Selected color, selected swatch, colorway, or color option shown for this exact product URL",
+      },
+      selected_color: { type: "string" },
       finish: { type: "string" },
+      selected_variant: { type: "string" },
+      variant: { type: "string" },
+      colorway: { type: "string" },
       dimensions: { type: "string" },
       price: { type: "string" },
       unit_cost: { type: "string" },
@@ -54,7 +63,11 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       },
       body: JSON.stringify({
         url,
-        formats: [{ type: "json", schema, prompt: "Extract product details from this page." }],
+        formats: [{
+          type: "json",
+          schema,
+          prompt: "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, or variant already chosen, capture that exact selected value. Do not invent a color when only a list of options is visible.",
+        }],
         onlyMainContent: true,
       }),
     });
@@ -69,7 +82,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       name: firstString(ex.name, meta.title, meta.ogTitle),
       vendor: firstString(ex.vendor, meta.ogSiteName, meta["og:site_name"]),
       sku: firstString(ex.sku, ex.model, ex.model_number),
-      finish: firstString(ex.finish, ex.color, ex.variant),
+      color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
+      finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
       dimensions: firstString(ex.dimensions, ex.size),
       price: firstString(ex.price),
       unit_cost: firstString(ex.unit_cost),
@@ -125,6 +139,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   name: existing.name ?? "",
                   vendor: existing.vendor ?? "",
                   image_url: existing.image_url ?? "",
+                  color: existing.finish ?? "",
                   finish: existing.finish ?? "",
                   sku: existing.sku ?? "",
                   dimensions: existing.dimensions ?? "",
@@ -169,7 +184,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             // Look up material item early so we have its category + room
             const { data: matItem } = await supabaseAdmin
               .from("material_items")
-              .select("id, room_id, category")
+              .select("id, room_id, category, color")
               .eq("id", row.material_item_id)
               .maybeSingle();
 
@@ -190,7 +205,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               vendor: row.scraped.vendor || null,
               product_url: row.url,
               image_url: row.scraped.image_url || null,
-              finish: row.scraped.finish || null,
+              finish: row.scraped.finish || row.scraped.color || null,
               sku: row.scraped.sku || null,
               dimensions: row.scraped.dimensions || null,
               price: row.scraped.price || null,
@@ -212,13 +227,19 @@ export const Route = createFileRoute("/api/scrape-materials")({
             }
 
             if (productId) {
+              const materialUpdate: Record<string, unknown> = {
+                product_id: productId,
+                scrape_status: "scraped",
+                scrape_error: null,
+              };
+              const scrapedColor = firstString(row.scraped.color, row.scraped.finish);
+              if (scrapedColor && !matItem?.color) {
+                materialUpdate.color = scrapedColor;
+              }
+
               await supabaseAdmin
                 .from("material_items")
-                .update({
-                  product_id: productId,
-                  scrape_status: "scraped",
-                  scrape_error: null,
-                })
+                .update(materialUpdate)
                 .eq("id", row.material_item_id);
 
               if (matItem?.room_id) {

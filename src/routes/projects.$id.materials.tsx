@@ -33,6 +33,7 @@ type ScrapedRow = {
     name?: string;
     vendor?: string;
     image_url?: string;
+    color?: string;
     finish?: string;
     sku?: string;
     dimensions?: string;
@@ -183,6 +184,15 @@ function RoomMaterialsSection({
 }) {
   const qc = useQueryClient();
   const done = items.filter((it) => it.not_needed || (it.product_url && it.product_url.trim().length > 0)).length;
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" })),
+    [items],
+  );
+  const roomInitial = (room.name.trim().charAt(0) || "R").toUpperCase();
+  const cadOptions = sortedItems.map((it, index) => ({
+    itemId: it.id,
+    value: `${roomInitial}-${String(index + 1).padStart(2, "0")}`,
+  }));
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
@@ -231,7 +241,7 @@ function RoomMaterialsSection({
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => {
+              {sortedItems.map((it) => {
                 const complete = it.not_needed || (it.product_url && it.product_url.trim().length > 0);
                 return (
                   <tr key={it.id} className="border-t border-border align-middle">
@@ -292,11 +302,11 @@ function RoomMaterialsSection({
                       </Select>
                     </td>
                     <td className="py-2 pr-3">
-                      <InlineInput
-                        value={it.cad_label ?? ""}
-                        onSave={(v) => update(it.id, { cad_label: v || null })}
+                      <CadLabelSelect
+                        value={it.cad_label}
+                        options={cadOptions}
+                        onSave={(v) => update(it.id, { cad_label: v })}
                         disabled={it.not_needed}
-                        placeholder="K-01"
                       />
                     </td>
                     <td className="py-2 pr-3">
@@ -350,6 +360,42 @@ function RoomMaterialsSection({
         </div>
       )}
     </section>
+  );
+}
+
+function CadLabelSelect({
+  value,
+  options,
+  onSave,
+  disabled,
+}: {
+  value: string | null;
+  options: Array<{ itemId: string; value: string }>;
+  onSave: (v: string | null) => void;
+  disabled?: boolean;
+}) {
+  const normalizedValue = value?.trim() || "__none__";
+  const hasCurrentValue = normalizedValue !== "__none__" && options.some((option) => option.value === normalizedValue);
+
+  return (
+    <Select
+      value={normalizedValue}
+      onValueChange={(next) => onSave(next === "__none__" ? null : next)}
+      disabled={disabled}
+    >
+      <SelectTrigger className="h-8 border-transparent hover:border-input focus:border-input bg-transparent text-xs">
+        <SelectValue placeholder="CAD label" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__none__">No label</SelectItem>
+        {!hasCurrentValue && normalizedValue !== "__none__" && (
+          <SelectItem value={normalizedValue}>{normalizedValue}</SelectItem>
+        )}
+        {options.map((option) => (
+          <SelectItem key={option.itemId} value={option.value}>{option.value}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -519,6 +565,7 @@ function ReviewDialog({
                     <Field label="Name" value={row.scraped.name ?? ""} onChange={(v) => update(idx, { name: v })} />
                     <Field label="Vendor" value={row.scraped.vendor ?? ""} onChange={(v) => update(idx, { vendor: v })} />
                     <Field label="SKU" value={row.scraped.sku ?? ""} onChange={(v) => update(idx, { sku: v })} />
+                    <Field label="Color" value={row.scraped.color ?? ""} onChange={(v) => update(idx, { color: v })} />
                     <Field label="Finish" value={row.scraped.finish ?? ""} onChange={(v) => update(idx, { finish: v })} />
                     <Field label="Dimensions" value={row.scraped.dimensions ?? ""} onChange={(v) => update(idx, { dimensions: v })} />
                     <Field label="Price" value={row.scraped.price ?? ""} onChange={(v) => update(idx, { price: v })} />
