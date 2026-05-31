@@ -193,6 +193,11 @@ function RoomMaterialsSection({
     itemId: it.id,
     value: `${roomInitial}-${String(index + 1).padStart(2, "0")}`,
   }));
+  const usedCadLabels = new Set(
+    sortedItems
+      .map((it) => it.cad_label?.trim())
+      .filter((label): label is string => !!label),
+  );
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
@@ -304,7 +309,7 @@ function RoomMaterialsSection({
                     <td className="py-2 pr-3">
                       <CadLabelSelect
                         value={it.cad_label}
-                        options={cadOptions}
+                        options={cadOptions.filter((option) => option.value === it.cad_label?.trim() || !usedCadLabels.has(option.value))}
                         onSave={(v) => update(it.id, { cad_label: v })}
                         disabled={it.not_needed}
                       />
