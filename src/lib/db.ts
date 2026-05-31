@@ -188,6 +188,7 @@ export interface FinancialInvoice {
   created_at: string;
   updated_at: string;
   payments?: FinancialInvoicePayment[];
+  project?: Pick<Project, "id" | "name" | "client_name" | "status"> | null;
 }
 
 export interface FinancialInvoicePayment {
@@ -337,6 +338,13 @@ export const db = {
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle()).data as Product | null,
 
   /* FINANCIALS */
+  listAllFinancialInvoices: async () =>
+    (await supabase
+      .from("financial_invoices")
+      .select("*, project:projects(id, name, client_name, status), payments:financial_invoice_payments(*)")
+      .order("invoice_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("sort_order", { referencedTable: "financial_invoice_payments", ascending: true })).data as FinancialInvoice[] | null,
   listFinancialInvoices: async (projectId: string) =>
     (await supabase
       .from("financial_invoices")

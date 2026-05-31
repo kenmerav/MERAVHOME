@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProcurementRouteImport } from './routes/procurement'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as FinancialsRouteImport } from './routes/financials'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
@@ -46,6 +47,11 @@ const ProcurementRoute = ProcurementRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinancialsRoute = FinancialsRouteImport.update({
+  id: '/financials',
+  path: '/financials',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogRoute = CatalogRouteImport.update({
@@ -152,6 +158,7 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
@@ -177,6 +184,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/catalog'
+    | '/financials'
     | '/login'
     | '/procurement'
     | '/settings'
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/catalog'
+    | '/financials'
     | '/login'
     | '/procurement'
     | '/settings'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/catalog'
+    | '/financials'
     | '/login'
     | '/procurement'
     | '/settings'
@@ -306,6 +318,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
+  FinancialsRoute: typeof FinancialsRoute
   LoginRoute: typeof LoginRoute
   ProcurementRoute: typeof ProcurementRoute
   SettingsRoute: typeof SettingsRoute
@@ -350,6 +363,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/financials': {
+      id: '/financials'
+      path: '/financials'
+      fullPath: '/financials'
+      preLoaderRoute: typeof FinancialsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog': {
@@ -498,6 +518,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
+  FinancialsRoute: FinancialsRoute,
   LoginRoute: LoginRoute,
   ProcurementRoute: ProcurementRoute,
   SettingsRoute: SettingsRoute,

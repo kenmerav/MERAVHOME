@@ -7,6 +7,9 @@ import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice, type FinancialInvoicePayment } from "@/lib/db";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { canViewFinancials } from "@/lib/permissions";
+import { formatMoney, procurementTotals } from "@/lib/money";
 
 export const Route = createFileRoute("/projects/$id/financials")({
   head: () => ({ meta: [{ title: "Financials — MERAV Studio" }] }),
@@ -36,11 +39,31 @@ function FinancialsPage() {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [review, setReview] = useState<ReviewInvoice | null>(null);
+  const [taxRate] = useState(() => {
+    if (typeof window === "undefined") return "0";
+    return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
+  });
 
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ["currentProfile"],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) return null;
+      return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
+    },
+  });
+  const allowed = canViewFinancials(profile);
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: invoices = [] } = useQuery({
     queryKey: ["financialInvoices", id],
     queryFn: async () => (await db.listFinancialInvoices(id)) ?? [],
+    enabled: allowed,
+  });
+  const { data: procurementItems = [] } = useQuery({
+    queryKey: ["procurement"],
+    queryFn: async () => (await db.listProcurement()) ?? [],
+    enabled: allowed,
   });
 
   const totals = useMemo(() => {
@@ -49,6 +72,11 @@ function FinancialsPage() {
     const paid = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     return { due, paid, total: due + paid, count: payments.length };
   }, [invoices]);
+  const projectProcurement = useMemo(
+    () => procurementTotals(procurementItems.filter((item) => item.room_product?.room?.project?.id === id), taxRate),
+    [id, procurementItems, taxRate],
+  );
+  const totalProjectProfit = totals.total + projectProcurement.profit;
 
   const onFile = async (file?: File | null) => {
     if (!file) return;
@@ -144,7 +172,21 @@ function FinancialsPage() {
     qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
   };
 
-  if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading...</div></AppShell>;
+  if (loadingProfile || !project) return <AppShell><div className="p-16 text-muted-foreground">Loading...</div></AppShell>;
+
+  if (!allowed) {
+    return (
+      <AppShell>
+        <div className="px-8 lg:px-16 py-16 max-w-[900px]">
+          <div className="eyebrow mb-3">Restricted</div>
+          <h1 className="editorial-hero text-5xl lg:text-6xl">Financials</h1>
+          <p className="mt-4 text-muted-foreground max-w-xl">
+            Financials are currently available only to Ken and Katie.
+          </p>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -167,10 +209,12 @@ function FinancialsPage() {
           </label>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          <Stat label="Total Scheduled" value={money(totals.total)} />
-          <Stat label="Paid" value={money(totals.paid)} />
-          <Stat label="Due" value={money(totals.due)} />
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-10">
+          <Stat label="Invoice Revenue" value={formatMoney(totals.total)} />
+          <Stat label="Paid" value={formatMoney(totals.paid)} />
+          <Stat label="Due" value={formatMoney(totals.due)} />
+          <Stat label="Procurement Profit" value={formatMoney(projectProcurement.profit)} />
+          <Stat label="Total Project Profit" value={formatMoney(totalProjectProfit)} />
           <Stat label="Payment Lines" value={String(totals.count)} />
         </div>
 
@@ -227,7 +271,7 @@ function InvoiceCard({ invoice, onStatus }: { invoice: FinancialInvoice; onStatu
           <div className="eyebrow mb-2">{invoice.invoice_date || "Invoice"}</div>
           <h2 className="font-display text-3xl">{invoice.file_name || "Invoice PDF"}</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            {[invoice.client_name, invoice.provider_name, invoice.balance_due != null && `Balance ${money(invoice.balance_due)}`].filter(Boolean).join(" - ")}
+            {[invoice.client_name, invoice.provider_name, invoice.balance_due != null && `Balance ${formatMoney(invoice.balance_due)}`].filter(Boolean).join(" - ")}
           </p>
         </div>
         {invoice.pdf_data_url && (
@@ -273,7 +317,7 @@ function PaymentTable({
                 {editable ? <Input value={payment.label} onChange={(e) => onChange?.(index, { label: e.target.value })} /> : payment.label}
               </td>
               <td className="py-3 px-4 text-right min-w-[150px]">
-                {editable ? <Input value={String(payment.amount ?? "")} onChange={(e) => onChange?.(index, { amount: numberValue(e.target.value) ?? 0 })} className="text-right" /> : money(Number(payment.amount || 0))}
+                {editable ? <Input value={String(payment.amount ?? "")} onChange={(e) => onChange?.(index, { amount: numberValue(e.target.value) ?? 0 })} className="text-right" /> : formatMoney(Number(payment.amount || 0))}
               </td>
               <td className="py-3 px-4 min-w-[160px]">
                 {editable ? <Input type="date" value={payment.due_date ?? ""} onChange={(e) => onChange?.(index, { due_date: e.target.value || null })} /> : payment.due_date || "TBD"}
@@ -332,8 +376,4 @@ function readFile(file: File) {
 function numberValue(value: string) {
   const parsed = Number(value.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }

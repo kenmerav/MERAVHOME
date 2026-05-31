@@ -1,11 +1,11 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
-import { canViewProcurement } from "@/lib/permissions";
+import { canViewFinancials, canViewProcurement } from "@/lib/permissions";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
@@ -15,6 +15,7 @@ const nav: NavItem[] = [
   { to: "/presentations", label: "Presentation Boards", icon: LayoutTemplate },
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
   { to: "/procurement", label: "Procurement", icon: Truck },
+  { to: "/financials", label: "Financials", icon: DollarSign },
   { to: "/users", label: "Users", icon: UserCog },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
@@ -59,7 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   useEffect(() => {
-    if (!loadingAuth && loc.pathname.startsWith("/procurement") && !canViewProcurement(profile)) {
+    if (!loadingAuth && (loc.pathname.startsWith("/procurement") || loc.pathname.startsWith("/financials") || loc.pathname.includes("/financials")) && !canViewFinancials(profile)) {
       navigate({ to: "/" });
     }
   }, [loadingAuth, loc.pathname, navigate, profile]);
@@ -90,6 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !profile?.is_owner) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
+            if (to === "/financials" && !canViewFinancials(profile)) return null;
             const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
             return (
               <Link

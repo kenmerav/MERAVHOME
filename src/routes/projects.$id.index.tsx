@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { canViewFinancials } from "@/lib/permissions";
 
 export const Route = createFileRoute("/projects/$id/")({
   head: () => ({ meta: [{ title: "Project — MERAV Studio" }] }),
@@ -25,6 +27,15 @@ function ProjectDetailPage() {
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: allImages = [] } = useQuery({ queryKey: ["projectImages", id], queryFn: async () => (await db.listProjectRoomImages(id)) ?? [] });
   const { data: materialItems = [] } = useQuery({ queryKey: ["materialItems", id], queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [] });
+  const { data: profile } = useQuery({
+    queryKey: ["currentProfile"],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) return null;
+      return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
+    },
+  });
 
   if (!project) {
     return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
@@ -82,9 +93,11 @@ function ProjectDetailPage() {
             <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <Sparkles className="w-4 h-4" /> Renderings
             </Link>
-            <Link to="/projects/$id/financials" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <DollarSign className="w-4 h-4" /> Financials
-            </Link>
+            {canViewFinancials(profile) && (
+              <Link to="/projects/$id/financials" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <DollarSign className="w-4 h-4" /> Financials
+              </Link>
+            )}
             <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
               <LayoutTemplate className="w-4 h-4" /> Presentation
             </Link>

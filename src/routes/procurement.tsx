@@ -8,6 +8,7 @@ import { Check, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
+import { formatMoney, procurementTotals } from "@/lib/money";
 
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
@@ -111,18 +112,7 @@ function ProcurementPage() {
   const ordered = visibleItems.filter(i => i.ordered).length;
   const received = visibleItems.filter(i => i.received).length;
   const installed = visibleItems.filter(i => i.installed).length;
-  const money = visibleItems.reduce((sum, item) => {
-    const product = item.room_product?.product;
-    const material = (item as any).material as { quantity: number | null } | null;
-    const qty = material?.quantity && material.quantity > 0 ? material.quantity : 1;
-    return {
-      client: sum.client + moneyValue(product?.price) * qty,
-      cost: sum.cost + moneyValue(product?.unit_cost) * qty,
-      shipping: sum.shipping + moneyValue(product?.shipping) * qty,
-    };
-  }, { client: 0, cost: 0, shipping: 0 });
-  const tax = money.cost * ((Number(taxRate) || 0) / 100);
-  const profit = money.client - money.cost - tax - money.shipping;
+  const money = procurementTotals(visibleItems, taxRate);
 
   if (loadingProfile) {
     return <AppShell><div className="p-16 text-muted-foreground">Checking access...</div></AppShell>;
@@ -156,7 +146,7 @@ function ProcurementPage() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <MoneyStat label="Client Cost" value={money.client} />
           <MoneyStat label="Costs" value={money.cost} />
-          <MoneyStat label="Tax" value={tax}>
+          <MoneyStat label="Tax" value={money.tax}>
             <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
               Rate
               <input
@@ -169,7 +159,7 @@ function ProcurementPage() {
             </label>
           </MoneyStat>
           <MoneyStat label="Shipping" value={money.shipping} />
-          <MoneyStat label="Profit" value={profit} />
+          <MoneyStat label="Profit" value={money.profit} />
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
@@ -386,16 +376,6 @@ function EditableMoneyCell({
       placeholder="$0.00"
     />
   );
-}
-
-function moneyValue(value?: string | null) {
-  if (!value) return 0;
-  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
 function MoneyStat({ label, value, children }: { label: string; value: number; children?: ReactNode }) {
