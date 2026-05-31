@@ -198,6 +198,11 @@ function RoomMaterialsSection({
       .map((it) => it.cad_label?.trim())
       .filter((label): label is string => !!label),
   );
+  const cadLabelOwner = new Map<string, string>();
+  for (const item of sortedItems) {
+    const label = item.cad_label?.trim();
+    if (label && !cadLabelOwner.has(label)) cadLabelOwner.set(label, item.id);
+  }
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
@@ -309,7 +314,10 @@ function RoomMaterialsSection({
                     <td className="py-2 pr-3">
                       <CadLabelSelect
                         value={it.cad_label}
-                        options={cadOptions.filter((option) => option.value === it.cad_label?.trim() || !usedCadLabels.has(option.value))}
+                        options={cadOptions.filter((option) => {
+                          const ownerId = cadLabelOwner.get(option.value);
+                          return !usedCadLabels.has(option.value) || ownerId === it.id;
+                        })}
                         onSave={(v) => update(it.id, { cad_label: v })}
                         disabled={it.not_needed}
                       />
