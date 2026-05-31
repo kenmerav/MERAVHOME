@@ -24,11 +24,13 @@ import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$product
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
+import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
+import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -106,6 +108,11 @@ const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
   path: '/api/scrape-materials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
+  id: '/api/parse-invoice-pdf',
+  path: '/api/parse-invoice-pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
   id: '/api/generate-rendering',
   path: '/api/generate-rendering',
@@ -131,6 +138,11 @@ const ProjectsIdMaterialsRoute = ProjectsIdMaterialsRouteImport.update({
   path: '/projects/$id/materials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdFinancialsRoute = ProjectsIdFinancialsRouteImport.update({
+  id: '/projects/$id/financials',
+  path: '/projects/$id/financials',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
   id: '/projects/$id/rooms/$roomId',
   path: '/projects/$id/rooms/$roomId',
@@ -144,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
+  '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
@@ -154,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -167,6 +181,7 @@ export interface FileRoutesByTo {
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
+  '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
@@ -177,6 +192,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/specbooks': typeof SpecbooksIndexRoute
   '/users': typeof UsersIndexRoute
+  '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -191,6 +207,7 @@ export interface FileRoutesById {
   '/procurement': typeof ProcurementRoute
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
+  '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
@@ -201,6 +218,7 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -216,6 +234,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/settings'
     | '/api/generate-rendering'
+    | '/api/parse-invoice-pdf'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
@@ -226,6 +245,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/specbooks/'
     | '/users/'
+    | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
@@ -239,6 +259,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/settings'
     | '/api/generate-rendering'
+    | '/api/parse-invoice-pdf'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
@@ -249,6 +270,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/specbooks'
     | '/users'
+    | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
@@ -262,6 +284,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/settings'
     | '/api/generate-rendering'
+    | '/api/parse-invoice-pdf'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
@@ -272,6 +295,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/specbooks/'
     | '/users/'
+    | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
@@ -286,6 +310,7 @@ export interface RootRouteChildren {
   ProcurementRoute: typeof ProcurementRoute
   SettingsRoute: typeof SettingsRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
+  ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiUsersRoute: typeof ApiUsersRoute
@@ -296,6 +321,7 @@ export interface RootRouteChildren {
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
   ProjectsIdRenderingsRoute: typeof ProjectsIdRenderingsRoute
@@ -410,6 +436,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiScrapeMaterialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/parse-invoice-pdf': {
+      id: '/api/parse-invoice-pdf'
+      path: '/api/parse-invoice-pdf'
+      fullPath: '/api/parse-invoice-pdf'
+      preLoaderRoute: typeof ApiParseInvoicePdfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/generate-rendering': {
       id: '/api/generate-rendering'
       path: '/api/generate-rendering'
@@ -445,6 +478,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdMaterialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id/financials': {
+      id: '/projects/$id/financials'
+      path: '/projects/$id/financials'
+      fullPath: '/projects/$id/financials'
+      preLoaderRoute: typeof ProjectsIdFinancialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/rooms/$roomId': {
       id: '/projects/$id/rooms/$roomId'
       path: '/projects/$id/rooms/$roomId'
@@ -462,6 +502,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProcurementRoute: ProcurementRoute,
   SettingsRoute: SettingsRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
+  ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiUsersRoute: ApiUsersRoute,
@@ -472,6 +513,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIndexRoute: ProjectsIndexRoute,
   SpecbooksIndexRoute: SpecbooksIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
   ProjectsIdRenderingsRoute: ProjectsIdRenderingsRoute,

@@ -171,6 +171,39 @@ export interface UserProfile {
   updated_at: string;
 }
 
+export type FinancialPaymentStatus = "due" | "paid" | "waived";
+
+export interface FinancialInvoice {
+  id: string;
+  project_id: string;
+  file_name: string | null;
+  pdf_data_url: string | null;
+  invoice_date: string | null;
+  client_name: string | null;
+  provider_name: string | null;
+  total_amount: number | null;
+  paid_amount: number | null;
+  balance_due: number | null;
+  raw_text: string | null;
+  created_at: string;
+  updated_at: string;
+  payments?: FinancialInvoicePayment[];
+}
+
+export interface FinancialInvoicePayment {
+  id: string;
+  invoice_id: string;
+  project_id: string;
+  label: string;
+  amount: number;
+  due_date: string | null;
+  status: FinancialPaymentStatus;
+  notes: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 
 export const db = {
   /* PROJECTS */
@@ -302,4 +335,27 @@ export const db = {
     supabase.from("material_items").delete().eq("id", id),
   findProductByUrl: async (url: string) =>
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle()).data as Product | null,
+
+  /* FINANCIALS */
+  listFinancialInvoices: async (projectId: string) =>
+    (await supabase
+      .from("financial_invoices")
+      .select("*, payments:financial_invoice_payments(*)")
+      .eq("project_id", projectId)
+      .order("invoice_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("sort_order", { referencedTable: "financial_invoice_payments", ascending: true })).data as FinancialInvoice[] | null,
+  createFinancialInvoice: async (
+    invoice: Omit<FinancialInvoice, "id" | "created_at" | "updated_at" | "payments">,
+    payments: Array<Omit<FinancialInvoicePayment, "id" | "invoice_id" | "created_at" | "updated_at">>,
+  ) => {
+    const created = (await supabase.from("financial_invoices").insert(invoice as any).select().single()).data as FinancialInvoice | null;
+    if (!created) return null;
+    if (payments.length) {
+      await supabase.from("financial_invoice_payments").insert(payments.map((payment) => ({ ...payment, invoice_id: created.id })) as any);
+    }
+    return created;
+  },
+  updateFinancialPayment: async (id: string, patch: Partial<FinancialInvoicePayment>) =>
+    (await supabase.from("financial_invoice_payments").update(patch as any).eq("id", id).select().single()).data as FinancialInvoicePayment | null,
 };

@@ -14,6 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
+      financial_invoice_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          due_date: string | null
+          id: string
+          invoice_id: string
+          label: string
+          notes: string | null
+          project_id: string
+          sort_order: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          invoice_id: string
+          label: string
+          notes?: string | null
+          project_id: string
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          invoice_id?: string
+          label?: string
+          notes?: string | null
+          project_id?: string
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "financial_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_invoice_payments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_invoices: {
+        Row: {
+          balance_due: number | null
+          client_name: string | null
+          created_at: string
+          file_name: string | null
+          id: string
+          invoice_date: string | null
+          paid_amount: number | null
+          pdf_data_url: string | null
+          project_id: string
+          provider_name: string | null
+          raw_text: string | null
+          total_amount: number | null
+          updated_at: string
+        }
+        Insert: {
+          balance_due?: number | null
+          client_name?: string | null
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          invoice_date?: string | null
+          paid_amount?: number | null
+          pdf_data_url?: string | null
+          project_id: string
+          provider_name?: string | null
+          raw_text?: string | null
+          total_amount?: number | null
+          updated_at?: string
+        }
+        Update: {
+          balance_due?: number | null
+          client_name?: string | null
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          invoice_date?: string | null
+          paid_amount?: number | null
+          pdf_data_url?: string | null
+          project_id?: string
+          provider_name?: string | null
+          raw_text?: string | null
+          total_amount?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_invoices_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       material_items: {
         Row: {
           cad_label: string | null

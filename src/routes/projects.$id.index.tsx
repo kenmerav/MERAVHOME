@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X } from "lucide-react";
+import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PROJECT_STATUSES, WORKFLOW_STAGES, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -81,6 +81,9 @@ function ProjectDetailPage() {
             </Link>
             <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <Sparkles className="w-4 h-4" /> Renderings
+            </Link>
+            <Link to="/projects/$id/financials" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <DollarSign className="w-4 h-4" /> Financials
             </Link>
             <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
               <LayoutTemplate className="w-4 h-4" /> Presentation
@@ -334,4 +337,3 @@ export function NewProjectQuickNote() {
 
 // Required to satisfy any tooling that imports field/textarea/etc. unused
 void Textarea;
-
