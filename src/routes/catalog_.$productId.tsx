@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -154,6 +155,7 @@ function ProductImageEditor({
 }) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [working, setWorking] = useState(false);
 
@@ -224,13 +226,13 @@ function ProductImageEditor({
     <div className="space-y-3">
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => setOptionsOpen(true)}
         onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         disabled={working}
         className={`group relative aspect-square w-full overflow-hidden border bg-bone text-left transition-colors disabled:cursor-wait disabled:opacity-70 ${dragging ? "border-ink" : "border-border hover:border-ink"}`}
-        title="Replace product image"
+        title="Edit product image"
       >
         {form.image_url ? (
           <img src={form.image_url} alt={form.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" />
@@ -246,7 +248,7 @@ function ProductImageEditor({
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/80 to-transparent p-4 text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100">
           <div className="flex items-center gap-2 text-sm">
             <Upload className="w-4 h-4" />
-            {working ? "Updating image..." : "Click or drag to replace image"}
+            {working ? "Updating image..." : "Click for image options or drag to replace"}
           </div>
         </div>
       </button>
@@ -262,28 +264,55 @@ function ProductImageEditor({
         }}
       />
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={working}
-          className="inline-flex items-center gap-2 px-4 py-2.5 border border-ink text-sm text-ink hover:bg-ink hover:text-primary-foreground transition-colors disabled:opacity-50"
-        >
-          <ImagePlus className="w-4 h-4" /> Replace image
-        </button>
-        {form.image_url && (
-          <button
-            type="button"
-            onClick={removeImage}
-            disabled={working}
-            className="inline-flex items-center gap-2 px-4 py-2.5 border border-destructive/40 text-sm text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
-          >
-            <Trash2 className="w-4 h-4" /> Remove image
-          </button>
-        )}
-      </div>
+      <Dialog open={optionsOpen} onOpenChange={setOptionsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl font-normal">Product image</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => {
+                setOptionsOpen(false);
+                inputRef.current?.click();
+              }}
+              disabled={working}
+              className="flex w-full items-center gap-3 border border-border p-4 text-left transition-colors hover:border-ink hover:bg-bone/60 disabled:opacity-50"
+            >
+              <span className="grid h-10 w-10 place-items-center bg-bone">
+                <ImagePlus className="w-5 h-5" />
+              </span>
+              <span>
+                <span className="block font-display text-xl">Replace image</span>
+                <span className="block text-sm text-muted-foreground">Upload a new screenshot or product photo.</span>
+              </span>
+            </button>
+
+            {form.image_url && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setOptionsOpen(false);
+                  await removeImage();
+                }}
+                disabled={working}
+                className="flex w-full items-center gap-3 border border-destructive/30 p-4 text-left text-destructive transition-colors hover:border-destructive hover:bg-destructive/5 disabled:opacity-50"
+              >
+                <span className="grid h-10 w-10 place-items-center bg-destructive/10">
+                  <Trash2 className="w-5 h-5" />
+                </span>
+                <span>
+                  <span className="block font-display text-xl">Remove image</span>
+                  <span className="block text-sm text-destructive/75">Clear this product image from the catalog.</span>
+                </span>
+              </button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Tip: drag a saved screenshot onto the image box. The image updates everywhere this product appears.
+        Tip: click the image for options, or drag a saved screenshot onto it to replace instantly.
       </p>
     </div>
   );
