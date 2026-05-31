@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PDFParse } from "pdf-parse";
+import type { PDFParse } from "pdf-parse";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -56,6 +56,73 @@ function dataUrlToBuffer(dataUrl: string) {
   return Buffer.from(match[1], "base64");
 }
 
+function ensurePdfJsGlobals() {
+  const globalScope = globalThis as typeof globalThis & {
+    DOMMatrix?: typeof DOMMatrix;
+    ImageData?: typeof ImageData;
+    Path2D?: typeof Path2D;
+  };
+
+  if (!globalScope.DOMMatrix) {
+    globalScope.DOMMatrix = class DOMMatrix {
+      a = 1;
+      b = 0;
+      c = 0;
+      d = 1;
+      e = 0;
+      f = 0;
+
+      constructor(init?: number[] | string) {
+        if (Array.isArray(init)) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+        }
+      }
+
+      multiplySelf() {
+        return this;
+      }
+
+      preMultiplySelf() {
+        return this;
+      }
+
+      translateSelf() {
+        return this;
+      }
+
+      scaleSelf() {
+        return this;
+      }
+
+      rotateSelf() {
+        return this;
+      }
+
+      invertSelf() {
+        return this;
+      }
+
+      transformPoint(point?: { x?: number; y?: number }) {
+        return { x: point?.x ?? 0, y: point?.y ?? 0 };
+      }
+    } as typeof DOMMatrix;
+  }
+
+  if (!globalScope.ImageData) {
+    globalScope.ImageData = class ImageData {
+      constructor(
+        public data: Uint8ClampedArray,
+        public width: number,
+        public height: number,
+      ) {}
+    } as typeof ImageData;
+  }
+
+  if (!globalScope.Path2D) {
+    globalScope.Path2D = class Path2D {} as typeof Path2D;
+  }
+}
+
 export const Route = createFileRoute("/api/parse-invoice-pdf")({
   server: {
     handlers: {
@@ -69,6 +136,8 @@ export const Route = createFileRoute("/api/parse-invoice-pdf")({
           if (!file_data_url) return json({ error: "Missing PDF upload." }, 400);
 
           const data = dataUrlToBuffer(file_data_url);
+          ensurePdfJsGlobals();
+          const { PDFParse } = await import("pdf-parse");
           parser = new PDFParse({ data });
           const result = await parser.getText();
           const parsed = parseInvoiceText(result.text);
