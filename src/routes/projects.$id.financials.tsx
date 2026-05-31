@@ -40,6 +40,20 @@ type ServiceInvoiceDraft = {
   projectName: string;
   clientName: string;
   clientEmail: string;
+  projectAddress: string;
+  squareFeet: string;
+  renovationRate: string;
+  renovationVirtualRate: string;
+  furnitureRate: string;
+  furnitureVirtualRate: string;
+  paid: string;
+  projectType: InvoiceProjectType;
+  roomSelectionsRenovation: string[];
+  roomSelectionsFurniture: string[];
+  servicesRenovation: string[];
+  servicesRenovationVirtual: string[];
+  servicesFurniture: string[];
+  servicesFurnitureVirtual: string[];
   location: string;
   description: string;
   invoiceDate: string;
@@ -50,8 +64,30 @@ type ServiceInvoiceDraft = {
   phases: Array<{ name: InvoicePhaseName; percent: string; dueDate: string }>;
 };
 
+type InvoiceProjectType = "Renovation" | "New Build" | "Furniture" | "Virtual Design" | "Virtual Furniture";
+type ServiceDraftListField =
+  | "roomSelectionsRenovation"
+  | "roomSelectionsFurniture"
+  | "servicesRenovation"
+  | "servicesRenovationVirtual"
+  | "servicesFurniture"
+  | "servicesFurnitureVirtual";
+
 const SERVICE_PHASES: InvoicePhaseName[] = ["Project Start", "Design Presentation", "Design Document Delivery", "Project Completion"];
-const DEFAULT_PHASE_SPLITS = ["25", "25", "25", "25"];
+const DEFAULT_PHASE_SPLITS = ["50", "25", "20", "5"];
+const INVOICE_PROJECT_TYPES: InvoiceProjectType[] = ["Renovation", "New Build", "Furniture", "Virtual Design", "Virtual Furniture"];
+const RENOVATION_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Master Bath", "Powder Room"];
+const FURNITURE_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Primary Bath", "Powder Room"];
+const SERVICE_OPTIONS = [
+  "Conceptual design planning",
+  "Drafting elevations",
+  "Digital renderings",
+  "Space planning",
+  "Sourcing furniture + fixtures",
+  "Presentations",
+  "Ordering",
+  "Managing installation",
+];
 
 function FinancialsPage() {
   const { id } = Route.useParams();
@@ -198,6 +234,20 @@ function FinancialsPage() {
       projectName: project?.name ?? "",
       clientName: project?.client_name ?? "",
       clientEmail: "",
+      projectAddress: "",
+      squareFeet: "",
+      renovationRate: "",
+      renovationVirtualRate: "",
+      furnitureRate: "",
+      furnitureVirtualRate: "",
+      paid: "",
+      projectType: "Renovation",
+      roomSelectionsRenovation: ["Full Home"],
+      roomSelectionsFurniture: ["Full Home"],
+      servicesRenovation: ["Conceptual design planning", "Drafting elevations", "Digital renderings", "Space planning", "Sourcing furniture + fixtures", "Presentations"],
+      servicesRenovationVirtual: ["Conceptual design planning", "Drafting elevations", "Digital renderings", "Space planning", "Sourcing furniture + fixtures", "Presentations"],
+      servicesFurniture: ["Conceptual design planning", "Space planning", "Sourcing furniture + fixtures", "Presentations", "Ordering", "Managing installation"],
+      servicesFurnitureVirtual: ["Conceptual design planning", "Space planning", "Sourcing furniture + fixtures", "Presentations"],
       location: project?.project_type === "Whole Home" ? "Full Home" : project?.project_type ?? "Full Home",
       description: "Conceptual design planning, Drafting elevations, Digital renderings, Space planning, Sourcing all fixtures + finishes, Full Specifications Document, Full Drawing Packet",
       invoiceDate: today,
@@ -222,10 +272,20 @@ function FinancialsPage() {
     });
   };
 
+  const toggleServiceDraftList = (field: ServiceDraftListField, value: string) => {
+    if (!serviceDraft) return;
+    const list = serviceDraft[field];
+    setServiceDraft({
+      ...serviceDraft,
+      [field]: list.includes(value) ? list.filter((item) => item !== value) : [...list, value],
+    });
+  };
+
   const saveServiceInvoice = async () => {
     if (!serviceDraft) return;
-    const fee = numberValue(serviceDraft.designFee) ?? 0;
-    if (fee <= 0) return toast.error("Enter the design fee first.");
+    const fee = calculatedDesignFee(serviceDraft);
+    const paid = numberValue(serviceDraft.paid) ?? 0;
+    if (fee <= 0) return toast.error("Enter square feet and the matching price per sq/ft first.");
     setSavingServiceInvoice(true);
     try {
       const payments = serviceDraft.phases.map((phase, index) => ({
@@ -246,8 +306,8 @@ function FinancialsPage() {
         client_name: serviceDraft.clientName || null,
         provider_name: "MERAV Interiors",
         total_amount: fee,
-        paid_amount: 0,
-        balance_due: payments.reduce((sum, payment) => sum + payment.amount, 0),
+        paid_amount: paid,
+        balance_due: Math.max(fee - paid, 0),
         raw_text: JSON.stringify({ type: "design_service_invoice", ...serviceDraft }),
       }, payments);
       toast.success("Design service invoice saved");
@@ -406,9 +466,30 @@ function FinancialsPage() {
                   <ReviewField label="Project Name" value={serviceDraft.projectName} onChange={(value) => updateServiceDraft({ projectName: value })} />
                   <ReviewField label="Client Name" value={serviceDraft.clientName} onChange={(value) => updateServiceDraft({ clientName: value })} />
                   <ReviewField label="Client Email" value={serviceDraft.clientEmail} onChange={(value) => updateServiceDraft({ clientEmail: value })} />
+                  <ReviewField label="Project Address" value={serviceDraft.projectAddress} onChange={(value) => updateServiceDraft({ projectAddress: value })} />
                   <ReviewField label="Invoice Date" value={serviceDraft.invoiceDate} onChange={(value) => updateServiceDraft({ invoiceDate: value })} />
-                  <ReviewField label="Design Fee" value={serviceDraft.designFee} onChange={(value) => updateServiceDraft({ designFee: value })} />
-                  <ReviewField label="Location" value={serviceDraft.location} onChange={(value) => updateServiceDraft({ location: value })} />
+                  <div>
+                    <Label className="eyebrow">Project Type</Label>
+                    <select
+                      value={serviceDraft.projectType}
+                      onChange={(e) => {
+                        const projectType = e.target.value as InvoiceProjectType;
+                        updateServiceDraft({
+                          projectType,
+                          serviceType: projectType === "Virtual Design" || projectType === "Virtual Furniture" ? "Virtual" : "Full Service",
+                        });
+                      }}
+                      className="h-10 w-full border border-input bg-background px-3 text-sm"
+                    >
+                      {INVOICE_PROJECT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                  </div>
+                  <ReviewField label="Square Feet" value={serviceDraft.squareFeet} onChange={(value) => updateServiceDraft({ squareFeet: value })} />
+                  <ReviewField label="Price per sq/ft Renovation" value={serviceDraft.renovationRate} onChange={(value) => updateServiceDraft({ renovationRate: value })} />
+                  <ReviewField label="Price per sq/ft Renovation Virtual" value={serviceDraft.renovationVirtualRate} onChange={(value) => updateServiceDraft({ renovationVirtualRate: value })} />
+                  <ReviewField label="Price per sq/ft Furniture" value={serviceDraft.furnitureRate} onChange={(value) => updateServiceDraft({ furnitureRate: value })} />
+                  <ReviewField label="Price per sq/ft Furniture Virtual" value={serviceDraft.furnitureVirtualRate} onChange={(value) => updateServiceDraft({ furnitureVirtualRate: value })} />
+                  <ReviewField label="Paid" value={serviceDraft.paid} onChange={(value) => updateServiceDraft({ paid: value })} />
                   <div>
                     <Label className="eyebrow">Payment Link Phase</Label>
                     <select
@@ -422,14 +503,45 @@ function FinancialsPage() {
                   <div className="md:col-span-2">
                     <ReviewField label="Stripe Link" value={serviceDraft.stripeLink} onChange={(value) => updateServiceDraft({ stripeLink: value })} />
                   </div>
-                  <div className="md:col-span-3">
-                    <Label className="eyebrow">Description</Label>
-                    <textarea
-                      value={serviceDraft.description}
-                      onChange={(e) => updateServiceDraft({ description: e.target.value })}
-                      className="min-h-20 w-full border border-input bg-background px-3 py-2 text-sm"
-                    />
-                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <CheckboxGroup
+                    title="Room Selections Renovation"
+                    options={RENOVATION_ROOMS}
+                    values={serviceDraft.roomSelectionsRenovation}
+                    onToggle={(value) => toggleServiceDraftList("roomSelectionsRenovation", value)}
+                  />
+                  <CheckboxGroup
+                    title="Room Selections Furniture"
+                    options={FURNITURE_ROOMS}
+                    values={serviceDraft.roomSelectionsFurniture}
+                    onToggle={(value) => toggleServiceDraftList("roomSelectionsFurniture", value)}
+                  />
+                  <CheckboxGroup
+                    title="Services Provided: Renovation"
+                    options={SERVICE_OPTIONS}
+                    values={serviceDraft.servicesRenovation}
+                    onToggle={(value) => toggleServiceDraftList("servicesRenovation", value)}
+                  />
+                  <CheckboxGroup
+                    title="Services Provided: Renovation Virtual"
+                    options={SERVICE_OPTIONS}
+                    values={serviceDraft.servicesRenovationVirtual}
+                    onToggle={(value) => toggleServiceDraftList("servicesRenovationVirtual", value)}
+                  />
+                  <CheckboxGroup
+                    title="Services Provided: Furniture"
+                    options={SERVICE_OPTIONS}
+                    values={serviceDraft.servicesFurniture}
+                    onToggle={(value) => toggleServiceDraftList("servicesFurniture", value)}
+                  />
+                  <CheckboxGroup
+                    title="Services Provided: Furniture Virtual"
+                    options={SERVICE_OPTIONS}
+                    values={serviceDraft.servicesFurnitureVirtual}
+                    onToggle={(value) => toggleServiceDraftList("servicesFurnitureVirtual", value)}
+                  />
                 </div>
 
                 <div className="mobile-card-scroll border border-border bg-background">
@@ -444,7 +556,7 @@ function FinancialsPage() {
                     </thead>
                     <tbody>
                       {serviceDraft.phases.map((phase, index) => {
-                        const fee = numberValue(serviceDraft.designFee) ?? 0;
+                        const fee = calculatedDesignFee(serviceDraft);
                         return (
                           <tr key={phase.name} className="border-b border-border">
                             <td className="py-3 px-4 min-w-[240px]">Phase {index + 1} - {phase.name}</td>
@@ -460,6 +572,12 @@ function FinancialsPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Stat label="Automated Design Fee" value={formatMoney(calculatedDesignFee(serviceDraft))} />
+                  <Stat label="Paid" value={formatMoney(numberValue(serviceDraft.paid) ?? 0)} />
+                  <Stat label="Balance Due" value={formatMoney(Math.max(calculatedDesignFee(serviceDraft) - (numberValue(serviceDraft.paid) ?? 0), 0))} />
                 </div>
 
                 <div>
@@ -705,8 +823,25 @@ function ReviewField({ label, value, onChange }: { label: string; value: string;
   );
 }
 
+function CheckboxGroup({ title, options, values, onToggle }: { title: string; options: string[]; values: string[]; onToggle: (value: string) => void }) {
+  return (
+    <div className="border border-border bg-background p-4">
+      <div className="eyebrow mb-3">{title}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {options.map((option) => (
+          <label key={option} className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={values.includes(option)} onChange={() => onToggle(option)} />
+            {option}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
-  const fee = numberValue(draft.designFee) ?? 0;
+  const fee = calculatedDesignFee(draft);
+  const paid = numberValue(draft.paid) ?? 0;
   const phaseRows = draft.phases.map((phase, index) => ({
     ...phase,
     label: `Phase ${index + 1} - ${phase.name}`,
@@ -739,7 +874,12 @@ function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
               <h3 className="font-serif text-2xl font-bold text-right">SERVICE INVOICE</h3>
               <div className="grid grid-cols-[90px_1fr] gap-3">
                 <strong>Date:</strong><span>{formatDateForInvoice(draft.invoiceDate)}</span>
-                <strong>Address:</strong><span>6901 East<br />Sweetwater Avenue<br />Scottsdale, Arizona<br />85254</span>
+                <strong>Address:</strong>
+                <span>
+                  {addressLines(draft.projectAddress).map((line) => (
+                    <span key={line}>{line}<br /></span>
+                  ))}
+                </span>
               </div>
             </div>
           </div>
@@ -757,8 +897,8 @@ function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
             </thead>
             <tbody>
               <tr>
-                <td className="border-r border-black py-8 px-3 text-center font-bold">{draft.location || "Full Home"}</td>
-                <td className="border-r border-black py-8 px-4 text-center">{draft.description}</td>
+                <td className="border-r border-black py-8 px-3 text-center font-bold">{invoiceLocation(draft)}</td>
+                <td className="border-r border-black py-8 px-4 text-center">{invoiceDescription(draft)}</td>
                 <td className="py-8 px-2 text-right">{formatMoney(fee)}</td>
               </tr>
               <tr>
@@ -775,8 +915,8 @@ function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
               <span className="border border-black bg-[#e9e7de] px-4 py-3 font-bold text-lg">{formatMoney(fee)}</span>
             </div>
             <div className="grid grid-cols-[1fr_130px] gap-x-3 gap-y-2 text-right mb-5">
-              <strong>Paid:</strong><span></span>
-              <strong className="underline">Design Fee Due:</strong><strong className="underline">{formatMoney(fee)}</strong>
+              <strong>Paid:</strong><span>{paid ? formatMoney(paid) : ""}</span>
+              <strong className="underline">Design Fee Due:</strong><strong className="underline">{formatMoney(Math.max(fee - paid, 0))}</strong>
               {phaseRows.filter((phase) => phase.amount > 0).map((phase) => (
                 <span key={phase.name}>Due {phase.name === "Project Start" ? "on" : "at"} {phase.name}:</span>
               )).flatMap((label, index) => [label, <span key={`amount-${index}`}>{formatMoney(phaseRows.filter((phase) => phase.amount > 0)[index]?.amount ?? 0)}</span>])}
@@ -845,6 +985,47 @@ function phaseAmount(fee: number, percent: string) {
   return Math.round((fee * ((numberValue(percent) ?? 0) / 100)) * 100) / 100;
 }
 
+function selectedRate(draft: ServiceInvoiceDraft) {
+  if (draft.projectType === "Furniture") return numberValue(draft.furnitureRate) ?? 0;
+  if (draft.projectType === "Virtual Furniture") return numberValue(draft.furnitureVirtualRate) ?? 0;
+  if (draft.projectType === "Virtual Design") return numberValue(draft.renovationVirtualRate) ?? 0;
+  return numberValue(draft.renovationRate) ?? 0;
+}
+
+function calculatedDesignFee(draft: ServiceInvoiceDraft) {
+  const squareFeet = numberValue(draft.squareFeet) ?? 0;
+  return Math.round(squareFeet * selectedRate(draft) * 100) / 100;
+}
+
+function activeRoomSelections(draft: ServiceInvoiceDraft) {
+  return draft.projectType === "Furniture" || draft.projectType === "Virtual Furniture"
+    ? draft.roomSelectionsFurniture
+    : draft.roomSelectionsRenovation;
+}
+
+function activeServices(draft: ServiceInvoiceDraft) {
+  if (draft.projectType === "Furniture") return draft.servicesFurniture;
+  if (draft.projectType === "Virtual Furniture") return draft.servicesFurnitureVirtual;
+  if (draft.projectType === "Virtual Design") return draft.servicesRenovationVirtual;
+  return draft.servicesRenovation;
+}
+
+function invoiceLocation(draft: ServiceInvoiceDraft) {
+  const rooms = activeRoomSelections(draft);
+  return rooms.length ? rooms.join(", ") : draft.location || "Full Home";
+}
+
+function invoiceDescription(draft: ServiceInvoiceDraft) {
+  const services = activeServices(draft);
+  if (services.length) return services.join(", ");
+  return draft.description || "Design services";
+}
+
+function addressLines(address: string) {
+  const lines = address.split(/\n|,/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? lines : ["6901 East", "Sweetwater Avenue", "Scottsdale, Arizona", "85254"];
+}
+
 function formatDateForInvoice(value: string) {
   if (!value) return "";
   const [year, month, day] = value.split("-");
@@ -877,6 +1058,8 @@ function buildServiceInvoiceHtml(
   payments: Array<{ label: string; amount: number; due_date: string | null; status: string; notes: string | null; sort_order: number }>,
 ) {
   const selectedAmount = payments.find((payment) => payment.label.includes(draft.currentPhase))?.amount ?? 0;
+  const paid = numberValue(draft.paid) ?? 0;
+  const address = addressLines(draft.projectAddress).map(escapeHtml).join("<br>");
   const phaseLines = payments
     .filter((payment) => payment.amount > 0)
     .map((payment) => {
@@ -937,7 +1120,7 @@ function buildServiceInvoiceHtml(
         <div class="title">SERVICE INVOICE</div>
         <div class="meta">
           <strong>Date:</strong><span>${escapeHtml(formatDateForInvoice(draft.invoiceDate))}</span>
-          <strong>Address:</strong><span>6901 East<br>Sweetwater Avenue<br>Scottsdale, Arizona<br>85254</span>
+          <strong>Address:</strong><span>${address}</span>
         </div>
       </div>
     </section>
@@ -948,8 +1131,8 @@ function buildServiceInvoiceHtml(
       </thead>
       <tbody>
         <tr>
-          <td class="center"><strong>${escapeHtml(draft.location || "Full Home")}</strong></td>
-          <td class="center">${escapeHtml(draft.description)}</td>
+          <td class="center"><strong>${escapeHtml(invoiceLocation(draft))}</strong></td>
+          <td class="center">${escapeHtml(invoiceDescription(draft))}</td>
           <td class="right">${formatMoney(fee)}</td>
         </tr>
         <tr><td></td><td></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(fee)}</strong></td></tr>
@@ -957,8 +1140,8 @@ function buildServiceInvoiceHtml(
     </table>
     <section class="summary">
       <div class="fee-row"><strong style="font-size:22px">Total Design Fee:</strong><span class="fee-box">${formatMoney(fee)}</span></div>
-      <div class="summary-row"><strong>Paid:</strong><span></span></div>
-      <div class="summary-row"><strong><u>Design Fee Due:</u></strong><strong><u>${formatMoney(fee)}</u></strong></div>
+      <div class="summary-row"><strong>Paid:</strong><span>${paid ? formatMoney(paid) : ""}</span></div>
+      <div class="summary-row"><strong><u>Design Fee Due:</u></strong><strong><u>${formatMoney(Math.max(fee - paid, 0))}</u></strong></div>
       ${phaseLines}
       <div class="pay">
         <div>${draft.stripeLink ? `<a href="${escapeHtml(draft.stripeLink)}">CLICK HERE TO PAY</a>` : "CLICK HERE TO PAY"}</div>
