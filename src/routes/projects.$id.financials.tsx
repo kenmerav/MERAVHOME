@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, FileText, Mail, Plus, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -32,6 +32,26 @@ type ReviewInvoice = {
 };
 
 type ReviewPayment = Pick<FinancialInvoicePayment, "label" | "amount" | "due_date" | "status" | "notes" | "sort_order">;
+type ServiceType = "Full Service" | "Virtual";
+type InvoicePhaseName = "Project Start" | "Design Presentation" | "Design Document Delivery" | "Project Completion";
+
+type ServiceInvoiceDraft = {
+  serviceType: ServiceType;
+  projectName: string;
+  clientName: string;
+  clientEmail: string;
+  location: string;
+  description: string;
+  invoiceDate: string;
+  designFee: string;
+  currentPhase: InvoicePhaseName;
+  stripeLink: string;
+  notes: string;
+  phases: Array<{ name: InvoicePhaseName; percent: string; dueDate: string }>;
+};
+
+const SERVICE_PHASES: InvoicePhaseName[] = ["Project Start", "Design Presentation", "Design Document Delivery", "Project Completion"];
+const DEFAULT_PHASE_SPLITS = ["25", "25", "25", "25"];
 
 function FinancialsPage() {
   const { id } = Route.useParams();
@@ -41,6 +61,8 @@ function FinancialsPage() {
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [review, setReview] = useState<ReviewInvoice | null>(null);
+  const [serviceDraft, setServiceDraft] = useState<ServiceInvoiceDraft | null>(null);
+  const [savingServiceInvoice, setSavingServiceInvoice] = useState(false);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -169,6 +191,76 @@ function FinancialsPage() {
     }
   };
 
+  const startServiceInvoice = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setServiceDraft({
+      serviceType: "Full Service",
+      projectName: project?.name ?? "",
+      clientName: project?.client_name ?? "",
+      clientEmail: "",
+      location: project?.project_type === "Whole Home" ? "Full Home" : project?.project_type ?? "Full Home",
+      description: "Conceptual design planning, Drafting elevations, Digital renderings, Space planning, Sourcing all fixtures + finishes, Full Specifications Document, Full Drawing Packet",
+      invoiceDate: today,
+      designFee: "",
+      currentPhase: "Project Start",
+      stripeLink: "",
+      notes: "",
+      phases: SERVICE_PHASES.map((name, index) => ({ name, percent: DEFAULT_PHASE_SPLITS[index], dueDate: "" })),
+    });
+  };
+
+  const updateServiceDraft = (patch: Partial<ServiceInvoiceDraft>) => {
+    if (!serviceDraft) return;
+    setServiceDraft({ ...serviceDraft, ...patch });
+  };
+
+  const updateServicePhase = (index: number, patch: Partial<ServiceInvoiceDraft["phases"][number]>) => {
+    if (!serviceDraft) return;
+    setServiceDraft({
+      ...serviceDraft,
+      phases: serviceDraft.phases.map((phase, i) => i === index ? { ...phase, ...patch } : phase),
+    });
+  };
+
+  const saveServiceInvoice = async () => {
+    if (!serviceDraft) return;
+    const fee = numberValue(serviceDraft.designFee) ?? 0;
+    if (fee <= 0) return toast.error("Enter the design fee first.");
+    setSavingServiceInvoice(true);
+    try {
+      const payments = serviceDraft.phases.map((phase, index) => ({
+        project_id: id,
+        label: `Phase ${index + 1} - ${phase.name}`,
+        amount: phaseAmount(fee, phase.percent),
+        due_date: phase.dueDate || null,
+        status: "due" as const,
+        notes: serviceDraft.currentPhase === phase.name && serviceDraft.stripeLink ? `Stripe payment link: ${serviceDraft.stripeLink}` : null,
+        sort_order: index,
+      }));
+      const invoiceHtml = buildServiceInvoiceHtml(serviceDraft, fee, payments);
+      await db.createFinancialInvoice({
+        project_id: id,
+        file_name: `${serviceDraft.projectName || "Project"} Design Service Invoice.html`,
+        pdf_data_url: htmlDataUrl(invoiceHtml),
+        invoice_date: serviceDraft.invoiceDate || null,
+        client_name: serviceDraft.clientName || null,
+        provider_name: "MERAV Interiors",
+        total_amount: fee,
+        paid_amount: 0,
+        balance_due: payments.reduce((sum, payment) => sum + payment.amount, 0),
+        raw_text: JSON.stringify({ type: "design_service_invoice", ...serviceDraft }),
+      }, payments);
+      toast.success("Design service invoice saved");
+      setServiceDraft(null);
+      qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Could not save service invoice.");
+    } finally {
+      setSavingServiceInvoice(false);
+    }
+  };
+
   const updatePaymentStatus = async (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => {
     await db.updateFinancialPayment(payment.id, { status });
     qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
@@ -234,10 +326,15 @@ function FinancialsPage() {
               Upload invoice PDFs, review the extracted payment schedule, and track every payment due for the project.
             </p>
           </div>
-          <label className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm cursor-pointer">
-            <Upload className="w-4 h-4" /> {parsing ? "Reading PDF..." : "Upload Invoice PDF"}
-            <input type="file" accept="application/pdf" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} disabled={parsing} />
-          </label>
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+            <button type="button" onClick={startServiceInvoice} className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-3 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <Plus className="w-4 h-4" /> Create Design Service Invoice
+            </button>
+            <label className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm cursor-pointer">
+              <Upload className="w-4 h-4" /> {parsing ? "Reading PDF..." : "Upload Invoice PDF"}
+              <input type="file" accept="application/pdf" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} disabled={parsing} />
+            </label>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-10">
@@ -275,6 +372,117 @@ function FinancialsPage() {
               <button onClick={saveReview} disabled={saving} className="px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
                 {saving ? "Saving..." : "Save Invoice"}
               </button>
+            </div>
+          </section>
+        )}
+
+        {serviceDraft && (
+          <section className="border border-border p-6 mb-10 bg-bone/20">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <div className="eyebrow mb-2">Design Service Quote</div>
+                <h2 className="font-display text-3xl">Create Invoice</h2>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Mirrors the Google Sheet flow: choose the service type, set payment splits, then save the payment schedule to this project.
+                </p>
+              </div>
+              <button onClick={() => setServiceDraft(null)} className="text-muted-foreground hover:text-ink"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_460px] gap-8">
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="eyebrow">Service Type</Label>
+                    <select
+                      value={serviceDraft.serviceType}
+                      onChange={(e) => updateServiceDraft({ serviceType: e.target.value as ServiceType })}
+                      className="h-10 w-full border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="Full Service">Full Service</option>
+                      <option value="Virtual">Virtual</option>
+                    </select>
+                  </div>
+                  <ReviewField label="Project Name" value={serviceDraft.projectName} onChange={(value) => updateServiceDraft({ projectName: value })} />
+                  <ReviewField label="Client Name" value={serviceDraft.clientName} onChange={(value) => updateServiceDraft({ clientName: value })} />
+                  <ReviewField label="Client Email" value={serviceDraft.clientEmail} onChange={(value) => updateServiceDraft({ clientEmail: value })} />
+                  <ReviewField label="Invoice Date" value={serviceDraft.invoiceDate} onChange={(value) => updateServiceDraft({ invoiceDate: value })} />
+                  <ReviewField label="Design Fee" value={serviceDraft.designFee} onChange={(value) => updateServiceDraft({ designFee: value })} />
+                  <ReviewField label="Location" value={serviceDraft.location} onChange={(value) => updateServiceDraft({ location: value })} />
+                  <div>
+                    <Label className="eyebrow">Payment Link Phase</Label>
+                    <select
+                      value={serviceDraft.currentPhase}
+                      onChange={(e) => updateServiceDraft({ currentPhase: e.target.value as InvoicePhaseName })}
+                      className="h-10 w-full border border-input bg-background px-3 text-sm"
+                    >
+                      {SERVICE_PHASES.map((phase) => <option key={phase} value={phase}>{phase}</option>)}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <ReviewField label="Stripe Link" value={serviceDraft.stripeLink} onChange={(value) => updateServiceDraft({ stripeLink: value })} />
+                  </div>
+                  <div className="md:col-span-3">
+                    <Label className="eyebrow">Description</Label>
+                    <textarea
+                      value={serviceDraft.description}
+                      onChange={(e) => updateServiceDraft({ description: e.target.value })}
+                      className="min-h-20 w-full border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="mobile-card-scroll border border-border bg-background">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border">
+                        <th className="py-3 px-4">Phase</th>
+                        <th className="py-3 px-4 text-right">Percent</th>
+                        <th className="py-3 px-4 text-right">Amount</th>
+                        <th className="py-3 px-4">Due Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {serviceDraft.phases.map((phase, index) => {
+                        const fee = numberValue(serviceDraft.designFee) ?? 0;
+                        return (
+                          <tr key={phase.name} className="border-b border-border">
+                            <td className="py-3 px-4 min-w-[240px]">Phase {index + 1} - {phase.name}</td>
+                            <td className="py-3 px-4 min-w-[130px]">
+                              <Input value={phase.percent} onChange={(e) => updateServicePhase(index, { percent: e.target.value })} className="text-right" />
+                            </td>
+                            <td className="py-3 px-4 text-right min-w-[130px]">{formatMoney(phaseAmount(fee, phase.percent))}</td>
+                            <td className="py-3 px-4 min-w-[160px]">
+                              <Input type="date" value={phase.dueDate} onChange={(e) => updateServicePhase(index, { dueDate: e.target.value })} />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div>
+                  <Label className="eyebrow">Notes</Label>
+                  <textarea
+                    value={serviceDraft.notes}
+                    onChange={(e) => updateServiceDraft({ notes: e.target.value })}
+                    className="min-h-24 w-full border border-input bg-background px-3 py-2 text-sm"
+                    placeholder="Optional invoice notes or client-facing details..."
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <button type="button" onClick={() => openServiceEmailDraft(serviceDraft)} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
+                    <Mail className="w-4 h-4" /> Draft Email
+                  </button>
+                  <button onClick={saveServiceInvoice} disabled={savingServiceInvoice} className="px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
+                    {savingServiceInvoice ? "Saving..." : "Save Invoice"}
+                  </button>
+                </div>
+              </div>
+
+              <ServiceInvoicePreview draft={serviceDraft} />
             </div>
           </section>
         )}
@@ -497,6 +705,119 @@ function ReviewField({ label, value, onChange }: { label: string; value: string;
   );
 }
 
+function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
+  const fee = numberValue(draft.designFee) ?? 0;
+  const phaseRows = draft.phases.map((phase, index) => ({
+    ...phase,
+    label: `Phase ${index + 1} - ${phase.name}`,
+    amount: phaseAmount(fee, phase.percent),
+  }));
+  const selectedAmount = phaseRows.find((phase) => phase.name === draft.currentPhase)?.amount ?? 0;
+  const percentTotal = draft.phases.reduce((sum, phase) => sum + (numberValue(phase.percent) ?? 0), 0);
+
+  return (
+    <div className="xl:sticky xl:top-6 self-start">
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] xl:grid-cols-1 gap-5">
+        <div className="bg-white border border-border p-5 text-black shadow-sm overflow-hidden">
+          <div className="text-center mb-8">
+            <div className="font-display text-[44px] sm:text-[58px] leading-none tracking-[-0.06em]">MERAV INTERIORS</div>
+            <div className="mt-3 text-[13px] tracking-[0.45em] text-neutral-500">BY KATIE ROBERTS</div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-8 text-[12px] mb-8">
+            <div className="space-y-10">
+              <div><strong>Client:</strong><span className="ml-8">{draft.clientName || "Client Name"}</span></div>
+              <div>
+                <strong>Provider:</strong>
+                <div className="ml-24 -mt-4">
+                  MERAV INTERIORS<br />
+                  <span className="text-blue-700">katie@meravinteriors.com</span>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-8">
+              <h3 className="font-serif text-2xl font-bold text-right">SERVICE INVOICE</h3>
+              <div className="grid grid-cols-[90px_1fr] gap-3">
+                <strong>Date:</strong><span>{formatDateForInvoice(draft.invoiceDate)}</span>
+                <strong>Address:</strong><span>6901 East<br />Sweetwater Avenue<br />Scottsdale, Arizona<br />85254</span>
+              </div>
+            </div>
+          </div>
+
+          <table className="w-full border border-black text-[12px] mb-16">
+            <thead>
+              <tr className="bg-[#e9e7de]">
+                <th colSpan={3} className="border-b border-black py-2 text-center font-bold">Renovation Design</th>
+              </tr>
+              <tr className="bg-[#e9e7de] text-left">
+                <th className="border-r border-black border-b border-black py-2 px-1 w-[30%]">Location</th>
+                <th className="border-r border-black border-b border-black py-2 px-1">Description</th>
+                <th className="border-b border-black py-2 px-1 w-[18%]">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border-r border-black py-8 px-3 text-center font-bold">{draft.location || "Full Home"}</td>
+                <td className="border-r border-black py-8 px-4 text-center">{draft.description}</td>
+                <td className="py-8 px-2 text-right">{formatMoney(fee)}</td>
+              </tr>
+              <tr>
+                <td className="border-r border-black"></td>
+                <td className="border-r border-black"></td>
+                <td className="bg-[#e9e7de] border-t border-black py-2 px-2 text-right font-bold">{formatMoney(fee)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="ml-auto max-w-[390px] text-[12px]">
+            <div className="flex items-center justify-end gap-2 mb-4">
+              <span className="font-bold text-xl">Total Design Fee:</span>
+              <span className="border border-black bg-[#e9e7de] px-4 py-3 font-bold text-lg">{formatMoney(fee)}</span>
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-x-3 gap-y-2 text-right mb-5">
+              <strong>Paid:</strong><span></span>
+              <strong className="underline">Design Fee Due:</strong><strong className="underline">{formatMoney(fee)}</strong>
+              {phaseRows.filter((phase) => phase.amount > 0).map((phase) => (
+                <span key={phase.name}>Due {phase.name === "Project Start" ? "on" : "at"} {phase.name}:</span>
+              )).flatMap((label, index) => [label, <span key={`amount-${index}`}>{formatMoney(phaseRows.filter((phase) => phase.amount > 0)[index]?.amount ?? 0)}</span>])}
+            </div>
+            <div className="grid grid-cols-[1fr_140px] border-2 border-black mb-10">
+              <div className="bg-[#e9e7de] text-center text-blue-700 underline font-bold py-1">
+                {draft.stripeLink ? "CLICK HERE TO PAY" : "CLICK HERE TO PAY"}
+              </div>
+              <div className="bg-[#e9e7de] border-l border-black py-1 px-2 text-right font-bold">{formatMoney(selectedAmount)}</div>
+            </div>
+            <div className="space-y-10 italic">
+              <div className="border-t border-black pt-2 flex justify-between"><span>Authorized by Client</span><span>Date</span></div>
+              <div className="border-t border-black pt-2 flex justify-between"><span>Authorized by MERAV INTERIORS</span><span>Date</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <button type="button" onClick={() => toast.info("Stripe payment-link generation is the next connection step.")} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
+            Generate Payment Link
+          </button>
+          <button type="button" onClick={() => openServiceEmailDraft(draft)} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
+            Draft Invoice Email
+          </button>
+          <button type="button" onClick={() => toast.info("QuickBooks invoice creation needs the rotated QuickBooks keys added to Vercel.")} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
+            Generate QuickBooks Invoice
+          </button>
+          <div className="bg-yellow-300 text-black p-4 text-xs mt-10">
+            <div className="font-bold mb-4">MATH CHECK:<span className="float-right">{formatMoney(fee)}</span></div>
+            <div className="font-bold mb-3">Percentage Check</div>
+            {draft.phases.map((phase) => (
+              <div key={phase.name} className="flex justify-between"><span>{phase.name}</span><span>{(numberValue(phase.percent) ?? 0).toFixed(2)}%</span></div>
+            ))}
+            <div className="flex justify-between border-t border-black/30 mt-4 pt-3 font-bold"><span>Total</span><span>{percentTotal.toFixed(2)}%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border border-border p-5">
@@ -520,6 +841,146 @@ function numberValue(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function phaseAmount(fee: number, percent: string) {
+  return Math.round((fee * ((numberValue(percent) ?? 0) / 100)) * 100) / 100;
+}
+
+function formatDateForInvoice(value: string) {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${month}/${day}/${year}`;
+}
+
+function htmlDataUrl(html: string) {
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+function openServiceEmailDraft(draft: ServiceInvoiceDraft) {
+  const subject = `Invoice & Timeline for ${draft.projectName || "your project"}`;
+  const body = [
+    `Hi ${draft.clientName || ""},`,
+    "",
+    "Attached please find your invoice and service timeline.",
+    draft.stripeLink ? `Payment link: ${draft.stripeLink}` : "",
+    "",
+    "Thank you,",
+    "MERAV Interiors",
+  ].filter(Boolean).join("\n");
+  const url = `mailto:${encodeURIComponent(draft.clientEmail)}?cc=${encodeURIComponent("katie@meravinteriors.com")}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = url;
+}
+
+function buildServiceInvoiceHtml(
+  draft: ServiceInvoiceDraft,
+  fee: number,
+  payments: Array<{ label: string; amount: number; due_date: string | null; status: string; notes: string | null; sort_order: number }>,
+) {
+  const selectedAmount = payments.find((payment) => payment.label.includes(draft.currentPhase))?.amount ?? 0;
+  const phaseLines = payments
+    .filter((payment) => payment.amount > 0)
+    .map((payment) => {
+      const clean = payment.label.replace(/^Phase \d+ - /, "");
+      return `<div class="summary-row"><span>Due ${clean === "Project Start" ? "on" : "at"} ${escapeHtml(clean)}:</span><span>${formatMoney(payment.amount)}</span></div>`;
+    }).join("");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(draft.projectName || "Design Service Invoice")}</title>
+  <style>
+    @page { size: letter; margin: 0.35in; }
+    body { margin: 0; font-family: Georgia, "Times New Roman", serif; color: #000; background: #fff; }
+    .page { width: 8.5in; min-height: 10.5in; padding: 0.15in 0.25in; box-sizing: border-box; }
+    .brand { text-align: center; margin: 0.05in 0 0.5in; }
+    .logo { font-size: 60px; line-height: 0.95; letter-spacing: -0.08em; font-weight: 400; }
+    .byline { margin-top: 16px; font-family: Arial, sans-serif; letter-spacing: 0.45em; color: #999; font-size: 15px; }
+    .top { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0.5in; font-size: 14px; margin-bottom: 0.35in; }
+    .provider { margin-top: 0.65in; }
+    .provider-row { display: grid; grid-template-columns: 0.75in 1fr; }
+    .title { text-align: right; font-size: 26px; font-weight: 700; margin-bottom: 0.35in; }
+    .meta { display: grid; grid-template-columns: 0.85in 1fr; gap: 0.14in; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #000; padding: 0.12in 0.08in; vertical-align: middle; }
+    th { background: #e9e7de; text-align: left; }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .line-table td { height: 0.65in; }
+    .summary { width: 3.2in; margin-left: auto; margin-top: 0.85in; font-size: 14px; }
+    .fee-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 0.18in; }
+    .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.12in 0.18in; font-size: 20px; font-weight: 700; }
+    .summary-row { display: grid; grid-template-columns: 1fr 1.1in; text-align: right; gap: 0.1in; margin: 0.06in 0; }
+    .pay { display: grid; grid-template-columns: 1fr 1.35in; border: 2px solid #000; margin: 0.22in 0 0.55in; }
+    .pay div { background: #e9e7de; padding: 0.04in 0.08in; font-weight: 700; text-align: center; }
+    .pay div + div { border-left: 1px solid #000; text-align: right; }
+    .pay a { color: #00f; text-decoration: underline; }
+    .sig { margin-top: 0.38in; border-top: 1px solid #000; padding-top: 0.07in; display: flex; justify-content: space-between; font-style: italic; }
+    a { color: #00f; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="brand">
+      <div class="logo">MERAV INTERIORS</div>
+      <div class="byline">BY KATIE ROBERTS</div>
+    </section>
+    <section class="top">
+      <div>
+        <div><strong>Client:</strong><span style="margin-left:0.55in">${escapeHtml(draft.clientName || "Client Name")}</span></div>
+        <div class="provider provider-row">
+          <strong>Provider:</strong>
+          <span>MERAV INTERIORS<br><a href="mailto:katie@meravinteriors.com">katie@meravinteriors.com</a></span>
+        </div>
+      </div>
+      <div>
+        <div class="title">SERVICE INVOICE</div>
+        <div class="meta">
+          <strong>Date:</strong><span>${escapeHtml(formatDateForInvoice(draft.invoiceDate))}</span>
+          <strong>Address:</strong><span>6901 East<br>Sweetwater Avenue<br>Scottsdale, Arizona<br>85254</span>
+        </div>
+      </div>
+    </section>
+    <table class="line-table">
+      <thead>
+        <tr><th colspan="3" class="center">Renovation Design</th></tr>
+        <tr><th style="width:30%">Location</th><th>Description</th><th style="width:18%">Subtotal</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="center"><strong>${escapeHtml(draft.location || "Full Home")}</strong></td>
+          <td class="center">${escapeHtml(draft.description)}</td>
+          <td class="right">${formatMoney(fee)}</td>
+        </tr>
+        <tr><td></td><td></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(fee)}</strong></td></tr>
+      </tbody>
+    </table>
+    <section class="summary">
+      <div class="fee-row"><strong style="font-size:22px">Total Design Fee:</strong><span class="fee-box">${formatMoney(fee)}</span></div>
+      <div class="summary-row"><strong>Paid:</strong><span></span></div>
+      <div class="summary-row"><strong><u>Design Fee Due:</u></strong><strong><u>${formatMoney(fee)}</u></strong></div>
+      ${phaseLines}
+      <div class="pay">
+        <div>${draft.stripeLink ? `<a href="${escapeHtml(draft.stripeLink)}">CLICK HERE TO PAY</a>` : "CLICK HERE TO PAY"}</div>
+        <div>${formatMoney(selectedAmount)}</div>
+      </div>
+      <div class="sig"><span>Authorized by Client</span><span>Date</span></div>
+      <div class="sig"><span>Authorized by MERAV INTERIORS</span><span>Date</span></div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 async function openInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
   if (!pdfDataUrl) return;
   const target = window.open("", "_blank");
@@ -532,6 +993,19 @@ async function openInvoicePdf(pdfDataUrl: string | null, fileName?: string | nul
     }
 
     const blob = await (await fetch(pdfDataUrl)).blob();
+    if (blob.type === "text/html") {
+      const html = await blob.text();
+      if (target) {
+        target.document.open();
+        target.document.write(html);
+        target.document.close();
+      } else {
+        const htmlUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        window.open(htmlUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(htmlUrl), 60_000);
+      }
+      return;
+    }
     const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
     const url = URL.createObjectURL(pdfBlob);
     if (target) {
