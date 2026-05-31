@@ -270,6 +270,8 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
 }) {
   const [open, setOpen] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
+  const [revisionReferenceUrl, setRevisionReferenceUrl] = useState("");
+  const [revisionReferenceName, setRevisionReferenceName] = useState("");
   const [revising, setRevising] = useState(false);
   const version = rendering.revision_number || 1;
   const reviewStatus = rendering.review_status || (rendering.is_approved ? "approved" : "draft");
@@ -302,9 +304,12 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
       await generateRendering(roomId, sketchup, qc, projectId, {
         baseRendering: rendering,
         revisionNotes: notes,
+        revisionReferenceUrl,
         revisionNumber: nextRevisionNumber(renderings),
       });
       setRevisionNotes("");
+      setRevisionReferenceUrl("");
+      setRevisionReferenceName("");
       setOpen(false);
       toast.success("Revision started");
     } finally {
@@ -403,6 +408,14 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
                   onChange={e => setRevisionNotes(e.target.value)}
                   placeholder="Example: make the pendant scale slightly smaller, keep cabinetry and camera angle unchanged, warm up the wall color..."
                   rows={4}
+                />
+                <RevisionReferenceDropzone
+                  imageUrl={revisionReferenceUrl}
+                  fileName={revisionReferenceName}
+                  onChange={(nextUrl, nextName) => {
+                    setRevisionReferenceUrl(nextUrl);
+                    setRevisionReferenceName(nextName);
+                  }}
                 />
                 <button
                   type="button"
@@ -546,6 +559,7 @@ function reviewLabel(status: RenderingReviewStatus) {
 type GenerateOptions = {
   baseRendering?: RoomImage;
   revisionNotes?: string;
+  revisionReferenceUrl?: string;
   revisionNumber?: number;
 };
 
@@ -599,6 +613,7 @@ async function generateRendering(
           "REVISION REQUEST",
           "Create a new version that corrects only the requested issues. Keep unchanged areas as close as possible to the previous rendering and the original SketchUp reference.",
           options.revisionNotes,
+          options.revisionReferenceUrl ? "An additional uploaded reference image is included for the specific material, finish, tile, wallpaper, fabric, or detail described in the notes." : "",
         ].join("\n")
       : "";
     const extraContext = [sk.caption, ctx, revisionContext].filter(Boolean).join("\n\n");
@@ -607,6 +622,7 @@ async function generateRendering(
       body: JSON.stringify({
         sketchupUrl,
         referenceImageUrl: options.baseRendering?.url,
+        referenceImageUrls: options.revisionReferenceUrl ? [options.revisionReferenceUrl] : [],
         extraContext,
       }),
     });
@@ -629,6 +645,62 @@ async function generateRendering(
     qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   }
+}
+
+function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
+  imageUrl: string;
+  fileName: string;
+  onChange: (imageUrl: string, fileName: string) => void;
+}) {
+  const onFile = async (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return toast.error("Please use an image file");
+    if (file.size > 8 * 1024 * 1024) return toast.error("Reference image too large (max 8MB)");
+    const dataUrl = await fileToDataUrl(file);
+    onChange(dataUrl, file.name || "Reference image");
+  };
+
+  return (
+    <div
+      onDragOver={e => e.preventDefault()}
+      onDrop={e => {
+        e.preventDefault();
+        onFile(e.dataTransfer.files?.[0]);
+      }}
+      className="border border-dashed border-border bg-bone/30 p-3"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label className="eyebrow">Optional Reference Image</Label>
+          <p className="text-xs text-muted-foreground mt-1">Drop tile, wallpaper, fabric, or finish inspiration here.</p>
+        </div>
+        <Input className="max-w-[220px]" type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} />
+      </div>
+      {imageUrl && (
+        <div className="mt-3 flex items-center gap-3">
+          <div className="h-20 w-20 bg-background overflow-hidden border border-border">
+            <img src={imageUrl} alt={fileName || "Revision reference"} className="h-full w-full object-cover" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm truncate">{fileName || "Reference image"}</p>
+            <p className="text-xs text-muted-foreground">This will be sent with the revision request.</p>
+          </div>
+          <button type="button" onClick={() => onChange("", "")} className="text-xs underline text-muted-foreground hover:text-ink">
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function buildContext(room: any, project: any, selections: RoomProduct[], materials: Material[]) {

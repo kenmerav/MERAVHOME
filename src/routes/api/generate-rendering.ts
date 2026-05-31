@@ -154,9 +154,10 @@ export const Route = createFileRoute("/api/generate-rendering")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const { sketchupUrl, referenceImageUrl, extraContext } = (await request.json()) as {
+          const { sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = (await request.json()) as {
             sketchupUrl: string;
             referenceImageUrl?: string;
+            referenceImageUrls?: string[];
             extraContext?: string;
           };
           if (!sketchupUrl) return new Response("sketchupUrl is required", { status: 400 });
@@ -169,14 +170,20 @@ export const Route = createFileRoute("/api/generate-rendering")({
           const referenceImage = referenceImageUrl
             ? await urlToImageFile(referenceImageUrl, origin, "previous-rendering")
             : null;
+          const additionalReferenceImages = await Promise.all(
+            (referenceImageUrls ?? []).slice(0, 3).map((url, index) =>
+              urlToImageFile(url, origin, `revision-reference-${index + 1}`),
+            ),
+          );
           const userText = extraContext
-            ? `${RENDERING_PROMPT}\n\nIf a second image is included, use it only as the previous AI rendering reference for the requested revisions. The first uploaded SketchUp image remains the exact architectural source of truth.\n\nAdditional design context:\n${extraContext}`
+            ? `${RENDERING_PROMPT}\n\nIf additional images are included, use them only as references for the requested revision details such as tile, wallpaper, fabric, color, finish, or styling direction. The first uploaded SketchUp image remains the exact architectural source of truth.\n\nAdditional design context:\n${extraContext}`
             : RENDERING_PROMPT;
 
           const form = new FormData();
           form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
           form.append("image", image);
           if (referenceImage) form.append("image", referenceImage);
+          for (const ref of additionalReferenceImages) form.append("image", ref);
           form.append("prompt", userText);
           form.append("size", "1536x1024");
           form.append("quality", "high");
