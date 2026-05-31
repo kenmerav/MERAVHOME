@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { toProductCategory } from "@/lib/roomTemplates";
+import { normalizeMoneyInput } from "@/lib/money";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 
@@ -208,9 +209,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
               finish: row.scraped.finish || row.scraped.color || null,
               sku: row.scraped.sku || null,
               dimensions: row.scraped.dimensions || null,
-              price: row.scraped.price || null,
-              unit_cost: row.scraped.unit_cost || null,
-              shipping: row.scraped.shipping || null,
+              price: normalizeMoneyInput(row.scraped.price),
+              unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
+              shipping: normalizeMoneyInput(row.scraped.shipping),
               description: row.scraped.description || null,
             };
 

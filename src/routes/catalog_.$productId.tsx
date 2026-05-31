@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeMoneyInput } from "@/lib/money";
 
 export const Route = createFileRoute("/catalog_/$productId")({
   head: () => ({ meta: [{ title: "Product — MERAV Studio" }] }),
@@ -62,6 +63,9 @@ function ProductPage() {
 
   const save = async () => {
     if (!form.name.trim()) return toast.error("Product name required");
+    const price = normalizeMoneyInput(form.price);
+    const unit_cost = normalizeMoneyInput(form.unit_cost);
+    const shipping = normalizeMoneyInput(form.shipping);
     await db.updateProduct(productId, {
       ...form,
       name: form.name.trim(),
@@ -72,12 +76,13 @@ function ProductPage() {
       finish: clean(form.finish),
       sku: clean(form.sku),
       dimensions: clean(form.dimensions),
-      price: clean(form.price),
-      unit_cost: clean(form.unit_cost),
-      shipping: clean(form.shipping),
+      price,
+      unit_cost,
+      shipping,
       notes: clean(form.notes),
       description: clean(form.description),
     });
+    setForm((prev) => prev ? { ...prev, price, unit_cost, shipping } : prev);
     qc.invalidateQueries({ queryKey: ["product", productId] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["procurement"] });

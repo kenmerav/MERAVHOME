@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/catalog")({
@@ -116,8 +117,8 @@ function NewProductDialog() {
     if (!f.name.trim()) return toast.error("Name required");
     await db.createProduct({
       name: f.name, vendor: f.vendor || null, product_url: f.product_url || null, image_url: f.image_url || null,
-      finish: f.finish || null, sku: f.sku || null, dimensions: f.dimensions || null, price: f.price || null,
-      unit_cost: f.unit_cost || null, shipping: f.shipping || null, notes: f.notes || null,
+      finish: f.finish || null, sku: f.sku || null, dimensions: f.dimensions || null, price: normalizeMoneyInput(f.price),
+      unit_cost: normalizeMoneyInput(f.unit_cost), shipping: normalizeMoneyInput(f.shipping), notes: f.notes || null,
       category, subcategory: f.subcategory || null,
     });
     qc.invalidateQueries({ queryKey: ["catalog"] });

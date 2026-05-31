@@ -8,7 +8,7 @@ import { Check, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
-import { formatMoney, procurementTotals } from "@/lib/money";
+import { formatMoney, normalizeMoneyInput, procurementTotals } from "@/lib/money";
 
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
@@ -102,7 +102,7 @@ function ProcurementPage() {
   };
 
   const updateProductMoney = async (productId: string, key: "price" | "unit_cost" | "shipping", value: string) => {
-    await db.updateProduct(productId, { [key]: value.trim() || null });
+    await db.updateProduct(productId, { [key]: normalizeMoneyInput(value) });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["product", productId] });
@@ -336,9 +336,10 @@ function EditableMoneyCell({
   }, [editing, value]);
 
   const save = async () => {
-    const next = draft.trim();
+    const next = normalizeMoneyInput(draft) ?? "";
+    const current = normalizeMoneyInput(value) ?? "";
     setEditing(false);
-    if (next === (value || "").trim()) return;
+    if (next === current) return;
     await onSave(next);
   };
 
@@ -354,7 +355,7 @@ function EditableMoneyCell({
         )}
         title={disabled ? undefined : "Click to edit"}
       >
-        {value || "—"}
+        {normalizeMoneyInput(value) || "—"}
       </button>
     );
   }

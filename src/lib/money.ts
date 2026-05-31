@@ -9,6 +9,14 @@ export function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
+export function normalizeMoneyInput(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("$")) return trimmed;
+  if (trimmed.startsWith("-")) return `-$${trimmed.slice(1).trim()}`;
+  return `$${trimmed}`;
+}
+
 export function procurementTotals(items: any[], taxRate: string | number = 0) {
   const money = items.reduce((sum, item) => {
     const product = item.room_product?.product;
