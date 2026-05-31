@@ -98,6 +98,7 @@ export interface Product {
   dimensions: string | null;
   price: string | null;
   unit_cost: string | null;
+  shipping: string | null;
   description: string | null;
   created_at: string;
   updated_at: string;

@@ -23,6 +23,8 @@ type Scraped = {
   sku?: string;
   dimensions?: string;
   price?: string;
+  unit_cost?: string;
+  shipping?: string;
   description?: string;
   error?: string;
 };
@@ -37,6 +39,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       finish: { type: "string" },
       dimensions: { type: "string" },
       price: { type: "string" },
+      unit_cost: { type: "string" },
+      shipping: { type: "string" },
       description: { type: "string" },
       image_url: { type: "string" },
     },
@@ -68,6 +72,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       finish: firstString(ex.finish, ex.color, ex.variant),
       dimensions: firstString(ex.dimensions, ex.size),
       price: firstString(ex.price),
+      unit_cost: firstString(ex.unit_cost),
+      shipping: firstString(ex.shipping),
       description: firstString(ex.description, meta.description, meta.ogDescription),
       image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
     };
@@ -106,7 +112,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             // Catalog dedupe by exact URL
             const { data: existing } = await supabaseAdmin
               .from("products")
-              .select("id, name, vendor, image_url, finish, sku, dimensions, price, description")
+              .select("id, name, vendor, image_url, finish, sku, dimensions, price, unit_cost, shipping, description")
               .eq("product_url", url)
               .maybeSingle();
 
@@ -123,6 +129,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   sku: existing.sku ?? "",
                   dimensions: existing.dimensions ?? "",
                   price: existing.price ?? "",
+                  unit_cost: existing.unit_cost ?? "",
+                  shipping: existing.shipping ?? "",
                   description: existing.description ?? "",
                 },
               });
@@ -186,6 +194,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
               sku: row.scraped.sku || null,
               dimensions: row.scraped.dimensions || null,
               price: row.scraped.price || null,
+              unit_cost: row.scraped.unit_cost || null,
+              shipping: row.scraped.shipping || null,
               description: row.scraped.description || null,
             };
 

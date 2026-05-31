@@ -37,6 +37,8 @@ type ScrapedRow = {
     sku?: string;
     dimensions?: string;
     price?: string;
+    unit_cost?: string;
+    shipping?: string;
     description?: string;
     error?: string;
   };
@@ -520,6 +522,8 @@ function ReviewDialog({
                     <Field label="Finish" value={row.scraped.finish ?? ""} onChange={(v) => update(idx, { finish: v })} />
                     <Field label="Dimensions" value={row.scraped.dimensions ?? ""} onChange={(v) => update(idx, { dimensions: v })} />
                     <Field label="Price" value={row.scraped.price ?? ""} onChange={(v) => update(idx, { price: v })} />
+                    <Field label="Unit Cost" value={row.scraped.unit_cost ?? ""} onChange={(v) => update(idx, { unit_cost: v })} />
+                    <Field label="Shipping" value={row.scraped.shipping ?? ""} onChange={(v) => update(idx, { shipping: v })} />
                     <Field label="Image URL" value={row.scraped.image_url ?? ""} onChange={(v) => update(idx, { image_url: v })} className="sm:col-span-2" />
                     <div className="sm:col-span-2 space-y-1">
                       <Label className="eyebrow text-[10px]">Description</Label>

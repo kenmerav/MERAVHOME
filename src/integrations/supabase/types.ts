@@ -203,6 +203,7 @@ export type Database = {
           notes: string | null
           price: string | null
           product_url: string | null
+          shipping: string | null
           sku: string | null
           subcategory: string | null
           unit_cost: string | null
@@ -221,6 +222,7 @@ export type Database = {
           notes?: string | null
           price?: string | null
           product_url?: string | null
+          shipping?: string | null
           sku?: string | null
           subcategory?: string | null
           unit_cost?: string | null
@@ -239,6 +241,7 @@ export type Database = {
           notes?: string | null
           price?: string | null
           product_url?: string | null
+          shipping?: string | null
           sku?: string | null
           subcategory?: string | null
           unit_cost?: string | null

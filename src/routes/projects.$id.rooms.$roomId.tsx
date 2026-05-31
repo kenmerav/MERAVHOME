@@ -323,13 +323,14 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
   };
 
   const subs = SUBCATEGORIES[category];
-  const [f, setF] = useState({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", notes: "", subcategory: subs[0] });
+  const [f, setF] = useState({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", dimensions: "", price: "", unit_cost: "", shipping: "", notes: "", subcategory: subs[0] });
 
   const createAndAdd = async () => {
     if (!f.name.trim()) return toast.error("Product name required");
     const prod = await db.createProduct({
       name: f.name, vendor: f.vendor || null, product_url: f.product_url || null, image_url: f.image_url || null,
-      finish: f.finish || null, sku: f.sku || null, notes: f.notes || null,
+      finish: f.finish || null, sku: f.sku || null, dimensions: f.dimensions || null, price: f.price || null,
+      unit_cost: f.unit_cost || null, shipping: f.shipping || null, notes: f.notes || null,
       category, subcategory: f.subcategory || null,
     });
     if (!prod) return;
@@ -338,7 +339,7 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     setOpen(false);
-    setF({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", notes: "", subcategory: subs[0] });
+    setF({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", dimensions: "", price: "", unit_cost: "", shipping: "", notes: "", subcategory: subs[0] });
     toast.success("Product created and added");
   };
 
@@ -391,7 +392,7 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
                 <SelectContent>{subs.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            {([["name","Product Name"],["vendor","Vendor"],["product_url","Product URL"],["image_url","Image URL"],["finish","Finish"],["sku","SKU"]] as const).map(([k, l]) => (
+            {([["name","Product Name"],["vendor","Vendor"],["product_url","Product URL"],["image_url","Image URL"],["finish","Finish"],["sku","SKU"],["dimensions","Dimensions"],["price","Client Price"],["unit_cost","Unit Cost"],["shipping","Shipping"]] as const).map(([k, l]) => (
               <div key={k}>
                 <Label className="eyebrow">{l}</Label>
                 <div className="flex gap-2">

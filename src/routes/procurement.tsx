@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db } from "@/lib/db";
 import { Check, ExternalLink } from "lucide-react";
@@ -14,6 +15,13 @@ export const Route = createFileRoute("/procurement")({
 function ProcurementPage() {
   const qc = useQueryClient();
   const [projectFilter, setProjectFilter] = useState("__overall");
+  const [roomFilter, setRoomFilter] = useState("__all");
+  const [categoryFilter, setCategoryFilter] = useState("__all");
+  const [vendorFilter, setVendorFilter] = useState("__all");
+  const [taxRate, setTaxRate] = useState(() => {
+    if (typeof window === "undefined") return "0";
+    return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
+  });
   const { data: items = [] } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
@@ -30,9 +38,49 @@ function ProcurementPage() {
       return a.name.localeCompare(b.name);
     });
   }, [items]);
-  const visibleItems = projectFilter === "__overall"
+  useEffect(() => {
+    window.localStorage.setItem("merav.procurement.taxRate", taxRate);
+  }, [taxRate]);
+
+  const projectItems = projectFilter === "__overall"
     ? items
     : items.filter((item) => item.room_product?.room?.project?.id === projectFilter);
+
+  const roomOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    projectItems.forEach((item) => {
+      const room = item.room_product?.room;
+      if (room?.id && room.name) map.set(room.id, room.name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [projectItems]);
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    projectItems.forEach((item) => {
+      const category = item.room_product?.product?.category;
+      if (category) set.add(category);
+    });
+    return Array.from(set).sort();
+  }, [projectItems]);
+
+  const vendorOptions = useMemo(() => {
+    const set = new Set<string>();
+    projectItems.forEach((item) => {
+      const vendor = item.room_product?.product?.vendor;
+      if (vendor) set.add(vendor);
+    });
+    return Array.from(set).sort();
+  }, [projectItems]);
+
+  const visibleItems = useMemo(() => projectItems.filter((item) => {
+    const product = item.room_product?.product;
+    const room = item.room_product?.room;
+    if (roomFilter !== "__all" && room?.id !== roomFilter) return false;
+    if (categoryFilter !== "__all" && product?.category !== categoryFilter) return false;
+    if (vendorFilter !== "__all" && product?.vendor !== vendorFilter) return false;
+    return true;
+  }), [projectItems, roomFilter, categoryFilter, vendorFilter]);
 
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
     await db.updateProcurement(id, { [key]: value });
@@ -43,6 +91,18 @@ function ProcurementPage() {
   const ordered = visibleItems.filter(i => i.ordered).length;
   const received = visibleItems.filter(i => i.received).length;
   const installed = visibleItems.filter(i => i.installed).length;
+  const money = visibleItems.reduce((sum, item) => {
+    const product = item.room_product?.product;
+    const material = (item as any).material as { quantity: number | null } | null;
+    const qty = material?.quantity && material.quantity > 0 ? material.quantity : 1;
+    return {
+      client: sum.client + moneyValue(product?.price) * qty,
+      cost: sum.cost + moneyValue(product?.unit_cost) * qty,
+      shipping: sum.shipping + moneyValue(product?.shipping) * qty,
+    };
+  }, { client: 0, cost: 0, shipping: 0 });
+  const tax = money.cost * ((Number(taxRate) || 0) / 100);
+  const profit = money.client - money.cost - tax - money.shipping;
 
   return (
     <AppShell>
@@ -53,6 +113,25 @@ function ProcurementPage() {
           <p className="mt-4 text-muted-foreground max-w-xl">
             Everything needed to place an order — product, vendor, link, quantity, color, dimensions, and pricing.
           </p>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <MoneyStat label="Client Cost" value={money.client} />
+          <MoneyStat label="Costs" value={money.cost} />
+          <MoneyStat label="Tax" value={tax}>
+            <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+              Rate
+              <input
+                value={taxRate}
+                onChange={(e) => setTaxRate(e.target.value)}
+                className="h-7 w-16 border border-input bg-background px-2 text-right text-xs text-ink"
+                inputMode="decimal"
+              />
+              %
+            </label>
+          </MoneyStat>
+          <MoneyStat label="Shipping" value={money.shipping} />
+          <MoneyStat label="Profit" value={profit} />
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
@@ -67,7 +146,12 @@ function ProcurementPage() {
             <label className="eyebrow block mb-2">Project</label>
             <select
               value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
+              onChange={(e) => {
+                setProjectFilter(e.target.value);
+                setRoomFilter("__all");
+                setCategoryFilter("__all");
+                setVendorFilter("__all");
+              }}
               className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
             >
               <option value="__overall">Overall · All Projects</option>
@@ -78,8 +162,26 @@ function ProcurementPage() {
               ))}
             </select>
           </div>
-          <div className="text-xs text-muted-foreground pb-2">
-            Room, category, and vendor filters are next; this starts procurement as project-based with an overall view.
+          <div className="min-w-[200px]">
+            <label className="eyebrow block mb-2">Room</label>
+            <select value={roomFilter} onChange={(e) => setRoomFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
+              <option value="__all">All Rooms</option>
+              {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[200px]">
+            <label className="eyebrow block mb-2">Category</label>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
+              <option value="__all">All Categories</option>
+              {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[220px]">
+            <label className="eyebrow block mb-2">Vendor</label>
+            <select value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
+              <option value="__all">All Vendors</option>
+              {vendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
+            </select>
           </div>
         </div>
 
@@ -95,6 +197,7 @@ function ProcurementPage() {
                 <th className="px-3 py-3">Dimensions</th>
                 <th className="px-3 py-3 text-right">Client Price</th>
                 <th className="px-3 py-3 text-right">Unit Cost</th>
+                <th className="px-3 py-3 text-right">Shipping</th>
                 <th className="px-3 py-3">Project · Room</th>
                 <th className="px-3 py-3 text-center w-[70px]">Ordered</th>
                 <th className="px-3 py-3 text-center w-[70px]">Received</th>
@@ -103,7 +206,7 @@ function ProcurementPage() {
             </thead>
             <tbody>
               {visibleItems.length === 0 && (
-                <tr><td colSpan={12} className="py-20 text-center text-sm text-muted-foreground">
+                <tr><td colSpan={13} className="py-20 text-center text-sm text-muted-foreground">
                   No procurement items for this view yet. Add products to a room to populate.
                 </td></tr>
               )}
@@ -141,6 +244,7 @@ function ProcurementPage() {
                     <td className="px-3 py-3 text-xs">{p?.dimensions || "—"}</td>
                     <td className="px-3 py-3 text-right text-xs">{p?.price || "—"}</td>
                     <td className="px-3 py-3 text-right text-xs">{p?.unit_cost || "—"}</td>
+                    <td className="px-3 py-3 text-right text-xs">{p?.shipping || "—"}</td>
                     <td className="px-3 py-3 text-xs text-muted-foreground">
                       <div className="truncate max-w-[140px]">{r?.project?.name}</div>
                       <div className="text-ink truncate max-w-[140px]">{r?.name}</div>
@@ -168,6 +272,26 @@ function ProcurementPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function moneyValue(value?: string | null) {
+  if (!value) return 0;
+  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+function MoneyStat({ label, value, children }: { label: string; value: number; children?: ReactNode }) {
+  return (
+    <div className="border border-border p-5">
+      <div className="eyebrow mb-2">{label}</div>
+      <div className="font-display text-3xl">{formatMoney(value)}</div>
+      {children}
+    </div>
   );
 }
 
