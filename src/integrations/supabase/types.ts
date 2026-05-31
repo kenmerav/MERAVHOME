@@ -373,6 +373,7 @@ export type Database = {
           id: string
           key_design_elements: string | null
           name: string
+          project_label: string | null
           project_summary: string | null
           project_type: Database["public"]["Enums"]["project_type"]
           status: Database["public"]["Enums"]["project_status"]
@@ -387,6 +388,7 @@ export type Database = {
           id?: string
           key_design_elements?: string | null
           name: string
+          project_label?: string | null
           project_summary?: string | null
           project_type: Database["public"]["Enums"]["project_type"]
           status?: Database["public"]["Enums"]["project_status"]
@@ -401,6 +403,7 @@ export type Database = {
           id?: string
           key_design_elements?: string | null
           name?: string
+          project_label?: string | null
           project_summary?: string | null
           project_type?: Database["public"]["Enums"]["project_type"]
           status?: Database["public"]["Enums"]["project_status"]

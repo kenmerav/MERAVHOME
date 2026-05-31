@@ -74,7 +74,7 @@ function ProjectsListPage() {
               </div>
               <div className="min-w-0">
                 <h3 className="font-display text-xl sm:text-2xl leading-tight">{p.name}</h3>
-                <div className="eyebrow mt-1">{p.project_type}<span className="lg:hidden"> · {p.client_name}</span></div>
+                <div className="eyebrow mt-1">{p.project_label || p.project_type}<span className="lg:hidden"> · {p.client_name}</span></div>
               </div>
               <div className="hidden lg:block text-sm text-muted-foreground">{p.client_name}</div>
               <div className="hidden lg:block"><StatusBadge status={p.status} /></div>

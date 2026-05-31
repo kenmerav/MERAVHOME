@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, PROJECT_STATUSES, WORKFLOW_STAGES, type ProjectStatus } from "@/lib/db";
+import { db, PROJECT_LABELS, PROJECT_STATUSES, WORKFLOW_STAGES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -77,6 +77,12 @@ function ProjectDetailPage() {
     qc.invalidateQueries({ queryKey: ["projects"] });
   };
 
+  const setProjectLabel = async (label: string) => {
+    await db.updateProject(id, { project_label: label === "none" ? null : label as ProjectLabel });
+    qc.invalidateQueries({ queryKey: ["project", id] });
+    qc.invalidateQueries({ queryKey: ["projects"] });
+  };
+
   return (
     <AppShell>
       <div className="page-pad max-w-[1500px]">
@@ -102,6 +108,13 @@ function ProjectDetailPage() {
               <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {PROJECT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={project.project_label ?? "none"} onValueChange={setProjectLabel}>
+              <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Project label" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No label</SelectItem>
+                {PROJECT_LABELS.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
               </SelectContent>
             </Select>
             <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
@@ -157,7 +170,7 @@ function ProjectDetailPage() {
         )}
 
         {/* Project-level concept */}
-        <div className="mt-20 pt-12 border-t border-border grid lg:grid-cols-3 gap-12">
+        <div className="mt-20 pt-12 border-t border-border grid md:grid-cols-2 lg:grid-cols-4 gap-12">
           <div>
             <div className="eyebrow mb-2">Client</div>
             <p className="font-display text-2xl">{project.client_name}</p>
@@ -165,6 +178,10 @@ function ProjectDetailPage() {
           <div>
             <div className="eyebrow mb-2">Status</div>
             <StatusBadge status={project.status} />
+          </div>
+          <div>
+            <div className="eyebrow mb-2">Project Label</div>
+            <p className="font-display text-2xl">{project.project_label || "Unlabeled"}</p>
           </div>
           <div>
             <div className="eyebrow mb-2">Design Notes</div>

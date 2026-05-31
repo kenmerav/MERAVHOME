@@ -78,7 +78,7 @@ function ProjectCard({ p }: { p: Project }) {
       </div>
       <div className="flex items-baseline justify-between gap-4">
         <div className="min-w-0">
-          <div className="eyebrow mb-1.5">{p.project_type}</div>
+          <div className="eyebrow mb-1.5">{p.project_label || p.project_type}</div>
           <h3 className="font-display text-2xl leading-tight truncate">{p.name}</h3>
           <p className="text-sm text-muted-foreground mt-1">{p.client_name}</p>
         </div>

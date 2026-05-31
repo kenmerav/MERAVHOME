@@ -13,7 +13,22 @@ export const Route = createFileRoute("/financials")({
   component: FinancialsOverviewPage,
 });
 
+type DateRangePreset = "all" | "ytd" | "q1" | "q2" | "q3" | "q4" | "last30" | "last60" | "last90";
+
+const DATE_RANGE_OPTIONS: Array<{ value: DateRangePreset; label: string }> = [
+  { value: "all", label: "All Time" },
+  { value: "ytd", label: "YTD" },
+  { value: "q1", label: "Q1" },
+  { value: "q2", label: "Q2" },
+  { value: "q3", label: "Q3" },
+  { value: "q4", label: "Q4" },
+  { value: "last30", label: "Last 30" },
+  { value: "last60", label: "Last 60" },
+  { value: "last90", label: "Last 90" },
+];
+
 function FinancialsOverviewPage() {
+  const [dateRange, setDateRange] = useState<DateRangePreset>("all");
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -44,15 +59,19 @@ function FinancialsOverviewPage() {
     enabled: allowed,
   });
 
+  const selectedRange = useMemo(() => getDateRange(dateRange), [dateRange]);
+
   const rows = useMemo(() => {
     return projects.map((project) => {
       const projectInvoices = invoices.filter((invoice) => invoice.project_id === project.id);
-      const payments = projectInvoices.flatMap((invoice) => invoice.payments ?? []);
+      const payments = projectInvoices.flatMap((invoice) =>
+        (invoice.payments ?? []).filter((payment) => isInDateRange(payment.due_date || invoice.invoice_date || invoice.created_at, selectedRange)),
+      );
       const paid = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       const due = payments.filter((payment) => payment.status !== "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       const revenue = paid + due;
       const procurement = procurementTotals(
-        procurementItems.filter((item) => item.room_product?.room?.project?.id === project.id),
+        procurementItems.filter((item) => item.room_product?.room?.project?.id === project.id && isInDateRange(item.updated_at, selectedRange)),
         taxRate,
       );
       return {
@@ -62,10 +81,10 @@ function FinancialsOverviewPage() {
         due,
         procurementProfit: procurement.profit,
         totalProfit: revenue + procurement.profit,
-        invoiceCount: projectInvoices.length,
+        invoiceCount: projectInvoices.filter((invoice) => isInDateRange(invoice.invoice_date || invoice.created_at, selectedRange)).length,
       };
     }).sort((a, b) => b.totalProfit - a.totalProfit);
-  }, [invoices, procurementItems, projects, taxRate]);
+  }, [invoices, procurementItems, projects, selectedRange, taxRate]);
 
   const totals = useMemo(() => rows.reduce((sum, row) => ({
     revenue: sum.revenue + row.revenue,
@@ -104,6 +123,21 @@ function FinancialsOverviewPage() {
           </p>
         </div>
 
+        <div className="mb-8 flex flex-wrap gap-2">
+          {DATE_RANGE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setDateRange(option.value)}
+              className={`px-4 py-2 text-[10px] tracking-[0.18em] uppercase border transition-colors ${
+                dateRange === option.value ? "bg-ink text-primary-foreground border-ink" : "border-border text-muted-foreground hover:bg-bone"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
           <MoneyStat label="Revenue" value={totals.revenue} />
           <MoneyStat label="Paid" value={totals.paid} />
@@ -117,6 +151,7 @@ function FinancialsOverviewPage() {
             <thead>
               <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border bg-bone/30">
                 <th className="px-4 py-3 min-w-[260px]">Project</th>
+                <th className="px-4 py-3 min-w-[170px]">Label</th>
                 <th className="px-4 py-3 text-right">Revenue</th>
                 <th className="px-4 py-3 text-right">Paid</th>
                 <th className="px-4 py-3 text-right">Due</th>
@@ -129,7 +164,7 @@ function FinancialsOverviewPage() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-20 text-center text-sm text-muted-foreground">
+                  <td colSpan={9} className="py-20 text-center text-sm text-muted-foreground">
                     No financial data yet. Upload project invoices to start tracking revenue.
                   </td>
                 </tr>
@@ -142,6 +177,7 @@ function FinancialsOverviewPage() {
                       {row.project.client_name} · {row.project.status}
                     </div>
                   </td>
+                  <td className="px-4 py-4 text-sm text-muted-foreground">{row.project.project_label || "Unlabeled"}</td>
                   <td className="px-4 py-4 text-right">{formatMoney(row.revenue)}</td>
                   <td className="px-4 py-4 text-right">{formatMoney(row.paid)}</td>
                   <td className="px-4 py-4 text-right">{formatMoney(row.due)}</td>
@@ -161,6 +197,45 @@ function FinancialsOverviewPage() {
       </div>
     </AppShell>
   );
+}
+
+function getDateRange(preset: DateRangePreset) {
+  if (preset === "all") return null;
+
+  const today = new Date();
+  const year = today.getFullYear();
+  const end = endOfDay(today);
+
+  if (preset === "ytd") return { start: new Date(year, 0, 1), end };
+  if (preset === "q1") return { start: new Date(year, 0, 1), end: endOfDay(new Date(year, 2, 31)) };
+  if (preset === "q2") return { start: new Date(year, 3, 1), end: endOfDay(new Date(year, 5, 30)) };
+  if (preset === "q3") return { start: new Date(year, 6, 1), end: endOfDay(new Date(year, 8, 30)) };
+  if (preset === "q4") return { start: new Date(year, 9, 1), end: endOfDay(new Date(year, 11, 31)) };
+
+  const days = preset === "last30" ? 30 : preset === "last60" ? 60 : 90;
+  const start = new Date(today);
+  start.setDate(today.getDate() - days);
+  return { start: startOfDay(start), end };
+}
+
+function isInDateRange(value: string | null | undefined, range: ReturnType<typeof getDateRange>) {
+  if (!range) return true;
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= range.start && date <= range.end;
+}
+
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
 }
 
 function MoneyStat({ label, value }: { label: string; value: number }) {

@@ -3,12 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 export type ProjectStatus = "Design" | "Presentation" | "Approved" | "Procurement" | "Complete";
 export type UserRole = "Admin" | "Employee" | "Contractor" | "Client";
 export type ProjectType = "Kitchen" | "Bathroom" | "Whole Home" | "New Build" | "Furnishings" | "Commercial";
+export type ProjectLabel = "Personal Home" | "Investor Renovation" | "Spec Build" | "D4D";
 export type ProductCategory = "Lighting" | "Plumbing" | "Hardware" | "Appliances" | "Flooring" | "Tile" | "Paint" | "Furniture" | "Decor";
 export type MaterialCategory = "Cabinet Finish" | "Countertop" | "Flooring" | "Tile" | "Fabric" | "Paint";
 
 export const PRODUCT_CATEGORIES: ProductCategory[] = ["Lighting","Plumbing","Hardware","Appliances","Flooring","Tile","Paint","Furniture","Decor"];
 export const MATERIAL_CATEGORIES: MaterialCategory[] = ["Cabinet Finish","Countertop","Flooring","Tile","Fabric","Paint"];
 export const PROJECT_TYPES: ProjectType[] = ["Kitchen","Bathroom","Whole Home","New Build","Furnishings","Commercial"];
+export const PROJECT_LABELS: ProjectLabel[] = ["Personal Home","Investor Renovation","Spec Build","D4D"];
 export const PROJECT_STATUSES: ProjectStatus[] = ["Design","Presentation","Approved","Procurement","Complete"];
 
 // Subcategories per the product spec
@@ -41,6 +43,7 @@ export interface Project {
   name: string;
   client_name: string;
   project_type: ProjectType;
+  project_label: ProjectLabel | null;
   status: ProjectStatus;
   design_notes: string | null;
   cover_image_url: string | null;
@@ -135,6 +138,7 @@ export interface ProcurementItem {
   received: boolean;
   installed: boolean;
   notes: string | null;
+  updated_at: string;
 }
 
 export interface MaterialItem {
