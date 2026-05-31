@@ -799,7 +799,7 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
           <img src={rendering.url} alt="" className="w-full" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">

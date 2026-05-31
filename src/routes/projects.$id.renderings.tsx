@@ -350,7 +350,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
             <DialogTrigger asChild>
               <button title="View" className="bg-background/95 p-1.5"><Eye className="w-3 h-3" /></button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl">
+            <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
               <img src={rendering.url} alt="" className="w-full" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
