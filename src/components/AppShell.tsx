@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
+import { canViewProcurement } from "@/lib/permissions";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
@@ -57,6 +58,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [navigate]);
 
+  useEffect(() => {
+    if (!loadingAuth && loc.pathname.startsWith("/procurement") && !canViewProcurement(profile)) {
+      navigate({ to: "/" });
+    }
+  }, [loadingAuth, loc.pathname, navigate, profile]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
     navigate({ to: "/login" });
@@ -82,6 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="flex-1 px-3 space-y-0.5">
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !profile?.is_owner) return null;
+            if (to === "/procurement" && !canViewProcurement(profile)) return null;
             const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
             return (
               <Link

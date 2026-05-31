@@ -6,6 +6,8 @@ import { AppShell } from "@/components/AppShell";
 import { db } from "@/lib/db";
 import { Check, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { canViewProcurement } from "@/lib/permissions";
 
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
@@ -22,13 +24,24 @@ function ProcurementPage() {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
   });
-  const { data: items = [] } = useQuery({
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ["currentProfile"],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) return null;
+      return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
+    },
+  });
+  const allowed = canViewProcurement(profile);
+  const { data: procurementItems = [] } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
+    enabled: allowed,
   });
   const projectOptions = useMemo(() => {
     const map = new Map<string, { id: string; name: string; client_name: string; status: string }>();
-    items.forEach((item) => {
+    procurementItems.forEach((item) => {
       const project = item.room_product?.room?.project;
       if (project?.id) map.set(project.id, project);
     });
@@ -37,14 +50,14 @@ function ProcurementPage() {
       if (a.status !== "Complete" && b.status === "Complete") return -1;
       return a.name.localeCompare(b.name);
     });
-  }, [items]);
+  }, [procurementItems]);
   useEffect(() => {
     window.localStorage.setItem("merav.procurement.taxRate", taxRate);
   }, [taxRate]);
 
   const projectItems = projectFilter === "__overall"
-    ? items
-    : items.filter((item) => item.room_product?.room?.project?.id === projectFilter);
+    ? procurementItems
+    : procurementItems.filter((item) => item.room_product?.room?.project?.id === projectFilter);
 
   const roomOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -110,6 +123,24 @@ function ProcurementPage() {
   }, { client: 0, cost: 0, shipping: 0 });
   const tax = money.cost * ((Number(taxRate) || 0) / 100);
   const profit = money.client - money.cost - tax - money.shipping;
+
+  if (loadingProfile) {
+    return <AppShell><div className="p-16 text-muted-foreground">Checking access...</div></AppShell>;
+  }
+
+  if (!allowed) {
+    return (
+      <AppShell>
+        <div className="px-8 lg:px-16 py-16 max-w-[900px]">
+          <div className="eyebrow mb-3">Restricted</div>
+          <h1 className="editorial-hero text-5xl lg:text-6xl">Procurement</h1>
+          <p className="mt-4 text-muted-foreground max-w-xl">
+            Procurement is currently available only to Ken and Katie.
+          </p>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
