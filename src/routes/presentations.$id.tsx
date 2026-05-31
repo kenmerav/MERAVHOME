@@ -278,10 +278,10 @@ function BrandCover({ project, roomCount }: { project: any; roomCount?: number }
         <div className="mt-7 text-[#9b9793] uppercase tracking-[0.42em] text-[clamp(1.05rem,2vw,2.25rem)] font-light">
           By Katie Roberts
         </div>
-        <div className="mt-20 text-ink uppercase tracking-[0.12em] text-[clamp(2rem,4.4vw,4.75rem)] font-light leading-tight">
+        <div className="mt-20 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(2rem,4.4vw,4.75rem)] font-light leading-tight">
           {project.name}
         </div>
-        <div className="mt-6 text-ink uppercase tracking-[0.28em] text-[clamp(1rem,1.9vw,2rem)] font-light">
+        <div className="mt-6 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(1rem,1.9vw,2rem)] font-light">
           Conceptual Design
         </div>
         {roomCount != null && (
