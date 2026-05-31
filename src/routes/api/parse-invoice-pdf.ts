@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { PDFParse } from "pdf-parse";
+import pdfWorkerSource from "pdfjs-dist/legacy/build/pdf.worker.mjs?raw";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -138,6 +139,7 @@ export const Route = createFileRoute("/api/parse-invoice-pdf")({
           const data = dataUrlToBuffer(file_data_url);
           ensurePdfJsGlobals();
           const { PDFParse } = await import("pdf-parse");
+          PDFParse.setWorker(`data:text/javascript;base64,${Buffer.from(pdfWorkerSource).toString("base64")}`);
           parser = new PDFParse({ data });
           const result = await parser.getText();
           const parsed = parseInvoiceText(result.text);
