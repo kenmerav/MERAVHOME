@@ -275,9 +275,9 @@ function InvoiceCard({ invoice, onStatus }: { invoice: FinancialInvoice; onStatu
           </p>
         </div>
         {invoice.pdf_data_url && (
-          <a href={invoice.pdf_data_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+          <button type="button" onClick={() => openInvoicePdf(invoice.pdf_data_url, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
             <FileText className="w-4 h-4" /> PDF
-          </a>
+          </button>
         )}
       </div>
       <PaymentTable payments={payments} onStatus={onStatus} />
@@ -376,4 +376,30 @@ function readFile(file: File) {
 function numberValue(value: string) {
   const parsed = Number(value.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function openInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
+  if (!pdfDataUrl) return;
+  const target = window.open("", "_blank", "noopener,noreferrer");
+  try {
+    if (!pdfDataUrl.startsWith("data:")) {
+      if (target) target.location.href = pdfDataUrl;
+      else window.open(pdfDataUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const blob = await (await fetch(pdfDataUrl)).blob();
+    const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+    const url = URL.createObjectURL(pdfBlob);
+    if (target) {
+      target.document.title = fileName || "Invoice PDF";
+      target.location.href = url;
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    if (target) target.close();
+    toast.error("Could not open invoice PDF.");
+  }
 }
