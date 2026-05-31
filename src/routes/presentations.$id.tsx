@@ -219,14 +219,7 @@ function PresentationPage() {
         </div>
 
         <div className="hidden print:flex print-page min-h-[9.5in] flex-col justify-between p-12">
-          <div className="eyebrow">MERAV Studio · Presentation</div>
-          <div>
-            <div className="eyebrow text-xs">{project.client_name}</div>
-            <h1 className="editorial-hero text-7xl mt-4">{project.name}</h1>
-          </div>
-          <div className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
-            {new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
-          </div>
+          <BrandCover project={project} />
         </div>
 
         <div className="mb-10 print:hidden">
@@ -242,6 +235,9 @@ function PresentationPage() {
         </div>
 
         <div className="space-y-12 print:space-y-0">
+          <section className="print:hidden bg-white border border-border min-h-[72vh]">
+            <BrandCover project={project} />
+          </section>
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
           {roomData.map(({ room, data }) =>
             data.views.map((view, vi) => (
@@ -266,15 +262,33 @@ function PresentationPage() {
 
 function CoverSlide({ project, roomCount }: { project: any; roomCount: number }) {
   return (
-    <div className="w-full h-full flex flex-col justify-between p-16 lg:p-24">
-      <div className="eyebrow">MERAV Studio · Presentation</div>
-      <div>
-        <div className="eyebrow text-xs mb-4">{project.client_name}</div>
-        <h1 className="editorial-hero text-6xl lg:text-9xl">{project.name}</h1>
-        <p className="mt-8 text-muted-foreground">{roomCount} {roomCount === 1 ? "room" : "rooms"}</p>
-      </div>
-      <div className="text-xs tracking-[0.2em] uppercase text-muted-foreground">
-        {new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+    <div className="w-full h-full">
+      <BrandCover project={project} roomCount={roomCount} />
+    </div>
+  );
+}
+
+function BrandCover({ project, roomCount }: { project: any; roomCount?: number }) {
+  return (
+    <div className="w-full h-full min-h-[inherit] flex items-center justify-center bg-white px-8 py-20 text-center">
+      <div className="w-full">
+        <div className="font-display text-ink uppercase leading-none tracking-[-0.075em] text-[clamp(4rem,11vw,12rem)] whitespace-nowrap">
+          MERAV INTERIORS
+        </div>
+        <div className="mt-7 text-[#9b9793] uppercase tracking-[0.42em] text-[clamp(1.05rem,2vw,2.25rem)] font-light">
+          By Katie Roberts
+        </div>
+        <div className="mt-20 text-ink uppercase tracking-[0.12em] text-[clamp(2rem,4.4vw,4.75rem)] font-light leading-tight">
+          {project.name}
+        </div>
+        <div className="mt-6 text-ink uppercase tracking-[0.28em] text-[clamp(1rem,1.9vw,2rem)] font-light">
+          Conceptual Design
+        </div>
+        {roomCount != null && (
+          <div className="mt-8 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            {roomCount} {roomCount === 1 ? "room" : "rooms"}
+          </div>
+        )}
       </div>
     </div>
   );
