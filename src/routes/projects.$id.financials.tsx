@@ -39,6 +39,7 @@ function FinancialsPage() {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+  const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [review, setReview] = useState<ReviewInvoice | null>(null);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
@@ -173,6 +174,19 @@ function FinancialsPage() {
     qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
   };
 
+  const updateSavedPayment = async (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => {
+    setSavingPaymentId(payment.id);
+    try {
+      await db.updateFinancialPayment(payment.id, patch);
+      qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Could not update payment.");
+    } finally {
+      setSavingPaymentId(null);
+    }
+  };
+
   const deleteInvoice = async (invoice: FinancialInvoice) => {
     const label = invoice.file_name || "this invoice";
     if (!window.confirm(`Delete ${label} and all of its payment lines? This cannot be undone.`)) return;
@@ -271,7 +285,15 @@ function FinancialsPage() {
               No invoices yet. Upload the first invoice PDF to start tracking payment lines.
             </div>
           ) : invoices.map((invoice) => (
-            <InvoiceCard key={invoice.id} invoice={invoice} onStatus={updatePaymentStatus} onDelete={deleteInvoice} deleting={deletingInvoiceId === invoice.id} />
+            <InvoiceCard
+              key={invoice.id}
+              invoice={invoice}
+              onStatus={updatePaymentStatus}
+              onPaymentUpdate={updateSavedPayment}
+              savingPaymentId={savingPaymentId}
+              onDelete={deleteInvoice}
+              deleting={deletingInvoiceId === invoice.id}
+            />
           ))}
         </div>
       </div>
@@ -282,11 +304,15 @@ function FinancialsPage() {
 function InvoiceCard({
   invoice,
   onStatus,
+  onPaymentUpdate,
+  savingPaymentId,
   onDelete,
   deleting,
 }: {
   invoice: FinancialInvoice;
   onStatus: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void;
+  onPaymentUpdate: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
+  savingPaymentId?: string | null;
   onDelete: (invoice: FinancialInvoice) => void;
   deleting?: boolean;
 }) {
@@ -312,7 +338,7 @@ function InvoiceCard({
           </button>
         </div>
       </div>
-      <PaymentTable payments={payments} onStatus={onStatus} />
+      <PaymentTable payments={payments} onStatus={onStatus} onSavedPaymentChange={onPaymentUpdate} savingPaymentId={savingPaymentId} />
     </section>
   );
 }
@@ -323,12 +349,16 @@ function PaymentTable({
   onChange,
   onRemove,
   onStatus,
+  onSavedPaymentChange,
+  savingPaymentId,
 }: {
   payments: ReviewPayment[] | FinancialInvoicePayment[];
   editable?: boolean;
   onChange?: (index: number, patch: Partial<ReviewPayment>) => void;
   onRemove?: (index: number) => void;
   onStatus?: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void;
+  onSavedPaymentChange?: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
+  savingPaymentId?: string | null;
 }) {
   return (
     <div className="mobile-card-scroll">
@@ -349,10 +379,18 @@ function PaymentTable({
                 {editable ? <Input value={payment.label} onChange={(e) => onChange?.(index, { label: e.target.value })} /> : payment.label}
               </td>
               <td className="py-3 px-4 text-right min-w-[150px]">
-                {editable ? <Input value={String(payment.amount ?? "")} onChange={(e) => onChange?.(index, { amount: numberValue(e.target.value) ?? 0 })} className="text-right" /> : formatMoney(Number(payment.amount || 0))}
+                {editable ? (
+                  <Input value={String(payment.amount ?? "")} onChange={(e) => onChange?.(index, { amount: numberValue(e.target.value) ?? 0 })} className="text-right" />
+                ) : (
+                  <EditableMoneyCell payment={payment as FinancialInvoicePayment} saving={savingPaymentId === (payment as FinancialInvoicePayment).id} onSave={onSavedPaymentChange} />
+                )}
               </td>
               <td className="py-3 px-4 min-w-[160px]">
-                {editable ? <Input type="date" value={payment.due_date ?? ""} onChange={(e) => onChange?.(index, { due_date: e.target.value || null })} /> : payment.due_date || "TBD"}
+                {editable ? (
+                  <Input type="date" value={payment.due_date ?? ""} onChange={(e) => onChange?.(index, { due_date: e.target.value || null })} />
+                ) : (
+                  <EditableDateCell payment={payment as FinancialInvoicePayment} saving={savingPaymentId === (payment as FinancialInvoicePayment).id} onSave={onSavedPaymentChange} />
+                )}
               </td>
               <td className="py-3 px-4 min-w-[150px]">
                 <select
@@ -375,6 +413,78 @@ function PaymentTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function EditableMoneyCell({
+  payment,
+  saving,
+  onSave,
+}: {
+  payment: FinancialInvoicePayment;
+  saving?: boolean;
+  onSave?: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
+}) {
+  const [value, setValue] = useState(formatMoney(Number(payment.amount || 0)));
+
+  const save = () => {
+    const amount = numberValue(value) ?? 0;
+    setValue(formatMoney(amount));
+    if (amount !== Number(payment.amount || 0)) onSave?.(payment, { amount });
+  };
+
+  return (
+    <Input
+      value={value}
+      disabled={saving}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={save}
+      onFocus={() => setValue(String(payment.amount ?? ""))}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setValue(formatMoney(Number(payment.amount || 0)));
+          e.currentTarget.blur();
+        }
+      }}
+      className="text-right"
+      aria-label={`Amount for ${payment.label}`}
+    />
+  );
+}
+
+function EditableDateCell({
+  payment,
+  saving,
+  onSave,
+}: {
+  payment: FinancialInvoicePayment;
+  saving?: boolean;
+  onSave?: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
+}) {
+  const [value, setValue] = useState(payment.due_date ?? "");
+
+  const save = () => {
+    const due_date = value || null;
+    if (due_date !== payment.due_date) onSave?.(payment, { due_date });
+  };
+
+  return (
+    <Input
+      type="date"
+      value={value}
+      disabled={saving}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setValue(payment.due_date ?? "");
+          e.currentTarget.blur();
+        }
+      }}
+      aria-label={`Due date for ${payment.label}`}
+    />
   );
 }
 
