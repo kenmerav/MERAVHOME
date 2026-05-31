@@ -1,11 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PROJECT_STATUSES, WORKFLOW_STAGES, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +31,7 @@ export const Route = createFileRoute("/projects/$id/")({
 function ProjectDetailPage() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
@@ -101,6 +111,16 @@ function ProjectDetailPage() {
             <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
               <LayoutTemplate className="w-4 h-4" /> Presentation
             </Link>
+            {profile?.is_owner && profile.role === "Admin" && (
+              <DeleteProjectDialog
+                projectId={id}
+                projectName={project.name}
+                onDeleted={async () => {
+                  qc.invalidateQueries({ queryKey: ["projects"] });
+                  await navigate({ to: "/projects" });
+                }}
+              />
+            )}
 
           </div>
         </div>
@@ -146,6 +166,82 @@ function ProjectDetailPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function DeleteProjectDialog({
+  projectId,
+  projectName,
+  onDeleted,
+}: {
+  projectId: string;
+  projectName: string;
+  onDeleted: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const canDelete = confirmName.trim() === projectName;
+
+  const deleteProject = async () => {
+    if (!canDelete) return;
+    setDeleting(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch("/api/projects", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Unable to delete project.");
+      toast.success("Project deleted");
+      setOpen(false);
+      await onDeleted();
+    } catch (e: any) {
+      toast.error(e?.message || "Unable to delete project.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setConfirmName(""); }}>
+      <AlertDialogTrigger asChild>
+        <button className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-destructive/40 text-destructive text-sm hover:bg-destructive hover:text-destructive-foreground transition-colors">
+          <Trash2 className="w-4 h-4" /> Delete
+        </button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="font-display text-2xl font-normal">Delete this project?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the project, rooms, renderings, material checklist, selections, procurement links, and financial invoices. The global product catalog will stay intact.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-3">
+          <Label className="eyebrow">Type project name to confirm</Label>
+          <Input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={projectName} />
+        </div>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <button type="button" onClick={() => setOpen(false)} className="px-5 py-2.5 border border-border text-sm">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={deleteProject}
+            disabled={!canDelete || deleting}
+            className="px-5 py-2.5 bg-destructive text-destructive-foreground text-sm disabled:opacity-50"
+          >
+            {deleting ? "Deleting..." : "Delete project"}
+          </button>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

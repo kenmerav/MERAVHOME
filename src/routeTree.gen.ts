@@ -25,6 +25,7 @@ import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$product
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
+import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
@@ -114,6 +115,11 @@ const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
   path: '/api/scrape-materials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProjectsRoute = ApiProjectsRouteImport.update({
+  id: '/api/projects',
+  path: '/api/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
   id: '/api/parse-invoice-pdf',
   path: '/api/parse-invoice-pdf',
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
+  '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
@@ -190,6 +197,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
+  '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
@@ -217,6 +225,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
+  '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/users': typeof ApiUsersRoute
@@ -245,6 +254,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
+    | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
@@ -271,6 +281,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
+    | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
@@ -297,6 +308,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
+    | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/users'
@@ -324,6 +336,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
+  ApiProjectsRoute: typeof ApiProjectsRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiUsersRoute: typeof ApiUsersRoute
@@ -456,6 +469,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiScrapeMaterialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/projects': {
+      id: '/api/projects'
+      path: '/api/projects'
+      fullPath: '/api/projects'
+      preLoaderRoute: typeof ApiProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/parse-invoice-pdf': {
       id: '/api/parse-invoice-pdf'
       path: '/api/parse-invoice-pdf'
@@ -524,6 +544,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
+  ApiProjectsRoute: ApiProjectsRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiUsersRoute: ApiUsersRoute,
