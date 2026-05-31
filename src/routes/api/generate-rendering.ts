@@ -181,9 +181,9 @@ export const Route = createFileRoute("/api/generate-rendering")({
 
           const form = new FormData();
           form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
-          form.append("image", image);
-          if (referenceImage) form.append("image", referenceImage);
-          for (const ref of additionalReferenceImages) form.append("image", ref);
+          const imageInputs = [image, referenceImage, ...additionalReferenceImages].filter(Boolean) as File[];
+          const imageField = imageInputs.length > 1 ? "image[]" : "image";
+          for (const img of imageInputs) form.append(imageField, img);
           form.append("prompt", userText);
           form.append("size", "1536x1024");
           form.append("quality", "high");
