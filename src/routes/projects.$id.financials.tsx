@@ -380,7 +380,8 @@ function numberValue(value: string) {
 
 async function openInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
   if (!pdfDataUrl) return;
-  const target = window.open("", "_blank", "noopener,noreferrer");
+  const target = window.open("", "_blank");
+  if (target) target.opener = null;
   try {
     if (!pdfDataUrl.startsWith("data:")) {
       if (target) target.location.href = pdfDataUrl;
