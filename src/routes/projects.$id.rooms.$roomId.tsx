@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { normalizeMoneyInput } from "@/lib/money";
+import { compressImageSource, fileToCompressedDataUrl } from "@/lib/imagePayload";
 import { toast } from "sonner";
 
 async function scrapeProductUrl(url: string) {
@@ -516,16 +517,17 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
     setGeneratingId(sk.id);
     try {
       const resolvedUrl = resolveImage(sk.url);
-      let sketchupUrl = resolvedUrl || sk.url;
+      let sketchupUrl = await compressImageSource(resolvedUrl || sk.url);
       if (sk.url?.startsWith("/src-assets/") && resolvedUrl) {
         const blob = await (await fetch(resolvedUrl)).blob();
-        sketchupUrl = await new Promise<string>((resolve, reject) => {
-          const r = new FileReader();
-          r.onloadend = () => resolve(r.result as string);
-          r.onerror = reject;
-          r.readAsDataURL(blob);
-        });
+        sketchupUrl = await fileToCompressedDataUrl(new File([blob], "sketchup-reference.png", { type: blob.type || "image/png" }));
       }
+      const previousReferenceUrl = options.baseRendering?.url
+        ? await compressImageSource(options.baseRendering.url)
+        : undefined;
+      const revisionReferenceUrl = options.revisionReferenceUrl
+        ? await compressImageSource(options.revisionReferenceUrl)
+        : undefined;
       const revisionContext = options.revisionNotes
         ? [
             "REVISION REQUEST",
@@ -541,8 +543,8 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sketchupUrl,
-          referenceImageUrl: options.baseRendering?.url,
-          referenceImageUrls: options.revisionReferenceUrl ? [options.revisionReferenceUrl] : [],
+          referenceImageUrl: previousReferenceUrl,
+          referenceImageUrls: revisionReferenceUrl ? [revisionReferenceUrl] : [],
           extraContext,
         }),
       });
@@ -912,7 +914,7 @@ function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
     if (!file) return;
     if (!file.type.startsWith("image/")) return toast.error("Please use an image file");
     if (file.size > 8 * 1024 * 1024) return toast.error("Reference image too large (max 8MB)");
-    const dataUrl = await fileToDataUrl(file);
+    const dataUrl = await fileToCompressedDataUrl(file);
     onChange(dataUrl, file.name || "Reference image");
   };
 
@@ -948,15 +950,6 @@ function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
       )}
     </div>
   );
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 /* ─────────── Concept ─────────── */
