@@ -1158,7 +1158,7 @@ function buildServiceInvoiceHtml(
     .line-table .subtotal-spacer { border: 0; height: 0; padding: 0; background: transparent; }
     .summary { width: 3.35in; margin-left: auto; margin-top: 0.32in; font-size: 14px; }
     .fee-row { display: grid; grid-template-columns: 1fr 1.35in; align-items: stretch; margin-bottom: 0.16in; }
-    .fee-label { align-self: center; padding-right: 0.06in; text-align: right; font-size: 22px; }
+    .fee-label { align-self: center; padding-right: 0.06in; text-align: right; font-size: 15px; }
     .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.11in 0.08in; text-align: right; font-size: 20px; font-weight: 700; }
     .summary-row { display: grid; grid-template-columns: 1fr 1.35in; text-align: right; gap: 0.06in; margin: 0.055in 0; }
     .pay { display: grid; grid-template-columns: 1fr 1.35in; border: 2px solid #000; margin: 0.22in 0 0.55in; }
