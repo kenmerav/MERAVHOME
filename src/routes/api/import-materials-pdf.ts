@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
 
@@ -60,6 +59,61 @@ type ImportedPdfItem = {
   item_label: string;
   product_url: string;
 };
+
+function ensurePdfDomPolyfills() {
+  if (!("DOMMatrix" in globalThis)) {
+    class ServerDOMMatrix {
+      a = 1;
+      b = 0;
+      c = 0;
+      d = 1;
+      e = 0;
+      f = 0;
+      m11 = 1;
+      m12 = 0;
+      m13 = 0;
+      m14 = 0;
+      m21 = 0;
+      m22 = 1;
+      m23 = 0;
+      m24 = 0;
+      m31 = 0;
+      m32 = 0;
+      m33 = 1;
+      m34 = 0;
+      m41 = 0;
+      m42 = 0;
+      m43 = 0;
+      m44 = 1;
+      is2D = true;
+      isIdentity = true;
+
+      constructor(init?: number[] | string) {
+        if (Array.isArray(init) && init.length >= 6) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+          this.m11 = this.a;
+          this.m12 = this.b;
+          this.m21 = this.c;
+          this.m22 = this.d;
+          this.m41 = this.e;
+          this.m42 = this.f;
+        }
+      }
+
+      multiplySelf() { return this; }
+      preMultiplySelf() { return this; }
+      translateSelf() { return this; }
+      scaleSelf() { return this; }
+      rotateSelf() { return this; }
+      invertSelf() { return this; }
+      transformPoint(point: { x?: number; y?: number }) {
+        return { x: point.x ?? 0, y: point.y ?? 0, z: 0, w: 1 };
+      }
+    }
+
+    (globalThis as any).DOMMatrix = ServerDOMMatrix;
+  }
+}
 
 function buildTextSegments(items: any[]): TextSegment[] {
   const textItems = items
@@ -128,6 +182,8 @@ function matchLabel(rect: number[], segments: TextSegment[]) {
 }
 
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
+  ensurePdfDomPolyfills();
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const bytes = new Uint8Array(await file.arrayBuffer());
   const pdf = await getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
   const imported: ImportedPdfItem[] = [];
