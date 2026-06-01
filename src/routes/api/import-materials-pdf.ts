@@ -15,18 +15,29 @@ function normalize(value: string) {
 
 function materialMatchKey(value: string) {
   const n = normalize(value).replace(/\bcabinetry\b/g, "cabinet").replace(/\bcabinets\b/g, "cabinet");
+  if (/\bhardware\b/.test(n) && /\bknob\b|\bknobs\b|\bpull\b|\bpulls\b/.test(n)) return "cabinet hardware";
   if (/\bcabinet\b/.test(n) && /\bhardware\b|\bknob\b|\bpull\b/.test(n)) return "cabinet hardware";
   if (/\bcabinet\b/.test(n) && /\bcolor\b|\bfinish\b|\bpaint\b/.test(n)) return "cabinet finish";
   if (/\bcountertop\b|\bcountertops\b|\bcounter\b/.test(n)) return "countertop";
+  if (/\bbacksplash\b/.test(n)) return "tile";
   if (/\bwallpaper\b/.test(n)) return "wallpaper";
   if (/\blimewash\b|\blime wash\b/.test(n)) return "limewash";
   if (/\bmirror\b/.test(n) && !/\bheart\b/.test(n)) return "mirror";
   if (/\bpendant\b/.test(n)) return "pendant";
+  if (/\bsconce\b|\bsconces\b/.test(n)) return "sconce";
+  if (/\bsink\b/.test(n)) return "sink";
+  if (/\bfaucet\b/.test(n)) return "faucet";
+  if (/\bpot filler\b/.test(n)) return "pot filler";
+  if (/\brange hood\b/.test(n)) return "range hood";
   return n;
 }
 
 function materialImportKey(roomId: string, label: string, productUrl: string | null | undefined) {
   return `${roomId}::${materialMatchKey(label)}::${normalize(productUrl ?? "")}`;
+}
+
+function materialRoomLabelKey(roomId: string, label: string) {
+  return `${roomId}::${materialMatchKey(label)}`;
 }
 
 function titleCase(value: string) {
@@ -53,9 +64,19 @@ type ImportedPdfItem = {
   room_name: string;
   item_label: string;
   product_url: string;
+  quantity: number | null;
+  color: string | null;
 };
 
 function pickRoomNameFromText(text: string) {
+  for (const match of text.matchAll(/\/E\s*\(([^)]{2,120})\)/g)) {
+    const heading = decodePdfLiteral(match[1]);
+    if (!/(fixture|finish|material|selection)/i.test(heading)) continue;
+    if (/materials list/i.test(heading) || /^\d+\./.test(heading.trim())) continue;
+    const roomName = heading.replace(/\s*(?:fixtures?|finishes|materials?|selections?).*$/i, "").trim();
+    if (roomName) return titleCase(roomName);
+  }
+
   const outlineTitleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)[\s\S]{0,120}?\/Dest\s*\[/);
   const titleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)/);
   const taggedTitleMatch = text.match(/\/T\s*\(([^)]{2,80})\)/);
@@ -86,6 +107,42 @@ function extractActionUrls(rawPdf: string) {
   return actionUrls;
 }
 
+function isUrlLabel(value: string) {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+function cleanItemLabel(value: string) {
+  return value
+    .replace(/^\s*\d+\.\s*/, "")
+    .replace(/\bHARWARE\b/gi, "HARDWARE")
+    .split(/\s+\|\s+/)[0]
+    .split(/\s+I\s+(?:QTY|QUANTITY)\s*:/i)[0]
+    .trim();
+}
+
+function extractQuantity(value: string) {
+  const match = value.match(/\b(?:QTY|QUANTITY)\s*:\s*(\d+(?:\.\d+)?)/i);
+  return match ? Number(match[1]) : null;
+}
+
+function extractColor(value: string) {
+  const match = value.match(/\bFINISH\s*:\s*(.+?)(?:\s+I\s+(?:QTY|QUANTITY|SIZE)\b|\s+\|\s*(?:QTY|QUANTITY|SIZE)\b|$)/i);
+  return match?.[1] ? titleCase(match[1].trim()) : null;
+}
+
+function parsePdfItem(label: string, roomName: string, productUrl: string): ImportedPdfItem | null {
+  if (isUrlLabel(label) || normalize(label) === normalize(roomName)) return null;
+  const itemLabel = cleanItemLabel(label);
+  if (!itemLabel) return null;
+  return {
+    room_name: roomName,
+    item_label: titleCase(itemLabel),
+    product_url: productUrl,
+    quantity: extractQuantity(label),
+    color: extractColor(label),
+  };
+}
+
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   const rawPdf = Buffer.from(await file.arrayBuffer()).toString("latin1");
   const roomName = pickRoomNameFromText(rawPdf);
@@ -99,9 +156,10 @@ async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
     const labelValue = annotation.match(/\/Contents\s*\(([\s\S]*?)\)/)?.[1];
     const url = actionRef ? actionUrls.get(actionRef) : null;
     const label = labelValue ? decodePdfLiteral(labelValue) : "";
-    if (!url || !label || normalize(label) === normalize(roomName)) continue;
+    if (!url || !label) continue;
 
-    const item = { room_name: roomName, item_label: titleCase(label), product_url: url };
+    const item = parsePdfItem(label, roomName, url);
+    if (!item) continue;
     const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -154,18 +212,23 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           const roomIds = Array.from(new Set(Array.from(roomByName.values()).map((room: any) => room.id)));
           const { data: existingItems, error: itemsError } = await supabaseAdmin
             .from("material_items")
-            .select("id, room_id, item_label, product_url, sort_order")
+            .select("id, room_id, item_label, product_url, quantity, color, sort_order")
             .eq("project_id", projectId)
             .in("room_id", roomIds);
           if (itemsError) return json({ error: itemsError.message }, 500);
 
           const existingByImportKey = new Map<string, any>();
+          const blankExistingByRoomLabel = new Map<string, any[]>();
           const nextSortByRoom = new Map<string, number>();
           for (const existing of existingItems ?? []) {
             existingByImportKey.set(
               materialImportKey(existing.room_id, existing.item_label, existing.product_url),
               existing,
             );
+            if (!existing.product_url) {
+              const key = materialRoomLabelKey(existing.room_id, existing.item_label);
+              blankExistingByRoomLabel.set(key, [...(blankExistingByRoomLabel.get(key) ?? []), existing]);
+            }
             nextSortByRoom.set(existing.room_id, Math.max(nextSortByRoom.get(existing.room_id) ?? 0, Number(existing.sort_order ?? 0) + 1));
           }
 
@@ -175,13 +238,27 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           for (const item of extracted) {
             const room = roomByName.get(normalize(item.room_name));
             if (!room?.id) continue;
-            const existing = existingByImportKey.get(materialImportKey(room.id, item.item_label, item.product_url));
+            const blankKey = materialRoomLabelKey(room.id, item.item_label);
+            const blankMatches = blankExistingByRoomLabel.get(blankKey) ?? [];
+            const existing = existingByImportKey.get(materialImportKey(room.id, item.item_label, item.product_url)) ?? blankMatches.shift();
+            blankExistingByRoomLabel.set(blankKey, blankMatches);
             if (existing) {
               const { error } = await supabaseAdmin
                 .from("material_items")
-                .update({ product_url: item.product_url, scrape_status: "pending", scrape_error: null, not_needed: false })
+                .update({
+                  product_url: item.product_url,
+                  quantity: item.quantity ?? existing.quantity ?? 1,
+                  color: item.color ?? existing.color ?? null,
+                  scrape_status: "pending",
+                  scrape_error: null,
+                  not_needed: false,
+                })
                 .eq("id", existing.id);
               if (error) return json({ error: error.message }, 500);
+              existingByImportKey.set(materialImportKey(room.id, item.item_label, item.product_url), {
+                ...existing,
+                product_url: item.product_url,
+              });
               updatedItems += 1;
               continue;
             }
@@ -198,8 +275,8 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
               sort_order: sortOrder,
               cad_label: null,
               product_url: item.product_url,
-              quantity: 1,
-              color: null,
+              quantity: item.quantity ?? 1,
+              color: item.color,
               notes: null,
               not_needed: false,
               product_id: null,
