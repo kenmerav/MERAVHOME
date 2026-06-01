@@ -377,7 +377,6 @@ function RoomMaterialsSection({
                         value={it.product_url ?? ""}
                         onSave={(v) => update(it.id, { product_url: v || null, scrape_status: "pending" })}
                         disabled={it.not_needed}
-                        placeholder="https://…"
                       />
                     </td>
                     <td className="py-2 pr-3">
@@ -386,7 +385,6 @@ function RoomMaterialsSection({
                         value={it.quantity?.toString() ?? ""}
                         onSave={(v) => update(it.id, { quantity: v ? parseInt(v, 10) : null })}
                         disabled={it.not_needed}
-                        placeholder="1"
                       />
                     </td>
                     <td className="py-2 pr-3">
@@ -394,7 +392,6 @@ function RoomMaterialsSection({
                         value={it.color ?? ""}
                         onSave={(v) => update(it.id, { color: v || null })}
                         disabled={it.not_needed}
-                        placeholder="Antique Brass"
                       />
                     </td>
                     <td className="py-2 pr-3">
