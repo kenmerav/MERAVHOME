@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem, type Room } from "@/lib/db";
-import { ALL_CATEGORIES, PRODUCT_CATEGORIES } from "@/lib/roomTemplates";
+import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
+import { ALL_CATEGORIES, PRODUCT_CATEGORIES, toProductCategory } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,6 +53,10 @@ function MaterialsPage() {
   const { data: items = [] } = useQuery({
     queryKey: ["materialItems", id],
     queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
+  });
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => (await db.listCatalog()) ?? [],
   });
 
   const [scraping, setScraping] = useState(false);
@@ -200,6 +204,7 @@ function MaterialsPage() {
               key={room.id}
               room={room}
               items={byRoom.get(room.id) ?? []}
+              products={products}
               projectId={id}
             />
           ))}
@@ -221,10 +226,12 @@ function MaterialsPage() {
 function RoomMaterialsSection({
   room,
   items,
+  products,
   projectId,
 }: {
   room: Room;
   items: MaterialItem[];
+  products: Product[];
   projectId: string;
 }) {
   const qc = useQueryClient();
@@ -259,6 +266,29 @@ function RoomMaterialsSection({
   const remove = async (id: string) => {
     if (!confirm("Delete this item?")) return;
     await db.deleteMaterialItem(id);
+    invalidate();
+  };
+
+  const attachCatalogProduct = async (item: MaterialItem, productId: string | null) => {
+    const product = productId ? products.find((p) => p.id === productId) : null;
+    await db.updateMaterialItem(item.id, {
+      product_id: product?.id ?? null,
+      product_url: product?.product_url ?? item.product_url ?? null,
+      color: product?.finish || item.color || null,
+      scrape_status: product ? "scraped" : "pending",
+      scrape_error: null,
+      not_needed: false,
+    });
+
+    if (product) {
+      const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+      const alreadyLinked = roomProducts.some((rp) => rp.product_id === product.id);
+      if (!alreadyLinked) {
+        await db.addRoomProduct({ room_id: room.id, product_id: product.id, is_key_selection: false });
+      }
+      toast.success(`Added ${product.name} to ${item.item_label}`);
+    }
+
     invalidate();
   };
 
@@ -335,6 +365,12 @@ function RoomMaterialsSection({
                           </div>
                         </Link>
                       )}
+                      <CatalogProductSelect
+                        item={it}
+                        products={products}
+                        onSelect={(productId) => attachCatalogProduct(it, productId)}
+                        disabled={it.not_needed}
+                      />
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput
@@ -419,6 +455,57 @@ function RoomMaterialsSection({
         </div>
       )}
     </section>
+  );
+}
+
+function CatalogProductSelect({
+  item,
+  products,
+  onSelect,
+  disabled,
+}: {
+  item: MaterialItem;
+  products: Product[];
+  onSelect: (productId: string | null) => void;
+  disabled?: boolean;
+}) {
+  const category = toProductCategory(item.category);
+  const matchingProducts = products.filter((product) => product.category === category);
+  const currentValue = item.product_id ?? "__none__";
+  const selectedProduct = products.find((product) => product.id === item.product_id);
+  const hasCurrentProductInCategory = matchingProducts.some((product) => product.id === item.product_id);
+
+  return (
+    <div className="mt-2 pl-3.5 max-w-[240px]">
+      <Select
+        value={currentValue}
+        onValueChange={(value) => onSelect(value === "__none__" ? null : value)}
+        disabled={disabled}
+      >
+        <SelectTrigger className="h-7 border-border bg-bone/40 text-[11px]">
+          <SelectValue placeholder={`Add ${category} from catalog`} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">No catalog product</SelectItem>
+          {selectedProduct && !hasCurrentProductInCategory && (
+            <SelectItem value={selectedProduct.id}>
+              {selectedProduct.name}
+            </SelectItem>
+          )}
+          {matchingProducts.length === 0 ? (
+            <SelectItem value={`__empty_${category}`} disabled>
+              No {category.toLowerCase()} products yet
+            </SelectItem>
+          ) : (
+            matchingProducts.map((product) => (
+              <SelectItem key={product.id} value={product.id}>
+                {[product.name, product.vendor, product.finish].filter(Boolean).join(" · ")}
+              </SelectItem>
+            ))
+          )}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
