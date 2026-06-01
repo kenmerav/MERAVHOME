@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
+import { extractMaterialPdfItemsFromText } from "@/lib/materialPdfExtract";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -221,50 +222,7 @@ function fallbackLabelFromUrl(productUrl: string) {
 
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   const rawPdf = Buffer.from(await file.arrayBuffer()).toString("latin1");
-  const roomName = pickRoomNameFromText(rawPdf);
-  const actionUrls = extractActionUrls(rawPdf);
-  const taggedLabels = extractTaggedLabels(rawPdf);
-  const imported: ImportedPdfItem[] = [];
-  const seen = new Set<string>();
-  const usedUrls = new Set<string>();
-  const urlOnlyAnnotations = new Set<string>();
-
-  for (const annotation of rawPdf.split(/\bendobj/)) {
-    if (!annotation.includes("/Subtype /Link")) continue;
-    const actionRef = annotation.match(/\/A\s+(\d+)\s+0\s+R/)?.[1];
-    const labelValue = annotation.match(/\/Contents\s*\(([\s\S]*?)\)/)?.[1];
-    const url = actionRef ? actionUrls.get(actionRef) : null;
-    const label = labelValue ? decodePdfLiteral(labelValue) : "";
-    if (!url || !label) continue;
-
-    const item = parsePdfItem(enrichTruncatedLabel(label, taggedLabels), roomName, url);
-    if (!item) {
-      if (isUrlLabel(label)) urlOnlyAnnotations.add(url);
-      continue;
-    }
-    const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    usedUrls.add(item.product_url);
-    imported.push(item);
-  }
-
-  for (const url of urlOnlyAnnotations) {
-    if (usedUrls.has(url)) continue;
-    const item = {
-      room_name: roomName,
-      item_label: fallbackLabelFromUrl(url),
-      product_url: url,
-      quantity: 1,
-      color: null,
-    };
-    const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    imported.push(item);
-  }
-
-  return imported;
+  return extractMaterialPdfItemsFromText(rawPdf);
 }
 
 export const Route = createFileRoute("/api/import-materials-pdf")({

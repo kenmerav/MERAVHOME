@@ -61,6 +61,18 @@ function pickRoomNameFromText(text: string) {
   return titleCase(outlineTitleMatch?.[1] || titleMatch?.[1] || taggedTitleMatch?.[1] || "Imported Room");
 }
 
+function roomNameFromSectionHeading(value: string) {
+  const heading = value.replace(/\\+$/g, "").trim();
+  const normalized = normalize(heading);
+  if (!normalized) return null;
+  if (/materials throughout/.test(normalized)) return "Materials Throughout";
+  if (/appliances throughout/.test(normalized)) return "Appliances Throughout";
+
+  const fixturesMatch = heading.match(/^(.+?)\s+(?:fixtures?|finishes|materials?|selections?)\s*(?:\+\s*finishes)?(?:\s+option\s+[a-z])?\s*:?\s*$/i);
+  if (fixturesMatch?.[1]) return titleCase(fixturesMatch[1].trim());
+  return null;
+}
+
 function extractActionUrls(rawPdf: string) {
   const actionUrls = new Map<string, string>();
   for (const objectBlock of rawPdf.split(/\bendobj/)) {
@@ -74,6 +86,57 @@ function extractActionUrls(rawPdf: string) {
 
 function extractTaggedLabels(rawPdf: string) {
   return Array.from(rawPdf.matchAll(/\/E\s*\(([^)]{2,160})\)/g)).map((match) => decodePdfLiteral(match[1]));
+}
+
+function isLikelyItemHeading(value: string) {
+  const label = cleanItemLabel(value);
+  const n = normalize(label);
+  if (!n || n.length < 2) return false;
+  if (/^https?:\/\//i.test(label)) return false;
+  if (/^low(er)?$|^upp(er)?$/.test(n)) return false;
+  if (/materials list/.test(n)) return false;
+  return true;
+}
+
+function buildTaggedItemQueue(rawPdf: string) {
+  const queue: Array<{ roomName: string; label: string; used: boolean }> = [];
+  let currentRoom = pickRoomNameFromText(rawPdf);
+
+  for (const taggedLabel of extractTaggedLabels(rawPdf)) {
+    const sectionRoom = roomNameFromSectionHeading(taggedLabel);
+    if (sectionRoom) {
+      currentRoom = sectionRoom;
+      continue;
+    }
+    if (!isLikelyItemHeading(taggedLabel)) continue;
+    queue.push({ roomName: currentRoom, label: taggedLabel, used: false });
+  }
+
+  return queue;
+}
+
+function labelsMatch(left: string, right: string) {
+  const a = normalize(cleanItemLabel(left));
+  const b = normalize(cleanItemLabel(right));
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function nextTaggedItemForLink(label: string, taggedItems: Array<{ roomName: string; label: string; used: boolean }>) {
+  const searchStart = taggedItems.findIndex((item) => !item.used);
+  if (searchStart === -1) return null;
+
+  if (label && !isUrlLabel(label)) {
+    const matchedIndex = taggedItems.findIndex((item, index) => index >= searchStart && !item.used && labelsMatch(label, item.label));
+    if (matchedIndex !== -1) {
+      taggedItems[matchedIndex].used = true;
+      return taggedItems[matchedIndex];
+    }
+  }
+
+  const nextItem = taggedItems[searchStart];
+  nextItem.used = true;
+  return nextItem;
 }
 
 function isUrlLabel(value: string) {
@@ -150,9 +213,10 @@ function fallbackLabelFromUrl(productUrl: string) {
 }
 
 export function extractMaterialPdfItemsFromText(rawPdf: string): ExtractedMaterialPdfItem[] {
-  const roomName = pickRoomNameFromText(rawPdf);
   const actionUrls = extractActionUrls(rawPdf);
   const taggedLabels = extractTaggedLabels(rawPdf);
+  const taggedItems = buildTaggedItemQueue(rawPdf);
+  const fallbackRoomName = pickRoomNameFromText(rawPdf);
   const imported: ExtractedMaterialPdfItem[] = [];
   const seen = new Set<string>();
   const usedUrls = new Set<string>();
@@ -166,7 +230,10 @@ export function extractMaterialPdfItemsFromText(rawPdf: string): ExtractedMateri
     const label = labelValue ? decodePdfLiteral(labelValue) : "";
     if (!url || !label) continue;
 
-    const item = parsePdfItem(enrichTruncatedLabel(label, taggedLabels), roomName, url);
+    const taggedItem = nextTaggedItemForLink(label, taggedItems);
+    const roomName = taggedItem?.roomName || fallbackRoomName;
+    const enrichedLabel = taggedItem?.label || enrichTruncatedLabel(label, taggedLabels);
+    const item = parsePdfItem(enrichedLabel, roomName, url);
     if (!item) {
       if (isUrlLabel(label)) urlOnlyAnnotations.add(url);
       continue;
@@ -180,9 +247,11 @@ export function extractMaterialPdfItemsFromText(rawPdf: string): ExtractedMateri
 
   for (const url of urlOnlyAnnotations) {
     if (usedUrls.has(url)) continue;
+    const taggedItem = nextTaggedItemForLink("", taggedItems);
+    const roomName = taggedItem?.roomName || fallbackRoomName;
     const item = {
       room_name: roomName,
-      item_label: fallbackLabelFromUrl(url),
+      item_label: taggedItem?.label ? titleCase(cleanItemLabel(taggedItem.label)) : fallbackLabelFromUrl(url),
       product_url: url,
       quantity: 1,
       color: null,
