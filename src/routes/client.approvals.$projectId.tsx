@@ -20,6 +20,13 @@ type ApprovalItem = RoomProduct & {
   material: MaterialItem | null;
 };
 type ApprovalFilter = ApprovalStatus | "all";
+type ApprovalDisplaySettings = {
+  showVendor: boolean;
+  showPricing: boolean;
+  showQuantity: boolean;
+  showDimensions: boolean;
+  showFinish: boolean;
+};
 
 function ClientApprovalsPage() {
   const { projectId } = Route.useParams();
@@ -88,6 +95,7 @@ function ClientApprovalsPage() {
   }
 
   const { project, rooms, items } = data;
+  const displaySettings = getDisplaySettings(project);
   const counts = countStatuses(items);
   const roomScopedItems = selectedRoomId === "overview" ? items : items.filter((item) => item.room_id === selectedRoomId);
   const visibleItems = approvalFilter === "all" ? roomScopedItems : roomScopedItems.filter((item) => getStatus(item) === approvalFilter);
@@ -147,6 +155,7 @@ function ClientApprovalsPage() {
             <RoomApprovalGrid
               items={visibleItems}
               filter={approvalFilter}
+              displaySettings={displaySettings}
               onOpen={openItem}
               onApprove={(item) => setApproval(item, "approved")}
               onDecline={(item) => setApproval(item, "declined")}
@@ -165,6 +174,7 @@ function ClientApprovalsPage() {
             hasPrevious={selectedIndex > 0}
             hasNext={selectedIndex >= 0 && selectedIndex < visibleItems.length - 1}
             saving={approvalMutation.isPending}
+            displaySettings={displaySettings}
             onApprove={() => setApproval(selectedItem, "approved", commentDraft)}
             onDecline={() => setApproval(selectedItem, "declined", commentDraft)}
             onSaveComment={() => setApproval(selectedItem, getStatus(selectedItem), commentDraft)}
@@ -368,12 +378,14 @@ function OverviewGrid({ rooms, items, onSelectRoom }: { rooms: Room[]; items: Ap
 function RoomApprovalGrid({
   items,
   filter,
+  displaySettings,
   onOpen,
   onApprove,
   onDecline,
 }: {
   items: ApprovalItem[];
   filter: ApprovalFilter;
+  displaySettings: ApprovalDisplaySettings;
   onOpen: (item: ApprovalItem) => void;
   onApprove: (item: ApprovalItem) => void;
   onDecline: (item: ApprovalItem) => void;
@@ -402,8 +414,8 @@ function RoomApprovalGrid({
                 )}
               </div>
               <h2 className="mt-8 min-h-14 text-base font-bold leading-snug text-slate-800">{detail.name}</h2>
-              {detail.total > 0 && <p className="mt-5 text-base font-bold text-slate-800">{formatMoney(detail.total)}</p>}
-              <p className="mt-2 text-sm text-slate-500">Qty: {detail.quantity}</p>
+              {displaySettings.showPricing && detail.total > 0 && <p className="mt-5 text-base font-bold text-slate-800">{formatMoney(detail.total)}</p>}
+              {displaySettings.showQuantity && <p className="mt-2 text-sm text-slate-500">Qty: {detail.quantity}</p>}
             </button>
             <div className="mt-6 flex items-center justify-between gap-4 border-t border-stone-100 pt-5">
               <button type="button" onClick={() => onOpen(item)} className="text-slate-500 hover:text-[#27484b]" aria-label="Open comments">
@@ -501,6 +513,7 @@ function ApprovalDetailModal({
   hasPrevious,
   hasNext,
   saving,
+  displaySettings,
   onApprove,
   onDecline,
   onSaveComment,
@@ -514,6 +527,7 @@ function ApprovalDetailModal({
   hasPrevious: boolean;
   hasNext: boolean;
   saving: boolean;
+  displaySettings: ApprovalDisplaySettings;
   onApprove: () => void;
   onDecline: () => void;
   onSaveComment: () => void;
@@ -573,12 +587,12 @@ function ApprovalDetailModal({
           <aside className="flex flex-col justify-center lg:pr-20">
             <div className="space-y-6 text-xl text-slate-700">
               <DetailLine label="Room" value={item.room.name} />
-              <DetailLine label="Vendor" value={detail.vendor} />
-              <DetailLine label="Price per Item" value={detail.price > 0 ? formatMoney(detail.price) : null} />
-              <DetailLine label="Qty" value={`${detail.quantity} Item(s)`} />
-              <DetailLine label="Total Price" value={detail.total > 0 ? formatMoney(detail.total) : null} />
-              <DetailLine label="Dimensions" value={detail.dimensions} />
-              <DetailLine label="Color/Finish" value={detail.colorFinish} />
+              {displaySettings.showVendor && <DetailLine label="Vendor" value={detail.vendor} />}
+              {displaySettings.showPricing && <DetailLine label="Price per Item" value={detail.price > 0 ? formatMoney(detail.price) : null} />}
+              {displaySettings.showQuantity && <DetailLine label="Qty" value={`${detail.quantity} Item(s)`} />}
+              {displaySettings.showPricing && <DetailLine label="Total Price" value={detail.total > 0 ? formatMoney(detail.total) : null} />}
+              {displaySettings.showDimensions && <DetailLine label="Dimensions" value={detail.dimensions} />}
+              {displaySettings.showFinish && <DetailLine label="Color/Finish" value={detail.colorFinish} />}
             </div>
 
             <div className="mt-10 rounded-[22px] bg-slate-100 p-6">
@@ -609,6 +623,16 @@ function ApprovalDetailModal({
       </div>
     </div>
   );
+}
+
+function getDisplaySettings(project: Project): ApprovalDisplaySettings {
+  return {
+    showVendor: project.approval_show_vendor !== false,
+    showPricing: project.approval_show_pricing !== false,
+    showQuantity: project.approval_show_quantity !== false,
+    showDimensions: project.approval_show_dimensions !== false,
+    showFinish: project.approval_show_finish !== false,
+  };
 }
 
 function DetailLine({ label, value }: { label: string; value?: string | null }) {

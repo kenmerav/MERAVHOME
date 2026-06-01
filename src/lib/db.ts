@@ -51,6 +51,11 @@ export interface Project {
   project_summary: string | null;
   design_concept: string | null;
   key_design_elements: string | null;
+  approval_show_vendor: boolean;
+  approval_show_pricing: boolean;
+  approval_show_quantity: boolean;
+  approval_show_dimensions: boolean;
+  approval_show_finish: boolean;
   created_at: string;
   updated_at: string;
 }
