@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2, X, Check } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES } from "@/lib/roomTemplates";
@@ -57,7 +57,9 @@ function MaterialsPage() {
   });
 
   const [scraping, setScraping] = useState(false);
+  const [importingPdf, setImportingPdf] = useState(false);
   const [reviewRows, setReviewRows] = useState<ScrapedRow[] | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
 
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -116,6 +118,32 @@ function MaterialsPage() {
     }
   };
 
+  const importPdf = async (file: File | null | undefined) => {
+    if (!file) return;
+    setImportingPdf(true);
+    try {
+      const form = new FormData();
+      form.append("project_id", id);
+      form.append("pdf", file);
+      const res = await fetch("/api/import-materials-pdf", {
+        method: "POST",
+        body: form,
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "PDF import failed");
+      toast.success(
+        `Imported ${body.imported ?? 0} linked item${body.imported === 1 ? "" : "s"} from ${body.room_names?.join(", ") || "PDF"}`,
+      );
+      qc.invalidateQueries({ queryKey: ["rooms", id] });
+      qc.invalidateQueries({ queryKey: ["materialItems", id] });
+    } catch (e: any) {
+      toast.error(e?.message || "PDF import failed");
+    } finally {
+      setImportingPdf(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = "";
+    }
+  };
+
   if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
 
   return (
@@ -138,14 +166,32 @@ function MaterialsPage() {
             <div className="text-xs text-muted-foreground">
               {overall.done} of {overall.total} items complete
             </div>
-            <button
-              onClick={runScrape}
-              disabled={scraping}
-              className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm tracking-wide disabled:opacity-60"
-            >
-              <Sparkles className="w-4 h-4" />
-              {scraping ? "Scraping…" : "Scrape Product Info"}
-            </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(event) => importPdf(event.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => pdfInputRef.current?.click()}
+                disabled={importingPdf}
+                className="inline-flex items-center gap-2 px-5 py-3 border border-ink text-ink text-sm tracking-wide disabled:opacity-60"
+              >
+                <Upload className="w-4 h-4" />
+                {importingPdf ? "Importing..." : "Import PDF"}
+              </button>
+              <button
+                onClick={runScrape}
+                disabled={scraping}
+                className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm tracking-wide disabled:opacity-60"
+              >
+                <Sparkles className="w-4 h-4" />
+                {scraping ? "Scraping..." : "Scrape Product Info"}
+              </button>
+            </div>
           </div>
         </div>
 
