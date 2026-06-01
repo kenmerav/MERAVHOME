@@ -32,6 +32,20 @@ async function requireOwner(request: Request) {
   return { user: userData.user };
 }
 
+function cleanProjectIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((id): id is string => typeof id === "string" && id.trim().length > 0)));
+}
+
+async function syncProjectAssignments(userId: string, projectIds: string[]) {
+  await supabaseAdmin.from("user_project_assignments").delete().eq("user_id", userId);
+  if (!projectIds.length) return;
+  const { error } = await supabaseAdmin
+    .from("user_project_assignments")
+    .insert(projectIds.map((project_id) => ({ user_id: userId, project_id })) as any);
+  if (error) throw error;
+}
+
 export const Route = createFileRoute("/api/users")({
   server: {
     handlers: {
@@ -45,7 +59,28 @@ export const Route = createFileRoute("/api/users")({
             .select("*")
             .order("created_at", { ascending: false });
           if (error) return json({ error: error.message }, 500);
-          return json({ users: data ?? [] });
+
+          const [{ data: projects, error: projectsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+            supabaseAdmin.from("projects").select("id,name,client_name,status").order("updated_at", { ascending: false }),
+            supabaseAdmin.from("user_project_assignments").select("user_id,project_id"),
+          ]);
+          if (projectsError) return json({ error: projectsError.message }, 500);
+          if (assignmentsError) return json({ error: assignmentsError.message }, 500);
+
+          const assignmentsByUser = new Map<string, string[]>();
+          (assignments ?? []).forEach((assignment: any) => {
+            const list = assignmentsByUser.get(assignment.user_id) ?? [];
+            list.push(assignment.project_id);
+            assignmentsByUser.set(assignment.user_id, list);
+          });
+
+          return json({
+            users: (data ?? []).map((user: any) => ({
+              ...user,
+              assigned_project_ids: assignmentsByUser.get(user.id) ?? [],
+            })),
+            projects: projects ?? [],
+          });
         } catch (e: any) {
           console.error("List users failed", e);
           return json({ error: "Unable to load users." }, 500);
@@ -62,18 +97,20 @@ export const Route = createFileRoute("/api/users")({
             role?: UserRole;
             password?: string;
             hourly_rate?: number;
+            project_ids?: string[];
           };
 
           const email = body.email?.trim().toLowerCase();
           const fullName = body.full_name?.trim();
           const role = body.role;
           const password = body.password?.trim() || "merav";
+          const projectIds = cleanProjectIds(body.project_ids);
 
           if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400);
           if (!fullName) return json({ error: "Enter the user's name." }, 400);
           if (!role || !ROLES.includes(role)) return json({ error: "Choose a valid role." }, 400);
           if (password.length < 4) return json({ error: "Password must be at least 4 characters." }, 400);
-          const hourlyRate = Number(body.hourly_rate ?? 0);
+          const hourlyRate = role === "Employee" ? Number(body.hourly_rate ?? 0) : 0;
           if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -109,6 +146,7 @@ export const Route = createFileRoute("/api/users")({
             .single();
 
           if (profileError) return json({ error: profileError.message }, 500);
+          await syncProjectAssignments(userId, role === "Client" || role === "Contractor" ? projectIds : []);
           return json({ user: profile });
         } catch (e: any) {
           console.error("Create user failed", e);
@@ -127,6 +165,7 @@ export const Route = createFileRoute("/api/users")({
             is_active?: boolean;
             password?: string;
             hourly_rate?: number;
+            project_ids?: string[];
           };
 
           if (!body.id) return json({ error: "Missing user id." }, 400);
@@ -146,7 +185,7 @@ export const Route = createFileRoute("/api/users")({
           if (body.password && body.password.trim().length < 4) {
             return json({ error: "Password must be at least 4 characters." }, 400);
           }
-          const hourlyRate = Number(body.hourly_rate ?? existing.hourly_rate ?? 0);
+          const hourlyRate = role === "Employee" ? Number(body.hourly_rate ?? existing.hourly_rate ?? 0) : 0;
           if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const fullName = body.full_name?.trim() || existing.full_name;
@@ -172,6 +211,9 @@ export const Route = createFileRoute("/api/users")({
             .select()
             .single();
           if (profileError) return json({ error: profileError.message }, 500);
+          if (body.project_ids) {
+            await syncProjectAssignments(body.id, role === "Client" || role === "Contractor" ? cleanProjectIds(body.project_ids) : []);
+          }
           return json({ user: profile });
         } catch (e: any) {
           console.error("Update user failed", e);

@@ -10,6 +10,26 @@ import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile, UserRole } from "@/lib/db";
 
 const ROLES: UserRole[] = ["Admin", "Employee", "Contractor", "Client"];
+const ASSIGNABLE_ROLES: UserRole[] = ["Client", "Contractor"];
+
+type UserProject = {
+  id: string;
+  name: string;
+  client_name: string;
+  status: string;
+};
+
+type ManagedUser = UserProfile & {
+  assigned_project_ids?: string[];
+};
+
+function roleLabel(role: UserRole) {
+  return role === "Contractor" ? "Builder / GC" : role;
+}
+
+function canAssignProjects(role: UserRole) {
+  return ASSIGNABLE_ROLES.includes(role);
+}
 
 export const Route = createFileRoute("/users/")({
   head: () => ({ meta: [{ title: "Users — MERAV Studio" }] }),
@@ -17,7 +37,8 @@ export const Route = createFileRoute("/users/")({
 });
 
 function UsersPage() {
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [projects, setProjects] = useState<UserProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fullName, setFullName] = useState("");
@@ -25,6 +46,7 @@ function UsersPage() {
   const [role, setRole] = useState<UserRole>("Employee");
   const [hourlyRate, setHourlyRate] = useState("");
   const [password, setPassword] = useState("merav");
+  const [projectIds, setProjectIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
   const authedFetch = async (url: string, init: RequestInit = {}) => {
@@ -51,6 +73,7 @@ function UsersPage() {
       return;
     }
     setUsers(body.users ?? []);
+    setProjects(body.projects ?? []);
   };
 
   useEffect(() => {
@@ -62,7 +85,14 @@ function UsersPage() {
     setBusy(true);
     const res = await authedFetch("/api/users", {
       method: "POST",
-      body: JSON.stringify({ full_name: fullName, email, role, hourly_rate: moneyNumber(hourlyRate), password }),
+      body: JSON.stringify({
+        full_name: fullName,
+        email,
+        role,
+        hourly_rate: role === "Employee" ? moneyNumber(hourlyRate) : 0,
+        password,
+        project_ids: canAssignProjects(role) ? projectIds : [],
+      }),
     });
     const body = await res.json();
     setBusy(false);
@@ -76,10 +106,11 @@ function UsersPage() {
     setRole("Employee");
     setHourlyRate("");
     setPassword("merav");
+    setProjectIds([]);
     await loadUsers();
   };
 
-  const updateUser = async (user: UserProfile, patch: Partial<UserProfile> & { password?: string }) => {
+  const updateUser = async (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[] }) => {
     setBusy(true);
     const res = await authedFetch("/api/users", {
       method: "PATCH",
@@ -87,9 +118,10 @@ function UsersPage() {
         id: user.id,
         full_name: patch.full_name ?? user.full_name,
         role: patch.role ?? user.role,
-        hourly_rate: patch.hourly_rate ?? user.hourly_rate,
+        hourly_rate: (patch.role ?? user.role) === "Employee" ? patch.hourly_rate ?? user.hourly_rate : 0,
         is_active: patch.is_active ?? user.is_active,
         password: patch.password,
+        project_ids: patch.project_ids,
       }),
     });
     const body = await res.json();
@@ -134,13 +166,22 @@ function UsersPage() {
                 onChange={(e) => setRole(e.target.value as UserRole)}
                 className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm"
               >
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
               </select>
             </div>
-            <div>
-              <Label className="eyebrow">Hourly Rate</Label>
-              <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
-            </div>
+            {role === "Employee" && (
+              <div>
+                <Label className="eyebrow">Hourly Rate</Label>
+                <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
+              </div>
+            )}
+            {canAssignProjects(role) && (
+              <ProjectAssignmentPicker
+                projects={projects}
+                selectedProjectIds={projectIds}
+                onChange={setProjectIds}
+              />
+            )}
             <div>
               <Label className="eyebrow">Temporary Password</Label>
               <Input value={password} onChange={(e) => setPassword(e.target.value)} required />
@@ -155,7 +196,7 @@ function UsersPage() {
             ) : users.length === 0 ? (
               <div className="py-12 text-sm text-muted-foreground">No users yet.</div>
             ) : users.map((user) => (
-              <UserRow key={user.id} user={user} busy={busy} onSave={updateUser} />
+              <UserRow key={user.id} user={user} projects={projects} busy={busy} onSave={updateUser} />
             ))}
           </div>
         </div>
@@ -166,18 +207,21 @@ function UsersPage() {
 
 function UserRow({
   user,
+  projects,
   busy,
   onSave,
 }: {
-  user: UserProfile;
+  user: ManagedUser;
+  projects: UserProject[];
   busy: boolean;
-  onSave: (user: UserProfile, patch: Partial<UserProfile> & { password?: string }) => void;
+  onSave: (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[] }) => void;
 }) {
   const [fullName, setFullName] = useState(user.full_name);
   const [role, setRole] = useState<UserRole>(user.role);
   const [hourlyRate, setHourlyRate] = useState(String(user.hourly_rate ?? 0));
   const [isActive, setIsActive] = useState(user.is_active);
   const [password, setPassword] = useState("");
+  const [projectIds, setProjectIds] = useState<string[]>(user.assigned_project_ids ?? []);
   const isKen = user.email.toLowerCase() === "ken@meravinteriors.com";
 
   useEffect(() => {
@@ -186,7 +230,19 @@ function UserRow({
     setHourlyRate(String(user.hourly_rate ?? 0));
     setIsActive(user.is_active);
     setPassword("");
+    setProjectIds(user.assigned_project_ids ?? []);
   }, [user]);
+
+  const saveUser = () => {
+    onSave(user, {
+      full_name: fullName,
+      role,
+      hourly_rate: role === "Employee" ? moneyNumber(hourlyRate) : 0,
+      is_active: isActive,
+      password: password || undefined,
+      project_ids: canAssignProjects(role) ? projectIds : [],
+    });
+  };
 
   return (
     <div className="py-5 border-b border-border space-y-4">
@@ -196,12 +252,12 @@ function UserRow({
           <div className="text-sm text-muted-foreground">{user.email}</div>
         </div>
         <div className="text-right">
-          <div className="eyebrow">{user.is_owner ? "Overall Admin" : user.role}</div>
+          <div className="eyebrow">{user.is_owner ? "Overall Admin" : roleLabel(user.role)}</div>
           <div className="text-xs text-muted-foreground mt-1">{user.is_active ? "Active" : "Inactive"}</div>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] gap-3">
+      <div className={role === "Employee" ? "grid md:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] gap-3" : "grid md:grid-cols-[1.2fr_0.8fr_0.8fr] gap-3"}>
         <div>
           <Label className="eyebrow">Name</Label>
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
@@ -214,13 +270,15 @@ function UserRow({
             onChange={(e) => setRole(e.target.value as UserRole)}
             className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm disabled:opacity-60"
           >
-            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
         </div>
-        <div>
-          <Label className="eyebrow">Hourly Rate</Label>
-          <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
-        </div>
+        {role === "Employee" && (
+          <div>
+            <Label className="eyebrow">Hourly Rate</Label>
+            <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
+          </div>
+        )}
         <div>
           <Label className="eyebrow">Status</Label>
           <select
@@ -235,6 +293,15 @@ function UserRow({
         </div>
       </div>
 
+      {canAssignProjects(role) && (
+        <ProjectAssignmentPicker
+          projects={projects}
+          selectedProjectIds={projectIds}
+          onChange={setProjectIds}
+          compact
+        />
+      )}
+
       <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
         <div>
           <Label className="eyebrow">Reset Password</Label>
@@ -243,10 +310,56 @@ function UserRow({
         <Button
           type="button"
           disabled={busy}
-          onClick={() => onSave(user, { full_name: fullName, role, hourly_rate: moneyNumber(hourlyRate), is_active: isActive, password: password || undefined })}
+          onClick={saveUser}
         >
           Save
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function ProjectAssignmentPicker({
+  projects,
+  selectedProjectIds,
+  onChange,
+  compact = false,
+}: {
+  projects: UserProject[];
+  selectedProjectIds: string[];
+  onChange: (projectIds: string[]) => void;
+  compact?: boolean;
+}) {
+  const toggleProject = (projectId: string) => {
+    onChange(
+      selectedProjectIds.includes(projectId)
+        ? selectedProjectIds.filter((id) => id !== projectId)
+        : [...selectedProjectIds, projectId],
+    );
+  };
+
+  return (
+    <div>
+      <Label className="eyebrow">Assigned Projects</Label>
+      <div className={`mt-2 border border-border bg-bone/30 ${compact ? "max-h-44" : "max-h-52"} overflow-y-auto`}>
+        {projects.length === 0 ? (
+          <div className="p-3 text-sm text-muted-foreground">No projects available yet.</div>
+        ) : (
+          projects.map((project) => (
+            <label key={project.id} className="flex cursor-pointer items-start gap-3 border-b border-border/70 px-3 py-2.5 last:border-b-0">
+              <input
+                type="checkbox"
+                checked={selectedProjectIds.includes(project.id)}
+                onChange={() => toggleProject(project.id)}
+                className="mt-1"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-ink">{project.name}</span>
+                <span className="block text-xs text-muted-foreground">{project.client_name} · {project.status}</span>
+              </span>
+            </label>
+          ))
+        )}
       </div>
     </div>
   );
