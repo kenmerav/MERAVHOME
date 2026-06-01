@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, FileText, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -435,9 +435,6 @@ function FinancialsPage() {
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-            <button type="button" onClick={startServiceInvoice} className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-3 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <Plus className="w-4 h-4" /> Create Design Service Invoice
-            </button>
             <label className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm cursor-pointer">
               <Upload className="w-4 h-4" /> {parsing ? "Reading PDF..." : "Upload Invoice PDF"}
               <input type="file" accept="application/pdf" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} disabled={parsing} />

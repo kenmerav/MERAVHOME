@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type Project } from "@/lib/db";
+import { db, type FinancialInvoice, type Project } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { canViewFinancials } from "@/lib/permissions";
+import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
+import { formatMoney } from "@/lib/money";
 
 
 export const Route = createFileRoute("/")({
@@ -26,10 +30,21 @@ export const Route = createFileRoute("/")({
 });
 
 function DashboardPage() {
+  const qc = useQueryClient();
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await db.listProjects()) ?? [],
   });
+  const { data: profile } = useQuery({
+    queryKey: ["currentProfile"],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) return null;
+      return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
+    },
+  });
+  const canCreateInvoices = canViewFinancials(profile);
   const activeProjects = projects.filter((p) => p.status !== "Complete");
 
   return (
@@ -45,6 +60,21 @@ function DashboardPage() {
           </div>
           <NewProjectDialog />
         </div>
+
+        {canCreateInvoices && (
+          <section className="border border-border bg-bone/20 p-6 mb-12">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+              <div>
+                <div className="eyebrow mb-2">Service Invoices</div>
+                <h2 className="font-display text-3xl">Pre-project invoice builder</h2>
+                <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
+                  Create the invoice before the client officially becomes a project. When they accept or pay, create the project and attach this invoice.
+                </p>
+              </div>
+              <ServiceInvoiceCreator onSaved={() => qc.invalidateQueries({ queryKey: ["financialInvoices", "unattached"] })} />
+            </div>
+          </section>
+        )}
 
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
@@ -115,13 +145,19 @@ export function NewProjectDialog() {
   const [notes, setNotes] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [others, setOthers] = useState<string[]>([]);
+  const [invoiceId, setInvoiceId] = useState("");
   const [busy, setBusy] = useState(false);
+  const { data: unattachedInvoices = [] } = useQuery({
+    queryKey: ["financialInvoices", "unattached"],
+    queryFn: async () => (await db.listUnattachedFinancialInvoices()) ?? [],
+    enabled: open,
+  });
 
   const toggle = (r: string) =>
     setSelected(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
 
   const reset = () => {
-    setName(""); setClient(""); setNotes(""); setSelected([]); setOthers([]);
+    setName(""); setClient(""); setNotes(""); setSelected([]); setOthers([]); setInvoiceId("");
   };
 
   const submit = async () => {
@@ -138,6 +174,9 @@ export function NewProjectDialog() {
         design_notes: notes.trim() || undefined,
       });
       if (!p) throw new Error("Could not create project");
+      if (invoiceId) {
+        await db.attachFinancialInvoiceToProject(invoiceId, p.id);
+      }
 
       // Create rooms + seed material_items for each
       for (let i = 0; i < roomNames.length; i++) {
@@ -172,6 +211,9 @@ export function NewProjectDialog() {
 
       toast.success("Project created");
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "unattached"] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", p.id] });
       setOpen(false);
       reset();
     } catch (e: any) {
@@ -207,6 +249,27 @@ export function NewProjectDialog() {
             <Label className="eyebrow">Project Notes</Label>
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Client priorities, scope, references…" />
           </div>
+
+          {unattachedInvoices.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="eyebrow">Attach Service Invoice</Label>
+              <select
+                value={invoiceId}
+                onChange={(e) => setInvoiceId(e.target.value)}
+                className="h-10 w-full border border-input bg-background px-3 text-sm"
+              >
+                <option value="">No invoice attached yet</option>
+                {unattachedInvoices.map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {invoiceLabel(invoice)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Use this after the client accepts or pays, so the original service invoice follows the project.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-3">
             <Label className="eyebrow">Rooms in this project</Label>
@@ -251,4 +314,11 @@ export function NewProjectDialog() {
       </DialogContent>
     </Dialog>
   );
+}
+
+function invoiceLabel(invoice: FinancialInvoice) {
+  const client = invoice.client_name || "Unassigned client";
+  const total = invoice.total_amount != null ? formatMoney(invoice.total_amount) : "No total";
+  const date = invoice.invoice_date || "No date";
+  return `${client} - ${total} - ${date}`;
 }

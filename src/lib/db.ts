@@ -185,7 +185,7 @@ export type FinancialPaymentStatus = "due" | "paid" | "waived";
 
 export interface FinancialInvoice {
   id: string;
-  project_id: string;
+  project_id: string | null;
   file_name: string | null;
   pdf_data_url: string | null;
   invoice_date: string | null;
@@ -204,7 +204,7 @@ export interface FinancialInvoice {
 export interface FinancialInvoicePayment {
   id: string;
   invoice_id: string;
-  project_id: string;
+  project_id: string | null;
   label: string;
   amount: number;
   due_date: string | null;
@@ -391,6 +391,14 @@ export const db = {
       .order("invoice_date", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .order("sort_order", { referencedTable: "financial_invoice_payments", ascending: true })).data as FinancialInvoice[] | null,
+  listUnattachedFinancialInvoices: async () =>
+    (await supabase
+      .from("financial_invoices")
+      .select("*, payments:financial_invoice_payments(*)")
+      .is("project_id", null)
+      .order("invoice_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("sort_order", { referencedTable: "financial_invoice_payments", ascending: true })).data as FinancialInvoice[] | null,
   createFinancialInvoice: async (
     invoice: Omit<FinancialInvoice, "id" | "created_at" | "updated_at" | "payments">,
     payments: Array<Omit<FinancialInvoicePayment, "id" | "invoice_id" | "created_at" | "updated_at">>,
@@ -401,6 +409,16 @@ export const db = {
       await supabase.from("financial_invoice_payments").insert(payments.map((payment) => ({ ...payment, invoice_id: created.id })) as any);
     }
     return created;
+  },
+  attachFinancialInvoiceToProject: async (invoiceId: string, projectId: string) => {
+    const invoice = (await supabase
+      .from("financial_invoices")
+      .update({ project_id: projectId } as any)
+      .eq("id", invoiceId)
+      .select()
+      .single()).data as FinancialInvoice | null;
+    await supabase.from("financial_invoice_payments").update({ project_id: projectId } as any).eq("invoice_id", invoiceId);
+    return invoice;
   },
   updateFinancialPayment: async (id: string, patch: Partial<FinancialInvoicePayment>) =>
     (await supabase.from("financial_invoice_payments").update(patch as any).eq("id", id).select().single()).data as FinancialInvoicePayment | null,
