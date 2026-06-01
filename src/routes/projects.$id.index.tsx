@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, PROJECT_LABELS, PROJECT_STATUSES, WORKFLOW_STAGES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
+import { db, PROJECT_LABELS, PROJECT_STATUSES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -36,7 +36,6 @@ function ProjectDetailPage() {
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: allImages = [] } = useQuery({ queryKey: ["projectImages", id], queryFn: async () => (await db.listProjectRoomImages(id)) ?? [] });
-  const { data: materialItems = [] } = useQuery({ queryKey: ["materialItems", id], queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [] });
   const { data: profile } = useQuery({
     queryKey: ["currentProfile"],
     queryFn: async () => {
@@ -50,26 +49,6 @@ function ProjectDetailPage() {
   if (!project) {
     return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
   }
-
-  const hasSketchup = allImages.some(i => i.kind === "sketchup");
-  const hasRendering = allImages.some(i => i.kind === "rendering");
-  const hasSelections = materialItems.some(m => !!m.product_url || !!m.product_id);
-  const hasSpecBook = materialItems.some(m => !!m.product_id);
-  const approvedStatuses: ProjectStatus[] = ["Approved", "Procurement", "Complete"];
-  const isApproved = approvedStatuses.includes(project.status);
-  const inProcurement = project.status === "Procurement" || project.status === "Complete";
-
-  const completed = [
-    true,                  // Create Project
-    rooms.length > 0,      // Create Rooms
-    hasSketchup,
-    hasSelections,
-    hasRendering,
-    hasRendering,          // Presentation Boards auto-built from renderings
-    isApproved,
-    hasSpecBook,
-    inProcurement,
-  ];
 
   const setStatus = async (s: ProjectStatus) => {
     await db.updateProject(id, { status: s });
@@ -151,10 +130,7 @@ function ProjectDetailPage() {
           </div>
         </div>
 
-        {/* Workflow strip */}
-        <WorkflowStrip completed={completed} />
-
-        <div className="mt-14 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div className="mt-8 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
             <div className="eyebrow mb-2">Rooms</div>
             <h2 className="font-display text-3xl">Project rooms</h2>
@@ -353,27 +329,6 @@ function DeleteProjectDialog({
         </div>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-function WorkflowStrip({ completed }: { completed: boolean[] }) {
-  return (
-    <div className="border border-border bg-bone/40 p-6">
-      <div className="eyebrow mb-4">Workflow</div>
-      <ol className="flex flex-wrap gap-x-6 gap-y-3 text-[12px]">
-        {WORKFLOW_STAGES.map((s, i) => {
-          const done = completed[i];
-          return (
-            <li key={s} className="flex items-center gap-2">
-              <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${done ? "bg-ink text-primary-foreground border-ink" : "border-border text-muted-foreground"}`}>
-                {done ? "✓" : i + 1}
-              </span>
-              <span className={done ? "text-ink" : "text-muted-foreground"}>{s}</span>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
   );
 }
 
