@@ -50,6 +50,8 @@ function ProjectDetailPage() {
     return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
   }
 
+  const isClientUser = profile?.role === "Client";
+
   const setStatus = async (s: ProjectStatus) => {
     await db.updateProject(id, { status: s });
     qc.invalidateQueries({ queryKey: ["project", id] });
@@ -72,62 +74,67 @@ function ProjectDetailPage() {
         <div className="flex items-start lg:items-end justify-between mb-12 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">{project.project_type} · {project.client_name}</div>
-            <EditableProjectName
-              projectId={id}
-              name={project.name}
-              onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["project", id] });
-                qc.invalidateQueries({ queryKey: ["projects"] });
-              }}
-            />
-          </div>
-          <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
-            <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
-            <Select value={project.status} onValueChange={v => setStatus(v as ProjectStatus)}>
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {PROJECT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={project.project_label ?? "none"} onValueChange={setProjectLabel}>
-              <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Project label" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No label</SelectItem>
-                {PROJECT_LABELS.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <ClipboardList className="w-4 h-4" /> Materials
-            </Link>
-            <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <Sparkles className="w-4 h-4" /> Renderings
-            </Link>
-            <Link to="/projects/$id/approvals" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <SlidersHorizontal className="w-4 h-4" /> Approval Setup
-            </Link>
-            <Link to="/client/approvals/$projectId" params={{ projectId: id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <CheckCircle2 className="w-4 h-4" /> Client View
-            </Link>
-            {canViewFinancials(profile) && (
-              <Link to="/projects/$id/financials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-                <DollarSign className="w-4 h-4" /> Financials
-              </Link>
-            )}
-            <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
-              <LayoutTemplate className="w-4 h-4" /> Presentation
-            </Link>
-            {profile?.is_owner && profile.role === "Admin" && (
-              <DeleteProjectDialog
+            {isClientUser ? (
+              <h1 className="editorial-hero text-5xl lg:text-7xl">{project.name}</h1>
+            ) : (
+              <EditableProjectName
                 projectId={id}
-                projectName={project.name}
-                onDeleted={async () => {
+                name={project.name}
+                onSaved={() => {
+                  qc.invalidateQueries({ queryKey: ["project", id] });
                   qc.invalidateQueries({ queryKey: ["projects"] });
-                  await navigate({ to: "/projects" });
                 }}
               />
             )}
-
           </div>
+          {!isClientUser && (
+            <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
+              <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
+              <Select value={project.status} onValueChange={v => setStatus(v as ProjectStatus)}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PROJECT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={project.project_label ?? "none"} onValueChange={setProjectLabel}>
+                <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Project label" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No label</SelectItem>
+                  {PROJECT_LABELS.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <ClipboardList className="w-4 h-4" /> Materials
+              </Link>
+              <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <Sparkles className="w-4 h-4" /> Renderings
+              </Link>
+              <Link to="/projects/$id/approvals" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <SlidersHorizontal className="w-4 h-4" /> Approval Setup
+              </Link>
+              <Link to="/client/approvals/$projectId" params={{ projectId: id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <CheckCircle2 className="w-4 h-4" /> Client View
+              </Link>
+              {canViewFinancials(profile) && (
+                <Link to="/projects/$id/financials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                  <DollarSign className="w-4 h-4" /> Financials
+                </Link>
+              )}
+              <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
+                <LayoutTemplate className="w-4 h-4" /> Presentation
+              </Link>
+              {profile?.is_owner && profile.role === "Admin" && (
+                <DeleteProjectDialog
+                  projectId={id}
+                  projectName={project.name}
+                  onDeleted={async () => {
+                    qc.invalidateQueries({ queryKey: ["projects"] });
+                    await navigate({ to: "/projects" });
+                  }}
+                />
+              )}
+            </div>
+          )}
         </div>
 
         <div className="mt-8 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -136,7 +143,7 @@ function ProjectDetailPage() {
             <h2 className="font-display text-3xl">Project rooms</h2>
             <p className="text-sm text-muted-foreground mt-1">Every selection, rendering, presentation, and spec is tied to a room.</p>
           </div>
-          <AddRoomDialog projectId={id} />
+          {!isClientUser && <AddRoomDialog projectId={id} />}
         </div>
 
         {rooms.length === 0 ? (
@@ -147,7 +154,7 @@ function ProjectDetailPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rooms.map(r => <RoomCard key={r.id} room={r} projectId={id} />)}
+            {rooms.map(r => <RoomCard key={r.id} room={r} projectId={id} canDelete={!isClientUser} />)}
           </div>
         )}
 
@@ -332,7 +339,7 @@ function DeleteProjectDialog({
   );
 }
 
-function RoomCard({ room, projectId }: { room: { id: string; name: string }; projectId: string }) {
+function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: string }; projectId: string; canDelete: boolean }) {
   const qc = useQueryClient();
   const { data: images = [] } = useQuery({ queryKey: ["roomImages", room.id], queryFn: async () => (await db.listRoomImages(room.id)) ?? [] });
   const { data: selections = [] } = useQuery({ queryKey: ["roomProducts", room.id], queryFn: async () => (await db.listRoomProducts(room.id)) ?? [] });
@@ -363,9 +370,11 @@ function RoomCard({ room, projectId }: { room: { id: string; name: string }; pro
             {sketchups} SketchUp · {renderings} Renderings · {selections.length} Selections
           </p>
         </div>
-        <button onClick={remove} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-ink transition-opacity">
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        {canDelete && (
+          <button onClick={remove} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-ink transition-opacity">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     </Link>
   );
