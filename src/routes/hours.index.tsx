@@ -17,7 +17,7 @@ export const Route = createFileRoute("/hours/")({
   component: HoursPage,
 });
 
-const PAID_THROUGH_OPTIONS = ["zelle", "check", "cash", "stripe", "other"];
+const PAID_THROUGH_OPTIONS = ["Zelle", "Venmo"];
 
 function HoursPage() {
   const qc = useQueryClient();
@@ -27,7 +27,7 @@ function HoursPage() {
   const [employeeFilter, setEmployeeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"unpaid" | "all" | "paid">("unpaid");
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10));
-  const [paidThrough, setPaidThrough] = useState("zelle");
+  const [paidThrough, setPaidThrough] = useState("Zelle");
   const [busy, setBusy] = useState(false);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
@@ -347,7 +347,7 @@ function HoursPage() {
                           ) : entry.paid ? "Yes" : "No"}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">{entry.paid_on ? formatShortDate(entry.paid_on) : ""}</td>
-                        <td className="px-3 py-3 italic truncate">{entry.paid_through ?? ""}</td>
+                        <td className="px-3 py-3 italic truncate">{formatPaidThrough(entry.paid_through)}</td>
                         <td className="px-3 py-3 text-right">
                           {(!entry.paid || canManage) && (
                             <button type="button" onClick={() => deleteEntry(entry)} className="text-muted-foreground hover:text-destructive" aria-label="Delete hour entry">
@@ -387,7 +387,7 @@ function HoursPage() {
                       <DetailStat label="Hours" value={formatHours(Number(entry.hours || 0))} />
                       <DetailStat label="Pay" value={formatMoney(entryPay(entry))} />
                       <DetailStat label="Paid On" value={entry.paid_on ? formatDate(entry.paid_on) : "—"} />
-                      <DetailStat label="Via" value={entry.paid_through ?? "—"} />
+                      <DetailStat label="Via" value={formatPaidThrough(entry.paid_through) || "—"} />
                     </div>
 
                     <div className="flex items-center justify-between border border-border bg-bone/30 px-3 py-2">
@@ -469,4 +469,12 @@ function formatDate(value: string) {
 function formatShortDate(value: string) {
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
+}
+
+function formatPaidThrough(value: string | null) {
+  if (!value) return "";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "zelle") return "Zelle";
+  if (normalized === "venmo") return "Venmo";
+  return value;
 }
