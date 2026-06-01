@@ -207,11 +207,11 @@ function HoursPage() {
               </div>
               <div>
                 <Label className="eyebrow">Hours</Label>
-                <Input value={hours} onChange={(e) => setHours(e.target.value)} placeholder="3.5" required />
+                <Input value={hours} onChange={(e) => setHours(e.target.value)} required />
               </div>
               <div>
                 <Label className="eyebrow">Task/Project</Label>
-                <Input value={taskProject} onChange={(e) => setTaskProject(e.target.value)} placeholder="Hanley Airbnb, renderings, install..." required />
+                <Input value={taskProject} onChange={(e) => setTaskProject(e.target.value)} required />
               </div>
               <button type="submit" disabled={busy} className="w-full bg-ink text-primary-foreground py-3 text-sm disabled:opacity-50">
                 {busy ? "Saving..." : "Add Hours"}
