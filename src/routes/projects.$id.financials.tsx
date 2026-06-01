@@ -76,9 +76,7 @@ type ServiceDraftListField =
   | "roomSelectionsRenovation"
   | "roomSelectionsFurniture"
   | "servicesRenovation"
-  | "servicesRenovationVirtual"
-  | "servicesFurniture"
-  | "servicesFurnitureVirtual";
+  | "servicesFurniture";
 
 const SERVICE_PHASES: InvoicePhaseName[] = ["Project Start", "Design Presentation", "Design Document Delivery", "Project Completion"];
 const DEFAULT_PHASE_SPLITS = ["50", "25", "20", "5"];
@@ -597,22 +595,10 @@ function FinancialsPage() {
                     onToggle={(value) => toggleServiceDraftList("servicesRenovation", value)}
                   />
                   <CheckboxGroup
-                    title="Services Provided: Renovation Virtual"
-                    options={SERVICE_OPTIONS}
-                    values={serviceDraft.servicesRenovationVirtual}
-                    onToggle={(value) => toggleServiceDraftList("servicesRenovationVirtual", value)}
-                  />
-                  <CheckboxGroup
                     title="Services Provided: Furniture"
                     options={SERVICE_OPTIONS}
                     values={serviceDraft.servicesFurniture}
                     onToggle={(value) => toggleServiceDraftList("servicesFurniture", value)}
-                  />
-                  <CheckboxGroup
-                    title="Services Provided: Furniture Virtual"
-                    options={SERVICE_OPTIONS}
-                    values={serviceDraft.servicesFurnitureVirtual}
-                    onToggle={(value) => toggleServiceDraftList("servicesFurnitureVirtual", value)}
                   />
                 </div>
 
@@ -1147,9 +1133,9 @@ function activeRoomSelections(draft: ServiceInvoiceDraft, kind: InvoiceDesignSec
 
 function activeServices(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
   if (kind === "furniture") {
-    return draft.serviceType === "Virtual" ? draft.servicesFurnitureVirtual : draft.servicesFurniture;
+    return draft.servicesFurniture;
   }
-  return draft.serviceType === "Virtual" ? draft.servicesRenovationVirtual : draft.servicesRenovation;
+  return draft.servicesRenovation;
 }
 
 function invoiceLocation(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
