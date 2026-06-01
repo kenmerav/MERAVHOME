@@ -544,7 +544,21 @@ function FinancialsPage() {
                     </select>
                   </div>
                   <div className="md:col-span-2">
-                    <ReviewField label="Stripe Link" value={serviceDraft.stripeLink} onChange={(value) => updateServiceDraft({ stripeLink: value })} />
+                    <Label className="eyebrow">Stripe Link</Label>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Input
+                        value={serviceDraft.stripeLink}
+                        onChange={(e) => updateServiceDraft({ stripeLink: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={createStripeLink}
+                        disabled={creatingStripeLink}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm whitespace-nowrap hover:border-ink disabled:opacity-50"
+                      >
+                        {creatingStripeLink ? "Creating..." : "Generate Payment Link"}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -634,9 +648,6 @@ function FinancialsPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <button type="button" onClick={createStripeLink} disabled={creatingStripeLink} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-50">
-                    {creatingStripeLink ? "Creating Stripe Link..." : "Generate Payment Link"}
-                  </button>
                   <button type="button" onClick={() => printServiceInvoiceDraft(serviceDraft)} className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
                     <FileText className="w-4 h-4" /> Download PDF
                   </button>
@@ -646,7 +657,7 @@ function FinancialsPage() {
                 </div>
               </div>
 
-              <ServiceInvoicePreview draft={serviceDraft} onCreateStripeLink={createStripeLink} creatingStripeLink={creatingStripeLink} />
+              <ServiceInvoicePreview draft={serviceDraft} />
             </div>
           </section>
         )}
@@ -893,12 +904,8 @@ function CheckboxGroup({ title, options, values, onToggle }: { title: string; op
 
 function ServiceInvoicePreview({
   draft,
-  onCreateStripeLink,
-  creatingStripeLink,
 }: {
   draft: ServiceInvoiceDraft;
-  onCreateStripeLink: () => void;
-  creatingStripeLink: boolean;
 }) {
   const fee = calculatedDesignFee(draft);
   const paid = numberValue(draft.paid) ?? 0;
@@ -995,15 +1002,6 @@ function ServiceInvoicePreview({
         </div>
 
         <div className="space-y-4">
-          <button type="button" onClick={onCreateStripeLink} disabled={creatingStripeLink} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold disabled:opacity-50">
-            {creatingStripeLink ? "Creating Payment Link..." : "Generate Payment Link"}
-          </button>
-          <button type="button" onClick={() => printServiceInvoiceDraft(draft)} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
-            Download PDF
-          </button>
-          <button type="button" onClick={() => toast.info("QuickBooks invoice creation needs the rotated QuickBooks keys added to Vercel.")} className="w-full bg-black text-white rounded-xl py-5 text-sm font-semibold">
-            Generate QuickBooks Invoice
-          </button>
           <div className="bg-yellow-300 text-black p-4 text-xs mt-10">
             <div className="font-bold mb-4">MATH CHECK:<span className="float-right">{formatMoney(fee)}</span></div>
             <div className="font-bold mb-3">Percentage Check</div>
