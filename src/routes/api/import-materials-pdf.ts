@@ -25,6 +25,10 @@ function materialMatchKey(value: string) {
   return n;
 }
 
+function materialImportKey(roomId: string, label: string, productUrl: string | null | undefined) {
+  return `${roomId}::${materialMatchKey(label)}::${normalize(productUrl ?? "")}`;
+}
+
 function titleCase(value: string) {
   return value
     .trim()
@@ -150,15 +154,18 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           const roomIds = Array.from(new Set(Array.from(roomByName.values()).map((room: any) => room.id)));
           const { data: existingItems, error: itemsError } = await supabaseAdmin
             .from("material_items")
-            .select("id, room_id, item_label, sort_order")
+            .select("id, room_id, item_label, product_url, sort_order")
             .eq("project_id", projectId)
             .in("room_id", roomIds);
           if (itemsError) return json({ error: itemsError.message }, 500);
 
-          const existingByRoomLabel = new Map<string, any>();
+          const existingByImportKey = new Map<string, any>();
           const nextSortByRoom = new Map<string, number>();
           for (const existing of existingItems ?? []) {
-            existingByRoomLabel.set(`${existing.room_id}::${materialMatchKey(existing.item_label)}`, existing);
+            existingByImportKey.set(
+              materialImportKey(existing.room_id, existing.item_label, existing.product_url),
+              existing,
+            );
             nextSortByRoom.set(existing.room_id, Math.max(nextSortByRoom.get(existing.room_id) ?? 0, Number(existing.sort_order ?? 0) + 1));
           }
 
@@ -168,7 +175,7 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           for (const item of extracted) {
             const room = roomByName.get(normalize(item.room_name));
             if (!room?.id) continue;
-            const existing = existingByRoomLabel.get(`${room.id}::${materialMatchKey(item.item_label)}`);
+            const existing = existingByImportKey.get(materialImportKey(room.id, item.item_label, item.product_url));
             if (existing) {
               const { error } = await supabaseAdmin
                 .from("material_items")
@@ -200,6 +207,11 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
               scrape_error: null,
             });
             if (error) return json({ error: error.message }, 500);
+            existingByImportKey.set(materialImportKey(room.id, item.item_label, item.product_url), {
+              room_id: room.id,
+              item_label: item.item_label,
+              product_url: item.product_url,
+            });
             createdItems += 1;
           }
 
