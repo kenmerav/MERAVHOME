@@ -143,12 +143,38 @@ function parsePdfItem(label: string, roomName: string, productUrl: string): Impo
   };
 }
 
+function fallbackLabelFromUrl(productUrl: string) {
+  let url: URL;
+  try {
+    url = new URL(productUrl);
+  } catch {
+    return "Imported Material";
+  }
+
+  const hostAndPath = `${url.hostname} ${url.pathname}`.toLowerCase();
+  if (/rangehood|range-hood|stove-hood/.test(hostAndPath)) return "Range Hood";
+  if (/sconce/.test(hostAndPath)) return "Sconce";
+  if (/pendant/.test(hostAndPath)) return "Pendant";
+  if (/zellige|tile/.test(hostAndPath)) return "Tile";
+  if (/quartzite|counter|slab/.test(hostAndPath)) return "Countertop";
+  if (/sink|blanco/.test(hostAndPath)) return "Sink";
+  if (/pot-filler/.test(hostAndPath)) return "Pot Filler";
+  if (/faucet/.test(hostAndPath)) return "Faucet";
+  if (/top-knobs|knob|pull/.test(hostAndPath)) return "Cabinet Hardware";
+  if (/cabinet|sollid/.test(hostAndPath)) return "Cabinet Finish";
+
+  const slug = url.pathname.split("/").filter(Boolean).at(-1)?.replace(/[-_]+/g, " ");
+  return slug ? titleCase(slug) : titleCase(url.hostname.replace(/^www\./, ""));
+}
+
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   const rawPdf = Buffer.from(await file.arrayBuffer()).toString("latin1");
   const roomName = pickRoomNameFromText(rawPdf);
   const actionUrls = extractActionUrls(rawPdf);
   const imported: ImportedPdfItem[] = [];
   const seen = new Set<string>();
+  const usedUrls = new Set<string>();
+  const urlOnlyAnnotations = new Set<string>();
 
   for (const annotation of rawPdf.split(/\bendobj/)) {
     if (!annotation.includes("/Subtype /Link")) continue;
@@ -159,7 +185,26 @@ async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
     if (!url || !label) continue;
 
     const item = parsePdfItem(label, roomName, url);
-    if (!item) continue;
+    if (!item) {
+      if (isUrlLabel(label)) urlOnlyAnnotations.add(url);
+      continue;
+    }
+    const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    usedUrls.add(item.product_url);
+    imported.push(item);
+  }
+
+  for (const url of urlOnlyAnnotations) {
+    if (usedUrls.has(url)) continue;
+    const item = {
+      room_name: roomName,
+      item_label: fallbackLabelFromUrl(url),
+      product_url: url,
+      quantity: 1,
+      color: null,
+    };
     const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
     if (seen.has(key)) continue;
     seen.add(key);
