@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, BookOpen, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PROJECT_LABELS, PROJECT_STATUSES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -105,6 +105,9 @@ function ProjectDetailPage() {
               </Select>
               <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
                 <ClipboardList className="w-4 h-4" /> Materials
+              </Link>
+              <Link to="/specbooks/$id" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <BookOpen className="w-4 h-4" /> Spec Book
               </Link>
               <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
                 <Sparkles className="w-4 h-4" /> Renderings
