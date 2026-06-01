@@ -57,6 +57,7 @@ function HoursPage() {
   const visibleEntries = useMemo(() => {
     return entries.filter((entry) => {
       if (!canManage && entry.user_id !== profile?.id) return false;
+      if (canManage && employeeFilter === "all") return false;
       if (canManage && employeeFilter !== "all" && entry.user_id !== employeeFilter) return false;
       if (statusFilter === "paid" && !entry.paid) return false;
       if (statusFilter === "unpaid" && entry.paid) return false;
@@ -66,6 +67,7 @@ function HoursPage() {
 
   const allSummary = useMemo(() => summarize(entries.filter((entry) => canManage || entry.user_id === profile?.id)), [canManage, entries, profile?.id]);
   const visibleSummary = useMemo(() => summarize(visibleEntries), [visibleEntries]);
+  const selectedEmployee = canManage && employeeFilter !== "all" ? users.find((user) => user.id === employeeFilter) : null;
   const employeeSummaries = useMemo(() => {
     const byUser = new Map<string, { user: EmployeeTimeEntry["user"]; entries: EmployeeTimeEntry[] }>();
     entries.forEach((entry) => {
@@ -220,7 +222,9 @@ function HoursPage() {
               <section className="border border-border bg-bone/20 p-6 space-y-4">
                 <div>
                   <div className="font-display text-2xl">Pay Run</div>
-                  <p className="text-sm text-muted-foreground mt-1">Mark all currently filtered unpaid rows as paid.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {selectedEmployee ? `Mark ${selectedEmployee.full_name}'s currently filtered unpaid rows as paid.` : "Choose an employee before marking hours paid."}
+                  </p>
                 </div>
                 <div>
                   <Label className="eyebrow">Paid On</Label>
@@ -232,8 +236,8 @@ function HoursPage() {
                     {PAID_THROUGH_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </div>
-                <button type="button" onClick={() => markPaid(visibleEntries)} disabled={busy} className="w-full bg-ink text-primary-foreground py-3 text-sm disabled:opacity-50">
-                  Mark Filtered Unpaid Paid
+                <button type="button" onClick={() => markPaid(visibleEntries)} disabled={busy || !selectedEmployee} className="w-full bg-ink text-primary-foreground py-3 text-sm disabled:opacity-50">
+                  {selectedEmployee ? `Mark ${selectedEmployee.full_name} Paid` : "Select Employee to Pay"}
                 </button>
               </section>
             )}
@@ -242,6 +246,18 @@ function HoursPage() {
           <div className="space-y-6">
             {canManage && (
               <section className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEmployeeFilter("all")}
+                  className={`border p-4 text-left ${employeeFilter === "all" ? "border-ink bg-bone" : "border-border bg-background hover:border-ink"}`}
+                >
+                  <div className="font-display text-xl">Everyone</div>
+                  <div className="text-xs text-muted-foreground mt-1">Team total, no detail rows</div>
+                  <div className="grid grid-cols-2 gap-2 mt-4 text-sm">
+                    <div><span className="eyebrow block">Due Hours</span>{formatHours(allSummary.unpaidHours)}</div>
+                    <div><span className="eyebrow block">Due Pay</span>{formatMoney(allSummary.unpaidPay)}</div>
+                  </div>
+                </button>
                 {employeeSummaries.map((summary) => (
                   <button
                     type="button"
@@ -250,7 +266,7 @@ function HoursPage() {
                       setEmployeeFilter(summary.userId);
                       setStatusFilter("unpaid");
                     }}
-                    className="border border-border bg-background p-4 text-left hover:border-ink"
+                    className={`border p-4 text-left ${employeeFilter === summary.userId ? "border-ink bg-bone" : "border-border bg-background hover:border-ink"}`}
                   >
                     <div className="font-display text-xl">{summary.user?.full_name ?? "Team Member"}</div>
                     <div className="text-xs text-muted-foreground mt-1">{summary.user?.email}</div>
@@ -266,14 +282,18 @@ function HoursPage() {
             <section className="border border-border bg-background">
               <div className="p-5 border-b border-border flex flex-col lg:flex-row lg:items-end gap-4 justify-between">
                 <div>
-                  <div className="eyebrow mb-2">{canManage ? "All Team Entries" : "My Entries"}</div>
-                  <div className="font-display text-3xl">{formatMoney(visibleSummary.unpaidPay)} Due</div>
-                  <p className="text-sm text-muted-foreground mt-1">{formatHours(visibleSummary.unpaidHours)} unpaid hours in this view</p>
+                  <div className="eyebrow mb-2">{canManage ? (selectedEmployee ? `${selectedEmployee.full_name} Details` : "Everyone Total") : "My Entries"}</div>
+                  <div className="font-display text-3xl">{formatMoney(canManage && !selectedEmployee ? allSummary.unpaidPay : visibleSummary.unpaidPay)} Due</div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {canManage && !selectedEmployee
+                      ? "Choose an employee above to see their detailed rows."
+                      : `${formatHours(visibleSummary.unpaidHours)} unpaid hours in this view`}
+                  </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3">
                   {canManage && (
                     <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="h-10 border border-input bg-background px-3 text-sm">
-                      <option value="all">All employees</option>
+                      <option value="all">Everyone total</option>
                       {users.map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}
                     </select>
                   )}
@@ -303,6 +323,8 @@ function HoursPage() {
                   <tbody>
                     {loadingEntries ? (
                       <tr><td colSpan={canManage ? 9 : 8} className="px-4 py-12 text-center text-muted-foreground">Loading hours...</td></tr>
+                    ) : canManage && !selectedEmployee ? (
+                      <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">Select an employee to see their hour detail.</td></tr>
                     ) : visibleEntries.length === 0 ? (
                       <tr><td colSpan={canManage ? 9 : 8} className="px-4 py-12 text-center text-muted-foreground">No hour entries in this view.</td></tr>
                     ) : visibleEntries.map((entry) => (
