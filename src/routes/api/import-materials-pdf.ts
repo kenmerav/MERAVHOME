@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { PDFParse } from "pdf-parse";
+import pdfWorkerSource from "pdfjs-dist/legacy/build/pdf.worker.mjs?raw";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
 
@@ -60,43 +62,25 @@ type ImportedPdfItem = {
   product_url: string;
 };
 
-function ensurePdfDomPolyfills() {
-  if (!("DOMMatrix" in globalThis)) {
-    class ServerDOMMatrix {
+function ensurePdfJsGlobals() {
+  const globalScope = globalThis as typeof globalThis & {
+    DOMMatrix?: typeof DOMMatrix;
+    ImageData?: typeof ImageData;
+    Path2D?: typeof Path2D;
+  };
+
+  if (!globalScope.DOMMatrix) {
+    globalScope.DOMMatrix = class DOMMatrix {
       a = 1;
       b = 0;
       c = 0;
       d = 1;
       e = 0;
       f = 0;
-      m11 = 1;
-      m12 = 0;
-      m13 = 0;
-      m14 = 0;
-      m21 = 0;
-      m22 = 1;
-      m23 = 0;
-      m24 = 0;
-      m31 = 0;
-      m32 = 0;
-      m33 = 1;
-      m34 = 0;
-      m41 = 0;
-      m42 = 0;
-      m43 = 0;
-      m44 = 1;
-      is2D = true;
-      isIdentity = true;
 
       constructor(init?: number[] | string) {
-        if (Array.isArray(init) && init.length >= 6) {
+        if (Array.isArray(init)) {
           [this.a, this.b, this.c, this.d, this.e, this.f] = init;
-          this.m11 = this.a;
-          this.m12 = this.b;
-          this.m21 = this.c;
-          this.m22 = this.d;
-          this.m41 = this.e;
-          this.m42 = this.f;
         }
       }
 
@@ -106,119 +90,75 @@ function ensurePdfDomPolyfills() {
       scaleSelf() { return this; }
       rotateSelf() { return this; }
       invertSelf() { return this; }
-      transformPoint(point: { x?: number; y?: number }) {
-        return { x: point.x ?? 0, y: point.y ?? 0, z: 0, w: 1 };
+      transformPoint(point?: { x?: number; y?: number }) {
+        return { x: point?.x ?? 0, y: point?.y ?? 0 };
       }
-    }
+    } as typeof DOMMatrix;
+  }
 
-    (globalThis as any).DOMMatrix = ServerDOMMatrix;
+  if (!globalScope.ImageData) {
+    globalScope.ImageData = class ImageData {
+      constructor(
+        public data: Uint8ClampedArray,
+        public width: number,
+        public height: number,
+      ) {}
+    } as typeof ImageData;
+  }
+
+  if (!globalScope.Path2D) {
+    globalScope.Path2D = class Path2D {} as typeof Path2D;
   }
 }
 
-function buildTextSegments(items: any[]): TextSegment[] {
-  const textItems = items
-    .map((item) => {
-      const text = String(item.str ?? "").trim();
-      if (!text) return null;
-      const x = Number(item.transform?.[4] ?? 0);
-      const y = Number(item.transform?.[5] ?? 0);
-      const width = Number(item.width ?? 0);
-      const height = Number(item.height || item.transform?.[0] || 10);
-      return { text, xMin: x, xMax: x + width, yMin: y, yMax: y + height, yCenter: y + height / 2 };
-    })
-    .filter(Boolean) as TextSegment[];
-
-  const rows: TextSegment[][] = [];
-  for (const item of textItems.sort((a, b) => b.yCenter - a.yCenter || a.xMin - b.xMin)) {
-    const row = rows.find((candidate) => Math.abs(candidate[0].yCenter - item.yCenter) < 3);
-    if (row) row.push(item);
-    else rows.push([item]);
-  }
-
-  const segments: TextSegment[] = [];
-  for (const row of rows) {
-    const sorted = row.sort((a, b) => a.xMin - b.xMin);
-    let current: TextSegment | null = null;
-    for (const item of sorted) {
-      if (!current || item.xMin - current.xMax > 18) {
-        current = { ...item };
-        segments.push(current);
-      } else {
-        current.text = `${current.text} ${item.text}`.replace(/\s+/g, " ");
-        current.xMax = Math.max(current.xMax, item.xMax);
-        current.yMin = Math.min(current.yMin, item.yMin);
-        current.yMax = Math.max(current.yMax, item.yMax);
-        current.yCenter = (current.yMin + current.yMax) / 2;
-      }
-    }
-  }
-
-  return segments;
+function pickRoomNameFromText(text: string) {
+  const nonLinkLines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.includes("](") && !line.startsWith("--"));
+  const uppercaseLines = nonLinkLines.filter((line) => /^[A-Z0-9' &/-]+$/.test(line));
+  return titleCase(uppercaseLines[1] || uppercaseLines[0] || "Imported Room");
 }
 
-function pickRoomName(segments: TextSegment[], pageWidth: number, pageHeight: number) {
-  const candidates = segments
-    .filter((segment) => segment.xMin > pageWidth * 0.45 && segment.yCenter > pageHeight * 0.65)
-    .sort((a, b) => (b.yMax - b.yMin) - (a.yMax - a.yMin) || b.yCenter - a.yCenter);
-  return titleCase(candidates[0]?.text || "Imported Room");
-}
+function extractMarkdownLinks(text: string, roomName: string): ImportedPdfItem[] {
+  const imported: ImportedPdfItem[] = [];
+  const seen = new Set<string>();
+  const linkPattern = /\[([^\]]+)\]\((https?:[^)]+)\)([A-Z])?/g;
+  for (const match of text.matchAll(linkPattern)) {
+    const rawLabel = `${match[1]}${match[3] ?? ""}`.trim();
+    const url = match[2].trim();
+    if (!rawLabel || !url || normalize(rawLabel) === normalize(roomName)) continue;
 
-function matchLabel(rect: number[], segments: TextSegment[]) {
-  const [x1, y1, x2, y2] = rect;
-  const xCenter = (x1 + x2) / 2;
-  const yCenter = (y1 + y2) / 2;
-  const candidates = segments
-    .filter((segment) => {
-      const yClose = yCenter >= segment.yMin - 8 && yCenter <= segment.yMax + 8;
-      const xClose = xCenter >= segment.xMin - 10 && xCenter <= segment.xMax + 10;
-      return yClose && xClose;
-    })
-    .sort((a, b) => {
-      const ad = Math.abs(a.yCenter - yCenter) + Math.abs((a.xMin + a.xMax) / 2 - xCenter);
-      const bd = Math.abs(b.yCenter - yCenter) + Math.abs((b.xMin + b.xMax) / 2 - xCenter);
-      return ad - bd;
-    });
-  return candidates[0]?.text.trim() ?? "";
+    const item = {
+      room_name: roomName,
+      item_label: titleCase(rawLabel),
+      product_url: url,
+    };
+    const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    imported.push(item);
+  }
+  return imported;
 }
 
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
-  ensurePdfDomPolyfills();
-  const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  GlobalWorkerOptions.workerSrc = "";
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await getDocument({
-    data: bytes,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    disableWorker: true,
-  } as any).promise;
-  const imported: ImportedPdfItem[] = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const text = await page.getTextContent();
-    const segments = buildTextSegments(text.items);
-    const roomName = pickRoomName(segments, page.view[2] - page.view[0], page.view[3] - page.view[1]);
-    const annotations = await page.getAnnotations({ intent: "display" });
-    const seen = new Set<string>();
-
-    for (const annotation of annotations as any[]) {
-      const url = String(annotation.url ?? "").trim();
-      const rect = annotation.rect as number[] | undefined;
-      if (!url || !rect?.length) continue;
-
-      const label = matchLabel(rect, segments);
-      if (!label || normalize(label) === normalize(roomName)) continue;
-
-      const key = `${normalize(roomName)}::${normalize(label)}::${url}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      imported.push({ room_name: roomName, item_label: titleCase(label), product_url: url });
-    }
+  let parser: PDFParse | null = null;
+  try {
+    ensurePdfJsGlobals();
+    const { PDFParse } = await import("pdf-parse");
+    PDFParse.setWorker(`data:text/javascript;base64,${Buffer.from(pdfWorkerSource).toString("base64")}`);
+    parser = new PDFParse({ data: Buffer.from(await file.arrayBuffer()) });
+    const [info, textResult] = await Promise.all([
+      parser.getInfo(),
+      parser.getText({ parseHyperlinks: true }),
+    ]);
+    const outlineTitle = info.outline?.find((item: any) => item?.title)?.title;
+    const roomName = titleCase(outlineTitle || pickRoomNameFromText(textResult.text));
+    return extractMarkdownLinks(textResult.text, roomName);
+  } finally {
+    await parser?.destroy();
   }
-
-  return imported;
 }
 
 export const Route = createFileRoute("/api/import-materials-pdf")({
