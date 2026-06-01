@@ -305,19 +305,19 @@ function HoursPage() {
                 </div>
               </div>
 
-              <div className="mobile-card-scroll">
-                <table className="w-full text-sm">
+              <div className="hidden lg:block">
+                <table className="w-full text-sm table-fixed">
                   <thead>
                     <tr className="bg-bone/70 text-left text-[11px] uppercase tracking-[0.12em]">
-                      {canManage && <th className="px-4 py-3 border-b border-border">Employee</th>}
-                      <th className="px-4 py-3 border-b border-border">Date</th>
-                      <th className="px-4 py-3 border-b border-border text-right">Hours</th>
-                      <th className="px-4 py-3 border-b border-border">Task/Project</th>
-                      <th className="px-4 py-3 border-b border-border text-right">Pay</th>
-                      <th className="px-4 py-3 border-b border-border text-center">Paid Y/N</th>
-                      <th className="px-4 py-3 border-b border-border">Paid On</th>
-                      <th className="px-4 py-3 border-b border-border">Paid Through</th>
-                      <th className="px-4 py-3 border-b border-border"></th>
+                      {canManage && <th className="px-3 py-3 border-b border-border w-[15%]">Employee</th>}
+                      <th className="px-3 py-3 border-b border-border w-[11%]">Date</th>
+                      <th className="px-3 py-3 border-b border-border text-right w-[8%]">Hours</th>
+                      <th className="px-3 py-3 border-b border-border">Task/Project</th>
+                      <th className="px-3 py-3 border-b border-border text-right w-[10%]">Pay</th>
+                      <th className="px-3 py-3 border-b border-border text-center w-[9%]">Paid</th>
+                      <th className="px-3 py-3 border-b border-border w-[11%]">Paid On</th>
+                      <th className="px-3 py-3 border-b border-border w-[10%]">Via</th>
+                      <th className="px-3 py-3 border-b border-border w-[5%]"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -329,12 +329,12 @@ function HoursPage() {
                       <tr><td colSpan={canManage ? 9 : 8} className="px-4 py-12 text-center text-muted-foreground">No hour entries in this view.</td></tr>
                     ) : visibleEntries.map((entry) => (
                       <tr key={entry.id} className="border-b border-border">
-                        {canManage && <td className="px-4 py-3 min-w-[180px]">{entry.user?.full_name ?? "Team Member"}</td>}
-                        <td className="px-4 py-3 min-w-[130px]">{formatDate(entry.work_date)}</td>
-                        <td className="px-4 py-3 text-right min-w-[90px]">{formatHours(Number(entry.hours || 0))}</td>
-                        <td className="px-4 py-3 min-w-[280px]">{entry.task_project}</td>
-                        <td className="px-4 py-3 text-right min-w-[120px]">{formatMoney(entryPay(entry))}</td>
-                        <td className="px-4 py-3 text-center min-w-[100px]">
+                        {canManage && <td className="px-3 py-3 truncate">{entry.user?.full_name ?? "Team Member"}</td>}
+                        <td className="px-3 py-3 whitespace-nowrap">{formatShortDate(entry.work_date)}</td>
+                        <td className="px-3 py-3 text-right">{formatHours(Number(entry.hours || 0))}</td>
+                        <td className="px-3 py-3 break-words">{entry.task_project}</td>
+                        <td className="px-3 py-3 text-right whitespace-nowrap">{formatMoney(entryPay(entry))}</td>
+                        <td className="px-3 py-3 text-center">
                           {canManage ? (
                             <button
                               type="button"
@@ -346,9 +346,9 @@ function HoursPage() {
                             </button>
                           ) : entry.paid ? "Yes" : "No"}
                         </td>
-                        <td className="px-4 py-3 min-w-[130px]">{entry.paid_on ? formatDate(entry.paid_on) : ""}</td>
-                        <td className="px-4 py-3 min-w-[130px] italic">{entry.paid_through ?? ""}</td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 py-3 whitespace-nowrap">{entry.paid_on ? formatShortDate(entry.paid_on) : ""}</td>
+                        <td className="px-3 py-3 italic truncate">{entry.paid_through ?? ""}</td>
+                        <td className="px-3 py-3 text-right">
                           {(!entry.paid || canManage) && (
                             <button type="button" onClick={() => deleteEntry(entry)} className="text-muted-foreground hover:text-destructive" aria-label="Delete hour entry">
                               <Trash2 className="w-4 h-4" />
@@ -359,6 +359,54 @@ function HoursPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="lg:hidden divide-y divide-border">
+                {loadingEntries ? (
+                  <div className="px-5 py-12 text-center text-muted-foreground">Loading hours...</div>
+                ) : canManage && !selectedEmployee ? (
+                  <div className="px-5 py-12 text-center text-muted-foreground">Select an employee to see their hour detail.</div>
+                ) : visibleEntries.length === 0 ? (
+                  <div className="px-5 py-12 text-center text-muted-foreground">No hour entries in this view.</div>
+                ) : visibleEntries.map((entry) => (
+                  <article key={entry.id} className="p-5 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        {canManage && <div className="eyebrow mb-1">{entry.user?.full_name ?? "Team Member"}</div>}
+                        <div className="font-display text-2xl leading-tight">{formatDate(entry.work_date)}</div>
+                        <p className="mt-1 text-sm text-muted-foreground break-words">{entry.task_project}</p>
+                      </div>
+                      {(!entry.paid || canManage) && (
+                        <button type="button" onClick={() => deleteEntry(entry)} className="text-muted-foreground hover:text-destructive flex-shrink-0" aria-label="Delete hour entry">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                      <DetailStat label="Hours" value={formatHours(Number(entry.hours || 0))} />
+                      <DetailStat label="Pay" value={formatMoney(entryPay(entry))} />
+                      <DetailStat label="Paid On" value={entry.paid_on ? formatDate(entry.paid_on) : "—"} />
+                      <DetailStat label="Via" value={entry.paid_through ?? "—"} />
+                    </div>
+
+                    <div className="flex items-center justify-between border border-border bg-bone/30 px-3 py-2">
+                      <span className="eyebrow">Paid</span>
+                      {canManage ? (
+                        <button
+                          type="button"
+                          onClick={() => togglePaid(entry)}
+                          className={`inline-flex h-7 w-7 items-center justify-center border ${entry.paid ? "bg-ink text-white border-ink" : "border-border bg-background"}`}
+                          aria-label={entry.paid ? "Mark unpaid" : "Mark paid"}
+                        >
+                          {entry.paid && <Check className="w-4 h-4" />}
+                        </button>
+                      ) : (
+                        <span className="text-sm">{entry.paid ? "Yes" : "No"}</span>
+                      )}
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
           </div>
@@ -373,6 +421,15 @@ function SummaryBox({ label, value }: { label: string; value: string }) {
     <div className="border-2 border-ink bg-background min-w-[150px] text-center">
       <div className="bg-bone border-b-2 border-ink px-4 py-2 font-bold">{label}</div>
       <div className="px-4 py-2 text-xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-border bg-background p-3 min-w-0">
+      <div className="eyebrow mb-1">{label}</div>
+      <div className="truncate text-base">{value}</div>
     </div>
   );
 }
@@ -407,4 +464,9 @@ function formatHours(value: number) {
 function formatDate(value: string) {
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-US");
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
 }
