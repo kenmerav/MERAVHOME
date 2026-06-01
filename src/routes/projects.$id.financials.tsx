@@ -65,6 +65,13 @@ type ServiceInvoiceDraft = {
 };
 
 type InvoiceProjectType = "Renovation" | "New Build" | "Furniture";
+type InvoiceDesignSection = {
+  kind: "renovation" | "furniture";
+  title: string;
+  amount: number;
+  location: string;
+  description: string;
+};
 type ServiceDraftListField =
   | "roomSelectionsRenovation"
   | "roomSelectionsFurniture"
@@ -939,6 +946,7 @@ function ServiceInvoicePreview({
   draft: ServiceInvoiceDraft;
 }) {
   const fee = calculatedDesignFee(draft);
+  const sections = invoiceDesignSections(draft);
   const paid = numberValue(draft.paid) ?? 0;
   const phaseRows = draft.phases.map((phase, index) => ({
     ...phase,
@@ -982,30 +990,34 @@ function ServiceInvoicePreview({
             </div>
           </div>
 
-          <table className="w-full border border-black text-[12px] mb-16">
-            <thead>
-              <tr className="bg-[#e9e7de]">
-                <th colSpan={3} className="border-b border-black py-2 text-center font-bold">Renovation Design</th>
-              </tr>
-              <tr className="bg-[#e9e7de] text-left">
-                <th className="border-r border-black border-b border-black py-2 px-1 w-[30%]">Location</th>
-                <th className="border-r border-black border-b border-black py-2 px-1">Description</th>
-                <th className="border-b border-black py-2 px-1 w-[18%]">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border-r border-black py-8 px-3 text-center font-bold">{invoiceLocation(draft)}</td>
-                <td className="border-r border-black py-8 px-4 text-center">{invoiceDescription(draft)}</td>
-                <td className="py-8 px-2 text-right">{formatMoney(fee)}</td>
-              </tr>
-              <tr>
-                <td className="border-r border-black"></td>
-                <td className="border-r border-black"></td>
-                <td className="bg-[#e9e7de] border-t border-black py-2 px-2 text-right font-bold">{formatMoney(fee)}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="space-y-10 mb-16">
+            {sections.map((section) => (
+              <table key={section.kind} className="w-full border border-black text-[12px]">
+                <thead>
+                  <tr className="bg-[#e9e7de]">
+                    <th colSpan={3} className="border-b border-black py-2 text-center font-bold">{section.title}</th>
+                  </tr>
+                  <tr className="bg-[#e9e7de] text-left">
+                    <th className="border-r border-black border-b border-black py-2 px-1 w-[30%]">Location</th>
+                    <th className="border-r border-black border-b border-black py-2 px-1">Description</th>
+                    <th className="border-b border-black py-2 px-1 w-[18%]">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border-r border-black py-8 px-3 text-center font-bold">{section.location}</td>
+                    <td className="border-r border-black py-8 px-4 text-center">{section.description}</td>
+                    <td className="py-8 px-2 text-right">{formatMoney(section.amount)}</td>
+                  </tr>
+                  <tr>
+                    <td className="border-r border-black"></td>
+                    <td className="border-r border-black"></td>
+                    <td className="bg-[#e9e7de] border-t border-black py-2 px-2 text-right font-bold">{formatMoney(section.amount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            ))}
+          </div>
 
           <div className="ml-auto max-w-[390px] text-[12px]">
             <div className="flex items-center justify-end gap-2 mb-4">
@@ -1074,39 +1086,79 @@ function phaseAmount(fee: number, percent: string) {
   return Math.round((fee * ((numberValue(percent) ?? 0) / 100)) * 100) / 100;
 }
 
-function selectedRate(draft: ServiceInvoiceDraft) {
-  const isFurniture = draft.projectType === "Furniture";
-  if (draft.serviceType === "Virtual") {
-    return numberValue(isFurniture ? draft.furnitureVirtualRate : draft.renovationVirtualRate) ?? 0;
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function activeRate(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
+  if (kind === "furniture") {
+    return numberValue(draft.serviceType === "Virtual" ? draft.furnitureVirtualRate : draft.furnitureRate) ?? 0;
   }
-  return numberValue(isFurniture ? draft.furnitureRate : draft.renovationRate) ?? 0;
+  return numberValue(draft.serviceType === "Virtual" ? draft.renovationVirtualRate : draft.renovationRate) ?? 0;
 }
 
 function calculatedDesignFee(draft: ServiceInvoiceDraft) {
-  const squareFeet = numberValue(draft.squareFeet) ?? 0;
-  return Math.round(squareFeet * selectedRate(draft) * 100) / 100;
+  return roundMoney(invoiceDesignSections(draft).reduce((sum, section) => sum + section.amount, 0));
 }
 
-function activeRoomSelections(draft: ServiceInvoiceDraft) {
-  return draft.projectType === "Furniture"
+function invoiceDesignSections(draft: ServiceInvoiceDraft): InvoiceDesignSection[] {
+  const squareFeet = numberValue(draft.squareFeet) ?? 0;
+  const sections: InvoiceDesignSection[] = [];
+  const renovationAmount = roundMoney(squareFeet * activeRate(draft, "renovation"));
+  const furnitureAmount = roundMoney(squareFeet * activeRate(draft, "furniture"));
+
+  if (renovationAmount > 0) {
+    sections.push({
+      kind: "renovation",
+      title: "Renovation Design",
+      amount: renovationAmount,
+      location: invoiceLocation(draft, "renovation"),
+      description: invoiceDescription(draft, "renovation"),
+    });
+  }
+
+  if (furnitureAmount > 0) {
+    sections.push({
+      kind: "furniture",
+      title: "Furniture Design",
+      amount: furnitureAmount,
+      location: invoiceLocation(draft, "furniture"),
+      description: invoiceDescription(draft, "furniture"),
+    });
+  }
+
+  if (sections.length) return sections;
+
+  const fallbackKind: InvoiceDesignSection["kind"] = draft.projectType === "Furniture" ? "furniture" : "renovation";
+  return [{
+    kind: fallbackKind,
+    title: fallbackKind === "furniture" ? "Furniture Design" : "Renovation Design",
+    amount: 0,
+    location: invoiceLocation(draft, fallbackKind),
+    description: invoiceDescription(draft, fallbackKind),
+  }];
+}
+
+function activeRoomSelections(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
+  return kind === "furniture"
     ? draft.roomSelectionsFurniture
     : draft.roomSelectionsRenovation;
 }
 
-function activeServices(draft: ServiceInvoiceDraft) {
-  if (draft.projectType === "Furniture") {
+function activeServices(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
+  if (kind === "furniture") {
     return draft.serviceType === "Virtual" ? draft.servicesFurnitureVirtual : draft.servicesFurniture;
   }
   return draft.serviceType === "Virtual" ? draft.servicesRenovationVirtual : draft.servicesRenovation;
 }
 
-function invoiceLocation(draft: ServiceInvoiceDraft) {
-  const rooms = activeRoomSelections(draft);
+function invoiceLocation(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
+  const rooms = activeRoomSelections(draft, kind);
   return rooms.length ? rooms.join(", ") : draft.location || "Full Home";
 }
 
-function invoiceDescription(draft: ServiceInvoiceDraft) {
-  const services = activeServices(draft);
+function invoiceDescription(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
+  const services = activeServices(draft, kind);
   if (services.length) return services.join(", ");
   return draft.description || "Design services";
 }
@@ -1167,6 +1219,22 @@ function buildServiceInvoiceHtml(
   const selectedAmount = payments.find((payment) => payment.label.includes(draft.currentPhase))?.amount ?? 0;
   const paid = numberValue(draft.paid) ?? 0;
   const address = addressLines(draft.projectAddress).map(escapeHtml).join("<br>");
+  const sectionTables = invoiceDesignSections(draft).map((section) => `
+    <table class="line-table">
+      <thead>
+        <tr><th colspan="3" class="center">${escapeHtml(section.title)}</th></tr>
+        <tr><th style="width:30%">Location</th><th style="width:56%">Description</th><th style="width:14%">Subtotal</th></tr>
+      </thead>
+      <tbody>
+        <tr class="item-row">
+          <td class="center"><strong>${escapeHtml(section.location)}</strong></td>
+          <td class="center">${escapeHtml(section.description)}</td>
+          <td class="right">${formatMoney(section.amount)}</td>
+        </tr>
+        <tr class="subtotal-row"><td class="subtotal-spacer" colspan="2"></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(section.amount)}</strong></td></tr>
+      </tbody>
+    </table>
+  `).join("");
   const phaseLines = payments
     .filter((payment) => payment.amount > 0)
     .map((payment) => {
@@ -1200,6 +1268,7 @@ function buildServiceInvoiceHtml(
     .line-table .item-row td { height: 0.7in; }
     .line-table .subtotal-row td { height: 0.28in; padding: 0.08in; }
     .line-table .subtotal-spacer { border: 0; height: 0; padding: 0; background: transparent; }
+    .line-table + .line-table { margin-top: 0.48in; }
     .summary { width: 3.35in; margin-left: auto; margin-top: 0.32in; font-size: 14px; }
     .fee-row { display: grid; grid-template-columns: 1fr 1.35in; align-items: stretch; margin-bottom: 0.16in; }
     .fee-label { align-self: center; padding-right: 0.06in; text-align: right; font-size: 15px; }
@@ -1235,20 +1304,7 @@ function buildServiceInvoiceHtml(
         </div>
       </div>
     </section>
-    <table class="line-table">
-      <thead>
-        <tr><th colspan="3" class="center">Renovation Design</th></tr>
-        <tr><th style="width:30%">Location</th><th style="width:56%">Description</th><th style="width:14%">Subtotal</th></tr>
-      </thead>
-      <tbody>
-        <tr class="item-row">
-          <td class="center"><strong>${escapeHtml(invoiceLocation(draft))}</strong></td>
-          <td class="center">${escapeHtml(invoiceDescription(draft))}</td>
-          <td class="right">${formatMoney(fee)}</td>
-        </tr>
-        <tr class="subtotal-row"><td class="subtotal-spacer" colspan="2"></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(fee)}</strong></td></tr>
-      </tbody>
-    </table>
+    ${sectionTables}
     <section class="summary">
       <div class="fee-row"><strong class="fee-label">Total Design Fee:</strong><span class="fee-box">${formatMoney(fee)}</span></div>
       <div class="summary-row"><strong>Paid:</strong><span>${paid ? formatMoney(paid) : ""}</span></div>
