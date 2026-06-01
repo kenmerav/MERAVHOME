@@ -241,13 +241,62 @@ export interface EmployeeTimeEntry {
   user?: Pick<UserProfile, "id" | "email" | "full_name" | "hourly_rate"> | null;
 }
 
+async function getCurrentProjectAccess() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user.id;
+  if (!userId) {
+    return { profile: null, assignedProjectIds: [] as string[] };
+  }
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const typedProfile = (profile as UserProfile | null) ?? null;
+  if (!typedProfile || !typedProfile.is_active) {
+    return { profile: typedProfile, assignedProjectIds: [] as string[] };
+  }
+
+  if (typedProfile.role !== "Client" && typedProfile.role !== "Contractor") {
+    return { profile: typedProfile, assignedProjectIds: [] as string[] };
+  }
+
+  const { data: assignments } = await supabase
+    .from("user_project_assignments")
+    .select("project_id")
+    .eq("user_id", userId);
+
+  return {
+    profile: typedProfile,
+    assignedProjectIds: (assignments ?? [])
+      .map((assignment: any) => assignment.project_id)
+      .filter((projectId: unknown): projectId is string => typeof projectId === "string" && projectId.length > 0),
+  };
+}
 
 export const db = {
   /* PROJECTS */
-  listProjects: async () =>
-    (await supabase.from("projects").select("*").order("updated_at", { ascending: false })).data as Project[] | null,
-  getProject: async (id: string) =>
-    (await supabase.from("projects").select("*").eq("id", id).maybeSingle()).data as Project | null,
+  listProjects: async () => {
+    const { profile, assignedProjectIds } = await getCurrentProjectAccess();
+    let query = supabase.from("projects").select("*").order("updated_at", { ascending: false });
+
+    if (profile && (profile.role === "Client" || profile.role === "Contractor")) {
+      if (!assignedProjectIds.length) return [] as Project[];
+      query = query.in("id", assignedProjectIds);
+    }
+
+    return (await query).data as Project[] | null;
+  },
+  getProject: async (id: string) => {
+    const { profile, assignedProjectIds } = await getCurrentProjectAccess();
+    if (profile && (profile.role === "Client" || profile.role === "Contractor") && !assignedProjectIds.includes(id)) {
+      return null;
+    }
+
+    return (await supabase.from("projects").select("*").eq("id", id).maybeSingle()).data as Project | null;
+  },
   createProject: async (p: { name: string; client_name: string; project_type: ProjectType; design_notes?: string }) =>
     (await supabase.from("projects").insert(p).select().single()).data as Project | null,
   updateProject: async (id: string, p: Partial<Project>) =>
