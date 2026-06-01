@@ -19,11 +19,14 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
 
 export const Route = createFileRoute("/projects/$id/materials")({
   head: () => ({ meta: [{ title: "Materials — MERAV Studio" }] }),
   component: MaterialsPage,
 });
+
+const DIRECT_PDF_UPLOAD_LIMIT = 4 * 1024 * 1024;
 
 type ScrapedRow = {
   material_item_id: string;
@@ -125,14 +128,21 @@ function MaterialsPage() {
     if (!file) return;
     setImportingPdf(true);
     try {
-      const form = new FormData();
-      form.append("project_id", id);
-      form.append("pdf", file);
-      const res = await fetch("/api/import-materials-pdf", {
-        method: "POST",
-        body: form,
-      });
-      const body = await res.json();
+      const useBrowserExtraction = file.size > DIRECT_PDF_UPLOAD_LIMIT;
+      const res = useBrowserExtraction
+        ? await fetch("/api/import-materials-pdf", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_id: id,
+              items: await extractMaterialPdfItemsFromFile(file),
+            }),
+          })
+        : await fetch("/api/import-materials-pdf", {
+            method: "POST",
+            body: pdfImportFormData(id, file),
+          });
+      const body = await readJsonResponse(res);
       if (!res.ok) throw new Error(body?.error || "PDF import failed");
       toast.success(
         `Imported ${body.imported ?? 0} linked item${body.imported === 1 ? "" : "s"} from ${body.room_names?.join(", ") || "PDF"}`,
@@ -746,4 +756,25 @@ function Field({ label, value, onChange, className }: { label: string; value: st
       <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8" />
     </div>
   );
+}
+
+function pdfImportFormData(projectId: string, file: File) {
+  const form = new FormData();
+  form.append("project_id", projectId);
+  form.append("pdf", file);
+  return form;
+}
+
+async function readJsonResponse(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      error: response.status === 413 || /request entity too large/i.test(text)
+        ? "That PDF is too large to upload directly. Try again and the browser-side importer will process it locally."
+        : text,
+    };
+  }
 }

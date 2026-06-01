@@ -9,6 +9,24 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function cleanImportedItems(value: unknown): ImportedPdfItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item: any) => {
+    const roomName = String(item?.room_name ?? "").trim();
+    const itemLabel = String(item?.item_label ?? "").trim();
+    const productUrl = String(item?.product_url ?? "").trim();
+    if (!roomName || !itemLabel || !/^https?:\/\//i.test(productUrl)) return [];
+    const quantity = Number(item?.quantity);
+    return [{
+      room_name: roomName,
+      item_label: itemLabel,
+      product_url: productUrl,
+      quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+      color: item?.color ? String(item.color).trim() : null,
+    }];
+  });
+}
+
 function normalize(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -254,13 +272,15 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const form = await request.formData();
-          const projectId = String(form.get("project_id") ?? "");
-          const file = form.get("pdf");
+          const isJsonRequest = request.headers.get("content-type")?.includes("application/json");
+          const body = isJsonRequest ? await request.json() : null;
+          const form = isJsonRequest ? null : await request.formData();
+          const projectId = String(isJsonRequest ? body?.project_id ?? "" : form?.get("project_id") ?? "");
+          const file = form?.get("pdf");
           if (!projectId) return json({ error: "project_id required" }, 400);
-          if (!(file instanceof File)) return json({ error: "PDF file required" }, 400);
+          if (!isJsonRequest && !(file instanceof File)) return json({ error: "PDF file required" }, 400);
 
-          const extracted = await extractPdfItems(file);
+          const extracted = isJsonRequest ? cleanImportedItems(body?.items) : await extractPdfItems(file as File);
           if (!extracted.length) return json({ error: "No linked material items were found in that PDF." }, 400);
 
           const { data: rooms, error: roomsError } = await supabaseAdmin
