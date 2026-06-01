@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Plus, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type FinancialInvoice, type Project } from "@/lib/db";
+import { db, type ApprovalStatus, type FinancialInvoice, type Project, type Room, type RoomProduct } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -46,22 +46,67 @@ function DashboardPage() {
   });
   const canCreateInvoices = canViewFinancials(profile);
   const activeProjects = projects.filter((p) => p.status !== "Complete");
+  const isClientUser = profile?.role === "Client";
+  const { data: clientApprovalSummaries = [] } = useQuery({
+    queryKey: ["clientApprovalSummaries", activeProjects.map((project) => project.id)],
+    enabled: isClientUser && activeProjects.length > 0,
+    queryFn: async () => {
+      const summaries = await Promise.all(
+        activeProjects.map(async (project) => {
+          const rooms = ((await db.listRooms(project.id)) ?? []).filter((room) => room.approval_visible !== false);
+          const roomSelections = await Promise.all(
+            rooms.map(async (room) => ({
+              room,
+              items: ((await db.listRoomProducts(room.id)) ?? []).filter((item) => item.approval_visible !== false),
+            })),
+          );
+
+          const counts = roomSelections.flatMap(({ items }) => items).reduce(
+            (acc, item) => {
+              const status = getApprovalStatus(item);
+              acc[status] += 1;
+              return acc;
+            },
+            { undecided: 0, approved: 0, declined: 0 } as Record<ApprovalStatus, number>,
+          );
+
+          return {
+            project,
+            roomCount: rooms.length,
+            itemCount: counts.undecided + counts.approved + counts.declined,
+            needReviewCount: counts.undecided,
+            approvedCount: counts.approved,
+            changesCount: counts.declined,
+          };
+        }),
+      );
+
+      return summaries.filter((summary) => summary.itemCount > 0);
+    },
+  });
+  const approvalsReady = clientApprovalSummaries.filter((summary) => summary.needReviewCount > 0);
 
   return (
     <AppShell>
       <div className="page-pad max-w-[1500px]">
         <div className="flex items-end justify-between mb-12 lg:mb-16 flex-wrap gap-6">
           <div>
-            <div className="eyebrow mb-3">The Studio</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">Active Projects</h1>
+            <div className="eyebrow mb-3">{isClientUser ? "Client Portal" : "The Studio"}</div>
+            <h1 className="editorial-hero text-5xl lg:text-7xl">{isClientUser ? "Your Projects" : "Active Projects"}</h1>
             <p className="mt-4 text-muted-foreground max-w-xl">
-              Every selection lives here once. Use it for presentations, spec books, and procurement.
+              {isClientUser
+                ? "Review current selections, leave comments, and jump straight into approvals that are ready for your feedback."
+                : "Every selection lives here once. Use it for presentations, spec books, and procurement."}
             </p>
           </div>
-          <NewProjectDialog />
+          {!isClientUser && <NewProjectDialog />}
         </div>
 
-        {canCreateInvoices && (
+        {isClientUser && (
+          <ClientApprovalsOverview summaries={clientApprovalSummaries} approvalsReady={approvalsReady} />
+        )}
+
+        {canCreateInvoices && !isClientUser && (
           <section className="border border-border bg-bone/20 p-6 mb-12">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
               <div>
@@ -79,10 +124,13 @@ function DashboardPage() {
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
         ) : activeProjects.length === 0 ? (
-          <EmptyState />
+          <EmptyState isClientUser={isClientUser} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-14">
-            {activeProjects.map((p) => <ProjectCard key={p.id} p={p} />)}
+            {activeProjects.map((p) => {
+              const approvalSummary = clientApprovalSummaries.find((summary) => summary.project.id === p.id);
+              return <ProjectCard key={p.id} p={p} isClientUser={isClientUser} approvalSummary={approvalSummary} />;
+            })}
           </div>
         )}
       </div>
@@ -90,9 +138,116 @@ function DashboardPage() {
   );
 }
 
-function ProjectCard({ p }: { p: Project }) {
+function ClientApprovalsOverview({
+  summaries,
+  approvalsReady,
+}: {
+  summaries: Array<{
+    project: Project;
+    roomCount: number;
+    itemCount: number;
+    needReviewCount: number;
+    approvedCount: number;
+    changesCount: number;
+  }>;
+  approvalsReady: Array<{
+    project: Project;
+    roomCount: number;
+    itemCount: number;
+    needReviewCount: number;
+    approvedCount: number;
+    changesCount: number;
+  }>;
+}) {
   return (
-    <Link to="/projects/$id" params={{ id: p.id }} className="group block">
+    <section className="mb-12 space-y-6">
+      <div className="border border-border bg-bone/30 p-6 lg:p-8">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+          <div>
+            <div className="eyebrow mb-2">Approvals</div>
+            <h2 className="font-display text-3xl">{approvalsReady.length > 0 ? "Selections ready for your review" : "No approvals waiting right now"}</h2>
+            <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
+              {approvalsReady.length > 0
+                ? `You currently have ${approvalsReady.reduce((sum, summary) => sum + summary.needReviewCount, 0)} selection${approvalsReady.reduce((sum, summary) => sum + summary.needReviewCount, 0) === 1 ? "" : "s"} that still need your approval.`
+                : "When new selections are ready, they’ll show up here so you can jump straight into review."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {approvalsReady.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {approvalsReady.map((summary) => (
+            <Link
+              key={summary.project.id}
+              to="/client/approvals/$projectId"
+              params={{ projectId: summary.project.id }}
+              className="group border border-border bg-background p-6 hover:border-ink transition-colors"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="eyebrow mb-2">Needs Review</div>
+                  <h3 className="font-display text-3xl leading-tight">{summary.project.name}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{summary.project.client_name}</p>
+                </div>
+                <div className="rounded-full bg-[#f1e3c8] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-ink">
+                  {summary.needReviewCount} Pending
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-4 text-sm text-muted-foreground">
+                <span>{summary.roomCount} room{summary.roomCount === 1 ? "" : "s"}</span>
+                <span>{summary.approvedCount} approved</span>
+                <span>{summary.changesCount} changes</span>
+              </div>
+              <div className="mt-6 inline-flex items-center gap-2 text-sm text-ink group-hover:gap-3 transition-all">
+                Open approvals <ArrowRight className="h-4 w-4" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {summaries.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <MetricCard label="Projects With Approvals" value={summaries.length} />
+          <MetricCard label="Selections Need Review" value={summaries.reduce((sum, summary) => sum + summary.needReviewCount, 0)} />
+          <MetricCard label="Selections Approved" value={summaries.reduce((sum, summary) => sum + summary.approvedCount, 0)} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border border-border bg-background px-5 py-4">
+      <div className="eyebrow mb-2">{label}</div>
+      <div className="font-display text-3xl">{value}</div>
+    </div>
+  );
+}
+
+function ProjectCard({
+  p,
+  isClientUser,
+  approvalSummary,
+}: {
+  p: Project;
+  isClientUser: boolean;
+  approvalSummary?: {
+    project: Project;
+    roomCount: number;
+    itemCount: number;
+    needReviewCount: number;
+    approvedCount: number;
+    changesCount: number;
+  };
+}) {
+  const projectLink = isClientUser && approvalSummary ? "/client/approvals/$projectId" : "/projects/$id";
+  const projectParams = isClientUser && approvalSummary ? { projectId: p.id } : { id: p.id };
+
+  return (
+    <Link to={projectLink as any} params={projectParams as any} className="group block">
       <div className="aspect-[4/5] bg-bone overflow-hidden mb-5">
         {p.cover_image_url ? (
           <img
@@ -111,6 +266,20 @@ function ProjectCard({ p }: { p: Project }) {
           <div className="eyebrow mb-1.5">{p.project_label || p.project_type}</div>
           <h3 className="font-display text-2xl leading-tight truncate">{p.name}</h3>
           <p className="text-sm text-muted-foreground mt-1">{p.client_name}</p>
+          {isClientUser && approvalSummary && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {approvalSummary.needReviewCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f1e3c8] px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-ink">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> {approvalSummary.needReviewCount} Need Review
+                </span>
+              )}
+              {approvalSummary.needReviewCount === 0 && approvalSummary.itemCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8efe6] px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-ink">
+                  All Reviewed
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <StatusBadge status={p.status} />
       </div>
@@ -127,14 +296,18 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ isClientUser }: { isClientUser: boolean }) {
   return (
     <div className="border border-dashed border-border py-24 text-center">
-      <div className="eyebrow mb-4">No projects yet</div>
-      <p className="font-display text-3xl mb-6">Begin with your first project</p>
-      <NewProjectDialog />
+      <div className="eyebrow mb-4">{isClientUser ? "No projects assigned" : "No projects yet"}</div>
+      <p className="font-display text-3xl mb-6">{isClientUser ? "Projects shared with you will appear here" : "Begin with your first project"}</p>
+      {!isClientUser && <NewProjectDialog />}
     </div>
   );
+}
+
+function getApprovalStatus(item: Pick<RoomProduct, "approval_status" | "approved">): ApprovalStatus {
+  return item.approval_status ?? (item.approved ? "approved" : "undecided");
 }
 
 export function NewProjectDialog() {
