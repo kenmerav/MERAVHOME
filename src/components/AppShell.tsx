@@ -68,6 +68,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [loadingAuth, loc.pathname, navigate, profile]);
 
   useEffect(() => {
+    if (!loadingAuth && profile?.role === "Client" && loc.pathname.startsWith("/catalog")) {
+      navigate({ to: "/" });
+    }
+  }, [loadingAuth, loc.pathname, navigate, profile]);
+
+  useEffect(() => {
     setMobileOpen(false);
   }, [loc.pathname]);
 
@@ -96,6 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="flex-1 px-3 space-y-0.5">
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !profile?.is_owner) return null;
+            if (to === "/catalog" && profile?.role === "Client") return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
             if (to === "/hours" && !canLogHours(profile)) return null;
@@ -157,6 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !profile?.is_owner) return null;
+              if (to === "/catalog" && profile?.role === "Client") return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
               if (to === "/hours" && !canLogHours(profile)) return null;
