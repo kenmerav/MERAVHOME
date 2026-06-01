@@ -23,7 +23,7 @@ function materialMatchKey(value: string) {
   if (/\bwallpaper\b/.test(n)) return "wallpaper";
   if (/\blimewash\b|\blime wash\b/.test(n)) return "limewash";
   if (/\bmirror\b/.test(n) && !/\bheart\b/.test(n)) return "mirror";
-  if (/\bpendant\b/.test(n)) return "pendant";
+  if (/\bpendant\b|\bpendants\b/.test(n)) return "pendant";
   if (/\bsconce\b|\bsconces\b/.test(n)) return "sconce";
   if (/\bsink\b/.test(n)) return "sink";
   if (/\bfaucet\b/.test(n)) return "faucet";
