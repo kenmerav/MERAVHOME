@@ -123,19 +123,20 @@ function FinancialsOverviewPage() {
           </p>
         </div>
 
-        <div className="mb-8 flex flex-wrap gap-2">
-          {DATE_RANGE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setDateRange(option.value)}
-              className={`px-4 py-2 text-[10px] tracking-[0.18em] uppercase border transition-colors ${
-                dateRange === option.value ? "bg-ink text-primary-foreground border-ink" : "border-border text-muted-foreground hover:bg-bone"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="mb-8 max-w-xs">
+          <label className="eyebrow mb-2 block" htmlFor="financial-date-range">Date Range</label>
+          <select
+            id="financial-date-range"
+            value={dateRange}
+            onChange={(event) => setDateRange(event.target.value as DateRangePreset)}
+            className="h-11 w-full border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ink"
+          >
+            {DATE_RANGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
