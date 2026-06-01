@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Search, ExternalLink, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/db";
@@ -21,11 +21,24 @@ export const Route = createFileRoute("/catalog")({
 function CatalogPage() {
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState<ProductCategory | "All">("All");
+  const [vendor, setVendor] = useState("All");
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
     queryFn: async () => (await db.listCatalog(search)) ?? [],
   });
-  const filtered = cat === "All" ? products : products.filter(p => p.category === cat);
+  const categoryFiltered = cat === "All" ? products : products.filter(p => p.category === cat);
+  const vendors = Array.from(
+    new Set(categoryFiltered.map((p) => p.vendor?.trim()).filter((value): value is string => Boolean(value))),
+  ).sort((a, b) => a.localeCompare(b));
+  const filtered = vendor === "All" ? categoryFiltered : categoryFiltered.filter(p => p.vendor === vendor);
+  const setCategory = (category: ProductCategory | "All") => {
+    setCat(category);
+    setVendor("All");
+  };
+
+  useEffect(() => {
+    if (vendor !== "All" && !vendors.includes(vendor)) setVendor("All");
+  }, [vendor, vendors]);
 
   return (
     <AppShell>
@@ -48,12 +61,23 @@ function CatalogPage() {
           </div>
           <div className="flex gap-1 flex-wrap">
             {(["All", ...PRODUCT_CATEGORIES] as const).map(c => (
-              <button key={c} onClick={() => setCat(c)}
+              <button key={c} onClick={() => setCategory(c)}
                 className={cn("text-xs px-3 py-1.5 border", cat === c ? "border-ink bg-ink text-primary-foreground" : "border-border text-muted-foreground hover:border-ink")}>
                 {c}
               </button>
             ))}
           </div>
+          <Select value={vendor} onValueChange={setVendor}>
+            <SelectTrigger className="w-full sm:w-56">
+              <SelectValue placeholder="Vendor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Vendors</SelectItem>
+              {vendors.map((vendorName) => (
+                <SelectItem key={vendorName} value={vendorName}>{vendorName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {filtered.length === 0 ? (

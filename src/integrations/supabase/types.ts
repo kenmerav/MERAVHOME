@@ -716,6 +716,7 @@ export type Database = {
         | "Appliances"
         | "Flooring"
         | "Tile"
+        | "Countertops"
         | "Paint"
         | "Furniture"
         | "Decor"
@@ -877,6 +878,7 @@ export const Constants = {
         "Appliances",
         "Flooring",
         "Tile",
+        "Countertops",
         "Paint",
         "Furniture",
         "Decor",
