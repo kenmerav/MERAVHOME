@@ -50,10 +50,14 @@ type ServiceInvoiceDraft = {
   projectType: InvoiceProjectType;
   roomSelectionsRenovation: string[];
   roomSelectionsFurniture: string[];
+  otherRoomRenovation: string;
+  otherRoomFurniture: string;
   servicesRenovation: string[];
   servicesRenovationVirtual: string[];
   servicesFurniture: string[];
   servicesFurnitureVirtual: string[];
+  otherServiceRenovation: string;
+  otherServiceFurniture: string;
   location: string;
   description: string;
   invoiceDate: string;
@@ -257,10 +261,14 @@ function FinancialsPage() {
       projectType: "Renovation",
       roomSelectionsRenovation: ["Full Home"],
       roomSelectionsFurniture: ["Full Home"],
+      otherRoomRenovation: "",
+      otherRoomFurniture: "",
       servicesRenovation: ["Conceptual design planning", "Drafting elevations", "Digital renderings", "Space planning", "Sourcing furniture + fixtures", "Presentations"],
       servicesRenovationVirtual: ["Conceptual design planning", "Drafting elevations", "Digital renderings", "Space planning", "Sourcing furniture + fixtures", "Presentations"],
       servicesFurniture: ["Conceptual design planning", "Space planning", "Sourcing furniture + fixtures", "Presentations", "Ordering", "Managing installation"],
       servicesFurnitureVirtual: ["Conceptual design planning", "Space planning", "Sourcing furniture + fixtures", "Presentations"],
+      otherServiceRenovation: "",
+      otherServiceFurniture: "",
       location: project?.project_type === "Whole Home" ? "Full Home" : project?.project_type ?? "Full Home",
       description: "Conceptual design planning, Drafting elevations, Digital renderings, Space planning, Sourcing all fixtures + finishes, Full Specifications Document, Full Drawing Packet",
       invoiceDate: today,
@@ -579,24 +587,32 @@ function FinancialsPage() {
                     options={RENOVATION_ROOMS}
                     values={serviceDraft.roomSelectionsRenovation}
                     onToggle={(value) => toggleServiceDraftList("roomSelectionsRenovation", value)}
+                    otherValue={serviceDraft.otherRoomRenovation}
+                    onOtherChange={(value) => updateServiceDraft({ otherRoomRenovation: value })}
                   />
                   <CheckboxGroup
                     title="Room Selections Furniture"
                     options={FURNITURE_ROOMS}
                     values={serviceDraft.roomSelectionsFurniture}
                     onToggle={(value) => toggleServiceDraftList("roomSelectionsFurniture", value)}
+                    otherValue={serviceDraft.otherRoomFurniture}
+                    onOtherChange={(value) => updateServiceDraft({ otherRoomFurniture: value })}
                   />
                   <CheckboxGroup
                     title="Services Provided: Renovation"
                     options={SERVICE_OPTIONS}
                     values={serviceDraft.servicesRenovation}
                     onToggle={(value) => toggleServiceDraftList("servicesRenovation", value)}
+                    otherValue={serviceDraft.otherServiceRenovation}
+                    onOtherChange={(value) => updateServiceDraft({ otherServiceRenovation: value })}
                   />
                   <CheckboxGroup
                     title="Services Provided: Furniture"
                     options={SERVICE_OPTIONS}
                     values={serviceDraft.servicesFurniture}
                     onToggle={(value) => toggleServiceDraftList("servicesFurniture", value)}
+                    otherValue={serviceDraft.otherServiceFurniture}
+                    onOtherChange={(value) => updateServiceDraft({ otherServiceFurniture: value })}
                   />
                 </div>
 
@@ -908,7 +924,21 @@ function ServiceRateField({
   );
 }
 
-function CheckboxGroup({ title, options, values, onToggle }: { title: string; options: string[]; values: string[]; onToggle: (value: string) => void }) {
+function CheckboxGroup({
+  title,
+  options,
+  values,
+  onToggle,
+  otherValue,
+  onOtherChange,
+}: {
+  title: string;
+  options: string[];
+  values: string[];
+  onToggle: (value: string) => void;
+  otherValue?: string;
+  onOtherChange?: (value: string) => void;
+}) {
   return (
     <div className="border border-border bg-background p-4">
       <div className="eyebrow mb-3">{title}</div>
@@ -920,6 +950,12 @@ function CheckboxGroup({ title, options, values, onToggle }: { title: string; op
           </label>
         ))}
       </div>
+      {values.includes("Other") && onOtherChange ? (
+        <div className="mt-3">
+          <Label className="eyebrow">Other</Label>
+          <Input value={otherValue ?? ""} onChange={(e) => onOtherChange(e.target.value)} placeholder="Type custom item" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1138,13 +1174,24 @@ function activeServices(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["
 
 function invoiceLocation(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
   const rooms = activeRoomSelections(draft, kind);
-  return rooms.length ? rooms.join(", ") : draft.location || "Full Home";
+  const otherValue = kind === "furniture" ? draft.otherRoomFurniture : draft.otherRoomRenovation;
+  const resolvedRooms = resolveOtherSelection(rooms, otherValue);
+  return resolvedRooms.length ? resolvedRooms.join(", ") : draft.location || "Full Home";
 }
 
 function invoiceDescription(draft: ServiceInvoiceDraft, kind: InvoiceDesignSection["kind"]) {
   const services = activeServices(draft, kind);
-  if (services.length) return services.join(", ");
+  const otherValue = kind === "furniture" ? draft.otherServiceFurniture : draft.otherServiceRenovation;
+  const resolvedServices = resolveOtherSelection(services, otherValue);
+  if (resolvedServices.length) return resolvedServices.join(", ");
   return draft.description || "Design services";
+}
+
+function resolveOtherSelection(values: string[], otherValue?: string) {
+  return values.map((value) => {
+    if (value !== "Other") return value;
+    return otherValue?.trim() || value;
+  });
 }
 
 function addressLines(address: string) {
