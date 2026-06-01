@@ -314,6 +314,7 @@ function RoomMaterialsSection({
             <thead>
               <tr className="text-left text-[11px] tracking-[0.15em] uppercase text-muted-foreground">
                 <th className="px-6 py-3 w-[180px]">Item</th>
+                <th className="py-3 w-[240px]">Catalog Product</th>
                 <th className="py-3 w-[220px]">Client Product Name</th>
                 <th className="py-3 w-[140px]">Category</th>
                 <th className="py-3 w-[120px]">CAD Label</th>
@@ -365,6 +366,8 @@ function RoomMaterialsSection({
                           </div>
                         </Link>
                       )}
+                    </td>
+                    <td className="py-2 pr-3">
                       <CatalogProductSelect
                         item={it}
                         products={products}
@@ -476,7 +479,7 @@ function CatalogProductSelect({
   const hasCurrentProductInCategory = matchingProducts.some((product) => product.id === item.product_id);
 
   return (
-    <div className="mt-2 pl-3.5 max-w-[240px]">
+    <div className="max-w-[240px]">
       <Select
         value={currentValue}
         onValueChange={(value) => onSelect(value === "__none__" ? null : value)}
