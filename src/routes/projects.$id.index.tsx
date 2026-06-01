@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PROJECT_LABELS, PROJECT_STATUSES, WORKFLOW_STAGES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -123,8 +123,11 @@ function ProjectDetailPage() {
             <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <Sparkles className="w-4 h-4" /> Renderings
             </Link>
+            <Link to="/projects/$id/approvals" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <SlidersHorizontal className="w-4 h-4" /> Approval Setup
+            </Link>
             <Link to="/client/approvals/$projectId" params={{ projectId: id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
-              <CheckCircle2 className="w-4 h-4" /> Client Approvals
+              <CheckCircle2 className="w-4 h-4" /> Client View
             </Link>
             {canViewFinancials(profile) && (
               <Link to="/projects/$id/financials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">

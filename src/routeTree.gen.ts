@@ -35,6 +35,7 @@ import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
 import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
+import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
@@ -169,6 +170,11 @@ const ProjectsIdFinancialsRoute = ProjectsIdFinancialsRouteImport.update({
   path: '/projects/$id/financials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdApprovalsRoute = ProjectsIdApprovalsRouteImport.update({
+  id: '/projects/$id/approvals',
+  path: '/projects/$id/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClientApprovalsProjectIdRoute =
   ClientApprovalsProjectIdRouteImport.update({
     id: '/client/approvals/$projectId',
@@ -204,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
+  '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
@@ -234,6 +241,7 @@ export interface FileRoutesByTo {
   '/specbooks': typeof SpecbooksIndexRoute
   '/users': typeof UsersIndexRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
+  '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
@@ -265,6 +273,7 @@ export interface FileRoutesById {
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
+  '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
@@ -297,6 +306,7 @@ export interface FileRouteTypes {
     | '/specbooks/'
     | '/users/'
     | '/client/approvals/$projectId'
+    | '/projects/$id/approvals'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
     | '/specbooks'
     | '/users'
     | '/client/approvals/$projectId'
+    | '/projects/$id/approvals'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
@@ -357,6 +368,7 @@ export interface FileRouteTypes {
     | '/specbooks/'
     | '/users/'
     | '/client/approvals/$projectId'
+    | '/projects/$id/approvals'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
@@ -388,6 +400,7 @@ export interface RootRouteChildren {
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
+  ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
@@ -580,6 +593,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdFinancialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id/approvals': {
+      id: '/projects/$id/approvals'
+      path: '/projects/$id/approvals'
+      fullPath: '/projects/$id/approvals'
+      preLoaderRoute: typeof ProjectsIdApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/client/approvals/$projectId': {
       id: '/client/approvals/$projectId'
       path: '/client/approvals/$projectId'
@@ -620,6 +640,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpecbooksIndexRoute: SpecbooksIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
+  ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,

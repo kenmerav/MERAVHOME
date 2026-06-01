@@ -66,6 +66,7 @@ export interface Room {
   presentation_cabinet_item_id: string | null;
   presentation_counter_item_id: string | null;
   presentation_faucet_item_id: string | null;
+  approval_visible: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -124,6 +125,7 @@ export interface RoomProduct {
   approval_status: ApprovalStatus;
   approval_comment: string | null;
   approval_updated_at: string | null;
+  approval_visible: boolean;
   product?: Product;
 }
 

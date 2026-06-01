@@ -196,6 +196,9 @@ function ClientReviewHeader({
         <div>
           <div className="font-display text-3xl leading-none tracking-tight md:text-4xl">MERAV INTERIORS</div>
           <div className="mt-2 text-[10px] uppercase tracking-[0.34em] text-stone-400">By Katie Roberts</div>
+          <Link to="/projects/$id" params={{ id: project.id }} className="mt-5 inline-flex text-xs font-medium uppercase tracking-[0.2em] text-stone-400 transition hover:text-stone-900">
+            Back to Studio
+          </Link>
         </div>
         <div className="text-left lg:text-center">
           <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-400">Client Review Board</div>
@@ -636,7 +639,7 @@ async function loadApprovalData(projectId: string) {
   ]);
   if (!project) throw new Error("Project not found.");
 
-  const roomList = rooms ?? [];
+  const roomList = (rooms ?? []).filter((room) => room.approval_visible !== false);
   const materials = materialItems ?? [];
   const materialMap = new Map<string, MaterialItem>();
   materials.forEach((material) => {
@@ -646,12 +649,14 @@ async function loadApprovalData(projectId: string) {
   const roomProducts = await Promise.all(
     roomList.map(async (room) => {
       const selections = (await db.listRoomProducts(room.id)) ?? [];
-      return selections.map((selection) => ({
-        ...selection,
-        room,
-        product: selection.product ?? null,
-        material: materialMap.get(`${room.id}::${selection.product_id}`) ?? null,
-      }));
+      return selections
+        .filter((selection) => selection.approval_visible !== false)
+        .map((selection) => ({
+          ...selection,
+          room,
+          product: selection.product ?? null,
+          material: materialMap.get(`${room.id}::${selection.product_id}`) ?? null,
+        }));
     }),
   );
 
