@@ -51,6 +51,7 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
   if ((PRODUCT_CATEGORIES as readonly string[]).includes(c)) return c as ProductCategory;
   const map: Record<string, ProductCategory> = {
     "Tile & Stone": "Tile",
+    Countertop: "Countertops",
     Countertops: "Countertops",
     "Cabinetry & Hardware": "Hardware",
     Cabinetry: "Hardware",

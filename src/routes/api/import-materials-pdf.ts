@@ -53,7 +53,10 @@ function inferCategory(label: string) {
   const n = normalize(label);
   if (/(pendant|sconce|lamp|light|chandelier)/.test(n)) return "Lighting";
   if (/(faucet|sink|shower|tub|toilet|plumbing)/.test(n)) return "Plumbing";
-  if (/(tile|stone|counter|slab|marble|quartz)/.test(n)) return "Tile & Stone";
+  if (/(countertop|countertops|counter top|counter tops|slab|marble|quartz|quartzite|granite|soapstone)/.test(n)) {
+    return "Countertops";
+  }
+  if (/(tile|stone|zellige)/.test(n)) return "Tile & Stone";
   if (/(cabinet|hardware|knob|pull)/.test(n)) return "Cabinetry & Hardware";
   if (/(floor|rug|carpet|paint|limewash|wallpaper)/.test(n)) return "Flooring & Paint";
   if (/(chair|table|sofa|cushion|drapery|basket|mirror|mobile|rack|kitchen|tent)/.test(n)) return "Accessories";
