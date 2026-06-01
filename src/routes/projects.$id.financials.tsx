@@ -64,7 +64,7 @@ type ServiceInvoiceDraft = {
   phases: Array<{ name: InvoicePhaseName; percent: string; dueDate: string }>;
 };
 
-type InvoiceProjectType = "Renovation" | "New Build" | "Furniture" | "Virtual Design" | "Virtual Furniture";
+type InvoiceProjectType = "Renovation" | "New Build" | "Furniture";
 type ServiceDraftListField =
   | "roomSelectionsRenovation"
   | "roomSelectionsFurniture"
@@ -75,7 +75,7 @@ type ServiceDraftListField =
 
 const SERVICE_PHASES: InvoicePhaseName[] = ["Project Start", "Design Presentation", "Design Document Delivery", "Project Completion"];
 const DEFAULT_PHASE_SPLITS = ["50", "25", "20", "5"];
-const INVOICE_PROJECT_TYPES: InvoiceProjectType[] = ["Renovation", "New Build", "Furniture", "Virtual Design", "Virtual Furniture"];
+const INVOICE_PROJECT_TYPES: InvoiceProjectType[] = ["Renovation", "New Build", "Furniture"];
 const RENOVATION_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Master Bath", "Powder Room"];
 const FURNITURE_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Primary Bath", "Powder Room"];
 const SERVICE_OPTIONS = [
@@ -496,15 +496,19 @@ function FinancialsPage() {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
-                    <Label className="eyebrow">Service Type</Label>
-                    <select
-                      value={serviceDraft.serviceType}
-                      onChange={(e) => updateServiceDraft({ serviceType: e.target.value as ServiceType })}
-                      className="h-10 w-full border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="Full Service">Full Service</option>
-                      <option value="Virtual">Virtual</option>
-                    </select>
+                    <Label className="eyebrow">Service Delivery</Label>
+                    <div className="grid grid-cols-2 border border-input h-10">
+                      {(["Full Service", "Virtual"] as ServiceType[]).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => updateServiceDraft({ serviceType: type })}
+                          className={`text-sm transition-colors ${serviceDraft.serviceType === type ? "bg-ink text-primary-foreground" : "bg-background hover:bg-bone"}`}
+                        >
+                          {type === "Full Service" ? "In Person" : "Virtual"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <ReviewField label="Project Name" value={serviceDraft.projectName} onChange={(value) => updateServiceDraft({ projectName: value })} />
                   <ReviewField label="Client Name" value={serviceDraft.clientName} onChange={(value) => updateServiceDraft({ clientName: value })} />
@@ -515,23 +519,27 @@ function FinancialsPage() {
                     <Label className="eyebrow">Project Type</Label>
                     <select
                       value={serviceDraft.projectType}
-                      onChange={(e) => {
-                        const projectType = e.target.value as InvoiceProjectType;
-                        updateServiceDraft({
-                          projectType,
-                          serviceType: projectType === "Virtual Design" || projectType === "Virtual Furniture" ? "Virtual" : "Full Service",
-                        });
-                      }}
+                      onChange={(e) => updateServiceDraft({ projectType: e.target.value as InvoiceProjectType })}
                       className="h-10 w-full border border-input bg-background px-3 text-sm"
                     >
                       {INVOICE_PROJECT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
                     </select>
                   </div>
                   <ReviewField label="Square Feet" value={serviceDraft.squareFeet} onChange={(value) => updateServiceDraft({ squareFeet: value })} />
-                  <ReviewField label="Price per sq/ft Renovation" value={serviceDraft.renovationRate} onChange={(value) => updateServiceDraft({ renovationRate: value })} />
-                  <ReviewField label="Price per sq/ft Renovation Virtual" value={serviceDraft.renovationVirtualRate} onChange={(value) => updateServiceDraft({ renovationVirtualRate: value })} />
-                  <ReviewField label="Price per sq/ft Furniture" value={serviceDraft.furnitureRate} onChange={(value) => updateServiceDraft({ furnitureRate: value })} />
-                  <ReviewField label="Price per sq/ft Furniture Virtual" value={serviceDraft.furnitureVirtualRate} onChange={(value) => updateServiceDraft({ furnitureVirtualRate: value })} />
+                  <ServiceRateField
+                    label="Price per sq/ft Renovation"
+                    serviceType={serviceDraft.serviceType}
+                    inPersonValue={serviceDraft.renovationRate}
+                    virtualValue={serviceDraft.renovationVirtualRate}
+                    onChange={(value) => updateServiceDraft(serviceDraft.serviceType === "Virtual" ? { renovationVirtualRate: value } : { renovationRate: value })}
+                  />
+                  <ServiceRateField
+                    label="Price per sq/ft Furniture"
+                    serviceType={serviceDraft.serviceType}
+                    inPersonValue={serviceDraft.furnitureRate}
+                    virtualValue={serviceDraft.furnitureVirtualRate}
+                    onChange={(value) => updateServiceDraft(serviceDraft.serviceType === "Virtual" ? { furnitureVirtualRate: value } : { furnitureRate: value })}
+                  />
                   <ReviewField label="Paid" value={serviceDraft.paid} onChange={(value) => updateServiceDraft({ paid: value })} />
                   <div>
                     <Label className="eyebrow">Payment Link Phase</Label>
@@ -886,6 +894,29 @@ function ReviewField({ label, value, onChange }: { label: string; value: string;
   );
 }
 
+function ServiceRateField({
+  label,
+  serviceType,
+  inPersonValue,
+  virtualValue,
+  onChange,
+}: {
+  label: string;
+  serviceType: ServiceType;
+  inPersonValue: string;
+  virtualValue: string;
+  onChange: (value: string) => void;
+}) {
+  const isVirtual = serviceType === "Virtual";
+  return (
+    <div>
+      <Label className="eyebrow">{label}</Label>
+      <Input value={isVirtual ? virtualValue : inPersonValue} onChange={(e) => onChange(e.target.value)} />
+      <div className="mt-1 text-[11px] text-muted-foreground">{isVirtual ? "Virtual rate" : "In-person rate"}</div>
+    </div>
+  );
+}
+
 function CheckboxGroup({ title, options, values, onToggle }: { title: string; options: string[]; values: string[]; onToggle: (value: string) => void }) {
   return (
     <div className="border border-border bg-background p-4">
@@ -1044,10 +1075,11 @@ function phaseAmount(fee: number, percent: string) {
 }
 
 function selectedRate(draft: ServiceInvoiceDraft) {
-  if (draft.projectType === "Furniture") return numberValue(draft.furnitureRate) ?? 0;
-  if (draft.projectType === "Virtual Furniture") return numberValue(draft.furnitureVirtualRate) ?? 0;
-  if (draft.projectType === "Virtual Design") return numberValue(draft.renovationVirtualRate) ?? 0;
-  return numberValue(draft.renovationRate) ?? 0;
+  const isFurniture = draft.projectType === "Furniture";
+  if (draft.serviceType === "Virtual") {
+    return numberValue(isFurniture ? draft.furnitureVirtualRate : draft.renovationVirtualRate) ?? 0;
+  }
+  return numberValue(isFurniture ? draft.furnitureRate : draft.renovationRate) ?? 0;
 }
 
 function calculatedDesignFee(draft: ServiceInvoiceDraft) {
@@ -1056,16 +1088,16 @@ function calculatedDesignFee(draft: ServiceInvoiceDraft) {
 }
 
 function activeRoomSelections(draft: ServiceInvoiceDraft) {
-  return draft.projectType === "Furniture" || draft.projectType === "Virtual Furniture"
+  return draft.projectType === "Furniture"
     ? draft.roomSelectionsFurniture
     : draft.roomSelectionsRenovation;
 }
 
 function activeServices(draft: ServiceInvoiceDraft) {
-  if (draft.projectType === "Furniture") return draft.servicesFurniture;
-  if (draft.projectType === "Virtual Furniture") return draft.servicesFurnitureVirtual;
-  if (draft.projectType === "Virtual Design") return draft.servicesRenovationVirtual;
-  return draft.servicesRenovation;
+  if (draft.projectType === "Furniture") {
+    return draft.serviceType === "Virtual" ? draft.servicesFurnitureVirtual : draft.servicesFurniture;
+  }
+  return draft.serviceType === "Virtual" ? draft.servicesRenovationVirtual : draft.servicesRenovation;
 }
 
 function invoiceLocation(draft: ServiceInvoiceDraft) {
