@@ -19,11 +19,14 @@ type ApprovalItem = RoomProduct & {
   product: Product | null;
   material: MaterialItem | null;
 };
+type ApprovalFilter = ApprovalStatus | "all";
 
 function ClientApprovalsPage() {
   const { projectId } = Route.useParams();
   const qc = useQueryClient();
   const [selectedRoomId, setSelectedRoomId] = useState<string>("overview");
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>("all");
+  const [showComments, setShowComments] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
 
@@ -86,9 +89,11 @@ function ClientApprovalsPage() {
 
   const { project, rooms, items } = data;
   const counts = countStatuses(items);
-  const visibleItems = selectedRoomId === "overview" ? items : items.filter((item) => item.room_id === selectedRoomId);
+  const roomScopedItems = selectedRoomId === "overview" ? items : items.filter((item) => item.room_id === selectedRoomId);
+  const visibleItems = approvalFilter === "all" ? roomScopedItems : roomScopedItems.filter((item) => getStatus(item) === approvalFilter);
   const selectedItem = selectedItemId ? items.find((item) => item.id === selectedItemId) ?? null : null;
   const selectedIndex = selectedItem ? visibleItems.findIndex((item) => item.id === selectedItem.id) : -1;
+  const itemsWithComments = items.filter((item) => item.approval_comment?.trim());
 
   const openItem = (item: ApprovalItem) => {
     setSelectedItemId(item.id);
@@ -114,13 +119,38 @@ function ClientApprovalsPage() {
     <ClientFrame>
       <div className="min-h-screen bg-[#f5f3ef] text-slate-800">
         <main className="mx-auto max-w-[1680px] px-4 py-6 md:px-8 lg:px-12 lg:py-10">
-          <ClientReviewHeader project={project} counts={counts} />
-          <RoomTabs rooms={rooms} items={items} selectedRoomId={selectedRoomId} onSelectRoom={setSelectedRoomId} />
+          <ClientReviewHeader project={project} counts={counts} activeFilter={approvalFilter} onFilterChange={(filter) => {
+            setApprovalFilter(filter);
+            setShowComments(false);
+          }} />
+          <RoomTabs
+            rooms={rooms}
+            items={items}
+            selectedRoomId={selectedRoomId}
+            onSelectRoom={(roomId) => {
+              setSelectedRoomId(roomId);
+              setShowComments(false);
+            }}
+            commentsCount={itemsWithComments.length}
+            showComments={showComments}
+            onShowComments={() => {
+              setShowComments(true);
+              setApprovalFilter("all");
+            }}
+          />
 
-          {selectedRoomId === "overview" ? (
+          {showComments ? (
+            <CommentsBoard items={itemsWithComments} onOpen={openItem} />
+          ) : selectedRoomId === "overview" && approvalFilter === "all" ? (
             <OverviewGrid rooms={rooms} items={items} onSelectRoom={setSelectedRoomId} />
           ) : (
-            <RoomApprovalGrid items={visibleItems} onOpen={openItem} onApprove={(item) => setApproval(item, "approved")} onDecline={(item) => setApproval(item, "declined")} />
+            <RoomApprovalGrid
+              items={visibleItems}
+              filter={approvalFilter}
+              onOpen={openItem}
+              onApprove={(item) => setApproval(item, "approved")}
+              onDecline={(item) => setApproval(item, "declined")}
+            />
           )}
         </main>
 
@@ -149,7 +179,17 @@ function ClientFrame({ children }: { children: ReactNode }) {
   return <div className="min-h-screen bg-[#f5f3ef]">{children}</div>;
 }
 
-function ClientReviewHeader({ project, counts }: { project: Project; counts: Record<ApprovalStatus, number> }) {
+function ClientReviewHeader({
+  project,
+  counts,
+  activeFilter,
+  onFilterChange,
+}: {
+  project: Project;
+  counts: Record<ApprovalStatus, number>;
+  activeFilter: ApprovalFilter;
+  onFilterChange: (filter: ApprovalFilter) => void;
+}) {
   return (
     <header className="rounded-[28px] border border-white/80 bg-white px-6 py-8 shadow-[0_18px_60px_rgba(65,56,47,0.08)] md:px-10 lg:px-12">
       <div className="grid gap-8 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
@@ -163,9 +203,9 @@ function ClientReviewHeader({ project, counts }: { project: Project; counts: Rec
           <p className="mt-3 text-sm text-stone-500">{project.client_name}</p>
         </div>
         <div className="grid grid-cols-3 gap-3 lg:justify-self-end">
-          <StatusMetric label="Need Review" value={counts.undecided} tone="warm" />
-          <StatusMetric label="Approved" value={counts.approved} tone="green" />
-          <StatusMetric label="Changes" value={counts.declined} tone="slate" />
+          <StatusMetric label="Need Review" value={counts.undecided} tone="warm" active={activeFilter === "undecided"} onClick={() => onFilterChange(activeFilter === "undecided" ? "all" : "undecided")} />
+          <StatusMetric label="Approved" value={counts.approved} tone="green" active={activeFilter === "approved"} onClick={() => onFilterChange(activeFilter === "approved" ? "all" : "approved")} />
+          <StatusMetric label="Changes" value={counts.declined} tone="slate" active={activeFilter === "declined"} onClick={() => onFilterChange(activeFilter === "declined" ? "all" : "declined")} />
         </div>
       </div>
     </header>
@@ -177,11 +217,17 @@ function RoomTabs({
   items,
   selectedRoomId,
   onSelectRoom,
+  commentsCount,
+  showComments,
+  onShowComments,
 }: {
   rooms: Room[];
   items: ApprovalItem[];
   selectedRoomId: string;
   onSelectRoom: (roomId: string) => void;
+  commentsCount: number;
+  showComments: boolean;
+  onShowComments: () => void;
 }) {
   return (
     <nav className="mt-5 overflow-x-auto pb-2">
@@ -222,24 +268,60 @@ function RoomTabs({
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={onShowComments}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-medium text-stone-500 transition hover:bg-white hover:text-stone-900",
+            showComments && "bg-stone-950 text-white shadow-sm hover:bg-stone-950 hover:text-white",
+          )}
+        >
+          <MessageSquare className="h-4 w-4" />
+          <span>Comments</span>
+          {commentsCount > 0 && (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[11px]",
+                showComments ? "bg-white/20 text-white" : "bg-stone-100 text-stone-500",
+              )}
+            >
+              {commentsCount}
+            </span>
+          )}
+        </button>
       </div>
     </nav>
   );
 }
 
-function StatusMetric({ label, value, tone = "warm" }: { label: string; value: number; tone?: "warm" | "green" | "slate" }) {
+function StatusMetric({
+  label,
+  value,
+  tone = "warm",
+  active = false,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  tone?: "warm" | "green" | "slate";
+  active?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        "rounded-2xl border px-4 py-3 text-center",
+        "rounded-2xl border px-4 py-3 text-center transition hover:-translate-y-0.5 hover:shadow-sm",
         tone === "green" && "border-emerald-100 bg-emerald-50",
         tone === "slate" && "border-slate-100 bg-slate-50",
         tone === "warm" && "border-stone-100 bg-stone-50",
+        active && "ring-2 ring-stone-950/80",
       )}
     >
       <div className="text-2xl font-semibold text-stone-800">{value}</div>
       <div className="mt-1 text-xs text-stone-500">{label}</div>
-    </div>
+    </button>
   );
 }
 
@@ -282,11 +364,13 @@ function OverviewGrid({ rooms, items, onSelectRoom }: { rooms: Room[]; items: Ap
 
 function RoomApprovalGrid({
   items,
+  filter,
   onOpen,
   onApprove,
   onDecline,
 }: {
   items: ApprovalItem[];
+  filter: ApprovalFilter;
   onOpen: (item: ApprovalItem) => void;
   onApprove: (item: ApprovalItem) => void;
   onDecline: (item: ApprovalItem) => void;
@@ -294,7 +378,7 @@ function RoomApprovalGrid({
   if (!items.length) {
     return (
       <div className="mt-8 rounded-[22px] bg-white p-12 text-center text-sm text-slate-500 shadow-sm">
-        No selections have been added for this room yet.
+        {filter === "all" ? "No selections have been added for this room yet." : `No ${filterLabel(filter).toLowerCase()} selections here.`}
       </div>
     );
   }
@@ -347,6 +431,59 @@ function RoomApprovalGrid({
           </article>
         );
       })}
+    </section>
+  );
+}
+
+function CommentsBoard({ items, onOpen }: { items: ApprovalItem[]; onOpen: (item: ApprovalItem) => void }) {
+  if (!items.length) {
+    return (
+      <div className="mt-8 rounded-[26px] border border-white/80 bg-white p-12 text-center shadow-[0_18px_55px_rgba(65,56,47,0.08)]">
+        <MessageSquare className="mx-auto h-6 w-6 text-stone-300" />
+        <h2 className="mt-4 text-xl font-semibold text-stone-900">No comments yet</h2>
+        <p className="mt-2 text-sm text-stone-500">Client comments will collect here as soon as they leave notes on selections.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="mt-8 rounded-[26px] border border-white/80 bg-white p-5 shadow-[0_18px_55px_rgba(65,56,47,0.08)] md:p-8">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-400">All Comments</div>
+          <h2 className="mt-2 text-2xl font-semibold text-stone-900">Client notes by selection</h2>
+        </div>
+        <p className="text-sm text-stone-500">{items.length} comment{items.length === 1 ? "" : "s"}</p>
+      </div>
+      <div className="divide-y divide-stone-100">
+        {items.map((item) => {
+          const detail = getDisplayDetails(item);
+          const status = getStatus(item);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpen(item)}
+              className="grid w-full gap-4 py-5 text-left transition hover:bg-stone-50/70 md:grid-cols-[88px_1fr_auto] md:items-center"
+            >
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[#faf8f4]">
+                {detail.image ? <img src={detail.image} alt="" className="max-h-full max-w-full object-contain" /> : <MessageSquare className="h-5 w-5 text-stone-300" />}
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-semibold text-stone-900">{detail.name}</h3>
+                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">{item.room.name}</span>
+                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">{filterLabel(status)}</span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-stone-600">{item.approval_comment}</p>
+              </div>
+              <div className="text-sm text-stone-400 md:text-right">
+                {formatShortDate(item.approval_updated_at)}
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -537,6 +674,13 @@ function countStatuses(items: ApprovalItem[]) {
 
 function getStatus(item: ApprovalItem): ApprovalStatus {
   return item.approval_status ?? (item.approved ? "approved" : "undecided");
+}
+
+function filterLabel(filter: ApprovalFilter) {
+  if (filter === "undecided") return "Need Review";
+  if (filter === "approved") return "Approved";
+  if (filter === "declined") return "Changes";
+  return "All";
 }
 
 function getDisplayDetails(item: ApprovalItem) {
