@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
+import { cleanUuid } from "@/lib/ids";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 
@@ -101,7 +102,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
       POST: async ({ request }) => {
         try {
           const { project_id } = (await request.json()) as { project_id?: string };
-          if (!project_id) return json({ error: "project_id required" }, 400);
+          const projectId = cleanUuid(project_id);
+          if (!projectId) return json({ error: "Valid project_id required" }, 400);
 
           const fcKey = process.env.FIRECRAWL_API_KEY;
           if (!fcKey) return json({ error: "Firecrawl is not connected yet." }, 500);
@@ -109,7 +111,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
             .select("id, product_url, product_id, scrape_status")
-            .eq("project_id", project_id)
+            .eq("project_id", projectId)
             .eq("not_needed", false)
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
@@ -178,14 +180,17 @@ export const Route = createFileRoute("/api/scrape-materials")({
           if (!Array.isArray(rows)) return json({ error: "rows required" }, 400);
 
           for (const row of rows) {
+            const materialItemId = cleanUuid(row.material_item_id);
+            if (!materialItemId) continue;
+
             // Look up material item early so we have its category + room
             const { data: matItem } = await supabaseAdmin
               .from("material_items")
               .select("id, room_id, category, color")
-              .eq("id", row.material_item_id)
+              .eq("id", materialItemId)
               .maybeSingle();
 
-            let productId = row.existing_product_id ?? null;
+            let productId = cleanUuid(row.existing_product_id);
 
             if (!productId) {
               const { data: dup } = await supabaseAdmin
@@ -193,7 +198,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 .select("id")
                 .eq("product_url", row.url)
                 .maybeSingle();
-              productId = dup?.id ?? null;
+              productId = cleanUuid(dup?.id);
             }
 
             const payload = {
@@ -219,7 +224,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 .select("id")
                 .single();
               if (insErr) return json({ error: insErr.message }, 500);
-              productId = inserted?.id ?? null;
+              productId = cleanUuid(inserted?.id);
             }
 
             if (productId) {
@@ -236,13 +241,14 @@ export const Route = createFileRoute("/api/scrape-materials")({
               await supabaseAdmin
                 .from("material_items")
                 .update(materialUpdate)
-                .eq("id", row.material_item_id);
+                .eq("id", materialItemId);
 
-              if (matItem?.room_id) {
+              const roomId = cleanUuid(matItem?.room_id);
+              if (roomId) {
                 const { data: existingLink } = await supabaseAdmin
                   .from("room_products")
                   .select("id")
-                  .eq("room_id", matItem.room_id)
+                  .eq("room_id", roomId)
                   .eq("product_id", productId)
                   .maybeSingle();
 
@@ -250,7 +256,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   await supabaseAdmin
                     .from("room_products")
                     .insert({
-                      room_id: matItem.room_id,
+                      room_id: roomId,
                       product_id: productId,
                       is_key_selection: false,
                     });

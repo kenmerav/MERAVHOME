@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { extractMaterialPdfItemsFromText } from "@/lib/materialPdfExtract";
+import { cleanUuid } from "@/lib/ids";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -233,9 +234,9 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           const isJsonRequest = request.headers.get("content-type")?.includes("application/json");
           const body = isJsonRequest ? await request.json() : null;
           const form = isJsonRequest ? null : await request.formData();
-          const projectId = String(isJsonRequest ? body?.project_id ?? "" : form?.get("project_id") ?? "");
+          const projectId = cleanUuid(isJsonRequest ? body?.project_id : form?.get("project_id"));
           const file = form?.get("pdf");
-          if (!projectId) return json({ error: "project_id required" }, 400);
+          if (!projectId) return json({ error: "Valid project_id required" }, 400);
           if (!isJsonRequest && !(file instanceof File)) return json({ error: "PDF file required" }, 400);
 
           const extracted = isJsonRequest ? cleanImportedItems(body?.items) : await extractPdfItems(file as File);

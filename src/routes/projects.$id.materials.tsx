@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
+import { cleanUuid, isUuid } from "@/lib/ids";
 
 export const Route = createFileRoute("/projects/$id/materials")({
   head: () => ({ meta: [{ title: "Materials — MERAV Studio" }] }),
@@ -49,13 +50,23 @@ type ScrapedRow = {
 
 function MaterialsPage() {
   const { id } = Route.useParams();
+  const projectId = cleanUuid(id);
   const qc = useQueryClient();
 
-  const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
-  const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
+  const { data: project } = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => db.getProject(projectId!),
+    enabled: !!projectId,
+  });
+  const { data: rooms = [] } = useQuery({
+    queryKey: ["rooms", projectId],
+    queryFn: async () => (await db.listRooms(projectId!)) ?? [],
+    enabled: !!projectId,
+  });
   const { data: items = [] } = useQuery({
-    queryKey: ["materialItems", id],
-    queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
+    queryKey: ["materialItems", projectId],
+    queryFn: async () => (await db.listMaterialItemsByProject(projectId!)) ?? [],
+    enabled: !!projectId,
   });
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
@@ -84,12 +95,13 @@ function MaterialsPage() {
   }, [items]);
 
   const runScrape = async () => {
+    if (!projectId) return toast.error("Invalid project link.");
     setScraping(true);
     try {
       const res = await fetch("/api/scrape-materials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: id }),
+        body: JSON.stringify({ project_id: projectId }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "Scrape failed");
@@ -108,16 +120,23 @@ function MaterialsPage() {
 
   const commitReview = async (final: ScrapedRow[]) => {
     try {
+      const safeRows = final
+        .map((row) => ({
+          ...row,
+          material_item_id: cleanUuid(row.material_item_id) ?? "",
+          existing_product_id: cleanUuid(row.existing_product_id),
+        }))
+        .filter((row) => row.material_item_id);
       const res = await fetch("/api/scrape-materials", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: final }),
+        body: JSON.stringify({ rows: safeRows }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || "Could not save");
-      toast.success(`Saved ${final.length} product${final.length === 1 ? "" : "s"} to catalog`);
+      toast.success(`Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`);
       setReviewRows(null);
-      qc.invalidateQueries({ queryKey: ["materialItems", id] });
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: any) {
       toast.error(e?.message || "Could not save");
@@ -126,6 +145,7 @@ function MaterialsPage() {
 
   const importPdf = async (file: File | null | undefined) => {
     if (!file) return;
+    if (!projectId) return toast.error("Invalid project link.");
     setImportingPdf(true);
     try {
       const useBrowserExtraction = file.size > DIRECT_PDF_UPLOAD_LIMIT;
@@ -134,21 +154,21 @@ function MaterialsPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              project_id: id,
+              project_id: projectId,
               items: await extractMaterialPdfItemsFromFile(file),
             }),
           })
         : await fetch("/api/import-materials-pdf", {
             method: "POST",
-            body: pdfImportFormData(id, file),
+            body: pdfImportFormData(projectId!, file),
           });
       const body = await readJsonResponse(res);
       if (!res.ok) throw new Error(body?.error || "PDF import failed");
       toast.success(
         `Imported ${body.imported ?? 0} linked item${body.imported === 1 ? "" : "s"} from ${body.room_names?.join(", ") || "PDF"}`,
       );
-      qc.invalidateQueries({ queryKey: ["rooms", id] });
-      qc.invalidateQueries({ queryKey: ["materialItems", id] });
+      qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
     } catch (e: any) {
       toast.error(e?.message || "PDF import failed");
     } finally {
@@ -157,12 +177,13 @@ function MaterialsPage() {
     }
   };
 
+  if (!projectId) return <AppShell><div className="p-16 text-muted-foreground">Invalid project link.</div></AppShell>;
   if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
 
   return (
     <AppShell>
       <div className="page-pad max-w-[1500px]">
-        <Link to="/projects/$id" params={{ id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
+        <Link to="/projects/$id" params={{ id: projectId }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
           <ArrowLeft className="w-3.5 h-3.5" /> Project
         </Link>
 
@@ -215,7 +236,7 @@ function MaterialsPage() {
               room={room}
               items={byRoom.get(room.id) ?? []}
               products={products}
-              projectId={id}
+              projectId={projectId}
             />
           ))}
         </div>
@@ -269,18 +290,25 @@ function RoomMaterialsSection({
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
   const update = async (id: string, patch: Partial<MaterialItem>) => {
+    if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
     await db.updateMaterialItem(id, patch);
     invalidate();
   };
 
   const remove = async (id: string) => {
+    if (!isUuid(id)) return toast.error("Could not delete this item because its ID is invalid.");
     if (!confirm("Delete this item?")) return;
     await db.deleteMaterialItem(id);
     invalidate();
   };
 
   const attachCatalogProduct = async (item: MaterialItem, productId: string | null) => {
-    const product = productId ? products.find((p) => p.id === productId) : null;
+    const safeProductId = cleanUuid(productId);
+    if (!isUuid(item.id) || !isUuid(room.id)) {
+      toast.error("Could not link this product because the item ID is invalid.");
+      return;
+    }
+    const product = safeProductId ? products.find((p) => p.id === safeProductId) : null;
     await db.updateMaterialItem(item.id, {
       product_id: product?.id ?? null,
       product_url: product?.product_url ?? item.product_url ?? null,
@@ -338,6 +366,7 @@ function RoomMaterialsSection({
             <tbody>
               {sortedItems.map((it) => {
                 const complete = it.not_needed || (it.product_url && it.product_url.trim().length > 0);
+                const linkedProductId = cleanUuid(it.product?.id);
                 return (
                   <tr key={it.id} className="border-t border-border align-middle">
                     <td className="px-6 py-3">
@@ -360,10 +389,10 @@ function RoomMaterialsSection({
                         onSelect={(productId) => attachCatalogProduct(it, productId)}
                         disabled={it.not_needed}
                       />
-                      {it.product && (
+                      {it.product && linkedProductId && (
                         <Link
                           to="/catalog/$productId"
-                          params={{ productId: it.product.id }}
+                          params={{ productId: linkedProductId }}
                           className="mt-2 flex items-center gap-2 pl-3.5 group/product"
                         >
                           {it.product.image_url ? (
@@ -480,16 +509,17 @@ function CatalogProductSelect({
   disabled?: boolean;
 }) {
   const category = toProductCategory(item.category);
-  const matchingProducts = products.filter((product) => product.category === category);
-  const currentValue = item.product_id ?? "__none__";
-  const selectedProduct = products.find((product) => product.id === item.product_id);
-  const hasCurrentProductInCategory = matchingProducts.some((product) => product.id === item.product_id);
+  const matchingProducts = products.filter((product) => product.category === category && isUuid(product.id));
+  const currentProductId = cleanUuid(item.product_id);
+  const currentValue = currentProductId ?? "__none__";
+  const selectedProduct = currentProductId ? products.find((product) => product.id === currentProductId) : null;
+  const hasCurrentProductInCategory = matchingProducts.some((product) => product.id === currentProductId);
 
   return (
     <div className="mt-2 max-w-[180px]">
       <Select
         value={currentValue}
-        onValueChange={(value) => onSelect(value === "__none__" ? null : value)}
+        onValueChange={(value) => onSelect(cleanUuid(value))}
         disabled={disabled}
       >
         <SelectTrigger className="h-7 border-border bg-bone/40 text-[11px]">
@@ -614,6 +644,7 @@ function AddCustomItemButton({ roomId, roomName, projectId, sortStart }: { roomI
 
   const submit = async () => {
     if (!label.trim()) return toast.error("Label required");
+    if (!isUuid(roomId) || !isUuid(projectId)) return toast.error("Could not add this item because the project link is invalid.");
     await db.bulkInsertMaterialItems([{
       room_id: roomId,
       project_id: projectId,

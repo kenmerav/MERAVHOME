@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeMoneyInput } from "@/lib/money";
+import { cleanUuid } from "@/lib/ids";
 
 export const Route = createFileRoute("/catalog_/$productId")({
   head: () => ({ meta: [{ title: "Product — MERAV Studio" }] }),
@@ -26,10 +27,12 @@ const PRODUCT_IMAGE_BUCKET = "product-images";
 
 function ProductPage() {
   const { productId } = Route.useParams();
+  const safeProductId = cleanUuid(productId);
   const qc = useQueryClient();
   const { data: product, isLoading } = useQuery({
-    queryKey: ["product", productId],
-    queryFn: () => db.getProduct(productId),
+    queryKey: ["product", safeProductId],
+    queryFn: () => db.getProduct(safeProductId!),
+    enabled: !!safeProductId,
   });
   const [form, setForm] = useState<ProductForm | null>(null);
 
@@ -54,6 +57,7 @@ function ProductPage() {
     }
   }, [product]);
 
+  if (!safeProductId) return <AppShell><div className="p-16 text-muted-foreground">Product not found.</div></AppShell>;
   if (isLoading) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
   if (!product) return <AppShell><div className="p-16 text-muted-foreground">Product not found.</div></AppShell>;
   if (!form) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
@@ -66,7 +70,7 @@ function ProductPage() {
     const price = normalizeMoneyInput(form.price);
     const unit_cost = normalizeMoneyInput(form.unit_cost);
     const shipping = normalizeMoneyInput(form.shipping);
-    await db.updateProduct(productId, {
+    await db.updateProduct(safeProductId, {
       ...form,
       name: form.name.trim(),
       vendor: clean(form.vendor),
@@ -83,7 +87,7 @@ function ProductPage() {
       description: clean(form.description),
     });
     setForm((prev) => prev ? { ...prev, price, unit_cost, shipping } : prev);
-    qc.invalidateQueries({ queryKey: ["product", productId] });
+    qc.invalidateQueries({ queryKey: ["product", safeProductId] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     toast.success("Product updated");
@@ -98,7 +102,7 @@ function ProductPage() {
 
         <div className="grid lg:grid-cols-[360px_1fr] gap-12 items-start">
           <div>
-            <ProductImageEditor productId={productId} form={form} onChange={update} />
+            <ProductImageEditor productId={safeProductId} form={form} onChange={update} />
             {form.product_url && (
               <a href={form.product_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm hover:underline">
                 Vendor product page <ExternalLink className="w-3.5 h-3.5" />
