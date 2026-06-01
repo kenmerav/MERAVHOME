@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -143,13 +143,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </button>
             </div>
           )}
-          <div className="eyebrow mb-3 flex items-center gap-2"><Sparkles className="w-3 h-3" /> Coming Soon</div>
-          <ul className="space-y-1.5 text-[13px] text-muted-foreground">
-            <li>Client Portal</li>
-            <li>AI Rendering Engine</li>
-            <li>QuickBooks Sync</li>
-            <li>Purchase Orders</li>
-          </ul>
         </div>
       </aside>
 
