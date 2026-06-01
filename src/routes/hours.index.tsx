@@ -176,20 +176,12 @@ function HoursPage() {
   return (
     <AppShell>
       <div className="page-pad max-w-[1500px]">
-        <div className="flex items-start justify-between gap-6 flex-wrap mb-10">
-          <div>
-            <div className="eyebrow mb-3">{canManage ? "Team Payroll" : "My Time"}</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">Hours</h1>
-            <p className="mt-4 text-muted-foreground max-w-2xl">
-              Log hours by date and project. Paid entries clear from the amount due while staying in year-to-date totals.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 w-full sm:w-auto">
-            <SummaryBox label="Hours Due" value={formatHours(allSummary.unpaidHours)} />
-            <SummaryBox label="Pay Due" value={formatMoney(allSummary.unpaidPay)} />
-            <SummaryBox label="Total Hours" value={formatHours(allSummary.totalHours)} />
-            <SummaryBox label="Total Income" value={formatMoney(allSummary.totalPay)} />
-          </div>
+        <div className="mb-10">
+          <div className="eyebrow mb-3">{canManage ? "Team Payroll" : "My Time"}</div>
+          <h1 className="editorial-hero text-5xl lg:text-7xl">Hours</h1>
+          <p className="mt-4 text-muted-foreground max-w-2xl">
+            Log hours by date and project. Paid entries clear from the amount due while staying in year-to-date totals.
+          </p>
         </div>
 
         <div className="grid xl:grid-cols-[360px_1fr] gap-8 items-start">
@@ -256,6 +248,8 @@ function HoursPage() {
                   <div className="grid grid-cols-2 gap-2 mt-4 text-sm">
                     <div><span className="eyebrow block">Due Hours</span>{formatHours(allSummary.unpaidHours)}</div>
                     <div><span className="eyebrow block">Due Pay</span>{formatMoney(allSummary.unpaidPay)}</div>
+                    <div><span className="eyebrow block">Total Hours</span>{formatHours(allSummary.totalHours)}</div>
+                    <div><span className="eyebrow block">Total Income</span>{formatMoney(allSummary.totalPay)}</div>
                   </div>
                 </button>
                 {employeeSummaries.map((summary) => (
@@ -273,6 +267,8 @@ function HoursPage() {
                     <div className="grid grid-cols-2 gap-2 mt-4 text-sm">
                       <div><span className="eyebrow block">Due Hours</span>{formatHours(summary.unpaidHours)}</div>
                       <div><span className="eyebrow block">Due Pay</span>{formatMoney(summary.unpaidPay)}</div>
+                      <div><span className="eyebrow block">Total Hours</span>{formatHours(summary.totalHours)}</div>
+                      <div><span className="eyebrow block">Total Income</span>{formatMoney(summary.totalPay)}</div>
                     </div>
                   </button>
                 ))}
@@ -413,15 +409,6 @@ function HoursPage() {
         </div>
       </div>
     </AppShell>
-  );
-}
-
-function SummaryBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-2 border-ink bg-background min-w-[150px] text-center">
-      <div className="bg-bone border-b-2 border-ink px-4 py-2 font-bold">{label}</div>
-      <div className="px-4 py-2 text-xl font-semibold">{value}</div>
-    </div>
   );
 }
 
