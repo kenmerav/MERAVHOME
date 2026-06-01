@@ -121,6 +121,23 @@ function extractActionUrls(rawPdf: string) {
   return actionUrls;
 }
 
+function extractTaggedLabels(rawPdf: string) {
+  return Array.from(rawPdf.matchAll(/\/E\s*\(([^)]{2,160})\)/g)).map((match) => decodePdfLiteral(match[1]));
+}
+
+function enrichTruncatedLabel(label: string, taggedLabels: string[]) {
+  const labelKey = normalize(cleanItemLabel(label));
+  if (!labelKey) return label;
+  const fullLabel = taggedLabels.find((taggedLabel) => normalize(cleanItemLabel(taggedLabel)) === labelKey);
+  if (!fullLabel) return label;
+
+  const labelHasQuantity = /\b(?:QTY|QUANTITY)\s*:\s*\d/i.test(label);
+  const fullHasQuantity = /\b(?:QTY|QUANTITY)\s*:\s*\d/i.test(fullLabel);
+  const labelHasFinish = /\bFINISH\s*:\s*\S/i.test(label);
+  const fullHasFinish = /\bFINISH\s*:\s*\S/i.test(fullLabel);
+  return (!labelHasQuantity && fullHasQuantity) || (!labelHasFinish && fullHasFinish) ? fullLabel : label;
+}
+
 function isUrlLabel(value: string) {
   return /^https?:\/\//i.test(value.trim());
 }
@@ -185,6 +202,7 @@ async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   const rawPdf = Buffer.from(await file.arrayBuffer()).toString("latin1");
   const roomName = pickRoomNameFromText(rawPdf);
   const actionUrls = extractActionUrls(rawPdf);
+  const taggedLabels = extractTaggedLabels(rawPdf);
   const imported: ImportedPdfItem[] = [];
   const seen = new Set<string>();
   const usedUrls = new Set<string>();
@@ -198,7 +216,7 @@ async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
     const label = labelValue ? decodePdfLiteral(labelValue) : "";
     if (!url || !label) continue;
 
-    const item = parsePdfItem(label, roomName, url);
+    const item = parsePdfItem(enrichTruncatedLabel(label, taggedLabels), roomName, url);
     if (!item) {
       if (isUrlLabel(label)) urlOnlyAnnotations.add(url);
       continue;
