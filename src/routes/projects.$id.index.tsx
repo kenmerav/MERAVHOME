@@ -89,7 +89,6 @@ function ProjectDetailPage() {
           </div>
           {!isClientUser && (
             <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
-              <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
               <Select value={project.status} onValueChange={v => setStatus(v as ProjectStatus)}>
                 <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -103,6 +102,7 @@ function ProjectDetailPage() {
                   {PROJECT_LABELS.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
               <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
                 <ClipboardList className="w-4 h-4" /> Materials
               </Link>
