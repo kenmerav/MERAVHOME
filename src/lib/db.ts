@@ -56,6 +56,7 @@ export interface Project {
   approval_show_quantity: boolean;
   approval_show_dimensions: boolean;
   approval_show_finish: boolean;
+  approval_live: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ArrowLeft, Eye, EyeOff, ExternalLink, MessageSquare } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, ExternalLink, MessageSquare, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Project, type Room, type RoomProduct } from "@/lib/db";
@@ -82,6 +82,12 @@ function ApprovalSetupPage() {
     toast.success(`${control?.label ?? "Detail"} ${visible ? "will show" : "will be hidden"} on the client approval page`);
   };
 
+  const setApprovalLive = async (live: boolean) => {
+    await db.updateProject(id, { approval_live: live } as Partial<Project>);
+    refresh();
+    toast.success(live ? "Approvals are now live for the client dashboard" : "Approvals are no longer live for the client dashboard");
+  };
+
   return (
     <AppShell>
       <div className="page-pad max-w-[1500px]">
@@ -106,10 +112,13 @@ function ApprovalSetupPage() {
               Choose which rooms and selections appear on the client-facing approval page for {project.name}.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <SetupStat label="Visible Rooms" value={visibleRooms} />
-            <SetupStat label="Visible Items" value={visibleItems} />
-            <SetupStat label="Hidden Items" value={hiddenItems} />
+          <div className="flex flex-col items-start gap-4 lg:items-end">
+            <LiveToggle live={project.approval_live === true} onToggle={() => setApprovalLive(project.approval_live !== true)} />
+            <div className="grid grid-cols-3 gap-3">
+              <SetupStat label="Visible Rooms" value={visibleRooms} />
+              <SetupStat label="Visible Items" value={visibleItems} />
+              <SetupStat label="Hidden Items" value={hiddenItems} />
+            </div>
           </div>
         </div>
 
@@ -192,6 +201,22 @@ function DetailVisibilityToggle({
     >
       {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
       <span>{label}</span>
+    </button>
+  );
+}
+
+function LiveToggle({ live, onToggle }: { live: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "inline-flex items-center gap-2 border px-4 py-2.5 text-sm transition-colors",
+        live ? "border-[#3f7f47] bg-[#3f7f47] text-white" : "border-[#a33b35] bg-[#a33b35] text-white",
+      )}
+    >
+      <Radio className="h-4 w-4" />
+      <span>{live ? "Live" : "Not Live"}</span>
     </button>
   );
 }

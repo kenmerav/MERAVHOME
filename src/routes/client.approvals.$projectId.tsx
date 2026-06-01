@@ -94,6 +94,21 @@ function ClientApprovalsPage() {
     return <ClientFrame><div className="p-10 text-sm text-slate-500">Project approvals were not found.</div></ClientFrame>;
   }
 
+  if (data.notLive) {
+    return (
+      <ClientFrame>
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="max-w-xl rounded-[28px] bg-white p-10 text-center shadow-sm">
+            <div className="font-display text-4xl">MERAV Interiors</div>
+            <p className="mt-4 text-sm text-slate-500">
+              This approval board is not live yet. It will appear here once your design team shares it with you.
+            </p>
+          </div>
+        </div>
+      </ClientFrame>
+    );
+  }
+
   const { project, rooms, items } = data;
   const displaySettings = getDisplaySettings(project);
   const counts = countStatuses(items);
@@ -662,6 +677,14 @@ async function loadApprovalData(projectId: string) {
     db.listMaterialItemsByProject(projectId),
   ]);
   if (!project) throw new Error("Project not found.");
+  if (project.approval_live !== true) {
+    return {
+      project,
+      rooms: [],
+      items: [],
+      notLive: true,
+    };
+  }
 
   const roomList = (rooms ?? []).filter((room) => room.approval_visible !== false);
   const materials = materialItems ?? [];
@@ -688,6 +711,7 @@ async function loadApprovalData(projectId: string) {
     project,
     rooms: roomList,
     items: roomProducts.flat().sort((a, b) => a.room.sort_order - b.room.sort_order || a.sort_order - b.sort_order),
+    notLive: false,
   };
 }
 

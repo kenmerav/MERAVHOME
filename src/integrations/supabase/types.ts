@@ -415,6 +415,12 @@ export type Database = {
       }
       projects: {
         Row: {
+          approval_live: boolean
+          approval_show_dimensions: boolean
+          approval_show_finish: boolean
+          approval_show_pricing: boolean
+          approval_show_quantity: boolean
+          approval_show_vendor: boolean
           client_name: string
           cover_image_url: string | null
           created_at: string
@@ -430,6 +436,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approval_live?: boolean
+          approval_show_dimensions?: boolean
+          approval_show_finish?: boolean
+          approval_show_pricing?: boolean
+          approval_show_quantity?: boolean
+          approval_show_vendor?: boolean
           client_name: string
           cover_image_url?: string | null
           created_at?: string
@@ -445,6 +457,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approval_live?: boolean
+          approval_show_dimensions?: boolean
+          approval_show_finish?: boolean
+          approval_show_pricing?: boolean
+          approval_show_quantity?: boolean
+          approval_show_vendor?: boolean
           client_name?: string
           cover_image_url?: string | null
           created_at?: string

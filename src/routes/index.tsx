@@ -77,11 +77,12 @@ function DashboardPage() {
             needReviewCount: counts.undecided,
             approvedCount: counts.approved,
             changesCount: counts.declined,
+            live: project.approval_live === true,
           };
         }),
       );
 
-      return summaries.filter((summary) => summary.itemCount > 0);
+      return summaries.filter((summary) => summary.itemCount > 0 && summary.live);
     },
   });
   const approvalsReady = clientApprovalSummaries.filter((summary) => summary.needReviewCount > 0);
