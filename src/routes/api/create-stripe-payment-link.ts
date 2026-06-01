@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { canViewFinancials } from "@/lib/permissions";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -21,11 +23,33 @@ async function stripePost(path: string, body: URLSearchParams, apiKey: string) {
   return data;
 }
 
+async function requireInvoiceAccess(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
+  if (!token) return { error: json({ error: "Sign in as Ken or Katie to use invoice tools." }, 401) };
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  if (userError || !userData.user) return { error: json({ error: "Your session is no longer valid." }, 401) };
+
+  const { data: profile } = await supabaseAdmin
+    .from("user_profiles")
+    .select("email,is_active")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+
+  if (!canViewFinancials(profile)) return { error: json({ error: "Only Ken and Katie can use invoice tools." }, 403) };
+
+  return { user: userData.user };
+}
+
 export const Route = createFileRoute("/api/create-stripe-payment-link")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         try {
+          const access = await requireInvoiceAccess(request);
+          if ("error" in access) return access.error;
+
           const { name, amount, description } = (await request.json()) as {
             name?: string;
             amount?: number;

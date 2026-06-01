@@ -141,14 +141,18 @@ function FinancialsPage() {
 
   const onFile = async (file?: File | null) => {
     if (!file) return;
+    if (!allowed) return toast.error("Only Ken and Katie can upload invoices.");
     if (file.type !== "application/pdf") return toast.error("Please upload a PDF invoice.");
     if (file.size > 10 * 1024 * 1024) return toast.error("PDF too large (max 10MB).");
     setParsing(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to use invoice tools.");
       const fileDataUrl = await readFile(file);
       const res = await fetch("/api/parse-invoice-pdf", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ file_name: file.name, file_data_url: fileDataUrl }),
       });
       const body = await res.json();
@@ -196,6 +200,7 @@ function FinancialsPage() {
 
   const saveReview = async () => {
     if (!review) return;
+    if (!allowed) return toast.error("Only Ken and Katie can save invoices.");
     setSaving(true);
     try {
       await db.createFinancialInvoice({
@@ -229,6 +234,7 @@ function FinancialsPage() {
   };
 
   const startServiceInvoice = () => {
+    if (!allowed) return toast.error("Only Ken and Katie can create invoices.");
     const today = new Date().toISOString().slice(0, 10);
     setServiceDraft({
       serviceType: "Full Service",
@@ -284,6 +290,7 @@ function FinancialsPage() {
 
   const saveServiceInvoice = async () => {
     if (!serviceDraft) return;
+    if (!allowed) return toast.error("Only Ken and Katie can save invoices.");
     const fee = calculatedDesignFee(serviceDraft);
     const paid = numberValue(serviceDraft.paid) ?? 0;
     if (fee <= 0) return toast.error("Enter square feet and the matching price per sq/ft first.");
@@ -324,15 +331,19 @@ function FinancialsPage() {
 
   const createStripeLink = async () => {
     if (!serviceDraft) return;
+    if (!allowed) return toast.error("Only Ken and Katie can create payment links.");
     const fee = calculatedDesignFee(serviceDraft);
     const amount = serviceDraft.phases.find((phase) => phase.name === serviceDraft.currentPhase);
     const paymentAmount = amount ? phaseAmount(fee, amount.percent) : 0;
     if (paymentAmount <= 0) return toast.error("Enter square feet, rate, and phase percent before creating the Stripe link.");
     setCreatingStripeLink(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to use invoice tools.");
       const res = await fetch("/api/create-stripe-payment-link", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           name: `${serviceDraft.projectName || "Design Service"} ${serviceDraft.currentPhase}`,
           amount: paymentAmount,
@@ -351,11 +362,13 @@ function FinancialsPage() {
   };
 
   const updatePaymentStatus = async (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => {
+    if (!allowed) return toast.error("Only Ken and Katie can edit invoices.");
     await db.updateFinancialPayment(payment.id, { status });
     qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
   };
 
   const updateSavedPayment = async (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => {
+    if (!allowed) return toast.error("Only Ken and Katie can edit invoices.");
     setSavingPaymentId(payment.id);
     try {
       await db.updateFinancialPayment(payment.id, patch);
@@ -369,6 +382,7 @@ function FinancialsPage() {
   };
 
   const deleteInvoice = async (invoice: FinancialInvoice) => {
+    if (!allowed) return toast.error("Only Ken and Katie can delete invoices.");
     const label = invoice.file_name || "this invoice";
     if (!window.confirm(`Delete ${label} and all of its payment lines? This cannot be undone.`)) return;
     setDeletingInvoiceId(invoice.id);
