@@ -29,13 +29,12 @@ type ApprovalDetailField =
 const DETAIL_VISIBILITY_CONTROLS: Array<{
   field: ApprovalDetailField;
   label: string;
-  description: string;
 }> = [
-  { field: "approval_show_vendor", label: "Vendor", description: "Show vendor names in the detail popup." },
-  { field: "approval_show_pricing", label: "Pricing", description: "Show item price and total pricing." },
-  { field: "approval_show_quantity", label: "Quantity", description: "Show quantity on cards and details." },
-  { field: "approval_show_dimensions", label: "Dimensions", description: "Show product dimensions in details." },
-  { field: "approval_show_finish", label: "Color/Finish", description: "Show selected color and product finish." },
+  { field: "approval_show_vendor", label: "Vendor" },
+  { field: "approval_show_pricing", label: "Pricing" },
+  { field: "approval_show_quantity", label: "Quantity" },
+  { field: "approval_show_dimensions", label: "Dimensions" },
+  { field: "approval_show_finish", label: "Color/Finish" },
 ];
 
 function ApprovalSetupPage() {
@@ -114,26 +113,22 @@ function ApprovalSetupPage() {
           </div>
         </div>
 
-        <section className="mb-8 border border-border bg-card p-5">
-          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <section className="mb-8 border border-border bg-card px-5 py-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <div className="eyebrow mb-2">Client Detail Visibility</div>
-              <h2 className="font-display text-3xl">What Clients Can See</h2>
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                These settings apply to every visible item on the client approval board.
-              </p>
+              <h2 className="font-display text-2xl">What Clients Can See</h2>
             </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {DETAIL_VISIBILITY_CONTROLS.map((control) => (
-              <DetailVisibilityCard
-                key={control.field}
-                label={control.label}
-                description={control.description}
-                visible={project[control.field] !== false}
-                onToggle={() => setProjectDetailVisible(control.field, project[control.field] === false)}
-              />
-            ))}
+            <div className="flex flex-wrap gap-2">
+              {DETAIL_VISIBILITY_CONTROLS.map((control) => (
+                <DetailVisibilityToggle
+                  key={control.field}
+                  label={control.label}
+                  visible={project[control.field] !== false}
+                  onToggle={() => setProjectDetailVisible(control.field, project[control.field] === false)}
+                />
+              ))}
+            </div>
           </div>
         </section>
 
@@ -177,14 +172,12 @@ function ApprovalSetupPage() {
   );
 }
 
-function DetailVisibilityCard({
+function DetailVisibilityToggle({
   label,
-  description,
   visible,
   onToggle,
 }: {
   label: string;
-  description: string;
   visible: boolean;
   onToggle: () => void;
 }) {
@@ -193,22 +186,12 @@ function DetailVisibilityCard({
       type="button"
       onClick={onToggle}
       className={cn(
-        "flex min-h-36 flex-col justify-between border p-4 text-left transition-colors",
+        "inline-flex items-center gap-2 border px-3.5 py-2 text-sm transition-colors",
         visible ? "border-ink bg-ink text-primary-foreground" : "border-border bg-background text-ink hover:border-ink",
       )}
     >
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-medium">{label}</h3>
-          {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-        </div>
-        <p className={cn("mt-3 text-sm leading-5", visible ? "text-primary-foreground/75" : "text-muted-foreground")}>
-          {description}
-        </p>
-      </div>
-      <span className={cn("mt-4 text-[11px] uppercase tracking-[0.22em]", visible ? "text-primary-foreground/70" : "text-muted-foreground")}>
-        {visible ? "Showing" : "Hidden"}
-      </span>
+      {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+      <span>{label}</span>
     </button>
   );
 }
