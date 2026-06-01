@@ -81,8 +81,8 @@ type ServiceDraftListField =
 const SERVICE_PHASES: InvoicePhaseName[] = ["Project Start", "Design Presentation", "Design Document Delivery", "Project Completion"];
 const DEFAULT_PHASE_SPLITS = ["50", "25", "20", "5"];
 const INVOICE_PROJECT_TYPES: InvoiceProjectType[] = ["Renovation", "New Build", "Furniture"];
-const RENOVATION_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Master Bath", "Powder Room"];
-const FURNITURE_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Primary Bath", "Powder Room"];
+const RENOVATION_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Master Bath", "Powder Room", "Other"];
+const FURNITURE_ROOMS = ["Full Home", "Living Room", "Kitchen", "Dining", "Primary Bedroom", "Primary Bath", "Powder Room", "Other"];
 const SERVICE_OPTIONS = [
   "Conceptual design planning",
   "Drafting elevations",
@@ -92,6 +92,7 @@ const SERVICE_OPTIONS = [
   "Presentations",
   "Ordering",
   "Managing installation",
+  "Other",
 ];
 
 function FinancialsPage() {
