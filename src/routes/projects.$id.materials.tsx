@@ -40,7 +40,6 @@ type ScrapedRow = {
     price?: string;
     unit_cost?: string;
     shipping?: string;
-    description?: string;
     error?: string;
   };
 };
@@ -632,14 +631,6 @@ function ReviewDialog({
                     <Field label="Unit Cost" value={row.scraped.unit_cost ?? ""} onChange={(v) => update(idx, { unit_cost: v })} />
                     <Field label="Shipping" value={row.scraped.shipping ?? ""} onChange={(v) => update(idx, { shipping: v })} />
                     <Field label="Image URL" value={row.scraped.image_url ?? ""} onChange={(v) => update(idx, { image_url: v })} className="sm:col-span-2" />
-                    <div className="sm:col-span-2 space-y-1">
-                      <Label className="eyebrow text-[10px]">Description</Label>
-                      <Textarea
-                        value={row.scraped.description ?? ""}
-                        onChange={(e) => update(idx, { description: e.target.value })}
-                        rows={2}
-                      />
-                    </div>
                   </div>
                 </div>
                 <button onClick={() => remove(idx)} className="text-muted-foreground hover:text-ink self-start" title="Skip this row">

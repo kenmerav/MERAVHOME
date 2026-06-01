@@ -38,7 +38,6 @@ export const Route = createFileRoute("/api/scrape-url")({
               finish: { type: "string", description: "Finish, color, or material variant" },
               selected_variant: { type: "string", description: "Selected variant or option when the page shows one" },
               image_url: { type: "string", description: "Absolute URL of the primary product image" },
-              notes: { type: "string", description: "Brief 1-2 sentence description" },
             },
           };
 
@@ -77,7 +76,6 @@ export const Route = createFileRoute("/api/scrape-url")({
             sku: firstString(extracted.sku, extracted.model, extracted.model_number),
             finish: firstString(extracted.finish, extracted.color, extracted.selected_color, extracted.selected_variant, extracted.variant),
             image_url: firstString(extracted.image_url, extracted.image, metadata.ogImage, metadata["og:image"]),
-            notes: firstString(extracted.notes, extracted.description, metadata.description, metadata.ogDescription),
           };
 
           return json(result);

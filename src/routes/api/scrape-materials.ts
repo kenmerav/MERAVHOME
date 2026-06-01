@@ -27,7 +27,6 @@ type Scraped = {
   price?: string;
   unit_cost?: string;
   shipping?: string;
-  description?: string;
   error?: string;
 };
 
@@ -51,7 +50,6 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       price: { type: "string" },
       unit_cost: { type: "string" },
       shipping: { type: "string" },
-      description: { type: "string" },
       image_url: { type: "string" },
     },
   };
@@ -89,7 +87,6 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       price: firstString(ex.price),
       unit_cost: firstString(ex.unit_cost),
       shipping: firstString(ex.shipping),
-      description: firstString(ex.description, meta.description, meta.ogDescription),
       image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
     };
   } catch (e: any) {
@@ -127,7 +124,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             // Catalog dedupe by exact URL
             const { data: existing } = await supabaseAdmin
               .from("products")
-              .select("id, name, vendor, image_url, finish, sku, dimensions, price, unit_cost, shipping, description")
+              .select("id, name, vendor, image_url, finish, sku, dimensions, price, unit_cost, shipping")
               .eq("product_url", url)
               .maybeSingle();
 
@@ -147,7 +144,6 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   price: existing.price ?? "",
                   unit_cost: existing.unit_cost ?? "",
                   shipping: existing.shipping ?? "",
-                  description: existing.description ?? "",
                 },
               });
               continue;
@@ -212,7 +208,6 @@ export const Route = createFileRoute("/api/scrape-materials")({
               price: normalizeMoneyInput(row.scraped.price),
               unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
               shipping: normalizeMoneyInput(row.scraped.shipping),
-              description: row.scraped.description || null,
             };
 
             if (productId) {
