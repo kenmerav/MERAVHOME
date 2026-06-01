@@ -1,6 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { PDFParse } from "pdf-parse";
-import pdfWorkerSource from "pdfjs-dist/legacy/build/pdf.worker.mjs?raw";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
 
@@ -47,153 +45,66 @@ function inferCategory(label: string) {
   return "Other";
 }
 
-type TextSegment = {
-  text: string;
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
-  yCenter: number;
-};
-
 type ImportedPdfItem = {
   room_name: string;
   item_label: string;
   product_url: string;
 };
 
-const METADATA_URL_HOSTS = [
-  "w3.org",
-  "purl.org",
-  "adobe.com",
-  "aiim.org",
-];
-
-function ensurePdfJsGlobals() {
-  const globalScope = globalThis as typeof globalThis & {
-    DOMMatrix?: typeof DOMMatrix;
-    ImageData?: typeof ImageData;
-    Path2D?: typeof Path2D;
-  };
-
-  if (!globalScope.DOMMatrix) {
-    globalScope.DOMMatrix = class DOMMatrix {
-      a = 1;
-      b = 0;
-      c = 0;
-      d = 1;
-      e = 0;
-      f = 0;
-
-      constructor(init?: number[] | string) {
-        if (Array.isArray(init)) {
-          [this.a, this.b, this.c, this.d, this.e, this.f] = init;
-        }
-      }
-
-      multiplySelf() { return this; }
-      preMultiplySelf() { return this; }
-      translateSelf() { return this; }
-      scaleSelf() { return this; }
-      rotateSelf() { return this; }
-      invertSelf() { return this; }
-      transformPoint(point?: { x?: number; y?: number }) {
-        return { x: point?.x ?? 0, y: point?.y ?? 0 };
-      }
-    } as typeof DOMMatrix;
-  }
-
-  if (!globalScope.ImageData) {
-    globalScope.ImageData = class ImageData {
-      constructor(
-        public data: Uint8ClampedArray,
-        public width: number,
-        public height: number,
-      ) {}
-    } as typeof ImageData;
-  }
-
-  if (!globalScope.Path2D) {
-    globalScope.Path2D = class Path2D {} as typeof Path2D;
-  }
-}
-
 function pickRoomNameFromText(text: string) {
-  const nonLinkLines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.includes("](") && !line.startsWith("--"));
-  const uppercaseLines = nonLinkLines.filter((line) => /^[A-Z0-9' &/-]+$/.test(line));
-  return titleCase(uppercaseLines[1] || uppercaseLines[0] || "Imported Room");
+  const outlineTitleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)[\s\S]{0,120}?\/Dest\s*\[/);
+  const titleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)/);
+  const taggedTitleMatch = text.match(/\/T\s*\(([^)]{2,80})\)/);
+  return titleCase(outlineTitleMatch?.[1] || titleMatch?.[1] || taggedTitleMatch?.[1] || "Imported Room");
 }
 
-function extractRawProductUrls(data: Buffer) {
-  const rawPdf = data.toString("latin1");
-  const urls = Array.from(rawPdf.matchAll(/https?:\/\/[^\s<>)\]]+/g))
-    .map((match) => match[0].replace(/["']+$/g, ""))
-    .filter((url) => {
-      try {
-        const host = new URL(url).hostname.toLowerCase();
-        return !METADATA_URL_HOSTS.some((metadataHost) => host.includes(metadataHost));
-      } catch {
-        return false;
-      }
-    });
-  return Array.from(new Set(urls));
+function decodePdfLiteral(value: string) {
+  return value
+    .replace(/\\([\\()nrtbf])/g, (_, escaped) => {
+      if (escaped === "n") return "\n";
+      if (escaped === "r") return "\r";
+      if (escaped === "t") return "\t";
+      if (escaped === "b") return "\b";
+      if (escaped === "f") return "\f";
+      return escaped;
+    })
+    .trim();
 }
 
-function extractTextLabels(text: string, roomName: string, count: number) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("--"));
-  const roomIndex = lines.findIndex((line) => normalize(line) === normalize(roomName));
-  const labelLines = (roomIndex >= 0 ? lines.slice(roomIndex + 1) : lines)
-    .filter((line) => normalize(line) !== normalize(roomName));
-  return labelLines.slice(0, count);
+function extractActionUrls(rawPdf: string) {
+  const actionUrls = new Map<string, string>();
+  for (const objectBlock of rawPdf.split(/\bendobj/)) {
+    if (!objectBlock.includes("/S /URI")) continue;
+    const objectId = objectBlock.match(/(\d+)\s+0\s+obj/)?.[1];
+    const uri = objectBlock.match(/\/URI\s*\(([\s\S]*?)\)/)?.[1];
+    if (objectId && uri) actionUrls.set(objectId, decodePdfLiteral(uri));
+  }
+  return actionUrls;
 }
 
-function pairLabelsWithUrls(text: string, roomName: string, urls: string[]): ImportedPdfItem[] {
+async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
+  const rawPdf = Buffer.from(await file.arrayBuffer()).toString("latin1");
+  const roomName = pickRoomNameFromText(rawPdf);
+  const actionUrls = extractActionUrls(rawPdf);
   const imported: ImportedPdfItem[] = [];
   const seen = new Set<string>();
-  const labels = extractTextLabels(text, roomName, urls.length);
 
-  for (let index = 0; index < Math.min(labels.length, urls.length); index += 1) {
-    const rawLabel = labels[index];
-    const url = urls[index];
-    if (!rawLabel || !url || normalize(rawLabel) === normalize(roomName)) continue;
+  for (const annotation of rawPdf.split(/\bendobj/)) {
+    if (!annotation.includes("/Subtype /Link")) continue;
+    const actionRef = annotation.match(/\/A\s+(\d+)\s+0\s+R/)?.[1];
+    const labelValue = annotation.match(/\/Contents\s*\(([\s\S]*?)\)/)?.[1];
+    const url = actionRef ? actionUrls.get(actionRef) : null;
+    const label = labelValue ? decodePdfLiteral(labelValue) : "";
+    if (!url || !label || normalize(label) === normalize(roomName)) continue;
 
-    const item = {
-      room_name: roomName,
-      item_label: titleCase(rawLabel),
-      product_url: url,
-    };
+    const item = { room_name: roomName, item_label: titleCase(label), product_url: url };
     const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
     if (seen.has(key)) continue;
     seen.add(key);
     imported.push(item);
   }
-  return imported;
-}
 
-async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
-  let parser: PDFParse | null = null;
-  try {
-    const data = Buffer.from(await file.arrayBuffer());
-    ensurePdfJsGlobals();
-    const { PDFParse } = await import("pdf-parse");
-    PDFParse.setWorker(`data:text/javascript;base64,${Buffer.from(pdfWorkerSource).toString("base64")}`);
-    parser = new PDFParse({ data });
-    const [info, textResult] = await Promise.all([
-      parser.getInfo(),
-      parser.getText(),
-    ]);
-    const outlineTitle = info.outline?.find((item: any) => item?.title)?.title;
-    const roomName = titleCase(outlineTitle || pickRoomNameFromText(textResult.text));
-    return pairLabelsWithUrls(textResult.text, roomName, extractRawProductUrls(data));
-  } finally {
-    await parser?.destroy();
-  }
+  return imported;
 }
 
 export const Route = createFileRoute("/api/import-materials-pdf")({
