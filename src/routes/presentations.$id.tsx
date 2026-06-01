@@ -271,16 +271,16 @@ function BrandCover({ project, roomCount }: { project: any; roomCount?: number }
   return (
     <div className="w-full h-full min-h-[inherit] flex items-center justify-center bg-white px-8 py-20 text-center">
       <div className="w-full">
-        <div className="font-display text-ink uppercase leading-none tracking-[-0.065em] text-[clamp(3.25rem,5.8vw,8.25rem)] whitespace-nowrap">
+        <div className="font-display text-ink uppercase leading-none tracking-[-0.075em] text-[clamp(4.25rem,7.6vw,10rem)] whitespace-nowrap">
           MERAV INTERIORS
         </div>
-        <div className="mt-7 text-[#9b9793] uppercase tracking-[0.42em] text-[clamp(1.05rem,2vw,2.25rem)] font-light">
+        <div className="mt-5 text-[#9b9793] uppercase tracking-[0.42em] text-[clamp(0.95rem,1.75vw,1.9rem)] font-light">
           By Katie Roberts
         </div>
-        <div className="mt-20 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(2rem,4.4vw,4.75rem)] font-light leading-tight">
+        <div className="mt-24 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight">
           {project.name}
         </div>
-        <div className="mt-6 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(1rem,1.9vw,2rem)] font-light">
+        <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">
           Conceptual Design
         </div>
         {roomCount != null && (
