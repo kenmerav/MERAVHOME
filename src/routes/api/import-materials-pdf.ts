@@ -62,6 +62,13 @@ type ImportedPdfItem = {
   product_url: string;
 };
 
+const METADATA_URL_HOSTS = [
+  "w3.org",
+  "purl.org",
+  "adobe.com",
+  "aiim.org",
+];
+
 function ensurePdfJsGlobals() {
   const globalScope = globalThis as typeof globalThis & {
     DOMMatrix?: typeof DOMMatrix;
@@ -120,13 +127,40 @@ function pickRoomNameFromText(text: string) {
   return titleCase(uppercaseLines[1] || uppercaseLines[0] || "Imported Room");
 }
 
-function extractMarkdownLinks(text: string, roomName: string): ImportedPdfItem[] {
+function extractRawProductUrls(data: Buffer) {
+  const rawPdf = data.toString("latin1");
+  const urls = Array.from(rawPdf.matchAll(/https?:\/\/[^\s<>)\]]+/g))
+    .map((match) => match[0].replace(/["']+$/g, ""))
+    .filter((url) => {
+      try {
+        const host = new URL(url).hostname.toLowerCase();
+        return !METADATA_URL_HOSTS.some((metadataHost) => host.includes(metadataHost));
+      } catch {
+        return false;
+      }
+    });
+  return Array.from(new Set(urls));
+}
+
+function extractTextLabels(text: string, roomName: string, count: number) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("--"));
+  const roomIndex = lines.findIndex((line) => normalize(line) === normalize(roomName));
+  const labelLines = (roomIndex >= 0 ? lines.slice(roomIndex + 1) : lines)
+    .filter((line) => normalize(line) !== normalize(roomName));
+  return labelLines.slice(0, count);
+}
+
+function pairLabelsWithUrls(text: string, roomName: string, urls: string[]): ImportedPdfItem[] {
   const imported: ImportedPdfItem[] = [];
   const seen = new Set<string>();
-  const linkPattern = /\[([^\]]+)\]\((https?:[^)]+)\)([A-Z])?/g;
-  for (const match of text.matchAll(linkPattern)) {
-    const rawLabel = `${match[1]}${match[3] ?? ""}`.trim();
-    const url = match[2].trim();
+  const labels = extractTextLabels(text, roomName, urls.length);
+
+  for (let index = 0; index < Math.min(labels.length, urls.length); index += 1) {
+    const rawLabel = labels[index];
+    const url = urls[index];
     if (!rawLabel || !url || normalize(rawLabel) === normalize(roomName)) continue;
 
     const item = {
@@ -145,17 +179,18 @@ function extractMarkdownLinks(text: string, roomName: string): ImportedPdfItem[]
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   let parser: PDFParse | null = null;
   try {
+    const data = Buffer.from(await file.arrayBuffer());
     ensurePdfJsGlobals();
     const { PDFParse } = await import("pdf-parse");
     PDFParse.setWorker(`data:text/javascript;base64,${Buffer.from(pdfWorkerSource).toString("base64")}`);
-    parser = new PDFParse({ data: Buffer.from(await file.arrayBuffer()) });
+    parser = new PDFParse({ data });
     const [info, textResult] = await Promise.all([
       parser.getInfo(),
-      parser.getText({ parseHyperlinks: true }),
+      parser.getText(),
     ]);
     const outlineTitle = info.outline?.find((item: any) => item?.title)?.title;
     const roomName = titleCase(outlineTitle || pickRoomNameFromText(textResult.text));
-    return extractMarkdownLinks(textResult.text, roomName);
+    return pairLabelsWithUrls(textResult.text, roomName, extractRawProductUrls(data));
   } finally {
     await parser?.destroy();
   }
