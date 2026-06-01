@@ -330,6 +330,15 @@ function ProjectAssignmentPicker({
   onChange: (projectIds: string[]) => void;
   compact?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const selectedProjects = projects.filter((project) => selectedProjectIds.includes(project.id));
+  const selectedLabel =
+    selectedProjects.length === 0
+      ? "Choose project(s)"
+      : selectedProjects.length <= 2
+        ? selectedProjects.map((project) => project.name).join(", ")
+        : `${selectedProjects.length} projects selected`;
+
   const toggleProject = (projectId: string) => {
     onChange(
       selectedProjectIds.includes(projectId)
@@ -339,28 +348,69 @@ function ProjectAssignmentPicker({
   };
 
   return (
-    <div>
+    <div className="relative">
       <Label className="eyebrow">Assigned Projects</Label>
-      <div className={`mt-2 border border-border bg-bone/30 ${compact ? "max-h-44" : "max-h-52"} overflow-y-auto`}>
-        {projects.length === 0 ? (
-          <div className="p-3 text-sm text-muted-foreground">No projects available yet.</div>
-        ) : (
-          projects.map((project) => (
-            <label key={project.id} className="flex cursor-pointer items-start gap-3 border-b border-border/70 px-3 py-2.5 last:border-b-0">
-              <input
-                type="checkbox"
-                checked={selectedProjectIds.includes(project.id)}
-                onChange={() => toggleProject(project.id)}
-                className="mt-1"
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-ink">{project.name}</span>
-                <span className="block text-xs text-muted-foreground">{project.client_name} · {project.status}</span>
-              </span>
-            </label>
-          ))
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="mt-2 flex h-10 w-full items-center justify-between gap-3 border border-input bg-background px-3 py-2 text-left text-sm"
+      >
+        <span className={selectedProjects.length ? "truncate text-ink" : "text-muted-foreground"}>{selectedLabel}</span>
+        <span className="text-xs text-muted-foreground">{open ? "Close" : "Open"}</span>
+      </button>
+      {selectedProjects.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {selectedProjects.slice(0, compact ? 3 : 5).map((project) => (
+            <span key={project.id} className="rounded-full bg-bone px-2.5 py-1 text-[11px] text-muted-foreground">
+              {project.name}
+            </span>
+          ))}
+          {selectedProjects.length > (compact ? 3 : 5) && (
+            <span className="rounded-full bg-bone px-2.5 py-1 text-[11px] text-muted-foreground">
+              +{selectedProjects.length - (compact ? 3 : 5)} more
+            </span>
+          )}
+        </div>
+      )}
+      {open && (
+        <div className={`absolute z-30 mt-2 w-full border border-border bg-background shadow-lg ${compact ? "max-h-56" : "max-h-64"} overflow-y-auto`}>
+          {projects.length === 0 ? (
+            <div className="p-3 text-sm text-muted-foreground">No projects available yet.</div>
+          ) : (
+            <>
+              {projects.map((project) => {
+                const selected = selectedProjectIds.includes(project.id);
+                return (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => toggleProject(project.id)}
+                    className={`flex w-full items-start justify-between gap-3 border-b border-border/70 px-3 py-2.5 text-left last:border-b-0 ${selected ? "bg-ink text-primary-foreground" : "hover:bg-bone/60"}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">{project.name}</span>
+                      <span className={selected ? "block text-xs text-primary-foreground/70" : "block text-xs text-muted-foreground"}>
+                        {project.client_name} · {project.status}
+                      </span>
+                    </span>
+                    <span className={selected ? "text-sm" : "text-xs text-muted-foreground"}>
+                      {selected ? "Selected" : "Add"}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="sticky bottom-0 flex justify-between gap-2 border-t border-border bg-background p-2">
+                <button type="button" onClick={() => onChange([])} className="px-3 py-2 text-xs text-muted-foreground hover:text-ink">
+                  Clear
+                </button>
+                <button type="button" onClick={() => setOpen(false)} className="bg-ink px-4 py-2 text-xs text-primary-foreground">
+                  Done
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
