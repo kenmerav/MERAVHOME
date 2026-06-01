@@ -183,9 +183,16 @@ function matchLabel(rect: number[], segments: TextSegment[]) {
 
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   ensurePdfDomPolyfills();
-  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  GlobalWorkerOptions.workerSrc = "";
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+  const pdf = await getDocument({
+    data: bytes,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true,
+    disableWorker: true,
+  } as any).promise;
   const imported: ImportedPdfItem[] = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
