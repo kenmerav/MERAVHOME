@@ -10,3 +10,8 @@ export function canViewFinancials(profile?: Pick<UserProfile, "email" | "is_acti
 }
 
 export const canViewProcurement = canViewFinancials;
+export const canManageHours = canViewFinancials;
+
+export function canLogHours(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
+  return !!profile?.is_active && profile.role !== "Client";
+}

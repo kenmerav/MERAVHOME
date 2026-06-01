@@ -19,6 +19,7 @@ import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as SpecbooksIndexRouteImport } from './routes/specbooks.index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as PresentationsIndexRouteImport } from './routes/presentations.index'
+import { Route as HoursIndexRouteImport } from './routes/hours.index'
 import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
@@ -84,6 +85,11 @@ const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
 const PresentationsIndexRoute = PresentationsIndexRouteImport.update({
   id: '/presentations/',
   path: '/presentations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HoursIndexRoute = HoursIndexRouteImport.update({
+  id: '/hours/',
+  path: '/hours/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpecbooksIdRoute = SpecbooksIdRouteImport.update({
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
+  '/hours/': typeof HoursIndexRoute
   '/presentations/': typeof PresentationsIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
@@ -213,6 +220,7 @@ export interface FileRoutesByTo {
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
+  '/hours': typeof HoursIndexRoute
   '/presentations': typeof PresentationsIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/specbooks': typeof SpecbooksIndexRoute
@@ -242,6 +250,7 @@ export interface FileRoutesById {
   '/catalog_/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
+  '/hours/': typeof HoursIndexRoute
   '/presentations/': typeof PresentationsIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
@@ -272,6 +281,7 @@ export interface FileRouteTypes {
     | '/catalog/$productId'
     | '/presentations/$id'
     | '/specbooks/$id'
+    | '/hours/'
     | '/presentations/'
     | '/projects/'
     | '/specbooks/'
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
     | '/catalog/$productId'
     | '/presentations/$id'
     | '/specbooks/$id'
+    | '/hours'
     | '/presentations'
     | '/projects'
     | '/specbooks'
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
     | '/catalog_/$productId'
     | '/presentations/$id'
     | '/specbooks/$id'
+    | '/hours/'
     | '/presentations/'
     | '/projects/'
     | '/specbooks/'
@@ -357,6 +369,7 @@ export interface RootRouteChildren {
   CatalogProductIdRoute: typeof CatalogProductIdRoute
   PresentationsIdRoute: typeof PresentationsIdRoute
   SpecbooksIdRoute: typeof SpecbooksIdRoute
+  HoursIndexRoute: typeof HoursIndexRoute
   PresentationsIndexRoute: typeof PresentationsIndexRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
@@ -439,6 +452,13 @@ declare module '@tanstack/react-router' {
       path: '/presentations'
       fullPath: '/presentations/'
       preLoaderRoute: typeof PresentationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hours/': {
+      id: '/hours/'
+      path: '/hours'
+      fullPath: '/hours/'
+      preLoaderRoute: typeof HoursIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/specbooks/$id': {
@@ -573,6 +593,7 @@ const rootRouteChildren: RootRouteChildren = {
   CatalogProductIdRoute: CatalogProductIdRoute,
   PresentationsIdRoute: PresentationsIdRoute,
   SpecbooksIdRoute: SpecbooksIdRoute,
+  HoursIndexRoute: HoursIndexRoute,
   PresentationsIndexRoute: PresentationsIndexRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
   SpecbooksIndexRoute: SpecbooksIndexRoute,

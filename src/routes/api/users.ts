@@ -61,6 +61,7 @@ export const Route = createFileRoute("/api/users")({
             full_name?: string;
             role?: UserRole;
             password?: string;
+            hourly_rate?: number;
           };
 
           const email = body.email?.trim().toLowerCase();
@@ -72,6 +73,8 @@ export const Route = createFileRoute("/api/users")({
           if (!fullName) return json({ error: "Enter the user's name." }, 400);
           if (!role || !ROLES.includes(role)) return json({ error: "Choose a valid role." }, 400);
           if (password.length < 4) return json({ error: "Password must be at least 4 characters." }, 400);
+          const hourlyRate = Number(body.hourly_rate ?? 0);
+          if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email,
@@ -101,7 +104,7 @@ export const Route = createFileRoute("/api/users")({
 
           const { data: profile, error: profileError } = await supabaseAdmin
             .from("user_profiles")
-            .upsert({ id: userId, email, full_name: fullName, role, is_active: true, is_owner: email === "ken@meravinteriors.com" }, { onConflict: "id" })
+            .upsert({ id: userId, email, full_name: fullName, role, hourly_rate: hourlyRate, is_active: true, is_owner: email === "ken@meravinteriors.com" } as any, { onConflict: "id" })
             .select()
             .single();
 
@@ -123,6 +126,7 @@ export const Route = createFileRoute("/api/users")({
             role?: UserRole;
             is_active?: boolean;
             password?: string;
+            hourly_rate?: number;
           };
 
           if (!body.id) return json({ error: "Missing user id." }, 400);
@@ -142,6 +146,8 @@ export const Route = createFileRoute("/api/users")({
           if (body.password && body.password.trim().length < 4) {
             return json({ error: "Password must be at least 4 characters." }, 400);
           }
+          const hourlyRate = Number(body.hourly_rate ?? existing.hourly_rate ?? 0);
+          if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const fullName = body.full_name?.trim() || existing.full_name;
           const isActive = isKen ? true : body.is_active ?? existing.is_active;
@@ -158,9 +164,10 @@ export const Route = createFileRoute("/api/users")({
             .update({
               full_name: fullName,
               role,
+              hourly_rate: hourlyRate,
               is_active: isActive,
               is_owner: isKen,
-            })
+            } as any)
             .eq("id", body.id)
             .select()
             .single();

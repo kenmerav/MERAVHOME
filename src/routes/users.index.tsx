@@ -23,6 +23,7 @@ function UsersPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("Employee");
+  const [hourlyRate, setHourlyRate] = useState("");
   const [password, setPassword] = useState("merav");
   const [busy, setBusy] = useState(false);
 
@@ -61,7 +62,7 @@ function UsersPage() {
     setBusy(true);
     const res = await authedFetch("/api/users", {
       method: "POST",
-      body: JSON.stringify({ full_name: fullName, email, role, password }),
+      body: JSON.stringify({ full_name: fullName, email, role, hourly_rate: moneyNumber(hourlyRate), password }),
     });
     const body = await res.json();
     setBusy(false);
@@ -73,6 +74,7 @@ function UsersPage() {
     setFullName("");
     setEmail("");
     setRole("Employee");
+    setHourlyRate("");
     setPassword("merav");
     await loadUsers();
   };
@@ -85,6 +87,7 @@ function UsersPage() {
         id: user.id,
         full_name: patch.full_name ?? user.full_name,
         role: patch.role ?? user.role,
+        hourly_rate: patch.hourly_rate ?? user.hourly_rate,
         is_active: patch.is_active ?? user.is_active,
         password: patch.password,
       }),
@@ -135,6 +138,10 @@ function UsersPage() {
               </select>
             </div>
             <div>
+              <Label className="eyebrow">Hourly Rate</Label>
+              <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
+            </div>
+            <div>
               <Label className="eyebrow">Temporary Password</Label>
               <Input value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
@@ -168,6 +175,7 @@ function UserRow({
 }) {
   const [fullName, setFullName] = useState(user.full_name);
   const [role, setRole] = useState<UserRole>(user.role);
+  const [hourlyRate, setHourlyRate] = useState(String(user.hourly_rate ?? 0));
   const [isActive, setIsActive] = useState(user.is_active);
   const [password, setPassword] = useState("");
   const isKen = user.email.toLowerCase() === "ken@meravinteriors.com";
@@ -175,6 +183,7 @@ function UserRow({
   useEffect(() => {
     setFullName(user.full_name);
     setRole(user.role);
+    setHourlyRate(String(user.hourly_rate ?? 0));
     setIsActive(user.is_active);
     setPassword("");
   }, [user]);
@@ -192,7 +201,7 @@ function UserRow({
         </div>
       </div>
 
-      <div className="grid md:grid-cols-[1.2fr_0.8fr_0.8fr] gap-3">
+      <div className="grid md:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] gap-3">
         <div>
           <Label className="eyebrow">Name</Label>
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
@@ -207,6 +216,10 @@ function UserRow({
           >
             {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
+        </div>
+        <div>
+          <Label className="eyebrow">Hourly Rate</Label>
+          <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
         </div>
         <div>
           <Label className="eyebrow">Status</Label>
@@ -230,11 +243,16 @@ function UserRow({
         <Button
           type="button"
           disabled={busy}
-          onClick={() => onSave(user, { full_name: fullName, role, is_active: isActive, password: password || undefined })}
+          onClick={() => onSave(user, { full_name: fullName, role, hourly_rate: moneyNumber(hourlyRate), is_active: isActive, password: password || undefined })}
         >
           Save
         </Button>
       </div>
     </div>
   );
+}
+
+function moneyNumber(value: string | number | null | undefined) {
+  const parsed = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }

@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      employee_time_entries: {
+        Row: {
+          created_at: string
+          hourly_rate: number
+          hours: number
+          id: string
+          paid: boolean
+          paid_on: string | null
+          paid_through: string | null
+          task_project: string
+          updated_at: string
+          user_id: string
+          work_date: string
+        }
+        Insert: {
+          created_at?: string
+          hourly_rate?: number
+          hours: number
+          id?: string
+          paid?: boolean
+          paid_on?: string | null
+          paid_through?: string | null
+          task_project: string
+          updated_at?: string
+          user_id: string
+          work_date: string
+        }
+        Update: {
+          created_at?: string
+          hourly_rate?: number
+          hours?: number
+          id?: string
+          paid?: boolean
+          paid_on?: string | null
+          paid_through?: string | null
+          task_project?: string
+          updated_at?: string
+          user_id?: string
+          work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_time_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_invoice_payments: {
         Row: {
           amount: number
@@ -592,6 +642,7 @@ export type Database = {
           created_at: string
           email: string
           full_name: string
+          hourly_rate: number
           id: string
           is_active: boolean
           is_owner: boolean
@@ -602,6 +653,7 @@ export type Database = {
           created_at?: string
           email: string
           full_name: string
+          hourly_rate?: number
           id: string
           is_active?: boolean
           is_owner?: boolean
@@ -612,6 +664,7 @@ export type Database = {
           created_at?: string
           email?: string
           full_name?: string
+          hourly_rate?: number
           id?: string
           is_active?: boolean
           is_owner?: boolean

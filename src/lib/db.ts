@@ -176,6 +176,7 @@ export interface UserProfile {
   role: UserRole;
   is_active: boolean;
   is_owner: boolean;
+  hourly_rate: number;
   created_at: string;
   updated_at: string;
 }
@@ -212,6 +213,21 @@ export interface FinancialInvoicePayment {
   sort_order: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface EmployeeTimeEntry {
+  id: string;
+  user_id: string;
+  work_date: string;
+  hours: number;
+  task_project: string;
+  hourly_rate: number;
+  paid: boolean;
+  paid_on: string | null;
+  paid_through: string | null;
+  created_at: string;
+  updated_at: string;
+  user?: Pick<UserProfile, "id" | "email" | "full_name" | "hourly_rate"> | null;
 }
 
 
@@ -390,4 +406,18 @@ export const db = {
     (await supabase.from("financial_invoice_payments").update(patch as any).eq("id", id).select().single()).data as FinancialInvoicePayment | null,
   deleteFinancialInvoice: async (id: string) =>
     supabase.from("financial_invoices").delete().eq("id", id),
+
+  /* HOURS */
+  listEmployeeTimeEntries: async () =>
+    (await supabase
+      .from("employee_time_entries")
+      .select("*, user:user_profiles(id,email,full_name,hourly_rate)")
+      .order("work_date", { ascending: false })
+      .order("created_at", { ascending: false })).data as EmployeeTimeEntry[] | null,
+  createEmployeeTimeEntry: async (entry: Pick<EmployeeTimeEntry, "user_id" | "work_date" | "hours" | "task_project" | "hourly_rate">) =>
+    (await supabase.from("employee_time_entries").insert(entry as any).select("*, user:user_profiles(id,email,full_name,hourly_rate)").single()).data as EmployeeTimeEntry | null,
+  updateEmployeeTimeEntry: async (id: string, patch: Partial<EmployeeTimeEntry>) =>
+    (await supabase.from("employee_time_entries").update(patch as any).eq("id", id).select("*, user:user_profiles(id,email,full_name,hourly_rate)").single()).data as EmployeeTimeEntry | null,
+  deleteEmployeeTimeEntry: async (id: string) =>
+    supabase.from("employee_time_entries").delete().eq("id", id),
 };

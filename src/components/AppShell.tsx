@@ -1,11 +1,11 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Sparkles, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
-import { canViewFinancials, canViewProcurement } from "@/lib/permissions";
+import { canLogHours, canViewFinancials, canViewProcurement } from "@/lib/permissions";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
@@ -16,6 +16,7 @@ const nav: NavItem[] = [
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
   { to: "/procurement", label: "Procurement", icon: Truck },
   { to: "/financials", label: "Financials", icon: DollarSign },
+  { to: "/hours", label: "Hours", icon: Clock },
   { to: "/users", label: "Users", icon: UserCog },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
@@ -97,6 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             if (to === "/users" && !profile?.is_owner) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
+            if (to === "/hours" && !canLogHours(profile)) return null;
             const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
             return (
               <Link
@@ -157,6 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               if (to === "/users" && !profile?.is_owner) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
+              if (to === "/hours" && !canLogHours(profile)) return null;
               const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
               return (
                 <Link
