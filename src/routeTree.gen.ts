@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProcurementRouteImport } from './routes/procurement'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FinancialsRouteImport } from './routes/financials'
@@ -39,11 +38,6 @@ import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.a
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProcurementRoute = ProcurementRouteImport.update({
   id: '/procurement',
   path: '/procurement',
@@ -193,7 +187,6 @@ export interface FileRoutesByFullPath {
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
-  '/settings': typeof SettingsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
@@ -224,7 +217,6 @@ export interface FileRoutesByTo {
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
-  '/settings': typeof SettingsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
@@ -256,7 +248,6 @@ export interface FileRoutesById {
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
   '/procurement': typeof ProcurementRoute
-  '/settings': typeof SettingsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
@@ -289,7 +280,6 @@ export interface FileRouteTypes {
     | '/financials'
     | '/login'
     | '/procurement'
-    | '/settings'
     | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
@@ -320,7 +310,6 @@ export interface FileRouteTypes {
     | '/financials'
     | '/login'
     | '/procurement'
-    | '/settings'
     | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
@@ -351,7 +340,6 @@ export interface FileRouteTypes {
     | '/financials'
     | '/login'
     | '/procurement'
-    | '/settings'
     | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
     | '/api/parse-invoice-pdf'
@@ -383,7 +371,6 @@ export interface RootRouteChildren {
   FinancialsRoute: typeof FinancialsRoute
   LoginRoute: typeof LoginRoute
   ProcurementRoute: typeof ProcurementRoute
-  SettingsRoute: typeof SettingsRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
@@ -411,13 +398,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/procurement': {
       id: '/procurement'
       path: '/procurement'
@@ -623,7 +603,6 @@ const rootRouteChildren: RootRouteChildren = {
   FinancialsRoute: FinancialsRoute,
   LoginRoute: LoginRoute,
   ProcurementRoute: ProcurementRoute,
-  SettingsRoute: SettingsRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,

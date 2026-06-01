@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Settings, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -18,7 +18,6 @@ const nav: NavItem[] = [
   { to: "/financials", label: "Financials", icon: DollarSign },
   { to: "/hours", label: "Hours", icon: Clock },
   { to: "/users", label: "Users", icon: UserCog },
-  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 
@@ -74,12 +73,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [loadingAuth, loc.pathname, navigate, profile]);
 
   useEffect(() => {
-    if (!loadingAuth && profile?.role === "Client" && loc.pathname.startsWith("/settings")) {
-      navigate({ to: "/" });
-    }
-  }, [loadingAuth, loc.pathname, navigate, profile]);
-
-  useEffect(() => {
     setMobileOpen(false);
   }, [loc.pathname]);
 
@@ -109,7 +102,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !profile?.is_owner) return null;
             if (to === "/catalog" && profile?.role === "Client") return null;
-            if (to === "/settings" && profile?.role === "Client") return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
             if (to === "/hours" && !canLogHours(profile)) return null;
@@ -165,7 +157,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !profile?.is_owner) return null;
               if (to === "/catalog" && profile?.role === "Client") return null;
-              if (to === "/settings" && profile?.role === "Client") return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
               if (to === "/hours" && !canLogHours(profile)) return null;
