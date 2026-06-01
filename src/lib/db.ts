@@ -6,6 +6,7 @@ export type ProjectType = "Kitchen" | "Bathroom" | "Whole Home" | "New Build" | 
 export type ProjectLabel = "Personal Home" | "Investor Renovation" | "Spec Build" | "D4D";
 export type ProductCategory = "Lighting" | "Plumbing" | "Hardware" | "Appliances" | "Flooring" | "Tile" | "Paint" | "Furniture" | "Decor";
 export type MaterialCategory = "Cabinet Finish" | "Countertop" | "Flooring" | "Tile" | "Fabric" | "Paint";
+export type ApprovalStatus = "undecided" | "approved" | "declined";
 
 export const PRODUCT_CATEGORIES: ProductCategory[] = ["Lighting","Plumbing","Hardware","Appliances","Flooring","Tile","Paint","Furniture","Decor"];
 export const MATERIAL_CATEGORIES: MaterialCategory[] = ["Cabinet Finish","Countertop","Flooring","Tile","Fabric","Paint"];
@@ -120,6 +121,9 @@ export interface RoomProduct {
   sort_order: number;
   room_notes: string | null;
   approved: boolean;
+  approval_status: ApprovalStatus;
+  approval_comment: string | null;
+  approval_updated_at: string | null;
   product?: Product;
 }
 
