@@ -97,7 +97,7 @@ function ClientApprovalsPage() {
 
   const setApproval = async (item: ApprovalItem, status: ApprovalStatus, comment?: string) => {
     await approvalMutation.mutateAsync({ item, status, comment });
-    toast.success(status === "approved" ? "Selection approved" : status === "declined" ? "Selection declined" : "Selection updated");
+    toast.success(status === "approved" ? "Selection approved" : status === "declined" ? "Change request saved" : "Selection updated");
   };
 
   const showPrevious = () => {
@@ -112,49 +112,16 @@ function ClientApprovalsPage() {
 
   return (
     <ClientFrame>
-      <div className="flex min-h-screen bg-[#f5f7f8] text-slate-800">
-        <ClientSidebar
-          project={project}
-          rooms={rooms}
-          items={items}
-          selectedRoomId={selectedRoomId}
-          onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
-        />
-        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 lg:px-12">
-          <div className="mx-auto max-w-[1680px]">
-            <div className="mb-6 md:hidden">
-              <div className="font-display text-2xl">MERAV Interiors</div>
-              <select
-                value={selectedRoomId}
-                onChange={(event) => setSelectedRoomId(event.target.value)}
-                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-              >
-                <option value="overview">Overview</option>
-                {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
-              </select>
-            </div>
+      <div className="min-h-screen bg-[#f5f3ef] text-slate-800">
+        <main className="mx-auto max-w-[1680px] px-4 py-6 md:px-8 lg:px-12 lg:py-10">
+          <ClientReviewHeader project={project} counts={counts} />
+          <RoomTabs rooms={rooms} items={items} selectedRoomId={selectedRoomId} onSelectRoom={setSelectedRoomId} />
 
-            <header className="rounded-[24px] bg-white px-6 py-8 shadow-sm md:px-10">
-              <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Approval Portal</div>
-                  <h1 className="mt-3 text-2xl font-bold uppercase tracking-tight text-slate-800 md:text-3xl">{project.name}</h1>
-                  <p className="mt-2 text-sm text-slate-500">{project.client_name}</p>
-                </div>
-                <div className="grid grid-cols-3 gap-6 text-center">
-                  <StatusMetric label="Undecided" value={counts.undecided} />
-                  <StatusMetric label="Approved" value={counts.approved} />
-                  <StatusMetric label="Declined" value={counts.declined} />
-                </div>
-              </div>
-            </header>
-
-            {selectedRoomId === "overview" ? (
-              <OverviewGrid rooms={rooms} items={items} onSelectRoom={setSelectedRoomId} />
-            ) : (
-              <RoomApprovalGrid items={visibleItems} onOpen={openItem} onApprove={(item) => setApproval(item, "approved")} onDecline={(item) => setApproval(item, "declined")} />
-            )}
-          </div>
+          {selectedRoomId === "overview" ? (
+            <OverviewGrid rooms={rooms} items={items} onSelectRoom={setSelectedRoomId} />
+          ) : (
+            <RoomApprovalGrid items={visibleItems} onOpen={openItem} onApprove={(item) => setApproval(item, "approved")} onDecline={(item) => setApproval(item, "declined")} />
+          )}
         </main>
 
         {selectedItem && (
@@ -179,44 +146,54 @@ function ClientApprovalsPage() {
 }
 
 function ClientFrame({ children }: { children: ReactNode }) {
-  return <div className="min-h-screen bg-[#f5f7f8]">{children}</div>;
+  return <div className="min-h-screen bg-[#f5f3ef]">{children}</div>;
 }
 
-function ClientSidebar({
-  project,
+function ClientReviewHeader({ project, counts }: { project: Project; counts: Record<ApprovalStatus, number> }) {
+  return (
+    <header className="rounded-[28px] border border-white/80 bg-white px-6 py-8 shadow-[0_18px_60px_rgba(65,56,47,0.08)] md:px-10 lg:px-12">
+      <div className="grid gap-8 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
+        <div>
+          <div className="font-display text-3xl leading-none tracking-tight md:text-4xl">MERAV INTERIORS</div>
+          <div className="mt-2 text-[10px] uppercase tracking-[0.34em] text-stone-400">By Katie Roberts</div>
+        </div>
+        <div className="text-left lg:text-center">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-400">Client Review Board</div>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-stone-900 md:text-5xl">{project.name}</h1>
+          <p className="mt-3 text-sm text-stone-500">{project.client_name}</p>
+        </div>
+        <div className="grid grid-cols-3 gap-3 lg:justify-self-end">
+          <StatusMetric label="Need Review" value={counts.undecided} tone="warm" />
+          <StatusMetric label="Approved" value={counts.approved} tone="green" />
+          <StatusMetric label="Changes" value={counts.declined} tone="slate" />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function RoomTabs({
   rooms,
   items,
   selectedRoomId,
   onSelectRoom,
 }: {
-  project: Project;
   rooms: Room[];
   items: ApprovalItem[];
   selectedRoomId: string;
   onSelectRoom: (roomId: string) => void;
 }) {
   return (
-    <aside className="sticky top-0 hidden h-screen w-80 shrink-0 flex-col border-r border-dashed border-slate-200 bg-white px-5 py-8 md:flex">
-      <div>
-        <div className="font-display text-3xl leading-none tracking-tight">MERAV INTERIORS</div>
-        <div className="mt-1 text-[9px] uppercase tracking-[0.28em] text-slate-400">By Katie Roberts</div>
-      </div>
-
-      <nav className="mt-24 space-y-2 text-slate-500">
-        <button type="button" className="flex w-full items-center gap-4 rounded-xl px-4 py-4 text-left text-base hover:bg-slate-50">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-300">•</span>
-          Welcome
-        </button>
-        <button type="button" className="flex w-full items-center justify-between rounded-xl bg-slate-100 px-4 py-4 text-left text-base text-slate-700">
-          <span className="flex items-center gap-4"><CheckCircle2 className="h-6 w-6" /> Approval</span>
-          <span>^</span>
-        </button>
+    <nav className="mt-5 overflow-x-auto pb-2">
+      <div className="flex min-w-max items-center gap-2 rounded-[22px] border border-white/80 bg-white/70 p-2 shadow-sm backdrop-blur">
         <button
           type="button"
           onClick={() => onSelectRoom("overview")}
-          className={cn("ml-7 flex w-[calc(100%-1.75rem)] items-center gap-5 rounded-xl px-4 py-4 text-left text-base hover:bg-slate-50", selectedRoomId === "overview" && "bg-slate-100 text-slate-800")}
+          className={cn(
+            "rounded-2xl px-5 py-3 text-sm font-medium text-stone-500 transition hover:bg-white hover:text-stone-900",
+            selectedRoomId === "overview" && "bg-stone-950 text-white shadow-sm hover:bg-stone-950 hover:text-white",
+          )}
         >
-          <span className="text-xl leading-none text-slate-300">•</span>
           Overview
         </button>
         {rooms.map((room) => {
@@ -226,30 +203,42 @@ function ClientSidebar({
               key={room.id}
               type="button"
               onClick={() => onSelectRoom(room.id)}
-              className={cn("ml-7 flex w-[calc(100%-1.75rem)] items-center justify-between rounded-xl px-4 py-3 text-left text-base hover:bg-slate-50", selectedRoomId === room.id && "bg-slate-100 text-slate-800")}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-medium text-stone-500 transition hover:bg-white hover:text-stone-900",
+                selectedRoomId === room.id && "bg-stone-950 text-white shadow-sm hover:bg-stone-950 hover:text-white",
+              )}
             >
-              <span className="flex min-w-0 items-center gap-5">
-                <span className={cn("text-xl leading-none", selectedRoomId === room.id ? "text-[#27484b]" : "text-slate-300")}>•</span>
-                <span className="truncate">{room.name}</span>
-              </span>
-              {roomCounts.undecided > 0 && <span className="text-xs text-slate-400">{roomCounts.undecided}</span>}
+              <span>{room.name}</span>
+              {roomCounts.undecided > 0 && (
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[11px]",
+                    selectedRoomId === room.id ? "bg-white/20 text-white" : "bg-stone-100 text-stone-500",
+                  )}
+                >
+                  {roomCounts.undecided}
+                </span>
+              )}
             </button>
           );
         })}
-      </nav>
-
-      <div className="mt-auto text-sm text-slate-500">
-        {project.name}
       </div>
-    </aside>
+    </nav>
   );
 }
 
-function StatusMetric({ label, value }: { label: string; value: number }) {
+function StatusMetric({ label, value, tone = "warm" }: { label: string; value: number; tone?: "warm" | "green" | "slate" }) {
   return (
-    <div>
-      <div className="text-2xl font-semibold text-slate-400">{value}</div>
-      <div className="text-sm text-slate-700">{label}</div>
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3 text-center",
+        tone === "green" && "border-emerald-100 bg-emerald-50",
+        tone === "slate" && "border-slate-100 bg-slate-50",
+        tone === "warm" && "border-stone-100 bg-stone-50",
+      )}
+    >
+      <div className="text-2xl font-semibold text-stone-800">{value}</div>
+      <div className="mt-1 text-xs text-stone-500">{label}</div>
     </div>
   );
 }
@@ -266,17 +255,24 @@ function OverviewGrid({ rooms, items, onSelectRoom }: { rooms: Room[]; items: Ap
             key={room.id}
             type="button"
             onClick={() => onSelectRoom(room.id)}
-            className="group rounded-[22px] bg-white p-8 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="group overflow-hidden rounded-[26px] border border-white/80 bg-white p-7 text-left shadow-[0_18px_55px_rgba(65,56,47,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_70px_rgba(65,56,47,0.12)]"
           >
-            <div className="flex h-56 items-center justify-center">
+            <div className="flex h-56 items-center justify-center rounded-[20px] bg-[#faf8f4]">
               {firstImage ? (
                 <img src={firstImage} alt="" className="max-h-full max-w-full object-contain" />
               ) : (
                 <div className="flex h-32 w-32 items-center justify-center rounded-full bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-300">No Image</div>
               )}
             </div>
-            <h2 className="mt-8 text-lg font-semibold text-slate-800">{room.name}</h2>
-            <p className="mt-7 text-sm text-slate-600">{counts.undecided} Need Approval</p>
+            <div className="mt-7 flex items-end justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-stone-900">{room.name}</h2>
+                <p className="mt-2 text-sm text-stone-500">{roomItems.length} total selections</p>
+              </div>
+              <div className="rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-600">
+                {counts.undecided} need review
+              </div>
+            </div>
           </button>
         );
       })}
@@ -309,9 +305,9 @@ function RoomApprovalGrid({
         const detail = getDisplayDetails(item);
         const status = getStatus(item);
         return (
-          <article key={item.id} className="rounded-[22px] bg-white p-7 shadow-sm">
+          <article key={item.id} className="rounded-[26px] border border-white/80 bg-white p-6 shadow-[0_18px_55px_rgba(65,56,47,0.08)]">
             <button type="button" onClick={() => onOpen(item)} className="block w-full text-left">
-              <div className="flex h-56 items-center justify-center">
+              <div className="flex h-56 items-center justify-center rounded-[20px] bg-[#faf8f4]">
                 {detail.image ? (
                   <img src={detail.image} alt={detail.name} className="max-h-full max-w-full object-contain" />
                 ) : (
@@ -322,13 +318,13 @@ function RoomApprovalGrid({
               {detail.total > 0 && <p className="mt-5 text-base font-bold text-slate-800">{formatMoney(detail.total)}</p>}
               <p className="mt-2 text-sm text-slate-500">Qty: {detail.quantity}</p>
             </button>
-            <div className="mt-6 flex items-center justify-between gap-4">
+            <div className="mt-6 flex items-center justify-between gap-4 border-t border-stone-100 pt-5">
               <button type="button" onClick={() => onOpen(item)} className="text-slate-500 hover:text-[#27484b]" aria-label="Open comments">
                 <MessageSquare className={cn("h-5 w-5", item.approval_comment && "fill-[#27484b]/10 text-[#27484b]")} />
               </button>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-500">{formatShortDate(item.approval_updated_at)}</span>
-                <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+                <div className="inline-flex overflow-hidden rounded-full border border-stone-200 bg-white">
                   <button
                     type="button"
                     onClick={() => onApprove(item)}
@@ -341,7 +337,7 @@ function RoomApprovalGrid({
                     type="button"
                     onClick={() => onDecline(item)}
                     className={cn("flex h-12 w-14 items-center justify-center border-l border-slate-200 transition", status === "declined" ? "bg-slate-600 text-white" : "bg-white text-slate-400 hover:bg-slate-600 hover:text-white")}
-                    aria-label="Decline"
+                    aria-label="Request Change"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -459,13 +455,13 @@ function ApprovalDetailModal({
 
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <button type="button" disabled={saving} onClick={onApprove} className="rounded-xl bg-[#48a23f] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
-                Approve
+                Approve This Item
               </button>
               <button type="button" disabled={saving} onClick={onDecline} className="rounded-xl bg-slate-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
-                Decline
+                Request Change
               </button>
               <button type="button" disabled={saving} onClick={onSaveComment} className="rounded-xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 disabled:opacity-50">
-                Save
+                Save Comment
               </button>
             </div>
           </aside>
@@ -490,7 +486,7 @@ function ApprovalPill({ status }: { status: ApprovalStatus }) {
     return <span className="inline-flex items-center gap-2 rounded-lg bg-[#48a23f] px-4 py-2 text-sm font-semibold text-white"><CheckCircle2 className="h-4 w-4" /> Approved</span>;
   }
   if (status === "declined") {
-    return <span className="inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white"><XCircle className="h-4 w-4" /> Declined</span>;
+    return <span className="inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white"><XCircle className="h-4 w-4" /> Change Requested</span>;
   }
   return <span className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">Undecided</span>;
 }
