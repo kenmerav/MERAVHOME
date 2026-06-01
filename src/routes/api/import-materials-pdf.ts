@@ -77,6 +77,20 @@ function pickRoomNameFromText(text: string) {
     if (roomName) return titleCase(roomName);
   }
 
+  const taggedHeadings = Array.from(text.matchAll(/\/E\s*\(([^)]{2,120})\)/g)).map((match) =>
+    decodePdfLiteral(match[1]),
+  );
+  const materialsListIndex = taggedHeadings.findIndex((heading) => /materials list/i.test(heading));
+  if (materialsListIndex > 0) {
+    const previousHeading = taggedHeadings[materialsListIndex - 1].trim();
+    const looksLikeRoomName =
+      previousHeading.length <= 40 &&
+      !/^\d+\./.test(previousHeading) &&
+      !/[|:]/.test(previousHeading) &&
+      !/https?:\/\//i.test(previousHeading);
+    if (looksLikeRoomName) return titleCase(previousHeading);
+  }
+
   const outlineTitleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)[\s\S]{0,120}?\/Dest\s*\[/);
   const titleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)/);
   const taggedTitleMatch = text.match(/\/T\s*\(([^)]{2,80})\)/);
