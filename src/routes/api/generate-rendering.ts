@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { uploadRoomImageFromDataUrl } from "@/lib/roomImageStorage.server";
 
 const RENDERING_PROMPT = `Use the uploaded SketchUp rendering as the exact architectural and design reference.
 
@@ -223,7 +224,7 @@ async function generateRenderingImage({
 }
 
 async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPayload, "roomId" | "sketchupId" | "sketchupUrl">> & EnqueueRenderingPayload & { placeholderId: string; origin: string }) {
-  const { placeholderId, origin, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = payload;
+  const { placeholderId, origin, roomId, sketchupCaption, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = payload;
   try {
     await supabaseAdmin
       .from("room_images")
@@ -238,10 +239,17 @@ async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPay
       extraContext,
     });
 
+    const uploaded = await uploadRoomImageFromDataUrl({
+      dataUrl: imageDataUrl,
+      roomId,
+      kind: "rendering",
+      preferredName: sketchupCaption || "rendering",
+    });
+
     await supabaseAdmin
       .from("room_images")
       .update({
-        url: imageDataUrl,
+        url: uploaded.publicUrl,
         status: "complete",
         is_approved: false,
         review_status: "draft",
@@ -313,6 +321,7 @@ export const Route = createFileRoute("/api/generate-rendering")({
               origin,
               roomId,
               sketchupId,
+              sketchupCaption,
               sketchupUrl,
               referenceImageUrl,
               referenceImageUrls,

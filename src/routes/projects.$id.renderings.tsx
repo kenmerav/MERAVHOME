@@ -15,6 +15,18 @@ import { resolveImage } from "@/lib/local-assets";
 import { compressImageSource, fileToCompressedDataUrl } from "@/lib/imagePayload";
 import { toast } from "sonner";
 
+async function persistRoomImageUrl(roomId: string, kind: "sketchup" | "rendering", value: string, fileName?: string) {
+  if (!value.startsWith("data:image/")) return value.trim();
+  const res = await fetch("/api/upload-room-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roomId, kind, dataUrl: value, fileName }),
+  });
+  const body = (await res.json()) as { url?: string; error?: string };
+  if (!res.ok || !body.url) throw new Error(body.error || "Could not upload image");
+  return body.url;
+}
+
 export const Route = createFileRoute("/projects/$id/renderings")({
   head: () => ({ meta: [{ title: "Renderings — MERAV Studio" }] }),
   component: ProjectRenderingsPage,
@@ -477,6 +489,7 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [fileName, setFileName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -493,6 +506,7 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
         r.readAsDataURL(file);
       });
       setUrl(dataUrl);
+      setFileName(file.name || "sketchup-image");
     } finally {
       setUploading(false);
     }
@@ -502,7 +516,8 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
     if (!url.trim()) return toast.error("Upload an image or paste a URL");
     setSaving(true);
     try {
-      const saved = await db.addRoomImage({ room_id: roomId, kind: "sketchup", url, caption });
+      const storedUrl = await persistRoomImageUrl(roomId, "sketchup", url, fileName || caption || "sketchup-image");
+      const saved = await db.addRoomImage({ room_id: roomId, kind: "sketchup", url: storedUrl, caption });
       if (saved) {
         const insertImage = (current?: RoomImage[]) => {
           if (!current) return saved ? [saved] : current;
@@ -513,7 +528,7 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
       }
       qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
       qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-      setOpen(false); setUrl(""); setCaption("");
+      setOpen(false); setUrl(""); setCaption(""); setFileName("");
       toast.success("SketchUp added");
     } finally {
       setSaving(false);
@@ -566,6 +581,7 @@ function AddExternalRenderingDialog({
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [fileName, setFileName] = useState("");
   const [linkedSketchupId, setLinkedSketchupId] = useState<string>("none");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -578,6 +594,7 @@ function AddExternalRenderingDialog({
     try {
       const dataUrl = await fileToCompressedDataUrl(file);
       setUrl(dataUrl);
+      setFileName(file.name || "rendering-image");
       if (!caption.trim()) {
         const baseName = file.name.replace(/\.[^.]+$/, "").trim();
         if (baseName) setCaption(baseName);
@@ -591,6 +608,7 @@ function AddExternalRenderingDialog({
     setOpen(false);
     setUrl("");
     setCaption("");
+    setFileName("");
     setLinkedSketchupId("none");
   };
 
@@ -602,10 +620,11 @@ function AddExternalRenderingDialog({
       const siblingVersions = linkedId
         ? renderings.filter((rendering) => rendering.linked_sketchup_id === linkedId)
         : [];
+      const storedUrl = await persistRoomImageUrl(roomId, "rendering", url.trim(), fileName || caption || "rendering-image");
       await db.addRoomImage({
         room_id: roomId,
         kind: "rendering",
-        url: url.trim(),
+        url: storedUrl,
         caption: caption.trim() || "Uploaded rendering",
         linked_sketchup_id: linkedId,
         status: "complete",

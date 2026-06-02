@@ -43,6 +43,18 @@ async function scrapeProductUrl(url: string) {
   }
 }
 
+async function persistRoomImageUrl(roomId: string, kind: "sketchup" | "rendering", value: string, fileName?: string) {
+  if (!value.startsWith("data:image/")) return value.trim();
+  const res = await fetch("/api/upload-room-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roomId, kind, dataUrl: value, fileName }),
+  });
+  const body = (await res.json()) as { url?: string; error?: string };
+  if (!res.ok || !body.url) throw new Error(body.error || "Could not upload image");
+  return body.url;
+}
+
 function mergeScraped<T extends Record<string, any>>(f: T, scraped: Record<string, any>): T {
   const out: any = { ...f };
   for (const k of Object.keys(scraped)) {
@@ -176,6 +188,7 @@ function ImageGrid({ title, roomId, kind, images }: { title: string; roomId: str
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [fileName, setFileName] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const onFile = async (file?: File | null) => {
@@ -191,6 +204,7 @@ function ImageGrid({ title, roomId, kind, images }: { title: string; roomId: str
         r.readAsDataURL(file);
       });
       setUrl(dataUrl);
+      setFileName(file.name || `${kind}-image`);
       toast.success("Image ready");
     } catch {
       toast.error("Failed to read image");
@@ -201,9 +215,10 @@ function ImageGrid({ title, roomId, kind, images }: { title: string; roomId: str
 
   const submit = async () => {
     if (!url.trim()) return toast.error("Upload an image or paste a URL");
-    await db.addRoomImage({ room_id: roomId, kind, url, caption });
+    const storedUrl = await persistRoomImageUrl(roomId, kind, url, fileName || caption || `${kind}-image`);
+    await db.addRoomImage({ room_id: roomId, kind, url: storedUrl, caption });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-    setOpen(false); setUrl(""); setCaption("");
+    setOpen(false); setUrl(""); setCaption(""); setFileName("");
     toast.success("Image added");
   };
 

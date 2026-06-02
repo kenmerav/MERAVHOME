@@ -23,6 +23,7 @@ import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
+import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
@@ -107,6 +108,11 @@ const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
 const ApiUsersRoute = ApiUsersRouteImport.update({
   id: '/api/users',
   path: '/api/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadRoomImageRoute = ApiUploadRoomImageRouteImport.update({
+  id: '/api/upload-room-image',
+  path: '/api/upload-room-image',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
@@ -200,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
@@ -231,6 +238,7 @@ export interface FileRoutesByTo {
   '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
@@ -263,6 +271,7 @@ export interface FileRoutesById {
   '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
@@ -296,6 +305,7 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
     | '/presentations/$id'
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
     | '/presentations/$id'
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/upload-room-image'
     | '/api/users'
     | '/catalog_/$productId'
     | '/presentations/$id'
@@ -390,6 +402,7 @@ export interface RootRouteChildren {
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
+  ApiUploadRoomImageRoute: typeof ApiUploadRoomImageRoute
   ApiUsersRoute: typeof ApiUsersRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
   PresentationsIdRoute: typeof PresentationsIdRoute
@@ -507,6 +520,13 @@ declare module '@tanstack/react-router' {
       path: '/api/users'
       fullPath: '/api/users'
       preLoaderRoute: typeof ApiUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-room-image': {
+      id: '/api/upload-room-image'
+      path: '/api/upload-room-image'
+      fullPath: '/api/upload-room-image'
+      preLoaderRoute: typeof ApiUploadRoomImageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/scrape-url': {
@@ -630,6 +650,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProjectsRoute: ApiProjectsRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
+  ApiUploadRoomImageRoute: ApiUploadRoomImageRoute,
   ApiUsersRoute: ApiUsersRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
   PresentationsIdRoute: PresentationsIdRoute,
