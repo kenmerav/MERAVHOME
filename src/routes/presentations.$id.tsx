@@ -183,7 +183,7 @@ function PresentationPage() {
       <div className="present-mode flex flex-col">
         <div className="flex-1 overflow-hidden flex items-center justify-center">
           {current.kind === "cover" ? (
-            <CoverSlide project={project} roomCount={rooms.length} />
+            <CoverSlide project={project} />
           ) : (
             <RoomSlide project={project} room={current.room} data={current.data} view={current.view} viewIndex={current.viewIndex} viewCount={current.viewCount} />
           )}
@@ -282,15 +282,15 @@ function PresentationPage() {
   );
 }
 
-function CoverSlide({ project, roomCount }: { project: any; roomCount: number }) {
+function CoverSlide({ project }: { project: any }) {
   return (
     <div className="w-full h-full">
-      <BrandCover project={project} roomCount={roomCount} />
+      <BrandCover project={project} />
     </div>
   );
 }
 
-function BrandCover({ project, roomCount }: { project: any; roomCount?: number }) {
+function BrandCover({ project }: { project: any }) {
   return (
     <div className="w-full h-full min-h-[inherit] flex items-center justify-center bg-white px-8 py-20 text-center">
       <div className="w-full">
@@ -306,11 +306,6 @@ function BrandCover({ project, roomCount }: { project: any; roomCount?: number }
         <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">
           Conceptual Design
         </div>
-        {roomCount != null && (
-          <div className="mt-8 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            {roomCount} {roomCount === 1 ? "room" : "rooms"}
-          </div>
-        )}
       </div>
     </div>
   );
