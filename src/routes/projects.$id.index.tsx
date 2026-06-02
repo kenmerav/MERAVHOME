@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BookOpen, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, BookOpen, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal, Pencil } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PROJECT_LABELS, PROJECT_STATUSES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
+import { buildClientProductName } from "@/lib/clientProductName";
 
 export const Route = createFileRoute("/projects/$id/")({
   head: () => ({ meta: [{ title: "Project — MERAV Studio" }] }),
@@ -359,6 +360,26 @@ function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: st
     toast.success("Room deleted");
   };
 
+  const rename = async (nextName: string) => {
+    const name = nextName.trim();
+    if (!name) return toast.error("Room name required.");
+    if (name === room.name) return;
+
+    await db.updateRoom(room.id, { name } as any);
+    const materialItems = ((await db.listMaterialItemsByProject(projectId)) ?? []).filter((item) => item.room_id === room.id);
+    await Promise.all(
+      materialItems.map((item) =>
+        db.updateMaterialItem(item.id, {
+          client_product_name: buildClientProductName(name, item.item_label),
+        } as any),
+      ),
+    );
+    qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+    qc.invalidateQueries({ queryKey: ["room", room.id] });
+    qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+    toast.success(`Renamed room to ${name}`);
+  };
+
   return (
     <Link to="/projects/$id/rooms/$roomId" params={{ id: projectId, roomId: room.id }} className="group block border border-border hover:border-ink transition-colors">
       <div className="aspect-[4/3] bg-bone overflow-hidden">
@@ -374,12 +395,76 @@ function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: st
           </p>
         </div>
         {canDelete && (
-          <button onClick={remove} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-ink transition-opacity">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <EditRoomNameDialog currentName={room.name} onSave={rename} />
+            <button onClick={remove} className="text-muted-foreground hover:text-ink">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
     </Link>
+  );
+}
+
+function EditRoomNameDialog({ currentName, onSave }: { currentName: string; onSave: (name: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(currentName);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await onSave(name);
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setName(currentName);
+      }}
+    >
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          className="text-muted-foreground hover:text-ink"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+      </DialogTrigger>
+      <DialogContent onClick={(event) => event.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">Edit Room Name</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label className="eyebrow">Room Name</Label>
+            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Kitchen" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            This will also update this room's client product names.
+          </p>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Room Name"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
