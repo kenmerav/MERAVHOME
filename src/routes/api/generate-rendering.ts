@@ -275,6 +275,7 @@ export const Route = createFileRoute("/api/generate-rendering")({
             roomId,
             sketchupId,
             sketchupCaption,
+            placeholderUrl,
             sketchupUrl,
             referenceImageUrl,
             referenceImageUrls,
