@@ -523,6 +523,10 @@ function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSa
   const [name, setName] = useState(currentName);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (open) setName(currentName);
+  }, [currentName, open]);
+
   const submit = async () => {
     setSaving(true);
     try {
@@ -582,6 +586,10 @@ function EditItemNameButton({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) setName(currentName);
+  }, [currentName, open]);
 
   const submit = async () => {
     const nextName = name.trim();
