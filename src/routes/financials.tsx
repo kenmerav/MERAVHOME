@@ -28,7 +28,7 @@ const DATE_RANGE_OPTIONS: Array<{ value: DateRangePreset; label: string }> = [
 ];
 
 function FinancialsOverviewPage() {
-  const [dateRange, setDateRange] = useState<DateRangePreset>("all");
+  const [dateRange, setDateRange] = useState<DateRangePreset>("ytd");
   const [selectedLabels, setSelectedLabels] = useState<ProjectLabel[]>([]);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
