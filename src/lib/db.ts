@@ -96,6 +96,7 @@ export interface RoomImage {
   role: RenderingRole | null;
   is_favorite: boolean;
   is_approved: boolean;
+  presentation_visible: boolean;
   review_status: RenderingReviewStatus;
   revision_notes: string | null;
   revision_parent_id: string | null;

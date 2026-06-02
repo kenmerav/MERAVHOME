@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/presentations/$id")({
 });
 
 type RoomData = {
-  views: { hero?: any; sketch?: any; label?: string }[];
+  views: { hero?: RoomImage; sketch?: RoomImage; label?: string; visible: boolean }[];
   renderingOptions: RoomImage[];
   sketchupOptions: RoomImage[];
   materials: MaterialItem[];
@@ -38,16 +38,16 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
   const views: RoomData["views"] = [];
   for (const r of approvedRenders) {
     const sketch = sketchups.find(s => s.id === r.linked_sketchup_id) || fallbackSketch;
-    views.push({ hero: r, sketch, label: r.caption });
+    views.push({ hero: r, sketch, label: r.caption, visible: r.presentation_visible !== false });
   }
   // Sketchups not linked to any rendering — show on their own page
   for (const s of sketchups) {
     if (!linkedSketchIds.has(s.id) && !views.some(v => v.sketch?.id === s.id && !v.hero)) {
       // only add as standalone if there are no renderings (so we don't duplicate the fallback)
-      if (approvedRenders.length === 0) views.push({ sketch: s });
+      if (approvedRenders.length === 0) views.push({ sketch: s, visible: s.presentation_visible !== false });
     }
   }
-  if (views.length === 0) views.push({ sketch: fallbackSketch });
+  if (views.length === 0) views.push({ sketch: fallbackSketch, visible: fallbackSketch?.presentation_visible !== false });
 
   const key = selections.filter(s => s.is_key_selection);
   const pickProduct = (cat: string) =>
@@ -114,12 +114,18 @@ function PresentationPage() {
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
+  const updateViewVisibility = async (roomId: string, imageId: string, visible: boolean) => {
+    await db.updateRoomImage(imageId, { presentation_visible: visible });
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+  };
+
   // Flat list of slides: cover + every view in every room
   const slides = useMemo(() => {
     const list: { kind: "cover" } | any = [{ kind: "cover" }];
     roomData.forEach(({ room, data }) => {
-      data.views.forEach((view, vi) => {
-        list.push({ kind: "view", room, data, view, viewIndex: vi, viewCount: data.views.length });
+      const visibleViews = data.views.filter((view) => view.visible);
+      visibleViews.forEach((view, vi) => {
+        list.push({ kind: "view", room, data, view, viewIndex: vi, viewCount: visibleViews.length });
       });
     });
     return list as ({ kind: "cover" } | { kind: "view"; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number })[];
@@ -249,8 +255,9 @@ function PresentationPage() {
             <BrandCover project={project} />
           </section>
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
-          {roomData.map(({ room, data }) =>
-            data.views.map((view, vi) => (
+          {roomData.map(({ room, data }) => {
+            const views = editingPicks ? data.views : data.views.filter((view) => view.visible);
+            return views.map((view, vi) => (
               <RoomSpread
                 key={`${room.id}-${vi}`}
                 project={project}
@@ -258,13 +265,17 @@ function PresentationPage() {
                 data={data}
                 view={view}
                 viewIndex={vi}
-                viewCount={data.views.length}
+                viewCount={views.length}
                 anchor={vi === 0 ? `room-${room.id}` : undefined}
                 onPick={editingPicks ? (patch) => updatePresentationPicks(room.id, patch) : undefined}
                 onUpdateViewSketch={editingPicks && view.hero ? (sketchupId) => updateRenderingSketchLink(room.id, view.hero.id, sketchupId) : undefined}
+                onToggleViewVisibility={editingPicks ? () => {
+                  const image = view.hero || view.sketch;
+                  if (image) updateViewVisibility(room.id, image.id, !view.visible);
+                } : undefined}
               />
-            ))
-          )}
+            ));
+          })}
         </div>
       </div>
     </AppShell>
@@ -342,6 +353,7 @@ function RoomSpread({
   anchor,
   onPick,
   onUpdateViewSketch,
+  onToggleViewVisibility,
 }: {
   project: any;
   room: any;
@@ -352,17 +364,36 @@ function RoomSpread({
   anchor?: string;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
+  onToggleViewVisibility?: () => void;
 }) {
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
   return (
-    <section id={anchor} className="bg-background border border-border print:border-0 print-page scroll-mt-24">
+    <section id={anchor} className={`bg-background border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
       <div className="px-10 lg:px-14 pt-10 pb-6 print:pt-6">
-        <div className="eyebrow text-[11px]">
-          {project.name} · {project.client_name}
-          {viewCount > 1 && <span className="ml-2 opacity-60">· View {viewIndex + 1} of {viewCount}</span>}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="eyebrow text-[11px]">
+              {project.name} · {project.client_name}
+              {viewCount > 1 && <span className="ml-2 opacity-60">· View {viewIndex + 1} of {viewCount}</span>}
+              {!view.visible && <span className="ml-2 text-destructive">· Hidden</span>}
+            </div>
+            <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">{room.name}</h2>
+            {view.label && <div className="text-sm text-muted-foreground mt-1">{view.label}</div>}
+          </div>
+          {onToggleViewVisibility && (
+            <button
+              type="button"
+              title={view.visible ? "Hide view" : "Show view"}
+              aria-label={view.visible ? "Hide presentation view" : "Show presentation view"}
+              onClick={onToggleViewVisibility}
+              className={`print:hidden inline-flex h-10 w-10 items-center justify-center border transition-colors ${
+                view.visible ? "border-ink bg-ink text-primary-foreground" : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
+              }`}
+            >
+              {view.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </button>
+          )}
         </div>
-        <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">{room.name}</h2>
-        {view.label && <div className="text-sm text-muted-foreground mt-1">{view.label}</div>}
       </div>
 
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-12 print:pb-6">
