@@ -171,6 +171,7 @@ function RoomRenderingSection({ room, projectId, sketchups, renderings, disableA
         </div>
         <div className="flex items-center gap-3">
           <AddSketchupDialog roomId={room.id} projectId={projectId} />
+          <AddExternalRenderingDialog roomId={room.id} projectId={projectId} sketchups={sketchups} renderings={renderings} />
           <Link to="/projects/$id/rooms/$roomId" params={{ id: projectId, roomId: room.id }} className="text-xs text-muted-foreground hover:text-ink underline">
             Open room
           </Link>
@@ -529,6 +530,131 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
           <div><Label className="eyebrow">Caption (e.g. Perspective 1, Vanity View)</Label><Input value={caption} onChange={e => setCaption(e.target.value)} /></div>
           <button onClick={submit} disabled={uploading} className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
             {uploading ? "Processing…" : "Add"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddExternalRenderingDialog({
+  roomId,
+  projectId,
+  sketchups,
+  renderings,
+}: {
+  roomId: string;
+  projectId: string;
+  sketchups: RoomImage[];
+  renderings: RoomImage[];
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [caption, setCaption] = useState("");
+  const [linkedSketchupId, setLinkedSketchupId] = useState<string>("none");
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const onFile = async (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return toast.error("Please select an image file");
+    if (file.size > 12 * 1024 * 1024) return toast.error("Image too large (max 12MB)");
+    setUploading(true);
+    try {
+      const dataUrl = await fileToCompressedDataUrl(file);
+      setUrl(dataUrl);
+      if (!caption.trim()) {
+        const baseName = file.name.replace(/\.[^.]+$/, "").trim();
+        if (baseName) setCaption(baseName);
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const reset = () => {
+    setOpen(false);
+    setUrl("");
+    setCaption("");
+    setLinkedSketchupId("none");
+  };
+
+  const submit = async () => {
+    if (!url.trim()) return toast.error("Upload a rendering or paste an image URL");
+    setSaving(true);
+    try {
+      const linkedId = linkedSketchupId === "none" ? null : linkedSketchupId;
+      const siblingVersions = linkedId
+        ? renderings.filter((rendering) => rendering.linked_sketchup_id === linkedId)
+        : [];
+      await db.addRoomImage({
+        room_id: roomId,
+        kind: "rendering",
+        url: url.trim(),
+        caption: caption.trim() || "Uploaded rendering",
+        linked_sketchup_id: linkedId,
+        status: "complete",
+        is_approved: true,
+        review_status: "approved",
+        revision_number: siblingVersions.length ? nextRevisionNumber(siblingVersions) : 1,
+      });
+      qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
+      qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+      toast.success("Rendering added to this room and presentation flow");
+      reset();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className="text-sm inline-flex items-center gap-1.5 px-3 py-1.5 border border-ink hover:bg-ink hover:text-primary-foreground transition-colors">
+          <Plus className="w-3.5 h-3.5" /> Add External Rendering
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Add External AI Rendering</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="eyebrow">Upload rendering</Label>
+            <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading || saving} />
+            {url.startsWith("data:") && (
+              <div className="mt-2 aspect-[4/3] bg-bone overflow-hidden">
+                <img src={url} alt="Rendering preview" className="w-full h-full object-cover" />
+              </div>
+            )}
+          </div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground text-center">or paste a URL</div>
+          <div>
+            <Label className="eyebrow">Rendering URL</Label>
+            <Input value={url.startsWith("data:") ? "" : url} onChange={e => setUrl(e.target.value)} placeholder="https://…" />
+          </div>
+          <div>
+            <Label className="eyebrow">Caption</Label>
+            <Input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Final hero view, Vanity rendering, Kitchen wide shot…" />
+          </div>
+          <div>
+            <Label className="eyebrow">Link to SketchUp source</Label>
+            <Select value={linkedSketchupId} onValueChange={setLinkedSketchupId}>
+              <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No SketchUp source</SelectItem>
+                {sketchups.map((sketchup, index) => (
+                  <SelectItem key={sketchup.id} value={sketchup.id}>
+                    {sketchup.caption?.trim() || `SketchUp ${index + 1}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              This saves as a completed approved rendering so it can appear in presentations right away.
+            </p>
+          </div>
+          <button onClick={submit} disabled={uploading || saving} className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
+            {uploading ? "Processing…" : saving ? "Saving…" : "Add Rendering"}
           </button>
         </div>
       </DialogContent>
