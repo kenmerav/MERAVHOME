@@ -38,7 +38,7 @@ function pickRoomNameFromText(text: string) {
     if (!/(fixture|finish|material|selection)/i.test(heading)) continue;
     if (/materials list/i.test(heading) || /^\d+\./.test(heading.trim())) continue;
     const roomName = heading.replace(/\s*(?:fixtures?|finishes|materials?|selections?).*$/i, "").trim();
-    if (roomName) return titleCase(roomName);
+    if (roomName && looksLikeImportedRoomName(roomName)) return titleCase(roomName);
   }
 
   const taggedHeadings = Array.from(text.matchAll(/\/E\s*\(([^)]{2,120})\)/g)).map((match) =>
@@ -47,18 +47,26 @@ function pickRoomNameFromText(text: string) {
   const materialsListIndex = taggedHeadings.findIndex((heading) => /materials list/i.test(heading));
   if (materialsListIndex > 0) {
     const previousHeading = taggedHeadings[materialsListIndex - 1].trim();
-    const looksLikeRoomName =
-      previousHeading.length <= 40 &&
-      !/^\d+\./.test(previousHeading) &&
-      !/[|:]/.test(previousHeading) &&
-      !/https?:\/\//i.test(previousHeading);
-    if (looksLikeRoomName) return titleCase(previousHeading);
+    if (!/^\d+\./.test(previousHeading) && !/https?:\/\//i.test(previousHeading) && looksLikeImportedRoomName(previousHeading)) {
+      return titleCase(previousHeading);
+    }
   }
 
   const outlineTitleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)[\s\S]{0,120}?\/Dest\s*\[/);
   const titleMatch = text.match(/\/Title\s*\(([^)]{2,80})\)/);
   const taggedTitleMatch = text.match(/\/T\s*\(([^)]{2,80})\)/);
   return titleCase(outlineTitleMatch?.[1] || titleMatch?.[1] || taggedTitleMatch?.[1] || "Imported Room");
+}
+
+function looksLikeImportedRoomName(value: string) {
+  const cleaned = cleanRoomName(value);
+  const n = normalize(cleaned);
+  return (
+    cleaned.length > 0 &&
+    cleaned.length <= 45 &&
+    !/[|:]/.test(cleaned) &&
+    !/\b(model|sku|color|lever trim|inch|tall|adjustable|solid brass|door stop|paint|sherwin|built in)\b/.test(n)
+  );
 }
 
 function roomNameFromSectionHeading(value: string) {
@@ -72,12 +80,7 @@ function roomNameFromSectionHeading(value: string) {
   const fixturesMatch = heading.match(/^(.+?)\s+(?:fixtures?|finishes|materials?|selections?)\s*(?:\+\s*finishes)?(?:\s+option\s+[a-z])?\s*:?\s*$/i);
   if (fixturesMatch?.[1]) {
     const candidate = cleanRoomName(fixturesMatch[1]);
-    const candidateKey = normalize(candidate);
-    const isProductLabel =
-      candidate.length > 45 ||
-      /[:|]/.test(candidate) ||
-      /\b(model|sku|color|lever trim|inch|tall|adjustable|solid brass|door stop|paint|sherwin|built in)\b/.test(candidateKey);
-    if (!isProductLabel) return titleCase(candidate);
+    if (looksLikeImportedRoomName(candidate)) return titleCase(candidate);
   }
   return null;
 }
