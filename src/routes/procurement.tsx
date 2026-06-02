@@ -9,6 +9,15 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
 import { formatMoney, normalizeMoneyInput, procurementTotals } from "@/lib/money";
+import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
+
+type ProcurementMaterialDetails = {
+  client_product_name: string | null;
+  quantity: number | null;
+  color: string | null;
+  product_url: string | null;
+  cad_label: string | null;
+};
 
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
@@ -41,7 +50,10 @@ function ProcurementPage() {
     enabled: allowed,
   });
   const projectOptions = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; client_name: string; status: string }>();
+    const map = new Map<
+      string,
+      { id: string; name: string; client_name: string; status: string }
+    >();
     procurementItems.forEach((item) => {
       const project = item.room_product?.room?.project;
       if (project?.id) map.set(project.id, project);
@@ -56,9 +68,10 @@ function ProcurementPage() {
     window.localStorage.setItem("merav.procurement.taxRate", taxRate);
   }, [taxRate]);
 
-  const projectItems = projectFilter === "__overall"
-    ? procurementItems
-    : procurementItems.filter((item) => item.room_product?.room?.project?.id === projectFilter);
+  const projectItems =
+    projectFilter === "__overall"
+      ? procurementItems
+      : procurementItems.filter((item) => item.room_product?.room?.project?.id === projectFilter);
 
   const roomOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -66,7 +79,9 @@ function ProcurementPage() {
       const room = item.room_product?.room;
       if (room?.id && room.name) map.set(room.id, room.name);
     });
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [projectItems]);
 
   const categoryOptions = useMemo(() => {
@@ -87,21 +102,29 @@ function ProcurementPage() {
     return Array.from(set).sort();
   }, [projectItems]);
 
-  const visibleItems = useMemo(() => projectItems.filter((item) => {
-    const product = item.room_product?.product;
-    const room = item.room_product?.room;
-    if (roomFilter !== "__all" && room?.id !== roomFilter) return false;
-    if (categoryFilter !== "__all" && product?.category !== categoryFilter) return false;
-    if (vendorFilter !== "__all" && product?.vendor !== vendorFilter) return false;
-    return true;
-  }), [projectItems, roomFilter, categoryFilter, vendorFilter]);
+  const visibleItems = useMemo(
+    () =>
+      projectItems.filter((item) => {
+        const product = item.room_product?.product;
+        const room = item.room_product?.room;
+        if (roomFilter !== "__all" && room?.id !== roomFilter) return false;
+        if (categoryFilter !== "__all" && product?.category !== categoryFilter) return false;
+        if (vendorFilter !== "__all" && product?.vendor !== vendorFilter) return false;
+        return true;
+      }),
+    [projectItems, roomFilter, categoryFilter, vendorFilter],
+  );
 
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
     await db.updateProcurement(id, { [key]: value });
     qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
-  const updateProductMoney = async (productId: string, key: "price" | "unit_cost" | "shipping", value: string) => {
+  const updateProductMoney = async (
+    productId: string,
+    key: "price" | "unit_cost" | "shipping",
+    value: string,
+  ) => {
     await db.updateProduct(productId, { [key]: normalizeMoneyInput(value) });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
@@ -109,13 +132,21 @@ function ProcurementPage() {
   };
 
   const total = visibleItems.length;
-  const ordered = visibleItems.filter(i => i.ordered).length;
-  const received = visibleItems.filter(i => i.received).length;
-  const installed = visibleItems.filter(i => i.installed).length;
+  const ordered = visibleItems.filter((i) => i.ordered).length;
+  const received = visibleItems.filter((i) => i.received).length;
+  const installed = visibleItems.filter((i) => i.installed).length;
   const money = procurementTotals(visibleItems, taxRate);
+  const selectedProject =
+    projectFilter === "__overall"
+      ? null
+      : (projectOptions.find((project) => project.id === projectFilter) ?? null);
 
   if (loadingProfile) {
-    return <AppShell><div className="p-16 text-muted-foreground">Checking access...</div></AppShell>;
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Checking access...</div>
+      </AppShell>
+    );
   }
 
   if (!allowed) {
@@ -139,7 +170,8 @@ function ProcurementPage() {
           <div className="eyebrow mb-3">Workflow</div>
           <h1 className="editorial-hero text-5xl lg:text-7xl">Procurement</h1>
           <p className="mt-4 text-muted-foreground max-w-xl">
-            Everything needed to place an order — product, vendor, link, quantity, color, dimensions, and pricing.
+            Everything needed to place an order — product, vendor, link, quantity, color,
+            dimensions, and pricing.
           </p>
         </div>
 
@@ -185,31 +217,76 @@ function ProcurementPage() {
               <option value="__overall">Overall · All Projects</option>
               {projectOptions.map((project) => (
                 <option key={project.id} value={project.id}>
-                  {project.name} · {project.client_name}{project.status === "Complete" ? " · Archived" : ""}
+                  {project.name} · {project.client_name}
+                  {project.status === "Complete" ? " · Archived" : ""}
                 </option>
               ))}
             </select>
           </div>
           <div className="w-full sm:min-w-[200px] sm:w-auto">
             <label className="eyebrow block mb-2">Room</label>
-            <select value={roomFilter} onChange={(e) => setRoomFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
+            <select
+              value={roomFilter}
+              onChange={(e) => setRoomFilter(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+            >
               <option value="__all">All Rooms</option>
-              {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+              {roomOptions.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {room.name}
+                </option>
+              ))}
             </select>
           </div>
           <div className="w-full sm:min-w-[200px] sm:w-auto">
             <label className="eyebrow block mb-2">Category</label>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+            >
               <option value="__all">All Categories</option>
-              {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
             </select>
           </div>
           <div className="w-full sm:min-w-[220px] sm:w-auto">
             <label className="eyebrow block mb-2">Vendor</label>
-            <select value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)} className="h-10 w-full border border-input bg-background px-3 py-2 text-sm">
+            <select
+              value={vendorFilter}
+              onChange={(e) => setVendorFilter(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+            >
               <option value="__all">All Vendors</option>
-              {vendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
+              {vendorOptions.map((vendor) => (
+                <option key={vendor} value={vendor}>
+                  {vendor}
+                </option>
+              ))}
             </select>
+          </div>
+          <div className="w-full sm:w-auto sm:ml-auto">
+            <label className="eyebrow block mb-2">Invoice</label>
+            <ProductInvoiceCreator
+              projectId={selectedProject?.id ?? null}
+              projectName={selectedProject?.name ?? ""}
+              clientName={selectedProject?.client_name ?? ""}
+              items={visibleItems}
+              defaultTaxRate={taxRate}
+              disabled={!selectedProject || visibleItems.length === 0}
+              onSaved={() => {
+                qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
+                qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+              }}
+            />
+            {!selectedProject && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                Choose one project to create an invoice.
+              </div>
+            )}
           </div>
         </div>
 
@@ -234,27 +311,48 @@ function ProcurementPage() {
             </thead>
             <tbody>
               {visibleItems.length === 0 && (
-                <tr><td colSpan={13} className="py-20 text-center text-sm text-muted-foreground">
-                  No procurement items for this view yet. Add products to a room to populate.
-                </td></tr>
+                <tr>
+                  <td colSpan={13} className="py-20 text-center text-sm text-muted-foreground">
+                    No procurement items for this view yet. Add products to a room to populate.
+                  </td>
+                </tr>
               )}
-              {visibleItems.map(item => {
+              {visibleItems.map((item) => {
                 const p = item.room_product?.product;
                 const r = item.room_product?.room;
-                const m = (item as any).material as { client_product_name: string | null; quantity: number | null; color: string | null; product_url: string | null; cad_label: string | null } | null;
+                const m = (item as typeof item & { material?: ProcurementMaterialDetails | null })
+                  .material;
                 const link = m?.product_url || p?.product_url || null;
-                const clientName = m?.client_product_name || [r?.name, p?.category].filter(Boolean).join(" ") || p?.name || "—";
+                const clientName =
+                  m?.client_product_name ||
+                  [r?.name, p?.category].filter(Boolean).join(" ") ||
+                  p?.name ||
+                  "—";
                 return (
                   <tr key={item.id} className="border-b border-border align-top">
                     <td className="px-3 py-3">
                       <ProductCell productId={p?.id} clientName={clientName}>
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
-                          {p?.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+                          {p?.image_url && (
+                            <img
+                              src={p.image_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          )}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-display text-base leading-tight truncate max-w-[220px]" title={clientName}>{clientName}</div>
+                          <div
+                            className="font-display text-base leading-tight truncate max-w-[220px]"
+                            title={clientName}
+                          >
+                            {clientName}
+                          </div>
                           <div className="text-[10px] text-muted-foreground truncate max-w-[220px]">
-                            {[p?.name, m?.cad_label, p?.sku && `SKU ${p.sku}`].filter(Boolean).join(" · ")}
+                            {[p?.name, m?.cad_label, p?.sku && `SKU ${p.sku}`]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </div>
                         </div>
                       </ProductCell>
@@ -262,35 +360,58 @@ function ProcurementPage() {
                     <td className="px-3 py-3 text-xs">{p?.vendor || "—"}</td>
                     <td className="px-3 py-3 text-xs">
                       {link ? (
-                        <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-ink hover:underline">
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-ink hover:underline"
+                        >
                           Order <ExternalLink className="w-3 h-3" />
                         </a>
-                      ) : <span className="text-muted-foreground">—</span>}
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
-                    <td className="px-3 py-3 text-center font-display text-base">{m?.quantity ?? "—"}</td>
+                    <td className="px-3 py-3 text-center font-display text-base">
+                      {m?.quantity ?? "—"}
+                    </td>
                     <td className="px-3 py-3 text-xs">{m?.color || p?.finish || "—"}</td>
                     <td className="px-3 py-3 text-xs">{p?.dimensions || "—"}</td>
                     <td className="px-3 py-3 text-right text-xs">
-                      <EditableMoneyCell value={p?.price ?? ""} disabled={!p?.id} onSave={(value) => p?.id && updateProductMoney(p.id, "price", value)} />
+                      <EditableMoneyCell
+                        value={p?.price ?? ""}
+                        disabled={!p?.id}
+                        onSave={(value) => p?.id && updateProductMoney(p.id, "price", value)}
+                      />
                     </td>
                     <td className="px-3 py-3 text-right text-xs">
-                      <EditableMoneyCell value={p?.unit_cost ?? ""} disabled={!p?.id} onSave={(value) => p?.id && updateProductMoney(p.id, "unit_cost", value)} />
+                      <EditableMoneyCell
+                        value={p?.unit_cost ?? ""}
+                        disabled={!p?.id}
+                        onSave={(value) => p?.id && updateProductMoney(p.id, "unit_cost", value)}
+                      />
                     </td>
                     <td className="px-3 py-3 text-right text-xs">
-                      <EditableMoneyCell value={p?.shipping ?? ""} disabled={!p?.id} onSave={(value) => p?.id && updateProductMoney(p.id, "shipping", value)} />
+                      <EditableMoneyCell
+                        value={p?.shipping ?? ""}
+                        disabled={!p?.id}
+                        onSave={(value) => p?.id && updateProductMoney(p.id, "shipping", value)}
+                      />
                     </td>
                     <td className="px-3 py-3 text-xs text-muted-foreground">
                       <div className="truncate max-w-[140px]">{r?.project?.name}</div>
                       <div className="text-ink truncate max-w-[140px]">{r?.name}</div>
                     </td>
-                    {(["ordered","received","installed"] as const).map(k => (
+                    {(["ordered", "received", "installed"] as const).map((k) => (
                       <td key={k} className="px-3 py-3">
                         <div className="flex justify-center">
                           <button
                             onClick={() => toggle(item.id, k, !item[k])}
                             className={cn(
                               "w-6 h-6 border flex items-center justify-center transition-colors",
-                              item[k] ? "bg-ink border-ink text-primary-foreground" : "border-border hover:border-ink"
+                              item[k]
+                                ? "bg-ink border-ink text-primary-foreground"
+                                : "border-border hover:border-ink",
                             )}
                           >
                             {item[k] && <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
@@ -309,11 +430,24 @@ function ProcurementPage() {
   );
 }
 
-function ProductCell({ productId, clientName, children }: { productId?: string; clientName: string; children: ReactNode }) {
+function ProductCell({
+  productId,
+  clientName,
+  children,
+}: {
+  productId?: string;
+  clientName: string;
+  children: ReactNode;
+}) {
   const className = "flex items-start gap-3 text-left group";
   if (!productId) return <div className={className}>{children}</div>;
   return (
-    <Link to="/catalog/$productId" params={{ productId }} className={className} title={`Open ${clientName}`}>
+    <Link
+      to="/catalog/$productId"
+      params={{ productId }}
+      className={className}
+      title={`Open ${clientName}`}
+    >
       {children}
     </Link>
   );
@@ -351,7 +485,7 @@ function EditableMoneyCell({
         onClick={() => !disabled && setEditing(true)}
         className={cn(
           "min-w-20 text-right underline-offset-4",
-          disabled ? "text-muted-foreground" : "hover:underline hover:text-ink"
+          disabled ? "text-muted-foreground" : "hover:underline hover:text-ink",
         )}
         title={disabled ? undefined : "Click to edit"}
       >
@@ -379,7 +513,15 @@ function EditableMoneyCell({
   );
 }
 
-function MoneyStat({ label, value, children }: { label: string; value: number; children?: ReactNode }) {
+function MoneyStat({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: number;
+  children?: ReactNode;
+}) {
   return (
     <div className="border border-border p-5">
       <div className="eyebrow mb-2">{label}</div>
@@ -400,7 +542,10 @@ function Stat({ label, n, total }: { label: string; n: number; total?: number })
       </div>
       {total !== undefined && (
         <div className="mt-3 h-px bg-border relative">
-          <div className="absolute inset-y-0 left-0 bg-brass" style={{ width: `${pct ?? 0}%`, height: 1 }} />
+          <div
+            className="absolute inset-y-0 left-0 bg-brass"
+            style={{ width: `${pct ?? 0}%`, height: 1 }}
+          />
         </div>
       )}
     </div>
