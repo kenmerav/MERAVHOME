@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
@@ -796,6 +796,9 @@ function InlineInput({
   placeholder?: string;
 }) {
   const [local, setLocal] = useState(value);
+  useEffect(() => {
+    setLocal(value);
+  }, [value]);
   return (
     <Input
       value={local}
