@@ -238,6 +238,9 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           const body = isJsonRequest ? await request.json() : null;
           const form = isJsonRequest ? null : await request.formData();
           const projectId = cleanUuid(isJsonRequest ? body?.project_id : form?.get("project_id"));
+          const replaceExistingCustom = isJsonRequest
+            ? body?.replace_existing_custom === true
+            : form?.get("replace_existing_custom") === "true";
           const file = form?.get("pdf");
           if (!projectId) return json({ error: "Valid project_id required" }, 400);
           if (!isJsonRequest && !(file instanceof File)) return json({ error: "PDF file required" }, 400);
@@ -282,6 +285,23 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           }
 
           const roomIds = Array.from(new Set(Array.from(roomByName.values()).map((room: any) => room.id)));
+          if (replaceExistingCustom) {
+            const importedRoomKeys = new Set(extracted.map((item) => normalize(item.room_name)));
+            const importedRoomIds = Array.from(roomByName.entries())
+              .filter(([roomKey]) => importedRoomKeys.has(roomKey))
+              .map(([, room]: any) => room.id)
+              .filter(Boolean);
+            if (importedRoomIds.length) {
+              const { error: replaceError } = await supabaseAdmin
+                .from("material_items")
+                .delete()
+                .eq("project_id", projectId)
+                .eq("is_required", false)
+                .in("room_id", importedRoomIds);
+              if (replaceError) return json({ error: replaceError.message }, 500);
+            }
+          }
+
           const { data: existingItems, error: itemsError } = await supabaseAdmin
             .from("material_items")
             .select("id, room_id, item_label, product_url, quantity, color, sort_order, is_required")

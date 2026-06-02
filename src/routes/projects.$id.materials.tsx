@@ -155,6 +155,7 @@ function MaterialsPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               project_id: projectId,
+              replace_existing_custom: true,
               items: await extractMaterialPdfItemsFromFile(file),
             }),
           })
@@ -792,6 +793,7 @@ function Field({ label, value, onChange, className }: { label: string; value: st
 function pdfImportFormData(projectId: string, file: File) {
   const form = new FormData();
   form.append("project_id", projectId);
+  form.append("replace_existing_custom", "true");
   form.append("pdf", file);
   return form;
 }
