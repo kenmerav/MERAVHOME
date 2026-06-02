@@ -318,7 +318,7 @@ function BrandCover({ project, roomCount }: { project: any; roomCount?: number }
 
 function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { project: any; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number }) {
   return (
-    <div className="w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 p-8 lg:p-12">
+    <div className="w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone p-8 lg:p-12">
       <div className="flex flex-col min-h-0">
         <div className="mb-4">
           <div className="eyebrow text-[11px]">
@@ -327,7 +327,7 @@ function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { projec
           </div>
           <h2 className="font-display text-4xl lg:text-6xl text-ink mt-2 leading-tight">{room.name}</h2>
         </div>
-        <div className="relative bg-bone overflow-hidden flex-1 min-h-0">
+        <div className="relative overflow-hidden flex-1 min-h-0">
           {view.hero ? (
             <img src={view.hero.url} alt={room.name} className="w-full h-full object-contain" />
           ) : view.sketch ? (
@@ -367,7 +367,7 @@ function RoomSpread({
 }) {
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
   return (
-    <section id={anchor} className={`bg-background border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
+    <section id={anchor} className={`bg-bone border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
       <div className="px-10 lg:px-14 pt-10 pb-6 print:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -395,7 +395,7 @@ function RoomSpread({
       </div>
 
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-12 print:pb-6">
-        <div className="relative bg-bone overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
+        <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
           {view.hero ? (
             <img src={view.hero.url} alt={room.name} className="w-full h-full object-contain" />
           ) : view.sketch ? (
