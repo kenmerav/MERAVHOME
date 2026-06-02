@@ -292,13 +292,17 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
 
           let createdItems = 0;
           let updatedItems = 0;
+          const importedKeysThisRun = new Set<string>();
 
           for (const item of extracted) {
             const room = roomByName.get(normalize(item.room_name));
             if (!room?.id) continue;
+            const importKey = materialImportKey(room.id, item.item_label, item.product_url);
+            if (importedKeysThisRun.has(importKey)) continue;
             const blankKey = materialRoomLabelKey(room.id, item.item_label);
             const blankMatches = blankExistingByRoomLabel.get(blankKey) ?? [];
-            const existing = existingByImportKey.get(materialImportKey(room.id, item.item_label, item.product_url)) ?? blankMatches.shift();
+            const importMatch = existingByImportKey.get(importKey);
+            const existing = cleanUuid(importMatch?.id) ? importMatch : blankMatches.shift();
             blankExistingByRoomLabel.set(blankKey, blankMatches);
             if (existing) {
               const { error } = await supabaseAdmin
@@ -313,10 +317,11 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
                 })
                 .eq("id", existing.id);
               if (error) return json({ error: error.message }, 500);
-              existingByImportKey.set(materialImportKey(room.id, item.item_label, item.product_url), {
+              existingByImportKey.set(importKey, {
                 ...existing,
                 product_url: item.product_url,
               });
+              importedKeysThisRun.add(importKey);
               updatedItems += 1;
               continue;
             }
@@ -342,11 +347,7 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
               scrape_error: null,
             });
             if (error) return json({ error: error.message }, 500);
-            existingByImportKey.set(materialImportKey(room.id, item.item_label, item.product_url), {
-              room_id: room.id,
-              item_label: item.item_label,
-              product_url: item.product_url,
-            });
+            importedKeysThisRun.add(importKey);
             createdItems += 1;
           }
 
