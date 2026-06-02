@@ -74,7 +74,7 @@ function ProjectDetailPage() {
 
         <div className="flex items-start lg:items-end justify-between mb-12 flex-wrap gap-6">
           <div>
-            <div className="eyebrow mb-3">{project.project_type} · {project.client_name}</div>
+            <div className="eyebrow mb-3">{project.client_name}</div>
             {isClientUser ? (
               <h1 className="editorial-hero text-5xl lg:text-7xl">{project.name}</h1>
             ) : (
