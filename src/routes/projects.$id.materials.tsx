@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES, toProductCategory } from "@/lib/roomTemplates";
@@ -395,7 +395,7 @@ function RoomMaterialsSection({
                           <span className="text-[10px] tracking-wider uppercase text-emerald-700">Scraped</span>
                         )}
                       </div>
-                      <CatalogProductSelect
+                      <CatalogProductPicker
                         item={it}
                         products={products}
                         onSelect={(productId) => attachCatalogProduct(it, productId)}
@@ -563,7 +563,7 @@ function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSa
   );
 }
 
-function CatalogProductSelect({
+function CatalogProductPicker({
   item,
   products,
   onSelect,
@@ -575,43 +575,99 @@ function CatalogProductSelect({
   disabled?: boolean;
 }) {
   const category = toProductCategory(item.category);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const matchingProducts = products.filter((product) => product.category === category && isUuid(product.id));
   const currentProductId = cleanUuid(item.product_id);
-  const currentValue = currentProductId ?? "__none__";
   const selectedProduct = currentProductId ? products.find((product) => product.id === currentProductId) : null;
-  const hasCurrentProductInCategory = matchingProducts.some((product) => product.id === currentProductId);
+  const searchedProducts = matchingProducts
+    .filter((product) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return [product.name, product.vendor, product.finish, product.sku]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(q));
+    })
+    .slice(0, 40);
+
+  const choose = (productId: string | null) => {
+    onSelect(productId);
+    setOpen(false);
+    setSearch("");
+  };
 
   return (
-    <div className="mt-2 max-w-[180px]">
-      <Select
-        value={currentValue}
-        onValueChange={(value) => onSelect(cleanUuid(value))}
-        disabled={disabled}
-      >
-        <SelectTrigger className="h-7 border-border bg-bone/40 text-[11px]">
-          <SelectValue placeholder={`Add ${category} from catalog`} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__none__">No catalog product</SelectItem>
-          {selectedProduct && !hasCurrentProductInCategory && (
-            <SelectItem value={selectedProduct.id}>
-              {selectedProduct.name}
-            </SelectItem>
+    <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setSearch(""); }}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className="mt-1 block pl-3.5 text-[11px] text-muted-foreground underline-offset-4 hover:text-ink hover:underline disabled:pointer-events-none disabled:opacity-40"
+        >
+          {selectedProduct ? "Change catalog product" : "Assign from catalog"}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">Assign Catalog Product</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            Choose a {category.toLowerCase()} product to attach to <span className="text-ink">{item.item_label}</span>.
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={`Search ${category.toLowerCase()} products`}
+              className="pl-9"
+            />
+          </div>
+          {selectedProduct && (
+            <button
+              type="button"
+              onClick={() => choose(null)}
+              className="w-full text-left border border-border p-3 text-sm hover:border-ink"
+            >
+              Clear catalog product
+              <span className="block text-xs text-muted-foreground">Keeps the row, but removes the catalog assignment.</span>
+            </button>
           )}
-          {matchingProducts.length === 0 ? (
-            <SelectItem value={`__empty_${category}`} disabled>
-              No {category.toLowerCase()} products yet
-            </SelectItem>
-          ) : (
-            matchingProducts.map((product) => (
-              <SelectItem key={product.id} value={product.id}>
-                {[product.name, product.vendor, product.finish].filter(Boolean).join(" · ")}
-              </SelectItem>
-            ))
-          )}
-        </SelectContent>
-      </Select>
-    </div>
+          <div className="max-h-[420px] overflow-y-auto border border-border divide-y divide-border">
+            {searchedProducts.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                No {category.toLowerCase()} products found in the catalog yet.
+              </div>
+            ) : (
+              searchedProducts.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => choose(product.id)}
+                  className={`w-full grid grid-cols-[64px_1fr] gap-4 p-3 text-left hover:bg-bone/50 ${product.id === currentProductId ? "bg-bone" : ""}`}
+                >
+                  {product.image_url ? (
+                    <img src={product.image_url} alt="" className="h-16 w-16 object-cover bg-bone border border-border" />
+                  ) : (
+                    <div className="h-16 w-16 bg-bone border border-border" />
+                  )}
+                  <span className="min-w-0">
+                    <span className="block text-sm text-ink truncate">{product.name}</span>
+                    <span className="block text-xs text-muted-foreground truncate">
+                      {[product.vendor, product.finish, product.price].filter(Boolean).join(" · ")}
+                    </span>
+                    {product.product_url && (
+                      <span className="block text-[11px] text-muted-foreground truncate">{product.product_url}</span>
+                    )}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
