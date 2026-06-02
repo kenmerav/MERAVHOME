@@ -478,6 +478,7 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const onFile = async (file?: File | null) => {
     if (!file) return;
@@ -499,11 +500,24 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
 
   const submit = async () => {
     if (!url.trim()) return toast.error("Upload an image or paste a URL");
-    await db.addRoomImage({ room_id: roomId, kind: "sketchup", url, caption });
-    qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
-    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-    setOpen(false); setUrl(""); setCaption("");
-    toast.success("SketchUp added");
+    setSaving(true);
+    try {
+      const saved = await db.addRoomImage({ room_id: roomId, kind: "sketchup", url, caption });
+      if (saved) {
+        const insertImage = (current?: RoomImage[]) => {
+          if (!current) return saved ? [saved] : current;
+          return [...current, saved].sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
+        };
+        qc.setQueryData<RoomImage[]>(["projectRoomImages", projectId], insertImage);
+        qc.setQueryData<RoomImage[]>(["roomImages", roomId], insertImage);
+      }
+      qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
+      qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+      setOpen(false); setUrl(""); setCaption("");
+      toast.success("SketchUp added");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -518,7 +532,7 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
         <div className="space-y-3">
           <div>
             <Label className="eyebrow">Upload image</Label>
-            <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading} />
+            <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading || saving} />
             {url.startsWith("data:") && (
               <div className="mt-2 aspect-[4/3] bg-bone overflow-hidden">
                 <img src={url} alt="preview" className="w-full h-full object-cover" />
@@ -528,8 +542,8 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground text-center">or paste a URL</div>
           <div><Label className="eyebrow">Image URL</Label><Input value={url.startsWith("data:") ? "" : url} onChange={e => setUrl(e.target.value)} placeholder="https://…" /></div>
           <div><Label className="eyebrow">Caption (e.g. Perspective 1, Vanity View)</Label><Input value={caption} onChange={e => setCaption(e.target.value)} /></div>
-          <button onClick={submit} disabled={uploading} className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
-            {uploading ? "Processing…" : "Add"}
+          <button onClick={submit} disabled={uploading || saving} className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50">
+            {uploading ? "Processing…" : saving ? "Saving…" : "Add"}
           </button>
         </div>
       </DialogContent>
