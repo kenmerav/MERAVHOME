@@ -70,7 +70,15 @@ function roomNameFromSectionHeading(value: string) {
   if (/^(fixtures|finishes|materials|selections)\b/.test(normalized)) return null;
 
   const fixturesMatch = heading.match(/^(.+?)\s+(?:fixtures?|finishes|materials?|selections?)\s*(?:\+\s*finishes)?(?:\s+option\s+[a-z])?\s*:?\s*$/i);
-  if (fixturesMatch?.[1]) return titleCase(cleanRoomName(fixturesMatch[1]));
+  if (fixturesMatch?.[1]) {
+    const candidate = cleanRoomName(fixturesMatch[1]);
+    const candidateKey = normalize(candidate);
+    const isProductLabel =
+      candidate.length > 45 ||
+      /[:|]/.test(candidate) ||
+      /\b(model|sku|color|lever trim|inch|tall|adjustable|solid brass|door stop|paint|sherwin|built in)\b/.test(candidateKey);
+    if (!isProductLabel) return titleCase(candidate);
+  }
   return null;
 }
 
@@ -275,10 +283,11 @@ export function extractMaterialPdfItemsFromText(rawPdf: string): ExtractedMateri
 }
 
 export async function extractMaterialPdfItemsFromFile(file: File) {
-  const rawPdf = new TextDecoder("latin1").decode(await file.arrayBuffer());
   try {
     return await extractMaterialPdfItemsWithPdfjs(file);
-  } catch {
+  } catch (error) {
+    console.error("[materials-pdf] PDF.js extraction failed; using raw PDF fallback.", error);
+    const rawPdf = new TextDecoder("latin1").decode(await file.arrayBuffer());
     return extractMaterialPdfItemsFromText(rawPdf);
   }
 }
