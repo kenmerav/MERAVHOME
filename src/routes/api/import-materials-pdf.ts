@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
-import { extractMaterialPdfItemsFromText } from "@/lib/materialPdfExtract";
+import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
 import { cleanUuid } from "@/lib/ids";
 
 function json(data: unknown, status = 200) {
@@ -222,8 +222,7 @@ function fallbackLabelFromUrl(productUrl: string) {
 }
 
 async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
-  const rawPdf = Buffer.from(await file.arrayBuffer()).toString("latin1");
-  return extractMaterialPdfItemsFromText(rawPdf);
+  return extractMaterialPdfItemsFromFile(file);
 }
 
 export const Route = createFileRoute("/api/import-materials-pdf")({

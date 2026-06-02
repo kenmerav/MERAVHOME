@@ -67,10 +67,19 @@ function roomNameFromSectionHeading(value: string) {
   if (!normalized) return null;
   if (/materials throughout/.test(normalized)) return "Materials Throughout";
   if (/appliances throughout/.test(normalized)) return "Appliances Throughout";
+  if (/^(fixtures|finishes|materials|selections)\b/.test(normalized)) return null;
 
   const fixturesMatch = heading.match(/^(.+?)\s+(?:fixtures?|finishes|materials?|selections?)\s*(?:\+\s*finishes)?(?:\s+option\s+[a-z])?\s*:?\s*$/i);
-  if (fixturesMatch?.[1]) return titleCase(fixturesMatch[1].trim());
+  if (fixturesMatch?.[1]) return titleCase(cleanRoomName(fixturesMatch[1]));
   return null;
+}
+
+function cleanRoomName(value: string) {
+  return value
+    .replace(/\\([()])/g, "$1")
+    .replace(/[()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function extractActionUrls(rawPdf: string) {
@@ -267,5 +276,173 @@ export function extractMaterialPdfItemsFromText(rawPdf: string): ExtractedMateri
 
 export async function extractMaterialPdfItemsFromFile(file: File) {
   const rawPdf = new TextDecoder("latin1").decode(await file.arrayBuffer());
-  return extractMaterialPdfItemsFromText(rawPdf);
+  try {
+    return await extractMaterialPdfItemsWithPdfjs(file);
+  } catch {
+    return extractMaterialPdfItemsFromText(rawPdf);
+  }
+}
+
+type PdfTextItem = {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type PdfAnnotation = {
+  url?: string;
+  contents?: string;
+  contentsObj?: { str?: string };
+  rect?: number[];
+};
+
+async function extractMaterialPdfItemsWithPdfjs(file: File): Promise<ExtractedMaterialPdfItem[]> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjs.getDocument({ data, disableWorker: true }).promise;
+  const imported: ExtractedMaterialPdfItem[] = [];
+  const seen = new Set<string>();
+
+  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+    const page = await doc.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const textItems = textContent.items
+      .map((item: any): PdfTextItem | null => {
+        const str = String(item.str ?? "").trim();
+        if (!str) return null;
+        const [, , , , x, y] = item.transform ?? [0, 0, 0, 0, 0, 0];
+        return {
+          str,
+          x: Number(x ?? 0),
+          y: Number(y ?? 0),
+          width: Number(item.width ?? 0),
+          height: Number(item.height ?? 0),
+        };
+      })
+      .filter((item): item is PdfTextItem => !!item);
+    const roomName = pickRoomNameFromPageText(textItems) ?? `Page ${pageNumber}`;
+    const annotations = ((await page.getAnnotations()) as PdfAnnotation[])
+      .filter((annotation) => annotation.url && /^https?:\/\//i.test(annotation.url));
+
+    for (const group of groupPageAnnotations(annotations)) {
+      const label = labelForAnnotationGroup(group, textItems, roomName);
+      const item = parsePdfItem(label || fallbackLabelFromUrl(group.url), roomName, group.url);
+      if (!item) continue;
+      const key = `${normalize(item.room_name)}::${normalize(item.item_label)}::${item.product_url}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      imported.push(item);
+    }
+  }
+
+  return imported.length ? imported : extractMaterialPdfItemsFromText(new TextDecoder("latin1").decode(await file.arrayBuffer()));
+}
+
+function pickRoomNameFromPageText(textItems: PdfTextItem[]) {
+  for (const item of textItems) {
+    const roomName = roomNameFromSectionHeading(item.str);
+    if (roomName) return roomName;
+  }
+
+  for (let index = 0; index < textItems.length; index += 1) {
+    const previous = textItems[index - 1]?.str ?? "";
+    const current = textItems[index].str;
+    const next = textItems[index + 1]?.str ?? "";
+    const currentKey = normalize(current);
+    const nextKey = normalize(next);
+
+    if (/^(fixtures|finishes|materials|selections)\b/.test(currentKey)) {
+      const roomName = roomNameFromSectionHeading(`${previous} ${current}`);
+      if (roomName) return roomName;
+    }
+
+    if ((/bathroom|kitchen|laundry|room|bath/i.test(current) || /^\s*\(/.test(current)) && /^(fixtures|finishes|materials|selections)\b/.test(nextKey)) {
+      const roomName = roomNameFromSectionHeading(`${current} ${next}`);
+      if (roomName) return roomName;
+    }
+  }
+
+  return null;
+}
+
+function annotationLabel(annotation: PdfAnnotation) {
+  return String(annotation.contentsObj?.str ?? annotation.contents ?? "").trim();
+}
+
+function groupPageAnnotations(annotations: PdfAnnotation[]) {
+  const groups: Array<{ url: string; annotations: PdfAnnotation[] }> = [];
+  for (const annotation of annotations) {
+    const url = annotation.url!;
+    const last = groups.at(-1);
+    if (last?.url === url && annotationsTouch(last.annotations.at(-1), annotation)) {
+      last.annotations.push(annotation);
+    } else {
+      groups.push({ url, annotations: [annotation] });
+    }
+  }
+  return groups;
+}
+
+function annotationsTouch(left?: PdfAnnotation, right?: PdfAnnotation) {
+  const a = left?.rect;
+  const b = right?.rect;
+  if (!a || !b) return false;
+  const sameLine = Math.abs(a[1] - b[1]) < 8 && Math.abs(a[3] - b[3]) < 8;
+  const closeColumns = Math.abs(a[2] - b[0]) < 14 || Math.abs(b[2] - a[0]) < 14;
+  return sameLine && closeColumns;
+}
+
+function labelForAnnotationGroup(group: { url: string; annotations: PdfAnnotation[] }, textItems: PdfTextItem[], roomName: string) {
+  const labels = group.annotations
+    .map((annotation) => annotationLabel(annotation))
+    .filter((label) => label && !isUrlLabel(label));
+  if (labels.length) return labels.join(" ");
+
+  const textLabel = group.annotations
+    .map((annotation) => labelFromTextInsideRect(annotation.rect, textItems, roomName))
+    .find((label) => !!label);
+  return textLabel ?? nearestTextLabel(group.annotations[0]?.rect, textItems, roomName) ?? fallbackLabelFromUrl(group.url);
+}
+
+function labelFromTextInsideRect(rect: number[] | undefined, textItems: PdfTextItem[], roomName: string) {
+  if (!rect) return null;
+  const [x1, y1, x2, y2] = rect;
+  const matches = textItems
+    .filter((item) => isMaterialLabelText(item.str, roomName))
+    .filter((item) => {
+      const cx = item.x + item.width / 2;
+      const cy = item.y + item.height / 2;
+      return cx >= x1 - 4 && cx <= x2 + 4 && cy >= y1 - 4 && cy <= y2 + 4;
+    })
+    .map((item) => item.str);
+  return matches.length ? matches.join(" ") : null;
+}
+
+function nearestTextLabel(rect: number[] | undefined, textItems: PdfTextItem[], roomName: string) {
+  if (!rect) return null;
+  const [x1, y1, x2, y2] = rect;
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  const candidates = textItems
+    .filter((item) => isMaterialLabelText(item.str, roomName))
+    .map((item) => ({
+      item,
+      distance: Math.hypot(item.x + item.width / 2 - cx, item.y + item.height / 2 - cy),
+    }))
+    .sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.distance < 120 ? candidates[0].item.str : null;
+}
+
+function isMaterialLabelText(value: string, roomName: string) {
+  const cleaned = cleanItemLabel(value);
+  const n = normalize(cleaned);
+  if (!n) return false;
+  if (normalize(roomName) === n) return false;
+  if (roomNameFromSectionHeading(cleaned)) return false;
+  if (/^https?:\/\//i.test(cleaned)) return false;
+  if (/^model\b|^color\b|^lever trim\b|^with\b|^finish\b|^baseboard$/.test(n)) return false;
+  if (/^\d/.test(n) && !/(inch|ft|in)\b/.test(n)) return false;
+  return true;
 }
