@@ -379,7 +379,7 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
                     product_url: null,
                     product_id: null,
                     color: null,
-                    scrape_status: null,
+                    scrape_status: "pending",
                     scrape_error: null,
                   })
                   .eq("id", existing.id)
