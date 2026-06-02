@@ -30,23 +30,12 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
     return score(a) - score(b) || (a.sort_order ?? 0) - (b.sort_order ?? 0);
   });
   const sketchups = images.filter(i => i.kind === "sketchup");
-  const selectedRendering = room.presentation_rendering_image_id
-    ? approvedRenders.find((image) => image.id === room.presentation_rendering_image_id)
-    : undefined;
-  const selectedSketch = room.presentation_sketchup_image_id
-    ? sketchups.find((image) => image.id === room.presentation_sketchup_image_id)
-    : undefined;
   const linkedSketchIds = new Set(approvedRenders.map(r => r.linked_sketchup_id).filter(Boolean));
-  const fallbackSketch = selectedSketch || sketchups[0];
+  const fallbackSketch = room.presentation_sketchup_image_id
+    ? sketchups.find((image) => image.id === room.presentation_sketchup_image_id) || sketchups[0]
+    : sketchups[0];
 
   const views: RoomData["views"] = [];
-  if (selectedRendering || selectedSketch) {
-    const hero = selectedRendering;
-    const sketch = selectedSketch || sketchups.find(s => s.id === selectedRendering?.linked_sketchup_id) || fallbackSketch;
-    if (hero || sketch) {
-      views.push({ hero, sketch, label: hero?.caption || sketch?.caption });
-    }
-  } else {
   for (const r of approvedRenders) {
     const sketch = sketchups.find(s => s.id === r.linked_sketchup_id) || fallbackSketch;
     views.push({ hero: r, sketch, label: r.caption });
@@ -57,7 +46,6 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
       // only add as standalone if there are no renderings (so we don't duplicate the fallback)
       if (approvedRenders.length === 0) views.push({ sketch: s });
     }
-  }
   }
   if (views.length === 0) views.push({ sketch: fallbackSketch });
 
@@ -119,6 +107,11 @@ function PresentationPage() {
   const updatePresentationPicks = async (roomId: string, patch: Record<string, string | string[] | null>) => {
     await db.updateRoom(roomId, patch as any);
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+  };
+
+  const updateRenderingSketchLink = async (roomId: string, renderingId: string, linkedSketchupId: string | null) => {
+    await db.updateRoomImage(renderingId, { linked_sketchup_id: linkedSketchupId });
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
   // Flat list of slides: cover + every view in every room
@@ -268,6 +261,7 @@ function PresentationPage() {
                 viewCount={data.views.length}
                 anchor={vi === 0 ? `room-${room.id}` : undefined}
                 onPick={editingPicks ? (patch) => updatePresentationPicks(room.id, patch) : undefined}
+                onUpdateViewSketch={editingPicks && view.hero ? (sketchupId) => updateRenderingSketchLink(room.id, view.hero.id, sketchupId) : undefined}
               />
             ))
           )}
@@ -338,7 +332,27 @@ function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { projec
   );
 }
 
-function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, onPick }: { project: any; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number; anchor?: string; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
+function RoomSpread({
+  project,
+  room,
+  data,
+  view,
+  viewIndex,
+  viewCount,
+  anchor,
+  onPick,
+  onUpdateViewSketch,
+}: {
+  project: any;
+  room: any;
+  data: RoomData;
+  view: RoomData["views"][number];
+  viewIndex: number;
+  viewCount: number;
+  anchor?: string;
+  onPick?: (patch: Record<string, string | string[] | null>) => void;
+  onUpdateViewSketch?: (sketchupId: string | null) => void;
+}) {
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
   return (
     <section id={anchor} className="bg-background border border-border print:border-0 print-page scroll-mt-24">
@@ -360,17 +374,6 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, o
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">No image yet</div>
           )}
-          {onPick && (
-            <div className="absolute top-4 left-4 z-10 print:hidden">
-              <ImagePickSelect
-                label="Presentation Rendering"
-                value={view.hero?.id ?? ""}
-                options={data.renderingOptions}
-                emptyLabel="Use default"
-                onChange={(id) => onPick({ presentation_rendering_image_id: id || null })}
-              />
-            </div>
-          )}
           {view.hero && (
             <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground pointer-events-none">
               <div className="eyebrow text-[10px] text-primary-foreground/80">Photoreal Visualization</div>
@@ -380,13 +383,25 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, o
             </div>
           )}
         </div>
-        <SpreadSidebar data={data} view={view} showSketch={showSketchInCard} onPick={onPick} />
+        <SpreadSidebar data={data} view={view} showSketch={showSketchInCard} onPick={onPick} onUpdateViewSketch={onUpdateViewSketch} />
       </div>
     </section>
   );
 }
 
-function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomData; view: RoomData["views"][number]; showSketch?: boolean; onPick?: (patch: Record<string, string | string[] | null>) => void }) {
+function SpreadSidebar({
+  data,
+  view,
+  showSketch = true,
+  onPick,
+  onUpdateViewSketch,
+}: {
+  data: RoomData;
+  view: RoomData["views"][number];
+  showSketch?: boolean;
+  onPick?: (patch: Record<string, string | string[] | null>) => void;
+  onUpdateViewSketch?: (sketchupId: string | null) => void;
+}) {
   const editing = !!onPick;
   const paletteItems = data.paletteMaterials.filter((material) => material.product?.image_url).slice(0, 4);
   const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
@@ -418,7 +433,13 @@ function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomDa
                 value={view.sketch?.id ?? ""}
                 options={data.sketchupOptions}
                 emptyLabel="Use default"
-                onChange={(id) => onPick({ presentation_sketchup_image_id: id || null })}
+                onChange={(id) => {
+                  if (view.hero) {
+                    onUpdateViewSketch?.(id || null);
+                    return;
+                  }
+                  onPick({ presentation_sketchup_image_id: id || null });
+                }}
               />
             </div>
           )}
