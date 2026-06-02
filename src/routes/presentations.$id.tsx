@@ -326,7 +326,6 @@ function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { projec
             {viewCount > 1 && <span className="ml-2 opacity-60">· View {viewIndex + 1} of {viewCount}</span>}
           </div>
           <h2 className="font-display text-4xl lg:text-6xl text-ink mt-2 leading-tight">{room.name}</h2>
-          {view.label && <div className="text-sm text-muted-foreground mt-1">{view.label}</div>}
         </div>
         <div className="relative bg-bone overflow-hidden flex-1 min-h-0">
           {view.hero ? (
@@ -378,7 +377,6 @@ function RoomSpread({
               {!view.visible && <span className="ml-2 text-destructive">· Hidden</span>}
             </div>
             <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">{room.name}</h2>
-            {view.label && <div className="text-sm text-muted-foreground mt-1">{view.label}</div>}
           </div>
           {onToggleViewVisibility && (
             <button
