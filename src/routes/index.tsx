@@ -110,7 +110,7 @@ function DashboardPage() {
 
         {canCreateInvoices && !isClientUser && (
           <section className="border border-border bg-bone/20 p-6 mb-12">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+            <div className="space-y-5">
               <div>
                 <div className="eyebrow mb-2">Service Documents</div>
                 <h2 className="font-display text-3xl">Pre-project builders</h2>
@@ -118,7 +118,7 @@ function DashboardPage() {
                   Create the invoice and timeline before the client officially becomes a project. When they accept or pay, create the project and attach the saved documents.
                 </p>
               </div>
-              <div className="flex w-full lg:w-auto flex-col sm:flex-row gap-3">
+              <div className="flex w-full flex-col gap-3">
                 <ServiceInvoiceCreator onSaved={() => qc.invalidateQueries({ queryKey: ["financialInvoices", "unattached"] })} />
                 <TimelineCreator onSaved={() => qc.invalidateQueries({ queryKey: ["projectTimelines", "unattached"] })} />
               </div>

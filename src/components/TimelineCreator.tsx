@@ -162,7 +162,7 @@ export function TimelineCreator({
             <button onClick={() => setDraft(null)} className="text-muted-foreground hover:text-ink"><X className="w-5 h-5" /></button>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_460px] gap-8">
+          <div className="space-y-8">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <ReviewField label="Timeline Title" value={draft.title} onChange={(value) => updateDraft({ title: value })} />
@@ -236,7 +236,8 @@ function ReviewField({ label, value, onChange, type = "text" }: { label: string;
 
 export function TimelinePreview({ draft }: { draft: TimelineDraft }) {
   return (
-    <div className="xl:sticky xl:top-6 self-start">
+    <div className="self-start">
+      <div className="eyebrow mb-3">Live Preview</div>
       <div className="bg-white border border-border p-8 text-black shadow-sm overflow-hidden">
         <TimelineDocument draft={draft} />
       </div>

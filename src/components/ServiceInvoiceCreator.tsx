@@ -241,7 +241,7 @@ export function ServiceInvoiceCreator({
             <button onClick={() => setServiceDraft(null)} className="text-muted-foreground hover:text-ink"><X className="w-5 h-5" /></button>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_460px] gap-8">
+          <div className="space-y-8">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
@@ -505,7 +505,8 @@ function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
   const percentTotal = draft.phases.reduce((sum, phase) => sum + (numberValue(phase.percent) ?? 0), 0);
 
   return (
-    <div className="xl:sticky xl:top-6 self-start">
+    <div className="self-start">
+      <div className="eyebrow mb-3">Live Preview</div>
       <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] xl:grid-cols-1 gap-5">
         <div className="bg-white border border-border p-5 text-black shadow-sm overflow-hidden">
           <div className="text-center mb-8">
