@@ -316,9 +316,22 @@ function BrandCover({ project, roomCount }: { project: any; roomCount?: number }
   );
 }
 
+function PresentationFooter() {
+  return (
+    <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2 text-center pointer-events-none print:bottom-4">
+      <div className="font-display text-ink uppercase leading-none tracking-[-0.07em] text-[clamp(2rem,4vw,4.25rem)] whitespace-nowrap">
+        MERAV INTERIORS
+      </div>
+      <div className="mt-2 text-[#9b9793] uppercase tracking-[0.38em] text-[clamp(0.45rem,0.85vw,0.75rem)] font-light">
+        By Katie Roberts
+      </div>
+    </div>
+  );
+}
+
 function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { project: any; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number }) {
   return (
-    <div className="w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone p-8 lg:p-12">
+    <div className="relative w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone px-8 pt-8 pb-24 lg:px-12 lg:pt-12 lg:pb-28">
       <div className="flex flex-col min-h-0">
         <div className="mb-4">
           <div className="eyebrow text-[11px]">
@@ -338,6 +351,7 @@ function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { projec
         </div>
       </div>
       <SpreadSidebar data={data} view={view} />
+      <PresentationFooter />
     </div>
   );
 }
@@ -367,7 +381,7 @@ function RoomSpread({
 }) {
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
   return (
-    <section id={anchor} className={`bg-bone border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
+    <section id={anchor} className={`relative bg-bone border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
       <div className="px-10 lg:px-14 pt-10 pb-6 print:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -394,7 +408,7 @@ function RoomSpread({
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-12 print:pb-6">
+      <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-28 print:pb-24">
         <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
           {view.hero ? (
             <img src={view.hero.url} alt={room.name} className="w-full h-full object-contain" />
@@ -414,6 +428,7 @@ function RoomSpread({
         </div>
         <SpreadSidebar data={data} view={view} showSketch={showSketchInCard} onPick={onPick} onUpdateViewSketch={onUpdateViewSketch} />
       </div>
+      <PresentationFooter />
     </section>
   );
 }
