@@ -76,6 +76,7 @@ function RoomPage() {
   const sketchups = images.filter(i => i.kind === "sketchup");
   const renderings = images.filter(i => i.kind === "rendering");
   const roomMaterialItems = projectMaterials.filter((it) => it.room_id === roomId && !it.not_needed);
+  const filledRoomMaterialCount = roomMaterialItems.filter(isMaterialItemFilled).length;
 
   const saveNotes = async (concept: string, notes: string) => {
     await db.updateRoom(roomId, { design_concept: concept, design_notes: notes });
@@ -110,7 +111,7 @@ function RoomPage() {
             {[
               ["sketchup", `SketchUp (${sketchups.length})`],
               ["selections", `Design Selections (${selections.length})`],
-              ["materials", `Materials (${roomMaterialItems.length})`],
+              ["materials", filledRoomMaterialCount > 0 ? `Materials (${filledRoomMaterialCount})` : "Materials"],
               ["renderings", `AI Renderings (${renderings.length})`],
               ["concept", "Concept & Notes"],
             ].map(([v, l]) => (
@@ -151,6 +152,17 @@ function RoomPage() {
         </Tabs>
       </div>
     </AppShell>
+  );
+}
+
+function isMaterialItemFilled(item: MaterialItem) {
+  return Boolean(
+    item.product_id ||
+    (item.product_url && item.product_url.trim()) ||
+    (item.color && item.color.trim()) ||
+    (item.notes && item.notes.trim()) ||
+    (item.cad_label && item.cad_label.trim()) ||
+    (typeof item.quantity === "number" && item.quantity > 0)
   );
 }
 
