@@ -4,11 +4,33 @@ import { buildClientProductName } from "@/lib/clientProductName";
 import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
 import { cleanUuid } from "@/lib/ids";
 
+const MATERIAL_PDF_IMPORT_BUCKET = "material-pdf-imports";
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function safeFileName(value: string) {
+  return (value || "materials.pdf")
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120) || "materials.pdf";
+}
+
+async function ensureImportBucket() {
+  const { data } = await supabaseAdmin.storage.getBucket(MATERIAL_PDF_IMPORT_BUCKET);
+  if (data) return;
+
+  const { error } = await supabaseAdmin.storage.createBucket(MATERIAL_PDF_IMPORT_BUCKET, {
+    public: false,
+    fileSizeLimit: 60 * 1024 * 1024,
+    allowedMimeTypes: ["application/pdf"],
+  });
+  if (error && !/already exists/i.test(error.message)) throw error;
 }
 
 function cleanImportedItems(value: unknown): ImportedPdfItem[] {
@@ -238,6 +260,15 @@ async function extractPdfItems(file: File): Promise<ImportedPdfItem[]> {
   return extractMaterialPdfItemsFromFile(file);
 }
 
+async function extractPdfItemsFromStorage(storagePath: string): Promise<ImportedPdfItem[]> {
+  const { data, error } = await supabaseAdmin.storage.from(MATERIAL_PDF_IMPORT_BUCKET).download(storagePath);
+  if (error) throw new Error(error.message);
+  const file = new File([await data.arrayBuffer()], storagePath.split("/").at(-1) || "materials.pdf", {
+    type: data.type || "application/pdf",
+  });
+  return extractPdfItems(file);
+}
+
 export const Route = createFileRoute("/api/import-materials-pdf")({
   server: {
     handlers: {
@@ -247,14 +278,38 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
           const body = isJsonRequest ? await request.json() : null;
           const form = isJsonRequest ? null : await request.formData();
           const projectId = cleanUuid(isJsonRequest ? body?.project_id : form?.get("project_id"));
+          const action = isJsonRequest ? String(body?.action ?? "") : "";
           const replaceExistingCustom = isJsonRequest
             ? body?.replace_existing_custom === true
             : form?.get("replace_existing_custom") === "true";
           const file = form?.get("pdf");
           if (!projectId) return json({ error: "Valid project_id required" }, 400);
+
+          if (action === "create_upload") {
+            await ensureImportBucket();
+            const storagePath = `${projectId}/${Date.now()}-${crypto.randomUUID()}-${safeFileName(String(body?.file_name ?? "materials.pdf"))}`;
+            const { data, error } = await supabaseAdmin.storage
+              .from(MATERIAL_PDF_IMPORT_BUCKET)
+              .createSignedUploadUrl(storagePath);
+            if (error) return json({ error: error.message }, 500);
+            return json({
+              bucket: MATERIAL_PDF_IMPORT_BUCKET,
+              path: storagePath,
+              token: data.token,
+            });
+          }
+
           if (!isJsonRequest && !(file instanceof File)) return json({ error: "PDF file required" }, 400);
 
-          const extracted = isJsonRequest ? cleanImportedItems(body?.items) : await extractPdfItems(file as File);
+          const storagePath = isJsonRequest ? String(body?.storage_path ?? "").trim() : "";
+          const extracted = storagePath
+            ? await extractPdfItemsFromStorage(storagePath)
+            : isJsonRequest
+              ? cleanImportedItems(body?.items)
+              : await extractPdfItems(file as File);
+          if (storagePath) {
+            await supabaseAdmin.storage.from(MATERIAL_PDF_IMPORT_BUCKET).remove([storagePath]);
+          }
           if (!extracted.length) return json({ error: "No linked material items were found in that PDF." }, 400);
           const suspiciousRoom = extracted.find((item) => suspiciousImportedRoomName(item.room_name))?.room_name;
           if (suspiciousRoom) {

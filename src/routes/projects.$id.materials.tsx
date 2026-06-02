@@ -19,8 +19,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
 import { cleanUuid, isUuid } from "@/lib/ids";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/projects/$id/materials")({
   head: () => ({ meta: [{ title: "Materials — MERAV Studio" }] }),
@@ -148,17 +148,8 @@ function MaterialsPage() {
     if (!projectId) return toast.error("Invalid project link.");
     setImportingPdf(true);
     try {
-      const useBrowserExtraction = file.size > DIRECT_PDF_UPLOAD_LIMIT;
-      const res = useBrowserExtraction
-        ? await fetch("/api/import-materials-pdf", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              project_id: projectId,
-              replace_existing_custom: true,
-              items: await extractMaterialPdfItemsFromFile(file),
-            }),
-          })
+      const res = file.size > DIRECT_PDF_UPLOAD_LIMIT
+        ? await importLargePdf(projectId, file)
         : await fetch("/api/import-materials-pdf", {
             method: "POST",
             body: pdfImportFormData(projectId!, file),
@@ -788,6 +779,38 @@ function Field({ label, value, onChange, className }: { label: string; value: st
       <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8" />
     </div>
   );
+}
+
+async function importLargePdf(projectId: string, file: File) {
+  const uploadRes = await fetch("/api/import-materials-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "create_upload",
+      project_id: projectId,
+      file_name: file.name,
+      content_type: file.type || "application/pdf",
+    }),
+  });
+  const uploadBody = await readJsonResponse(uploadRes);
+  if (!uploadRes.ok) throw new Error(uploadBody?.error || "Could not prepare PDF upload");
+
+  const { error: uploadError } = await supabase.storage
+    .from(uploadBody.bucket)
+    .uploadToSignedUrl(uploadBody.path, uploadBody.token, file, {
+      contentType: file.type || "application/pdf",
+    });
+  if (uploadError) throw new Error(uploadError.message || "Could not upload PDF");
+
+  return fetch("/api/import-materials-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: projectId,
+      replace_existing_custom: true,
+      storage_path: uploadBody.path,
+    }),
+  });
 }
 
 function pdfImportFormData(projectId: string, file: File) {
