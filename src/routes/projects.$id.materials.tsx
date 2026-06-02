@@ -388,6 +388,15 @@ function RoomMaterialsSection({
                           title={complete ? "Complete" : "Incomplete"}
                         />
                         <span className={it.not_needed ? "line-through text-muted-foreground" : ""}>{it.item_label}</span>
+                        <EditItemNameButton
+                          currentName={it.item_label}
+                          onSave={(nextName) =>
+                            update(it.id, {
+                              item_label: nextName,
+                              client_product_name: buildClientProductName(room.name, nextName),
+                            })
+                          }
+                        />
                         {!it.is_required && (
                           <span className="text-[10px] tracking-wider uppercase text-muted-foreground">Custom</span>
                         )}
@@ -556,6 +565,72 @@ function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSa
             className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save Room Name"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditItemNameButton({
+  currentName,
+  onSave,
+}: {
+  currentName: string;
+  onSave: (name: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(currentName);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const nextName = name.trim();
+    if (!nextName) {
+      toast.error("Item name required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(nextName);
+      toast.success(`Renamed item to ${nextName}`);
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setName(currentName);
+      }}
+    >
+      <DialogTrigger asChild>
+        <button type="button" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-ink">
+          <Pencil className="h-3 w-3" />
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">Edit Item Name</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label className="eyebrow">Item Name</Label>
+            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Pendant" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            This will also update the client product name for this row.
+          </p>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="w-full py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Item Name"}
           </button>
         </div>
       </DialogContent>
