@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem } from "@/lib/db";
+import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { useEffect, useState, useCallback, useMemo } from "react";
 
@@ -13,6 +13,8 @@ export const Route = createFileRoute("/presentations/$id")({
 
 type RoomData = {
   views: { hero?: any; sketch?: any; label?: string }[];
+  renderingOptions: RoomImage[];
+  sketchupOptions: RoomImage[];
   materials: MaterialItem[];
   paletteMaterials: MaterialItem[];
   cabinetProduct: any;
@@ -28,10 +30,23 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
     return score(a) - score(b) || (a.sort_order ?? 0) - (b.sort_order ?? 0);
   });
   const sketchups = images.filter(i => i.kind === "sketchup");
+  const selectedRendering = room.presentation_rendering_image_id
+    ? approvedRenders.find((image) => image.id === room.presentation_rendering_image_id)
+    : undefined;
+  const selectedSketch = room.presentation_sketchup_image_id
+    ? sketchups.find((image) => image.id === room.presentation_sketchup_image_id)
+    : undefined;
   const linkedSketchIds = new Set(approvedRenders.map(r => r.linked_sketchup_id).filter(Boolean));
-  const fallbackSketch = sketchups[0];
+  const fallbackSketch = selectedSketch || sketchups[0];
 
   const views: RoomData["views"] = [];
+  if (selectedRendering || selectedSketch) {
+    const hero = selectedRendering;
+    const sketch = selectedSketch || sketchups.find(s => s.id === selectedRendering?.linked_sketchup_id) || fallbackSketch;
+    if (hero || sketch) {
+      views.push({ hero, sketch, label: hero?.caption || sketch?.caption });
+    }
+  } else {
   for (const r of approvedRenders) {
     const sketch = sketchups.find(s => s.id === r.linked_sketchup_id) || fallbackSketch;
     views.push({ hero: r, sketch, label: r.caption });
@@ -42,6 +57,7 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
       // only add as standalone if there are no renderings (so we don't duplicate the fallback)
       if (approvedRenders.length === 0) views.push({ sketch: s });
     }
+  }
   }
   if (views.length === 0) views.push({ sketch: fallbackSketch });
 
@@ -61,6 +77,8 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
 
   return {
     views,
+    renderingOptions: approvedRenders,
+    sketchupOptions: sketchups,
     materials,
     paletteMaterials,
     cabinetProduct: pickProduct("Hardware"),
@@ -342,6 +360,17 @@ function RoomSpread({ project, room, data, view, viewIndex, viewCount, anchor, o
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">No image yet</div>
           )}
+          {onPick && (
+            <div className="absolute top-4 left-4 z-10 print:hidden">
+              <ImagePickSelect
+                label="Presentation Rendering"
+                value={view.hero?.id ?? ""}
+                options={data.renderingOptions}
+                emptyLabel="Use default"
+                onChange={(id) => onPick({ presentation_rendering_image_id: id || null })}
+              />
+            </div>
+          )}
           {view.hero && (
             <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground pointer-events-none">
               <div className="eyebrow text-[10px] text-primary-foreground/80">Photoreal Visualization</div>
@@ -382,6 +411,17 @@ function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomDa
               <div className="w-full h-full flex items-center justify-center text-[11px] text-muted-foreground">No SketchUp yet</div>
             )}
           </div>
+          {onPick && (
+            <div className="mt-3 print:hidden">
+              <ImagePickSelect
+                label="Design Model"
+                value={view.sketch?.id ?? ""}
+                options={data.sketchupOptions}
+                emptyLabel="Use default"
+                onChange={(id) => onPick({ presentation_sketchup_image_id: id || null })}
+              />
+            </div>
+          )}
         </Card>
       )}
 
@@ -450,6 +490,38 @@ function SpreadSidebar({ data, view, showSketch = true, onPick }: { data: RoomDa
         </div>
       )}
     </div>
+  );
+}
+
+function ImagePickSelect({
+  label,
+  value,
+  options,
+  emptyLabel,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: RoomImage[];
+  emptyLabel: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="eyebrow text-[10px] mb-1">{label}</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-border bg-background px-2 py-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground"
+      >
+        <option value="">{emptyLabel}</option>
+        {options.map((image, index) => (
+          <option key={image.id} value={image.id}>
+            {image.caption?.trim() || `${label} ${index + 1}`}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

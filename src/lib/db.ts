@@ -70,6 +70,8 @@ export interface Room {
   design_concept: string | null;
   design_notes: string | null;
   presentation_palette_item_ids: string[] | null;
+  presentation_rendering_image_id: string | null;
+  presentation_sketchup_image_id: string | null;
   presentation_cabinet_item_id: string | null;
   presentation_counter_item_id: string | null;
   presentation_faucet_item_id: string | null;
