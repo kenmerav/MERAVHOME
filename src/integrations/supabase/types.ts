@@ -615,6 +615,8 @@ export type Database = {
           presentation_cabinet_item_id: string | null
           presentation_counter_item_id: string | null
           presentation_faucet_item_id: string | null
+          presentation_overlay_body: string | null
+          presentation_overlay_label: string | null
           presentation_palette_item_ids: string[] | null
           project_id: string
           sort_order: number
@@ -629,6 +631,8 @@ export type Database = {
           presentation_cabinet_item_id?: string | null
           presentation_counter_item_id?: string | null
           presentation_faucet_item_id?: string | null
+          presentation_overlay_body?: string | null
+          presentation_overlay_label?: string | null
           presentation_palette_item_ids?: string[] | null
           project_id: string
           sort_order?: number
@@ -643,6 +647,8 @@ export type Database = {
           presentation_cabinet_item_id?: string | null
           presentation_counter_item_id?: string | null
           presentation_faucet_item_id?: string | null
+          presentation_overlay_body?: string | null
+          presentation_overlay_label?: string | null
           presentation_palette_item_ids?: string[] | null
           project_id?: string
           sort_order?: number

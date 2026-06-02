@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight, Eye, EyeOff, Type } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
@@ -22,6 +22,9 @@ type RoomData = {
   counter: MaterialItem | null;
   faucet: MaterialItem | any;
 };
+
+const DEFAULT_OVERLAY_LABEL = "Photoreal Visualization";
+const DEFAULT_OVERLAY_BODY = "A true-to-life preview of your space, designed to give you confidence in every material, finish, and detail.";
 
 function buildRoomData(room: any, images: any[], selections: any[], materials: MaterialItem[]): RoomData {
   const approvedRenders = images.filter(i => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false);
@@ -119,6 +122,16 @@ function PresentationPage() {
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
+  const updateSlideText = async (roomId: string, patch: Record<string, string | null>) => {
+    await db.updateRoom(roomId, patch as any);
+    qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+  };
+
+  const updateCoverText = async (patch: Record<string, string | null>) => {
+    await db.updateProject(projectId, patch as any);
+    qc.invalidateQueries({ queryKey: ["project", projectId] });
+  };
+
   // Flat list of slides: cover + every view in every room
   const slides = useMemo(() => {
     const list: { kind: "cover" } | any = [{ kind: "cover" }];
@@ -134,6 +147,7 @@ function PresentationPage() {
   const [presenting, setPresenting] = useState(false);
   const [slide, setSlide] = useState(0);
   const [editingPicks, setEditingPicks] = useState(false);
+  const [editingText, setEditingText] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || presenting) return;
@@ -225,6 +239,9 @@ function PresentationPage() {
             <button onClick={() => setEditingPicks((value) => !value)} className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors">
               {editingPicks ? "Done Editing" : "Edit Picks"}
             </button>
+            <button onClick={() => setEditingText((value) => !value)} className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors">
+              <Type className="w-4 h-4" /> {editingText ? "Done Text" : "Edit Text"}
+            </button>
             <button onClick={enterPresent} className="inline-flex items-center gap-2 px-5 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
               <Maximize2 className="w-4 h-4" /> Present
             </button>
@@ -252,7 +269,7 @@ function PresentationPage() {
 
         <div className="space-y-12 print:space-y-0">
           <section className="print:hidden bg-white border border-border min-h-[72vh]">
-            <BrandCover project={project} />
+            <BrandCover project={project} onTextChange={editingText ? updateCoverText : undefined} />
           </section>
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
           {roomData.map(({ room, data }) => {
@@ -273,6 +290,7 @@ function PresentationPage() {
                   const image = view.hero || view.sketch;
                   if (image) updateViewVisibility(room.id, image.id, !view.visible);
                 } : undefined}
+                onTextChange={editingText ? (patch) => updateSlideText(room.id, patch) : undefined}
               />
             ));
           })}
@@ -290,7 +308,9 @@ function CoverSlide({ project }: { project: any }) {
   );
 }
 
-function BrandCover({ project }: { project: any }) {
+function BrandCover({ project, onTextChange }: { project: any; onTextChange?: (patch: Record<string, string | null>) => void }) {
+  const editingText = !!onTextChange;
+  const conceptText = project.design_concept || "Conceptual Design";
   return (
     <div className="w-full h-full min-h-[inherit] flex items-center justify-center bg-white px-8 py-20 text-center">
       <div className="w-full">
@@ -300,12 +320,45 @@ function BrandCover({ project }: { project: any }) {
         <div className="mt-5 text-[#9b9793] uppercase tracking-[0.42em] text-[clamp(0.95rem,1.75vw,1.9rem)] font-light">
           By Katie Roberts
         </div>
-        <div className="mt-24 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight">
-          {project.name}
-        </div>
-        <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">
-          Conceptual Design
-        </div>
+        {editingText ? (
+          <div className="mx-auto mt-24 max-w-3xl space-y-5 print:hidden">
+            <input
+              key={`cover-name-${project.name}`}
+              defaultValue={project.name}
+              onBlur={(event) => onTextChange?.({ name: event.target.value.trim() || project.name })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              className="w-full border border-border bg-background px-3 py-2 text-center font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight"
+              aria-label="Cover project name"
+            />
+            <input
+              key={`cover-concept-${conceptText}`}
+              defaultValue={conceptText}
+              onBlur={(event) => onTextChange?.({ design_concept: event.target.value.trim() || null })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              className="w-full border border-border bg-background px-3 py-2 text-center font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light"
+              aria-label="Cover subtitle"
+            />
+          </div>
+        ) : (
+          <>
+            <div className="mt-24 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight">
+              {project.name}
+            </div>
+            <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">
+              {conceptText}
+            </div>
+          </>
+        )}
+        {editingText && (
+          <div className="hidden print:block">
+            <div className="mt-24 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight">{project.name}</div>
+            <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">{conceptText}</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -362,6 +415,7 @@ function RoomSpread({
   onPick,
   onUpdateViewSketch,
   onToggleViewVisibility,
+  onTextChange,
 }: {
   project: any;
   room: any;
@@ -373,8 +427,10 @@ function RoomSpread({
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
   onToggleViewVisibility?: () => void;
+  onTextChange?: (patch: Record<string, string | null>) => void;
 }) {
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
+  const editingText = !!onTextChange;
   return (
     <section id={anchor} className={`relative bg-bone border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
       <div className="px-10 lg:px-14 pt-10 pb-6 print:pt-6">
@@ -385,7 +441,20 @@ function RoomSpread({
               {viewCount > 1 && <span className="ml-2 opacity-60">· View {viewIndex + 1} of {viewCount}</span>}
               {!view.visible && <span className="ml-2 text-destructive">· Hidden</span>}
             </div>
-            <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">{room.name}</h2>
+            {editingText ? (
+              <input
+                key={`title-${room.id}-${room.name}`}
+                defaultValue={room.name}
+                onBlur={(event) => onTextChange?.({ name: event.target.value.trim() || room.name })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                className="mt-2 w-full max-w-xl border border-border bg-background px-3 py-2 font-display text-4xl lg:text-5xl text-ink leading-tight"
+                aria-label="Slide room title"
+              />
+            ) : (
+              <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">{room.name}</h2>
+            )}
           </div>
           {onToggleViewVisibility && (
             <button
@@ -413,11 +482,42 @@ function RoomSpread({
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">No image yet</div>
           )}
           {view.hero && (
-            <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground pointer-events-none">
-              <div className="eyebrow text-[10px] text-primary-foreground/80">Photoreal Visualization</div>
-              <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">
-                A true-to-life preview of your space, designed to give you confidence in every material, finish, and detail.
-              </p>
+            <div className={`absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground ${editingText ? "" : "pointer-events-none"}`}>
+              {editingText ? (
+                <div className="max-w-xl space-y-2 print:hidden">
+                  <input
+                    key={`label-${room.id}-${room.presentation_overlay_label || ""}`}
+                    defaultValue={room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
+                    onBlur={(event) => onTextChange?.({ presentation_overlay_label: event.target.value.trim() || null })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    className="w-full border border-white/40 bg-black/30 px-2 py-1 text-[10px] uppercase tracking-[0.28em] text-primary-foreground placeholder:text-primary-foreground/50"
+                    aria-label="Slide overlay label"
+                  />
+                  <textarea
+                    key={`body-${room.id}-${room.presentation_overlay_body || ""}`}
+                    defaultValue={room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
+                    onBlur={(event) => onTextChange?.({ presentation_overlay_body: event.target.value.trim() || null })}
+                    rows={2}
+                    className="w-full resize-none border border-white/40 bg-black/30 px-2 py-1 font-display text-sm lg:text-base leading-snug text-primary-foreground placeholder:text-primary-foreground/50"
+                    aria-label="Slide overlay body"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="eyebrow text-[10px] text-primary-foreground/80">{room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}</div>
+                  <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">
+                    {room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
+                  </p>
+                </>
+              )}
+              {editingText && (
+                <div className="hidden print:block">
+                  <div className="eyebrow text-[10px] text-primary-foreground/80">{room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}</div>
+                  <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">{room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}</p>
+                </div>
+              )}
             </div>
           )}
         </div>
