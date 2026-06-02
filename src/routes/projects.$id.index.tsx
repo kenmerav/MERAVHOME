@@ -2,9 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BookOpen, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal, Pencil } from "lucide-react";
+import { ArrowLeft, BookOpen, CalendarDays, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal, Pencil, FileText } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, PROJECT_LABELS, PROJECT_STATUSES, type ProjectLabel, type ProjectStatus } from "@/lib/db";
+import { db, PROJECT_LABELS, PROJECT_STATUSES, type ProjectLabel, type ProjectStatus, type ProjectTimeline } from "@/lib/db";
 import { StatusBadge } from "./index";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
+import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
 
 export const Route = createFileRoute("/projects/$id/")({
   head: () => ({ meta: [{ title: "Project — MERAV Studio" }] }),
@@ -37,6 +38,7 @@ function ProjectDetailPage() {
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: allImages = [] } = useQuery({ queryKey: ["projectImages", id], queryFn: async () => (await db.listProjectRoomImages(id)) ?? [] });
+  const { data: timelines = [] } = useQuery({ queryKey: ["projectTimelines", id], queryFn: async () => (await db.listProjectTimelines(id)) ?? [] });
   const { data: profile } = useQuery({
     queryKey: ["currentProfile"],
     queryFn: async () => {
@@ -140,6 +142,22 @@ function ProjectDetailPage() {
             </div>
           )}
         </div>
+
+        {timelines.length > 0 && (
+          <section className="mb-12 border border-border bg-bone/20 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-5">
+              <div>
+                <div className="eyebrow mb-2">Timeline</div>
+                <h2 className="font-display text-3xl">Project dates</h2>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {timelines.map((timeline) => (
+                <TimelineCard key={timeline.id} timeline={timeline} />
+              ))}
+            </div>
+          </section>
+        )}
 
         <div className="mt-8 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div>
@@ -265,6 +283,63 @@ function EditableProjectName({
       {name}
     </button>
   );
+}
+
+function TimelineCard({ timeline }: { timeline: ProjectTimeline }) {
+  const draft = timelineFromRaw(timeline.raw_text);
+  const milestones = draft?.milestones ?? [];
+
+  const openSavedTimeline = () => {
+    if (!timeline.html_data_url) return;
+    window.open(timeline.html_data_url, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div className="border border-border bg-background p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="eyebrow mb-2">{timeline.timeline_date || "Timeline"}</div>
+          <h3 className="font-display text-2xl leading-tight">{timeline.title || "Service Timeline"}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{timeline.project_name || timeline.client_name || "Project"}</p>
+        </div>
+        <CalendarDays className="w-5 h-5 text-muted-foreground" />
+      </div>
+
+      {milestones.length > 0 && (
+        <div className="mt-5 divide-y divide-border">
+          {milestones.slice(0, 5).map((milestone, index) => (
+            <div key={`${milestone.weekLabel}-${index}`} className="py-3 grid grid-cols-[110px_1fr] gap-4 text-sm">
+              <div className="font-medium">{milestone.weekLabel || `Week ${index + 1}`}</div>
+              <div>
+                <div className="line-clamp-2">{milestone.description}</div>
+                {milestone.estimatedDate && <div className="text-xs text-muted-foreground mt-1">{formatTimelineDate(milestone.estimatedDate)}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        {draft && (
+          <button type="button" onClick={() => printTimelineDraft(draft)} className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
+            <FileText className="w-4 h-4" /> Download PDF
+          </button>
+        )}
+        {timeline.html_data_url && (
+          <button type="button" onClick={openSavedTimeline} className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
+            Open Timeline
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatTimelineDate(value: string) {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 function DeleteProjectDialog({

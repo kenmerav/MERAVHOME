@@ -413,6 +413,53 @@ export type Database = {
         }
         Relationships: []
       }
+      project_timelines: {
+        Row: {
+          client_name: string | null
+          created_at: string
+          html_data_url: string | null
+          id: string
+          project_id: string | null
+          project_name: string | null
+          raw_text: string | null
+          timeline_date: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_name?: string | null
+          created_at?: string
+          html_data_url?: string | null
+          id?: string
+          project_id?: string | null
+          project_name?: string | null
+          raw_text?: string | null
+          timeline_date?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string | null
+          created_at?: string
+          html_data_url?: string | null
+          id?: string
+          project_id?: string | null
+          project_name?: string | null
+          raw_text?: string | null
+          timeline_date?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_timelines_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           approval_live: boolean

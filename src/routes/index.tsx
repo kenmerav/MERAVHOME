@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, Plus, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type ApprovalStatus, type FinancialInvoice, type Project, type Room, type RoomProduct } from "@/lib/db";
+import { db, type ApprovalStatus, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
+import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
 
 
@@ -111,13 +112,16 @@ function DashboardPage() {
           <section className="border border-border bg-bone/20 p-6 mb-12">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
               <div>
-                <div className="eyebrow mb-2">Service Invoices</div>
-                <h2 className="font-display text-3xl">Pre-project invoice builder</h2>
+                <div className="eyebrow mb-2">Service Documents</div>
+                <h2 className="font-display text-3xl">Pre-project builders</h2>
                 <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
-                  Create the invoice before the client officially becomes a project. When they accept or pay, create the project and attach this invoice.
+                  Create the invoice and timeline before the client officially becomes a project. When they accept or pay, create the project and attach the saved documents.
                 </p>
               </div>
-              <ServiceInvoiceCreator onSaved={() => qc.invalidateQueries({ queryKey: ["financialInvoices", "unattached"] })} />
+              <div className="flex w-full lg:w-auto flex-col sm:flex-row gap-3">
+                <ServiceInvoiceCreator onSaved={() => qc.invalidateQueries({ queryKey: ["financialInvoices", "unattached"] })} />
+                <TimelineCreator onSaved={() => qc.invalidateQueries({ queryKey: ["projectTimelines", "unattached"] })} />
+              </div>
             </div>
           </section>
         )}
@@ -320,10 +324,16 @@ export function NewProjectDialog() {
   const [selected, setSelected] = useState<string[]>([]);
   const [others, setOthers] = useState<string[]>([]);
   const [invoiceId, setInvoiceId] = useState("");
+  const [timelineId, setTimelineId] = useState("");
   const [busy, setBusy] = useState(false);
   const { data: unattachedInvoices = [] } = useQuery({
     queryKey: ["financialInvoices", "unattached"],
     queryFn: async () => (await db.listUnattachedFinancialInvoices()) ?? [],
+    enabled: open,
+  });
+  const { data: unattachedTimelines = [] } = useQuery({
+    queryKey: ["projectTimelines", "unattached"],
+    queryFn: async () => (await db.listUnattachedProjectTimelines()) ?? [],
     enabled: open,
   });
 
@@ -331,7 +341,7 @@ export function NewProjectDialog() {
     setSelected(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
 
   const reset = () => {
-    setName(""); setClient(""); setNotes(""); setSelected([]); setOthers([]); setInvoiceId("");
+    setName(""); setClient(""); setNotes(""); setSelected([]); setOthers([]); setInvoiceId(""); setTimelineId("");
   };
 
   const submit = async () => {
@@ -350,6 +360,9 @@ export function NewProjectDialog() {
       if (!p) throw new Error("Could not create project");
       if (invoiceId) {
         await db.attachFinancialInvoiceToProject(invoiceId, p.id);
+      }
+      if (timelineId) {
+        await db.attachProjectTimelineToProject(timelineId, p.id);
       }
 
       // Create rooms + seed material_items for each
@@ -388,6 +401,8 @@ export function NewProjectDialog() {
       qc.invalidateQueries({ queryKey: ["financialInvoices", "unattached"] });
       qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
       qc.invalidateQueries({ queryKey: ["financialInvoices", p.id] });
+      qc.invalidateQueries({ queryKey: ["projectTimelines", "unattached"] });
+      qc.invalidateQueries({ queryKey: ["projectTimelines", p.id] });
       setOpen(false);
       reset();
     } catch (e: any) {
@@ -445,6 +460,27 @@ export function NewProjectDialog() {
             </div>
           )}
 
+          {unattachedTimelines.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="eyebrow">Attach Timeline</Label>
+              <select
+                value={timelineId}
+                onChange={(e) => setTimelineId(e.target.value)}
+                className="h-10 w-full border border-input bg-background px-3 text-sm"
+              >
+                <option value="">No timeline attached yet</option>
+                {unattachedTimelines.map((timeline) => (
+                  <option key={timeline.id} value={timeline.id}>
+                    {timelineLabel(timeline)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Attach the pre-project service timeline so it follows this project for the team and client.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-3">
             <Label className="eyebrow">Rooms in this project</Label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -495,4 +531,11 @@ function invoiceLabel(invoice: FinancialInvoice) {
   const total = invoice.total_amount != null ? formatMoney(invoice.total_amount) : "No total";
   const date = invoice.invoice_date || "No date";
   return `${client} - ${total} - ${date}`;
+}
+
+function timelineLabel(timeline: ProjectTimeline) {
+  const owner = timeline.project_name || timeline.client_name || "Unassigned project";
+  const title = timeline.title || "Service timeline";
+  const date = timeline.timeline_date || "No date";
+  return `${owner} - ${title} - ${date}`;
 }

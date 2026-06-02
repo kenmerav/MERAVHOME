@@ -233,6 +233,19 @@ export interface FinancialInvoicePayment {
   updated_at: string;
 }
 
+export interface ProjectTimeline {
+  id: string;
+  project_id: string | null;
+  title: string | null;
+  project_name: string | null;
+  client_name: string | null;
+  timeline_date: string | null;
+  html_data_url: string | null;
+  raw_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface EmployeeTimeEntry {
   id: string;
   user_id: string;
@@ -491,6 +504,35 @@ export const db = {
     (await supabase.from("financial_invoice_payments").update(patch as any).eq("id", id).select().single()).data as FinancialInvoicePayment | null,
   deleteFinancialInvoice: async (id: string) =>
     supabase.from("financial_invoices").delete().eq("id", id),
+
+  /* PROJECT TIMELINES */
+  listProjectTimelines: async (projectId: string) =>
+    (await supabase
+      .from("project_timelines" as any)
+      .select("*")
+      .eq("project_id", projectId)
+      .order("timeline_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false })).data as ProjectTimeline[] | null,
+  listUnattachedProjectTimelines: async () =>
+    (await supabase
+      .from("project_timelines" as any)
+      .select("*")
+      .is("project_id", null)
+      .order("timeline_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })).data as ProjectTimeline[] | null,
+  createProjectTimeline: async (timeline: Omit<ProjectTimeline, "id" | "created_at" | "updated_at">) =>
+    (await supabase.from("project_timelines" as any).insert(timeline as any).select().single()).data as ProjectTimeline | null,
+  attachProjectTimelineToProject: async (timelineId: string, projectId: string) =>
+    (await supabase
+      .from("project_timelines" as any)
+      .update({ project_id: projectId } as any)
+      .eq("id", timelineId)
+      .select()
+      .single()).data as ProjectTimeline | null,
+  updateProjectTimeline: async (id: string, patch: Partial<ProjectTimeline>) =>
+    (await supabase.from("project_timelines" as any).update(patch as any).eq("id", id).select().single()).data as ProjectTimeline | null,
+  deleteProjectTimeline: async (id: string) =>
+    supabase.from("project_timelines" as any).delete().eq("id", id),
 
   /* HOURS */
   listEmployeeTimeEntries: async () =>
