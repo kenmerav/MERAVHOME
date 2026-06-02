@@ -5,6 +5,7 @@ import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
 import { cleanUuid } from "@/lib/ids";
 
 const MATERIAL_PDF_IMPORT_BUCKET = "material-pdf-imports";
+const MATERIAL_PDF_IMPORT_LIMIT = 25 * 1024 * 1024;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -23,11 +24,19 @@ function safeFileName(value: string) {
 
 async function ensureImportBucket() {
   const { data } = await supabaseAdmin.storage.getBucket(MATERIAL_PDF_IMPORT_BUCKET);
-  if (data) return;
+  if (data) {
+    const { error } = await supabaseAdmin.storage.updateBucket(MATERIAL_PDF_IMPORT_BUCKET, {
+      public: false,
+      fileSizeLimit: MATERIAL_PDF_IMPORT_LIMIT,
+      allowedMimeTypes: ["application/pdf"],
+    });
+    if (error) throw error;
+    return;
+  }
 
   const { error } = await supabaseAdmin.storage.createBucket(MATERIAL_PDF_IMPORT_BUCKET, {
     public: false,
-    fileSizeLimit: 60 * 1024 * 1024,
+    fileSizeLimit: MATERIAL_PDF_IMPORT_LIMIT,
     allowedMimeTypes: ["application/pdf"],
   });
   if (error && !/already exists/i.test(error.message)) throw error;
