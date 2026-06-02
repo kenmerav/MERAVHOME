@@ -226,6 +226,16 @@ async function generateRenderingImage({
 async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPayload, "roomId" | "sketchupId" | "sketchupUrl">> & EnqueueRenderingPayload & { placeholderId: string; origin: string }) {
   const { placeholderId, origin, roomId, sketchupCaption, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = payload;
   try {
+    const { data: currentPlaceholder } = await supabaseAdmin
+      .from("room_images")
+      .select("id, status")
+      .eq("id", placeholderId)
+      .maybeSingle();
+
+    if (!currentPlaceholder || (currentPlaceholder.status !== "queued" && currentPlaceholder.status !== "processing")) {
+      return;
+    }
+
     await supabaseAdmin
       .from("room_images")
       .update({ status: "processing", error_message: null })
@@ -246,6 +256,16 @@ async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPay
       preferredName: sketchupCaption || "rendering",
     });
 
+    const { data: latestPlaceholder } = await supabaseAdmin
+      .from("room_images")
+      .select("id, status")
+      .eq("id", placeholderId)
+      .maybeSingle();
+
+    if (!latestPlaceholder || latestPlaceholder.status !== "processing") {
+      return;
+    }
+
     await supabaseAdmin
       .from("room_images")
       .update({
@@ -258,6 +278,16 @@ async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPay
       .eq("id", placeholderId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";
+    const { data: latestPlaceholder } = await supabaseAdmin
+      .from("room_images")
+      .select("id")
+      .eq("id", placeholderId)
+      .maybeSingle();
+
+    if (!latestPlaceholder) {
+      return;
+    }
+
     await supabaseAdmin
       .from("room_images")
       .update({ status: "failed", error_message: message })

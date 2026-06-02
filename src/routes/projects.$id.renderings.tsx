@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch } from "lucide-react";
+import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type Material } from "@/lib/db";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -233,6 +233,17 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
+  const cancelActiveJobs = async () => {
+    const activeJobs = renderings.filter((rendering) => rendering.status === "queued" || rendering.status === "processing");
+    if (!activeJobs.length) return;
+    for (const job of activeJobs) {
+      await db.deleteRoomImage(job.id);
+    }
+    qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+    toast.success(activeJobs.length === 1 ? "Rendering canceled" : "Renderings canceled");
+  };
+
   return (
     <div className="border border-border p-3 flex flex-col">
       <div className="relative aspect-[4/3] bg-bone overflow-hidden mb-3">
@@ -248,19 +259,34 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
         <span className="text-[11px] text-muted-foreground">
           {renderings.filter(r => r.status === "complete").length} rendering{renderings.filter(r => r.status === "complete").length === 1 ? "" : "s"}
         </span>
-        <button
-          disabled={busy || disableActions || status === "processing" || status === "queued"}
-          onClick={run}
-          className={cn(
-            "px-3 py-1.5 text-xs inline-flex items-center gap-1.5",
-            (busy || disableActions || status === "processing" || status === "queued")
-              ? "bg-bone text-muted-foreground"
-              : "bg-ink text-primary-foreground hover:opacity-90"
+        <div className="flex items-center gap-2">
+          {(status === "processing" || status === "queued") && (
+            <button
+              disabled={disableActions}
+              onClick={cancelActiveJobs}
+              className={cn(
+                "px-3 py-1.5 text-xs inline-flex items-center gap-1.5 border border-destructive text-destructive",
+                disableActions ? "opacity-50 cursor-not-allowed" : "hover:bg-destructive hover:text-destructive-foreground",
+              )}
+            >
+              <X className="w-3 h-3" />
+              Stop
+            </button>
           )}
-        >
-          {status === "complete" ? <RefreshCw className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
-          {busy ? "Generating…" : status === "complete" ? "Regenerate" : "Generate"}
-        </button>
+          <button
+            disabled={busy || disableActions || status === "processing" || status === "queued"}
+            onClick={run}
+            className={cn(
+              "px-3 py-1.5 text-xs inline-flex items-center gap-1.5",
+              (busy || disableActions || status === "processing" || status === "queued")
+                ? "bg-bone text-muted-foreground"
+                : "bg-ink text-primary-foreground hover:opacity-90"
+            )}
+          >
+            {status === "complete" ? <RefreshCw className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+            {busy ? "Generating…" : status === "complete" ? "Regenerate" : "Generate"}
+          </button>
+        </div>
       </div>
 
       {renderings.length > 0 && (
@@ -325,6 +351,12 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
     qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
+  const cancel = async () => {
+    await db.deleteRoomImage(rendering.id);
+    qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+    toast.success("Rendering canceled");
+  };
   const download = () => {
     const a = document.createElement("a");
     a.href = rendering.url;
@@ -358,7 +390,17 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
 
   if (rendering.status !== "complete") {
     return (
-      <div className="aspect-[4/3] bg-bone flex flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground p-2 text-center">
+      <div className="relative aspect-[4/3] bg-bone flex flex-col items-center justify-center gap-2 text-[10px] text-muted-foreground p-2 text-center">
+        {(rendering.status === "queued" || rendering.status === "processing") && (
+          <button
+            type="button"
+            title="Stop rendering"
+            onClick={cancel}
+            className="absolute top-1.5 right-1.5 bg-background/95 p-1.5 hover:bg-background"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
         <span className="eyebrow text-[9px]">Version {version}</span>
         {rendering.status === "failed" ? (
           <span className="text-destructive">Failed: {rendering.error_message || "unknown"}</span>
