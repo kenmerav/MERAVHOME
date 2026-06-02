@@ -291,6 +291,12 @@ type PdfTextItem = {
   height: number;
 };
 
+type PdfTextLine = {
+  str: string;
+  x: number;
+  y: number;
+};
+
 type PdfAnnotation = {
   url?: string;
   contents?: string;
@@ -341,15 +347,19 @@ async function extractMaterialPdfItemsWithPdfjs(file: File): Promise<ExtractedMa
 }
 
 function pickRoomNameFromPageText(textItems: PdfTextItem[]) {
-  for (const item of textItems) {
-    const roomName = roomNameFromSectionHeading(item.str);
+  const lines = buildPageTextLines(textItems);
+  const topY = Math.max(-Infinity, ...lines.map((line) => line.y));
+  const headerLines = lines.filter((line) => line.y >= topY - 180);
+
+  for (const line of headerLines) {
+    const roomName = roomNameFromSectionHeading(line.str);
     if (roomName) return roomName;
   }
 
-  for (let index = 0; index < textItems.length; index += 1) {
-    const previous = textItems[index - 1]?.str ?? "";
-    const current = textItems[index].str;
-    const next = textItems[index + 1]?.str ?? "";
+  for (let index = 0; index < headerLines.length; index += 1) {
+    const previous = headerLines[index - 1]?.str ?? "";
+    const current = headerLines[index].str;
+    const next = headerLines[index + 1]?.str ?? "";
     const currentKey = normalize(current);
     const nextKey = normalize(next);
 
@@ -365,6 +375,31 @@ function pickRoomNameFromPageText(textItems: PdfTextItem[]) {
   }
 
   return null;
+}
+
+function buildPageTextLines(textItems: PdfTextItem[]) {
+  const sorted = [...textItems].sort((a, b) => b.y - a.y || a.x - b.x);
+  const lineGroups: PdfTextItem[][] = [];
+
+  for (const item of sorted) {
+    const line = lineGroups.find((group) => Math.abs(group[0].y - item.y) < 5);
+    if (line) {
+      line.push(item);
+    } else {
+      lineGroups.push([item]);
+    }
+  }
+
+  return lineGroups
+    .map((group): PdfTextLine => {
+      const ordered = [...group].sort((a, b) => a.x - b.x);
+      return {
+        str: ordered.map((item) => item.str).join(" ").replace(/\s+/g, " ").trim(),
+        x: Math.min(...ordered.map((item) => item.x)),
+        y: ordered.reduce((sum, item) => sum + item.y, 0) / ordered.length,
+      };
+    })
+    .filter((line) => line.str);
 }
 
 function annotationLabel(annotation: PdfAnnotation) {

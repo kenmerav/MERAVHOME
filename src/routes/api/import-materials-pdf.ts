@@ -60,6 +60,10 @@ function materialRoomLabelKey(roomId: string, label: string) {
   return `${roomId}::${materialMatchKey(label)}`;
 }
 
+function productUrlKey(productUrl: string | null | undefined) {
+  return String(productUrl ?? "").trim().toLowerCase();
+}
+
 function titleCase(value: string) {
   return value
     .trim()
@@ -267,10 +271,20 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
             createdRooms += 1;
           }
 
+          const expectedRoomIdsByProductUrl = new Map<string, Set<string>>();
+          for (const item of extracted) {
+            const room = roomByName.get(normalize(item.room_name));
+            const urlKey = productUrlKey(item.product_url);
+            if (!room?.id || !urlKey) continue;
+            const roomIdsForUrl = expectedRoomIdsByProductUrl.get(urlKey) ?? new Set<string>();
+            roomIdsForUrl.add(room.id);
+            expectedRoomIdsByProductUrl.set(urlKey, roomIdsForUrl);
+          }
+
           const roomIds = Array.from(new Set(Array.from(roomByName.values()).map((room: any) => room.id)));
           const { data: existingItems, error: itemsError } = await supabaseAdmin
             .from("material_items")
-            .select("id, room_id, item_label, product_url, quantity, color, sort_order")
+            .select("id, room_id, item_label, product_url, quantity, color, sort_order, is_required")
             .eq("project_id", projectId)
             .in("room_id", roomIds);
           if (itemsError) return json({ error: itemsError.message }, 500);
@@ -292,6 +306,7 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
 
           let createdItems = 0;
           let updatedItems = 0;
+          let removedWrongRoomItems = 0;
           const importedKeysThisRun = new Set<string>();
 
           for (const item of extracted) {
@@ -351,12 +366,36 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
             createdItems += 1;
           }
 
+          const wrongRoomImportedItems = (existingItems ?? []).filter((existing: any) => {
+            const urlKey = productUrlKey(existing.product_url);
+            const expectedRoomIds = expectedRoomIdsByProductUrl.get(urlKey);
+            return expectedRoomIds && !expectedRoomIds.has(existing.room_id);
+          });
+          for (const existing of wrongRoomImportedItems) {
+            const result = existing.is_required
+              ? await supabaseAdmin
+                  .from("material_items")
+                  .update({
+                    product_url: null,
+                    product_id: null,
+                    color: null,
+                    scrape_status: null,
+                    scrape_error: null,
+                  })
+                  .eq("id", existing.id)
+              : await supabaseAdmin.from("material_items").delete().eq("id", existing.id);
+            const { error } = result;
+            if (error) return json({ error: error.message }, 500);
+            removedWrongRoomItems += 1;
+          }
+
           return json({
             ok: true,
             imported: extracted.length,
             created_rooms: createdRooms,
             created_items: createdItems,
             updated_items: updatedItems,
+            removed_wrong_room_items: removedWrongRoomItems,
             room_names: Array.from(new Set(extracted.map((item) => item.room_name))),
           });
         } catch (e: any) {
