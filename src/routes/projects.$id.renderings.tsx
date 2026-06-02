@@ -79,12 +79,12 @@ function ProjectRenderingsPage() {
       setBusy(false);
       return;
     }
-    toast.success(`Generating ${tasks.length} rendering${tasks.length === 1 ? "" : "s"}…`);
-    for (const t of tasks) {
-      await generateRendering(t.roomId, t.sk, qc, id);
-    }
-    setBusy(false);
-    toast.success("Batch generation finished");
+  toast.success(`Queueing ${tasks.length} rendering${tasks.length === 1 ? "" : "s"}…`);
+  for (const t of tasks) {
+    await generateRendering(t.roomId, t.sk, qc, id);
+  }
+  setBusy(false);
+  toast.success("Batch queued");
   };
 
   if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
@@ -725,23 +725,6 @@ async function generateRendering(
   options: GenerateOptions = {},
 ) {
   const isRevision = Boolean(options.baseRendering);
-  // Create a placeholder rendering row in 'processing' state
-  const placeholder = await db.addRoomImage({
-    room_id: roomId, kind: "rendering", url: sk.url,
-    caption: isRevision
-      ? `Revision ${options.revisionNumber || 2} from ${sk.caption || "SketchUp"}`
-      : `Rendering from ${sk.caption || "SketchUp"}`,
-    linked_sketchup_id: sk.id,
-    status: "processing",
-    is_approved: false,
-    review_status: "draft",
-    revision_parent_id: options.baseRendering?.id ?? null,
-    revision_number: options.revisionNumber || 1,
-    revision_notes: options.revisionNotes || null,
-  });
-  qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
-  qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-
   try {
     // Build minimal context (room-level data) — fetch fresh
     const [room, selections, materials, project] = await Promise.all([
@@ -775,10 +758,18 @@ async function generateRendering(
     const res = await fetch("/api/generate-rendering", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        mode: "enqueue",
+        roomId,
+        sketchupId: sk.id,
+        sketchupCaption: sk.caption,
+        placeholderUrl: sk.url,
         sketchupUrl,
         referenceImageUrl: previousReferenceUrl,
         referenceImageUrls: revisionReferenceUrl ? [revisionReferenceUrl] : [],
         extraContext,
+        revisionParentId: options.baseRendering?.id ?? null,
+        revisionNumber: options.revisionNumber || 1,
+        revisionNotes: options.revisionNotes || null,
       }),
     });
     if (!res.ok) {
@@ -787,14 +778,12 @@ async function generateRendering(
         : await res.text();
       throw new Error(message || "Rendering generation failed");
     }
-    const { imageDataUrl } = (await res.json()) as { imageDataUrl: string };
+    const { placeholder } = (await res.json()) as { placeholder?: RoomImage };
     if (placeholder) {
-      await db.updateRoomImage(placeholder.id, { url: imageDataUrl, status: "complete", is_approved: false, review_status: "draft" });
+      qc.setQueryData<RoomImage[]>(["projectRoomImages", projectId], (current = []) => [placeholder, ...current]);
+      qc.setQueryData<RoomImage[]>(["roomImages", roomId], (current = []) => [placeholder, ...current]);
     }
   } catch (e: any) {
-    if (placeholder) {
-      await db.updateRoomImage(placeholder.id, { status: "failed", error_message: e?.message || "Generation failed" });
-    }
     toast.error(e?.message || "Generation failed");
   } finally {
     qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });

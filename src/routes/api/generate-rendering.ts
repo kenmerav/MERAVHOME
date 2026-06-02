@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const RENDERING_PROMPT = `Use the uploaded SketchUp rendering as the exact architectural and design reference.
 
@@ -102,6 +103,21 @@ OUTPUT:
 
 class ImageInputError extends Error {}
 
+type EnqueueRenderingPayload = {
+  mode?: "enqueue" | "sync";
+  roomId?: string;
+  sketchupId?: string;
+  sketchupCaption?: string | null;
+  placeholderUrl?: string;
+  sketchupUrl: string;
+  referenceImageUrl?: string;
+  referenceImageUrls?: string[];
+  extraContext?: string;
+  revisionParentId?: string | null;
+  revisionNumber?: number;
+  revisionNotes?: string | null;
+};
+
 function extensionForContentType(contentType: string) {
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
   if (contentType.includes("webp")) return "webp";
@@ -149,63 +165,172 @@ async function urlToImageFile(url: string, origin: string, fallbackName = "sketc
   return new File([buf], `${fallbackName}.${extensionForContentType(contentType)}`, { type: contentType });
 }
 
+async function generateRenderingImage({
+  origin,
+  sketchupUrl,
+  referenceImageUrl,
+  referenceImageUrls,
+  extraContext,
+}: {
+  origin: string;
+  sketchupUrl: string;
+  referenceImageUrl?: string;
+  referenceImageUrls?: string[];
+  extraContext?: string;
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
+
+  const image = await urlToImageFile(sketchupUrl, origin, "sketchup-reference");
+  const referenceImage = referenceImageUrl
+    ? await urlToImageFile(referenceImageUrl, origin, "previous-rendering")
+    : null;
+  const additionalReferenceImages = await Promise.all(
+    (referenceImageUrls ?? []).slice(0, 3).map((url, index) =>
+      urlToImageFile(url, origin, `revision-reference-${index + 1}`),
+    ),
+  );
+  const userText = extraContext
+    ? `${RENDERING_PROMPT}\n\nIf additional images are included, use them only as references for the requested revision details such as tile, wallpaper, fabric, color, finish, or styling direction. The first uploaded SketchUp image remains the exact architectural source of truth.\n\nAdditional design context:\n${extraContext}`
+    : RENDERING_PROMPT;
+
+  const form = new FormData();
+  form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
+  const imageInputs = [image, referenceImage, ...additionalReferenceImages].filter(Boolean) as File[];
+  const imageField = imageInputs.length > 1 ? "image[]" : "image";
+  for (const img of imageInputs) form.append(imageField, img);
+  form.append("prompt", userText);
+  form.append("size", "1536x1024");
+  form.append("quality", "high");
+
+  const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: form,
+  });
+
+  if (!imageRes.ok) {
+    const errText = await imageRes.text();
+    throw new Error(`OpenAI image error: ${errText}`);
+  }
+
+  const json = (await imageRes.json()) as { data?: Array<{ b64_json?: string }> };
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) throw new Error("No image returned by model");
+  return `data:image/png;base64,${b64}`;
+}
+
+async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPayload, "roomId" | "sketchupId" | "sketchupUrl">> & EnqueueRenderingPayload & { placeholderId: string; origin: string }) {
+  const { placeholderId, origin, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = payload;
+  try {
+    await supabaseAdmin
+      .from("room_images")
+      .update({ status: "processing", error_message: null })
+      .eq("id", placeholderId);
+
+    const imageDataUrl = await generateRenderingImage({
+      origin,
+      sketchupUrl,
+      referenceImageUrl,
+      referenceImageUrls,
+      extraContext,
+    });
+
+    await supabaseAdmin
+      .from("room_images")
+      .update({
+        url: imageDataUrl,
+        status: "complete",
+        is_approved: false,
+        review_status: "draft",
+        error_message: null,
+      })
+      .eq("id", placeholderId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Generation failed";
+    await supabaseAdmin
+      .from("room_images")
+      .update({ status: "failed", error_message: message })
+      .eq("id", placeholderId);
+  }
+}
+
 export const Route = createFileRoute("/api/generate-rendering")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         try {
-          const { sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = (await request.json()) as {
-            sketchupUrl: string;
-            referenceImageUrl?: string;
-            referenceImageUrls?: string[];
-            extraContext?: string;
-          };
+          const {
+            mode = "sync",
+            roomId,
+            sketchupId,
+            sketchupCaption,
+            sketchupUrl,
+            referenceImageUrl,
+            referenceImageUrls,
+            extraContext,
+            revisionParentId,
+            revisionNumber,
+            revisionNotes,
+          } = (await request.json()) as EnqueueRenderingPayload;
           if (!sketchupUrl) return new Response("sketchupUrl is required", { status: 400 });
 
-          const apiKey = process.env.OPENAI_API_KEY;
-          if (!apiKey) return new Response("OPENAI_API_KEY not configured", { status: 500 });
-
           const origin = new URL(request.url).origin;
-          const image = await urlToImageFile(sketchupUrl, origin, "sketchup-reference");
-          const referenceImage = referenceImageUrl
-            ? await urlToImageFile(referenceImageUrl, origin, "previous-rendering")
-            : null;
-          const additionalReferenceImages = await Promise.all(
-            (referenceImageUrls ?? []).slice(0, 3).map((url, index) =>
-              urlToImageFile(url, origin, `revision-reference-${index + 1}`),
-            ),
-          );
-          const userText = extraContext
-            ? `${RENDERING_PROMPT}\n\nIf additional images are included, use them only as references for the requested revision details such as tile, wallpaper, fabric, color, finish, or styling direction. The first uploaded SketchUp image remains the exact architectural source of truth.\n\nAdditional design context:\n${extraContext}`
-            : RENDERING_PROMPT;
+          if (mode === "enqueue") {
+            if (!roomId || !sketchupId) {
+              return Response.json({ error: "roomId and sketchupId are required for queued rendering." }, { status: 400 });
+            }
 
-          const form = new FormData();
-          form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
-          const imageInputs = [image, referenceImage, ...additionalReferenceImages].filter(Boolean) as File[];
-          const imageField = imageInputs.length > 1 ? "image[]" : "image";
-          for (const img of imageInputs) form.append(imageField, img);
-          form.append("prompt", userText);
-          form.append("size", "1536x1024");
-          form.append("quality", "high");
+            const { data: placeholder, error } = await supabaseAdmin
+              .from("room_images")
+              .insert({
+                room_id: roomId,
+                kind: "rendering",
+                url: placeholderUrl || sketchupUrl,
+                caption: revisionParentId
+                  ? `Revision ${revisionNumber || 2} from ${sketchupCaption || "SketchUp"}`
+                  : `Rendering from ${sketchupCaption || "SketchUp"}`,
+                linked_sketchup_id: sketchupId,
+                status: "queued",
+                is_approved: false,
+                review_status: "draft",
+                revision_parent_id: revisionParentId ?? null,
+                revision_number: revisionNumber || 1,
+                revision_notes: revisionNotes || null,
+                error_message: null,
+              })
+              .select()
+              .single();
 
-          const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: form,
-          });
+            if (error || !placeholder) {
+              return Response.json({ error: error?.message || "Could not create rendering job." }, { status: 500 });
+            }
 
-          if (!imageRes.ok) {
-            const errText = await imageRes.text();
-            return new Response(`OpenAI image error: ${errText}`, { status: imageRes.status });
+            void processQueuedRendering({
+              placeholderId: placeholder.id,
+              origin,
+              roomId,
+              sketchupId,
+              sketchupUrl,
+              referenceImageUrl,
+              referenceImageUrls,
+              extraContext,
+            });
+
+            return Response.json({ queued: true, placeholder });
           }
 
-          const json = (await imageRes.json()) as { data?: Array<{ b64_json?: string }> };
-          const b64 = json.data?.[0]?.b64_json;
-          if (!b64) return new Response("No image returned by model", { status: 502 });
+          const imageDataUrl = await generateRenderingImage({
+            origin,
+            sketchupUrl,
+            referenceImageUrl,
+            referenceImageUrls,
+            extraContext,
+          });
 
-          return Response.json({ imageDataUrl: `data:image/png;base64,${b64}` });
+          return Response.json({ imageDataUrl });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           return Response.json(

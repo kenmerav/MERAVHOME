@@ -62,7 +62,11 @@ function RoomPage() {
 
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: room } = useQuery({ queryKey: ["room", roomId], queryFn: () => db.getRoom(roomId) });
-  const { data: images = [] } = useQuery({ queryKey: ["roomImages", roomId], queryFn: async () => (await db.listRoomImages(roomId)) ?? [] });
+  const { data: images = [] } = useQuery({
+    queryKey: ["roomImages", roomId],
+    queryFn: async () => (await db.listRoomImages(roomId)) ?? [],
+    refetchInterval: 4000,
+  });
   const { data: selections = [] } = useQuery({ queryKey: ["roomProducts", roomId], queryFn: async () => (await db.listRoomProducts(roomId)) ?? [] });
   const { data: projectMaterials = [] } = useQuery({
     queryKey: ["materialItems", id],
@@ -554,10 +558,18 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: "enqueue",
+          roomId,
+          sketchupId: sk.id,
+          sketchupCaption: sk.caption,
+          placeholderUrl: sk.url,
           sketchupUrl,
           referenceImageUrl: previousReferenceUrl,
           referenceImageUrls: revisionReferenceUrl ? [revisionReferenceUrl] : [],
           extraContext,
+          revisionParentId: options.baseRendering?.id ?? null,
+          revisionNumber: options.revisionNumber || 1,
+          revisionNotes: options.revisionNotes || null,
         }),
       });
       if (!res.ok) {
@@ -566,21 +578,12 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
           : await res.text();
         throw new Error(message || "Rendering generation failed");
       }
-      const { imageDataUrl } = (await res.json()) as { imageDataUrl: string };
-      await db.addRoomImage({
-        room_id: roomId, kind: "rendering", url: imageDataUrl,
-        caption: options.baseRendering
-          ? `Revision ${options.revisionNumber || 2} from ${sk.caption || "SketchUp"}`
-          : `Rendering from ${sk.caption || "SketchUp"}`,
-        linked_sketchup_id: sk.id,
-        is_approved: false,
-        review_status: "draft",
-        revision_parent_id: options.baseRendering?.id ?? null,
-        revision_number: options.revisionNumber || 1,
-        revision_notes: options.revisionNotes || null,
-      });
+      const { placeholder } = (await res.json()) as { placeholder?: RoomImage };
+      if (placeholder) {
+        qc.setQueryData<RoomImage[]>(["roomImages", roomId], (current = []) => [placeholder, ...current]);
+      }
       qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-      toast.success(options.baseRendering ? "Revision generated" : "Rendering generated");
+      toast.success(options.baseRendering ? "Revision queued" : "Rendering queued");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
