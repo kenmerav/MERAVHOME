@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { db } from "@/lib/db";
+import { db, PROJECT_LABELS, type ProjectLabel } from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { formatMoney, procurementTotals } from "@/lib/money";
@@ -29,6 +29,7 @@ const DATE_RANGE_OPTIONS: Array<{ value: DateRangePreset; label: string }> = [
 
 function FinancialsOverviewPage() {
   const [dateRange, setDateRange] = useState<DateRangePreset>("all");
+  const [selectedLabels, setSelectedLabels] = useState<ProjectLabel[]>([]);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -62,7 +63,11 @@ function FinancialsOverviewPage() {
   const selectedRange = useMemo(() => getDateRange(dateRange), [dateRange]);
 
   const rows = useMemo(() => {
-    return projects.map((project) => {
+    const filteredProjects = selectedLabels.length
+      ? projects.filter((project) => project.project_label && selectedLabels.includes(project.project_label))
+      : projects;
+
+    return filteredProjects.map((project) => {
       const projectInvoices = invoices.filter((invoice) => invoice.project_id === project.id);
       const payments = projectInvoices.flatMap((invoice) =>
         (invoice.payments ?? []).filter((payment) => isInDateRange(payment.due_date || invoice.invoice_date || invoice.created_at, selectedRange)),
@@ -84,7 +89,7 @@ function FinancialsOverviewPage() {
         invoiceCount: projectInvoices.filter((invoice) => isInDateRange(invoice.invoice_date || invoice.created_at, selectedRange)).length,
       };
     }).sort((a, b) => b.totalProfit - a.totalProfit);
-  }, [invoices, procurementItems, projects, selectedRange, taxRate]);
+  }, [invoices, procurementItems, projects, selectedLabels, selectedRange, taxRate]);
 
   const totals = useMemo(() => rows.reduce((sum, row) => ({
     revenue: sum.revenue + row.revenue,
@@ -93,6 +98,22 @@ function FinancialsOverviewPage() {
     procurementProfit: sum.procurementProfit + row.procurementProfit,
     totalProfit: sum.totalProfit + row.totalProfit,
   }), { revenue: 0, paid: 0, due: 0, procurementProfit: 0, totalProfit: 0 }), [rows]);
+
+  const labelBreakdown = useMemo(() => {
+    const activeLabels = selectedLabels.length ? selectedLabels : PROJECT_LABELS;
+    return activeLabels.map((label) => {
+      const labelRows = rows.filter((row) => row.project.project_label === label);
+      const totalProfit = labelRows.reduce((sum, row) => sum + row.totalProfit, 0);
+      const revenue = labelRows.reduce((sum, row) => sum + row.revenue, 0);
+      return { label, projectCount: labelRows.length, revenue, totalProfit };
+    });
+  }, [rows, selectedLabels]);
+
+  const toggleLabel = (label: ProjectLabel) => {
+    setSelectedLabels((current) =>
+      current.includes(label) ? current.filter((item) => item !== label) : [...current, label],
+    );
+  };
 
   if (loadingProfile) {
     return <AppShell><div className="p-16 text-muted-foreground">Checking access...</div></AppShell>;
@@ -123,20 +144,57 @@ function FinancialsOverviewPage() {
           </p>
         </div>
 
-        <div className="mb-8 max-w-xs">
-          <label className="eyebrow mb-2 block" htmlFor="financial-date-range">Date Range</label>
-          <select
-            id="financial-date-range"
-            value={dateRange}
-            onChange={(event) => setDateRange(event.target.value as DateRangePreset)}
-            className="h-11 w-full border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ink"
-          >
-            {DATE_RANGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <div className="mb-8 grid gap-4 lg:grid-cols-[260px_1fr]">
+          <div>
+            <label className="eyebrow mb-2 block" htmlFor="financial-date-range">Date Range</label>
+            <select
+              id="financial-date-range"
+              value={dateRange}
+              onChange={(event) => setDateRange(event.target.value as DateRangePreset)}
+              className="h-11 w-full border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ink"
+            >
+              {DATE_RANGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="eyebrow">Project Type</div>
+              {selectedLabels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLabels([])}
+                  className="text-xs text-muted-foreground underline-offset-4 hover:text-ink hover:underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {PROJECT_LABELS.map((label) => {
+                const active = selectedLabels.includes(label);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => toggleLabel(label)}
+                    className={`h-11 border px-4 text-sm transition-colors ${
+                      active ? "border-ink bg-ink text-primary-foreground" : "border-border bg-background text-ink hover:border-ink"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {selectedLabels.length ? `Showing ${selectedLabels.join(", ")}` : "Showing all project types"}
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
@@ -145,6 +203,18 @@ function FinancialsOverviewPage() {
           <MoneyStat label="Due" value={totals.due} />
           <MoneyStat label="Procurement Profit" value={totals.procurementProfit} />
           <MoneyStat label="Total Profit" value={totals.totalProfit} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+          {labelBreakdown.map((item) => (
+            <div key={item.label} className="border border-border p-5 bg-bone/25">
+              <div className="eyebrow mb-2">{item.label}</div>
+              <div className="font-display text-3xl">{formatMoney(item.totalProfit)}</div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {item.projectCount} project{item.projectCount === 1 ? "" : "s"} · {formatMoney(item.revenue)} revenue
+              </div>
+            </div>
+          ))}
         </div>
 
         <div className="mobile-card-scroll border border-border">
