@@ -30,6 +30,7 @@ import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-mate
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
+import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
@@ -148,6 +149,11 @@ const ApiImportMaterialsPdfRoute = ApiImportMaterialsPdfRouteImport.update({
   path: '/api/import-materials-pdf',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiImageDataUrlRoute = ApiImageDataUrlRouteImport.update({
+  id: '/api/image-data-url',
+  path: '/api/image-data-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
   id: '/api/generate-rendering',
   path: '/api/generate-rendering',
@@ -219,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/procurement': typeof ProcurementRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
+  '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -254,6 +261,7 @@ export interface FileRoutesByTo {
   '/procurement': typeof ProcurementRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
+  '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -290,6 +298,7 @@ export interface FileRoutesById {
   '/procurement': typeof ProcurementRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
+  '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -327,6 +336,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
+    | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
@@ -362,6 +372,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
+    | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
@@ -397,6 +408,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/api/create-stripe-payment-link'
     | '/api/generate-rendering'
+    | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
@@ -433,6 +445,7 @@ export interface RootRouteChildren {
   ProcurementRoute: typeof ProcurementRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
+  ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
@@ -610,6 +623,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiImportMaterialsPdfRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/image-data-url': {
+      id: '/api/image-data-url'
+      path: '/api/image-data-url'
+      fullPath: '/api/image-data-url'
+      preLoaderRoute: typeof ApiImageDataUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/generate-rendering': {
       id: '/api/generate-rendering'
       path: '/api/generate-rendering'
@@ -705,6 +725,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProcurementRoute: ProcurementRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
+  ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiProjectsRoute: ApiProjectsRoute,

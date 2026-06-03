@@ -13,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Scissors,
   Trash2,
   Type,
   Upload,
@@ -93,6 +94,7 @@ function ProjectDesignBoardsPage() {
   const [boardScale, setBoardScale] = useState(1);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ProductCategory | "All">("All");
+  const [removingBackground, setRemovingBackground] = useState(false);
 
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
@@ -273,6 +275,20 @@ function ProjectDesignBoardsPage() {
     setSelectedId(null);
   };
 
+  const removeSelectedBackground = async () => {
+    if (!selected || selected.type !== "image" || !selected.src) return;
+    setRemovingBackground(true);
+    try {
+      const source = await imageSourceForCanvas(selected.src);
+      const cutout = await removeFlatImageBackground(source);
+      updateElement(selected.id, { src: cutout });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not remove background.");
+    } finally {
+      setRemovingBackground(false);
+    }
+  };
+
   const handleBoardDrop = async (event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const productJson = event.dataTransfer.getData("application/x-merav-product");
@@ -360,6 +376,9 @@ function ProjectDesignBoardsPage() {
               </ToolbarButton>
               <ToolbarButton onClick={() => moveLayer("back")} disabled={!selected}>
                 <ArrowDown className="h-4 w-4" /> Back
+              </ToolbarButton>
+              <ToolbarButton onClick={removeSelectedBackground} disabled={!selected || selected.type !== "image" || removingBackground}>
+                <Scissors className="h-4 w-4" /> {removingBackground ? "Cutting..." : "Remove BG"}
               </ToolbarButton>
               <ToolbarButton onClick={removeSelected} disabled={!selected} destructive>
                 <Trash2 className="h-4 w-4" /> Delete
@@ -508,6 +527,8 @@ function ProjectDesignBoardsPage() {
                 selected={selected}
                 products={products}
                 onUpdate={(patch) => updateElement(selected.id, patch)}
+                onRemoveBackground={removeSelectedBackground}
+                removingBackground={removingBackground}
               />
             )}
 
@@ -661,10 +682,14 @@ function SelectedPanel({
   selected,
   products,
   onUpdate,
+  onRemoveBackground,
+  removingBackground,
 }: {
   selected: BoardElement;
   products: Product[];
   onUpdate: (patch: Partial<BoardElement>) => void;
+  onRemoveBackground: () => void;
+  removingBackground: boolean;
 }) {
   const linkedProduct = selected.productId ? products.find((product) => product.id === selected.productId) : null;
 
@@ -705,6 +730,17 @@ function SelectedPanel({
       )}
       {selected.type === "image" && (
         <div className="space-y-3">
+          <button
+            type="button"
+            onClick={onRemoveBackground}
+            disabled={removingBackground}
+            className="inline-flex w-full items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Scissors className="h-4 w-4" /> {removingBackground ? "Removing background..." : "Remove Background"}
+          </button>
+          <p className="text-xs leading-relaxed text-stone-500">
+            Best for product images on white or solid backgrounds. Messy lifestyle photos may still need manual cleanup later.
+          </p>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
             Image Label
             <input
@@ -823,6 +859,117 @@ function productPlaceholderDataUrl(name: string) {
       <text x="260" y="238" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" letter-spacing="6" fill="#9b9389">PRODUCT IMAGE</text>
     </svg>
   `.replace(/\s+/g, " ").trim())}`;
+}
+
+async function imageSourceForCanvas(src: string) {
+  if (src.startsWith("data:image/")) return src;
+  const res = await fetch("/api/image-data-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageUrl: src }),
+  });
+  const body = await res.json();
+  if (!res.ok || !body?.image) throw new Error(body?.error || "Could not prepare image.");
+  return body.image as string;
+}
+
+function loadCanvasImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not load image."));
+    image.src = src;
+  });
+}
+
+async function removeFlatImageBackground(src: string) {
+  const image = await loadCanvasImage(src);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Could not edit image.");
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  removeFlatBackgroundPixels(imageData.data, canvas.width, canvas.height);
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, height: number, tolerance = 44) {
+  const background = averageCornerColor(data, width, height);
+  const visited = new Uint8Array(width * height);
+  const queue: number[] = [];
+
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const pixel = y * width + x;
+    if (visited[pixel]) return;
+    const index = pixel * 4;
+    if (data[index + 3] === 0) return;
+    if (colorDistance(data, index, background) > tolerance) return;
+    visited[pixel] = 1;
+    queue.push(pixel);
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
+
+  while (queue.length) {
+    const pixel = queue.shift()!;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    const index = pixel * 4;
+    const distance = colorDistance(data, index, background);
+    data[index + 3] = Math.max(0, Math.round(((tolerance - distance) / tolerance) * 40));
+
+    enqueue(x + 1, y);
+    enqueue(x - 1, y);
+    enqueue(x, y + 1);
+    enqueue(x, y - 1);
+  }
+}
+
+function averageCornerColor(data: Uint8ClampedArray, width: number, height: number): [number, number, number] {
+  const sampleSize = Math.max(4, Math.round(Math.min(width, height) * 0.025));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let count = 0;
+  const corners = [
+    [0, 0],
+    [width - sampleSize, 0],
+    [0, height - sampleSize],
+    [width - sampleSize, height - sampleSize],
+  ];
+
+  for (const [startX, startY] of corners) {
+    for (let y = startY; y < Math.min(height, startY + sampleSize); y += 1) {
+      for (let x = startX; x < Math.min(width, startX + sampleSize); x += 1) {
+        const index = (y * width + x) * 4;
+        r += data[index];
+        g += data[index + 1];
+        b += data[index + 2];
+        count += 1;
+      }
+    }
+  }
+
+  return [r / count, g / count, b / count];
+}
+
+function colorDistance(data: Uint8ClampedArray, index: number, color: [number, number, number]) {
+  const dr = data[index] - color[0];
+  const dg = data[index + 1] - color[1];
+  const db = data[index + 2] - color[2];
+  return Math.sqrt(dr * dr + dg * dg + db * db);
 }
 
 function loadBoardState(projectId: string): BoardState {
