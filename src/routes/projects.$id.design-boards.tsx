@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   ArrowDown,
@@ -11,7 +11,6 @@ import {
   Image as ImageIcon,
   MousePointer2,
   Plus,
-  RotateCcw,
   Search,
   Scissors,
   Trash2,
@@ -90,6 +89,7 @@ function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
   const boardRef = useRef<HTMLDivElement | null>(null);
   const copiedElementRef = useRef<BoardElement | null>(null);
+  const undoStackRef = useRef<BoardState[]>([]);
   const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -123,6 +123,19 @@ function ProjectDesignBoardsPage() {
   const imageElements = elements.filter((element) => element.type === "image");
   const allBoardDetailsHidden = imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
 
+  const pushUndo = useCallback(() => {
+    undoStackRef.current = [...undoStackRef.current.slice(-49), cloneBoardState(boardState)];
+  }, [boardState]);
+
+  const undoLastChange = useCallback(() => {
+    const previous = undoStackRef.current.at(-1);
+    if (!previous) return;
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    setBoardState(previous);
+    setSelectedId(null);
+    setDragMode(null);
+  }, []);
+
   const setElements = (updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
     setBoardState((current) => {
       const safePages = current.pages.length ? current.pages : defaultPages();
@@ -141,6 +154,7 @@ function ProjectDesignBoardsPage() {
   useEffect(() => {
     setBoardState(loadBoardState(id));
     setSelectedId(null);
+    undoStackRef.current = [];
   }, [id]);
 
   useEffect(() => {
@@ -205,6 +219,7 @@ function ProjectDesignBoardsPage() {
       const copiedElement = copiedElementRef.current;
       if (!copiedElement) return;
       event.preventDefault();
+      pushUndo();
       const copyItem = {
         ...copiedElement,
         id: crypto.randomUUID(),
@@ -216,13 +231,19 @@ function ProjectDesignBoardsPage() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [selectedPageId]);
+  }, [pushUndo, selectedPageId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditingText = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
-      if (isEditingText || !selectedId) return;
+      if (isEditingText) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undoLastChange();
+        return;
+      }
+      if (!selectedId) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selected) {
         event.preventDefault();
         copiedElementRef.current = selected;
@@ -235,14 +256,16 @@ function ProjectDesignBoardsPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, selectedId]);
+  }, [selected, selectedId, undoLastChange]);
 
   const updateElement = (elementId: string, patch: Partial<BoardElement>) => {
+    pushUndo();
     setElements((current) => current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)));
   };
 
   const toggleBoardDetails = () => {
     const shouldHide = !allBoardDetailsHidden;
+    pushUndo();
     setElements((current) =>
       current.map((element) => (element.type === "image" ? { ...element, hideDetails: shouldHide } : element)),
     );
@@ -250,12 +273,14 @@ function ProjectDesignBoardsPage() {
 
   const addElement = (element: Omit<BoardElement, "id" | "zIndex">) => {
     const next: BoardElement = { ...element, id: crypto.randomUUID(), zIndex: nextZIndex(elements) };
+    pushUndo();
     setElements((current) => [...current, next]);
     setSelectedId(next.id);
   };
 
   const addPage = () => {
     const nextPage: BoardPage = { id: crypto.randomUUID(), title: `Board ${pages.length + 1}`, roomId: null, elements: [] };
+    pushUndo();
     setBoardState((current) => ({
       selectedPageId: nextPage.id,
       pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
@@ -269,6 +294,7 @@ function ProjectDesignBoardsPage() {
   };
 
   const updateActivePage = (patch: Partial<BoardPage>) => {
+    pushUndo();
     setBoardState((current) => ({
       ...current,
       pages: current.pages.map((page) => (page.id === selectedPageId ? { ...page, ...patch } : page)),
@@ -284,6 +310,7 @@ function ProjectDesignBoardsPage() {
   const duplicateSelected = () => {
     if (!selected) return;
     const copyItem = { ...selected, id: crypto.randomUUID(), x: selected.x + 32, y: selected.y + 32, zIndex: nextZIndex(elements) };
+    pushUndo();
     setElements((current) => [...current, copyItem]);
     setSelectedId(copyItem.id);
   };
@@ -295,22 +322,20 @@ function ProjectDesignBoardsPage() {
     if (direction === "front") nextSorted.push(selected);
     else nextSorted.unshift(selected);
     const normalizedZ = new Map(nextSorted.map((element, index) => [element.id, (index + 1) * 10]));
+    pushUndo();
     setElements((current) => current.map((element) => ({ ...element, zIndex: normalizedZ.get(element.id) ?? element.zIndex })));
   };
 
   const removeSelected = () => {
     if (!selectedId) return;
+    pushUndo();
     setElements((current) => current.filter((element) => element.id !== selectedId));
-    setSelectedId(null);
-  };
-
-  const resetCurrentBoard = () => {
-    setElements([]);
     setSelectedId(null);
   };
 
   const removeSelectedBackground = async () => {
     if (!selected || selected.type !== "image" || !selected.src) return;
+    pushUndo();
     setRemovingBackground(true);
     try {
       const source = await imageSourceForCanvas(selected.src);
@@ -483,9 +508,10 @@ function ProjectDesignBoardsPage() {
                   selected={element.id === selectedId}
                   onSelect={() => setSelectedId(element.id)}
                   onChange={(patch) => updateElement(element.id, patch)}
-                  onStartMove={(event) => {
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    setSelectedId(element.id);
+	                  onStartMove={(event) => {
+	                    pushUndo();
+	                    event.currentTarget.setPointerCapture(event.pointerId);
+	                    setSelectedId(element.id);
                     setDragMode({
                       kind: "move",
                       id: element.id,
@@ -494,9 +520,10 @@ function ProjectDesignBoardsPage() {
                       originalPositions: { [element.id]: { x: element.x, y: element.y } },
                     });
                   }}
-                  onStartResize={(event) => {
-                    event.stopPropagation();
-                    event.currentTarget.setPointerCapture(event.pointerId);
+	                  onStartResize={(event) => {
+	                    event.stopPropagation();
+	                    pushUndo();
+	                    event.currentTarget.setPointerCapture(event.pointerId);
                     setSelectedId(element.id);
                     setDragMode({
                       kind: "resize",
@@ -550,13 +577,6 @@ function ProjectDesignBoardsPage() {
                   <div className="eyebrow mt-1">Linked</div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={resetCurrentBoard}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm hover:border-ink"
-              >
-                <RotateCcw className="h-4 w-4" /> Clear Current Board
-              </button>
               </div>
 
             {selected && (
@@ -658,18 +678,26 @@ function BoardObject({
         <>
           <img src={element.src} alt={element.label ?? ""} className="h-full w-full object-contain" draggable={false} />
           {!element.hideDetails && (element.label || element.productName) && (
-            <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 shadow-sm">
-              {element.label || element.productName}
-            </div>
+            element.link ? (
+              <a
+                href={normalizeExternalUrl(element.link)}
+                target="_blank"
+                rel="noreferrer"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 underline decoration-stone-400 underline-offset-4 shadow-sm"
+              >
+                {element.label || element.productName}
+              </a>
+            ) : (
+              <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 shadow-sm">
+                {element.label || element.productName}
+              </div>
+            )
           )}
           {!element.hideDetails && element.productId && (
             <div className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#1f4e5f] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white shadow-sm">
               Product
-            </div>
-          )}
-          {!element.hideDetails && element.link && (
-            <div className="pointer-events-none absolute right-1 top-1 rounded-full bg-white/90 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-stone-500 shadow-sm">
-              Link
             </div>
           )}
         </>
@@ -1063,6 +1091,16 @@ function defaultPages(): BoardPage[] {
 
 function storageKey(projectId: string) {
   return `merav-studio-design-boards-v2-${projectId}`;
+}
+
+function cloneBoardState(state: BoardState): BoardState {
+  return JSON.parse(JSON.stringify(state)) as BoardState;
+}
+
+function normalizeExternalUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return "#";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 function fileToDataUrl(file: File) {
