@@ -84,12 +84,15 @@ type DragMode =
 
 const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 1.25;
 
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
   const boardRef = useRef<HTMLDivElement | null>(null);
   const copiedElementRef = useRef<BoardElement | null>(null);
   const undoStackRef = useRef<BoardState[]>([]);
+  const hasCustomZoomRef = useRef(false);
   const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -164,7 +167,7 @@ function ProjectDesignBoardsPage() {
   useEffect(() => {
     const updateScale = () => {
       const width = boardRef.current?.parentElement?.clientWidth ?? BOARD_WIDTH;
-      setBoardScale(Math.min(1, Math.max(0.45, (width - 24) / BOARD_WIDTH)));
+      if (!hasCustomZoomRef.current) setBoardScale(Math.min(1, Math.max(MIN_ZOOM, (width - 24) / BOARD_WIDTH)));
     };
     updateScale();
     window.addEventListener("resize", updateScale);
@@ -301,6 +304,11 @@ function ProjectDesignBoardsPage() {
       pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
     }));
     setSelectedId(null);
+  };
+
+  const updateZoom = (zoomPercent: number) => {
+    hasCustomZoomRef.current = true;
+    setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
   };
 
   const selectPage = (pageId: string) => {
@@ -464,33 +472,7 @@ function ProjectDesignBoardsPage() {
           </div>
         </div>
 
-        <div className="border-b border-stone-200 bg-[#f8f6f1]">
-          <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-2 px-5 py-3">
-            <div className="mr-2 text-xs uppercase tracking-[0.22em] text-stone-500">Pages</div>
-            {pages.map((page, index) => (
-              <button
-                key={page.id}
-                type="button"
-                onClick={() => selectPage(page.id)}
-                className={cn(
-                  "border px-4 py-2 text-sm transition",
-                  page.id === selectedPageId ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-stone-700 hover:border-ink",
-                )}
-              >
-                {page.title || `Board ${index + 1}`}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={addPage}
-              className="inline-flex items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink"
-            >
-              <Plus className="h-4 w-4" /> Add New Page
-            </button>
-          </div>
-        </div>
-
-        <main className="relative mx-auto max-w-[1680px] px-5 py-5 pr-16">
+        <main className="relative mx-auto max-w-[1680px] px-5 py-5 pb-40 pr-16">
           <section className="overflow-auto rounded-xl border border-stone-200 bg-white/70 p-3 shadow-sm">
             <div
               ref={boardRef}
@@ -553,6 +535,50 @@ function ProjectDesignBoardsPage() {
               ))}
             </div>
           </section>
+
+          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-stone-200 bg-[#f6f4f0]/95 shadow-[0_-16px_50px_rgba(40,34,25,0.12)] backdrop-blur print:hidden">
+            <div className="flex items-center gap-4 px-4 py-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto pb-1">
+                {pages.map((page, index) => (
+                  <button
+                    key={page.id}
+                    type="button"
+                    onClick={() => selectPage(page.id)}
+                    className={cn(
+                      "group shrink-0 rounded-xl border bg-white p-1 text-left shadow-sm transition",
+                      page.id === selectedPageId ? "border-[#6d4cff] ring-2 ring-[#6d4cff]" : "border-stone-200 hover:border-ink",
+                    )}
+                  >
+                    <PageThumbnail page={page} pageNumber={index + 1} />
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={addPage}
+                  className="flex h-[82px] w-[130px] shrink-0 items-center justify-center gap-2 rounded-xl border border-dashed border-stone-300 bg-white text-sm text-ink transition hover:border-ink"
+                >
+                  <Plus className="h-4 w-4" /> Page
+                </button>
+              </div>
+
+              <div className="hidden shrink-0 items-center gap-3 md:flex">
+                <input
+                  type="range"
+                  min={Math.round(MIN_ZOOM * 100)}
+                  max={Math.round(MAX_ZOOM * 100)}
+                  value={Math.round(boardScale * 100)}
+                  onChange={(event) => updateZoom(Number(event.target.value))}
+                  className="w-44 accent-ink"
+                  aria-label="Board zoom"
+                />
+                <div className="w-12 text-right text-sm font-medium text-stone-600">{Math.round(boardScale * 100)}%</div>
+                <div className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-stone-700">Pages</div>
+                <div className="w-16 text-sm font-medium text-stone-600">
+                  {pages.findIndex((page) => page.id === selectedPageId) + 1} / {pages.length}
+                </div>
+              </div>
+            </div>
+          </div>
 
           <aside className="group fixed right-0 top-0 z-50 flex h-screen translate-x-[360px] transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden">
             <div className="mt-32 flex h-32 w-12 items-center justify-center rounded-l-xl border border-r-0 border-stone-200 bg-white shadow-sm">
@@ -661,6 +687,61 @@ function ProjectDesignBoardsPage() {
         </main>
       </div>
     </AppShell>
+  );
+}
+
+function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
+  const scale = 0.075;
+  const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
+
+  return (
+    <div className="flex items-end gap-2">
+      <div className="relative h-[68px] w-[106px] overflow-hidden rounded-lg border border-stone-100 bg-[#fbfaf7]">
+        <div
+          className="absolute left-0 top-0 origin-top-left"
+          style={{ width: BOARD_WIDTH, height: BOARD_HEIGHT, transform: `scale(${scale})` }}
+        >
+          {sortedElements.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center font-display text-[72px] text-stone-200">
+              {pageNumber}
+            </div>
+          )}
+          {sortedElements.map((element) => (
+            <div
+              key={element.id}
+              className="absolute overflow-hidden"
+              style={{
+                left: element.x,
+                top: element.y,
+                width: element.width,
+                height: element.height,
+                zIndex: element.zIndex,
+              }}
+            >
+              {element.type === "image" && element.src && <img src={element.src} alt="" className="h-full w-full object-contain" draggable={false} />}
+              {element.type === "shape" && <div className="h-full w-full" style={{ background: element.background ?? "#dcd9ce" }} />}
+              {element.type === "text" && (
+                <div
+                  className="flex h-full w-full items-center justify-center overflow-hidden text-center uppercase leading-tight"
+                  style={{
+                    color: element.color ?? "#1f1d1b",
+                    fontSize: element.fontSize ?? 24,
+                    letterSpacing: element.letterSpacing ?? 1,
+                    fontFamily: "var(--font-montserrat)",
+                  }}
+                >
+                  {element.text}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="max-w-[72px] pb-1">
+        <div className="text-sm font-medium text-ink">{pageNumber}</div>
+        <div className="truncate text-[11px] text-stone-500">{page.title || `Board ${pageNumber}`}</div>
+      </div>
+    </div>
   );
 }
 
