@@ -101,6 +101,9 @@ function ProjectDesignBoardsPage() {
   const saveTimeoutRef = useRef<number | null>(null);
   const remoteLoadedRef = useRef(false);
   const lastSavedJsonRef = useRef("");
+  const lastRemoteUpdatedAtRef = useRef("");
+  const pendingSaveJsonRef = useRef<string | null>(null);
+  const removingBackgroundRef = useRef(false);
   const applyingRemoteRef = useRef(false);
   const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -176,6 +179,19 @@ function ProjectDesignBoardsPage() {
     setElementsForPage(selectedPageId, updater);
   };
 
+  const shouldApplyRemoteBoard = (remoteJson: string, updatedAt?: string | null) => {
+    if (remoteJson === lastSavedJsonRef.current) return false;
+    if (removingBackgroundRef.current) return false;
+    if (pendingSaveJsonRef.current && remoteJson !== pendingSaveJsonRef.current) return false;
+    if (updatedAt && lastRemoteUpdatedAtRef.current && Date.parse(updatedAt) <= Date.parse(lastRemoteUpdatedAtRef.current)) return false;
+    return true;
+  };
+
+  const markRemoteBoardApplied = (remoteJson: string, updatedAt?: string | null) => {
+    lastSavedJsonRef.current = remoteJson;
+    if (updatedAt) lastRemoteUpdatedAtRef.current = updatedAt;
+  };
+
   useEffect(() => {
     const localState = loadBoardState(id);
     setBoardState(localState);
@@ -183,6 +199,9 @@ function ProjectDesignBoardsPage() {
     undoStackRef.current = [];
     remoteLoadedRef.current = false;
     lastSavedJsonRef.current = "";
+    lastRemoteUpdatedAtRef.current = "";
+    pendingSaveJsonRef.current = null;
+    removingBackgroundRef.current = false;
     applyingRemoteRef.current = false;
     setSaveStatus("loading");
   }, [id]);
@@ -209,16 +228,24 @@ function ProjectDesignBoardsPage() {
         setBoardState(localState);
         lastSavedJsonRef.current = localJson;
         remoteLoadedRef.current = true;
+        pendingSaveJsonRef.current = localJson;
         setSaveStatus("saving");
         void db.upsertDesignBoard(id, localState, profile?.id).then(
-          () => setSaveStatus("saved"),
-          () => setSaveStatus("error"),
+          (savedBoard) => {
+            pendingSaveJsonRef.current = null;
+            if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+            setSaveStatus("saved");
+          },
+          () => {
+            pendingSaveJsonRef.current = null;
+            setSaveStatus("error");
+          },
         );
         return;
       }
       applyingRemoteRef.current = true;
       setBoardState(remoteState);
-      lastSavedJsonRef.current = JSON.stringify(remoteState);
+      markRemoteBoardApplied(JSON.stringify(remoteState), sharedBoard.updated_at);
       remoteLoadedRef.current = true;
       setSaveStatus("saved");
       return;
@@ -233,10 +260,18 @@ function ProjectDesignBoardsPage() {
 
     const seedJson = JSON.stringify(localState);
     lastSavedJsonRef.current = seedJson;
+    pendingSaveJsonRef.current = seedJson;
     setSaveStatus("saving");
     void db.upsertDesignBoard(id, localState, profile?.id).then(
-      () => setSaveStatus("saved"),
-      () => setSaveStatus("error"),
+      (savedBoard) => {
+        pendingSaveJsonRef.current = null;
+        if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+        setSaveStatus("saved");
+      },
+      () => {
+        pendingSaveJsonRef.current = null;
+        setSaveStatus("error");
+      },
     );
   }, [canEditDesignBoards, id, loadingProfile, loadingSharedBoard, profile?.id, sharedBoard]);
 
@@ -250,14 +285,20 @@ function ProjectDesignBoardsPage() {
     const nextJson = JSON.stringify(boardState);
     if (nextJson === lastSavedJsonRef.current) return;
     if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+    pendingSaveJsonRef.current = nextJson;
     setSaveStatus("saving");
     saveTimeoutRef.current = window.setTimeout(() => {
       void db.upsertDesignBoard(id, boardState, profile?.id).then(
-        () => {
+        (savedBoard) => {
+          pendingSaveJsonRef.current = null;
           lastSavedJsonRef.current = JSON.stringify(boardState);
+          if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
           setSaveStatus("saved");
         },
-        () => setSaveStatus("error"),
+        () => {
+          pendingSaveJsonRef.current = null;
+          setSaveStatus("error");
+        },
       );
     }, 650);
 
@@ -270,9 +311,9 @@ function ProjectDesignBoardsPage() {
     if (!canEditDesignBoards || !remoteLoadedRef.current || !sharedBoard?.board_state || saveStatus === "saving") return;
     const remoteState = normalizeBoardState(sharedBoard.board_state);
     const remoteJson = JSON.stringify(remoteState);
-    if (remoteJson === lastSavedJsonRef.current) return;
+    if (!shouldApplyRemoteBoard(remoteJson, sharedBoard.updated_at)) return;
     applyingRemoteRef.current = true;
-    lastSavedJsonRef.current = remoteJson;
+    markRemoteBoardApplied(remoteJson, sharedBoard.updated_at);
     setBoardState(remoteState);
     setSelectedId(null);
     setSaveStatus("saved");
@@ -286,11 +327,12 @@ function ProjectDesignBoardsPage() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "design_boards", filter: `project_id=eq.${id}` },
         (payload) => {
-          const remoteState = normalizeBoardState((payload.new as { board_state?: unknown }).board_state);
+          const remoteRecord = payload.new as { board_state?: unknown; updated_at?: string | null };
+          const remoteState = normalizeBoardState(remoteRecord.board_state);
           const remoteJson = JSON.stringify(remoteState);
-          if (remoteJson === lastSavedJsonRef.current) return;
+          if (!shouldApplyRemoteBoard(remoteJson, remoteRecord.updated_at)) return;
           applyingRemoteRef.current = true;
-          lastSavedJsonRef.current = remoteJson;
+          markRemoteBoardApplied(remoteJson, remoteRecord.updated_at);
           setBoardState(remoteState);
           setSelectedId(null);
           setSaveStatus("saved");
@@ -300,11 +342,12 @@ function ProjectDesignBoardsPage() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "design_boards", filter: `project_id=eq.${id}` },
         (payload) => {
-          const remoteState = normalizeBoardState((payload.new as { board_state?: unknown }).board_state);
+          const remoteRecord = payload.new as { board_state?: unknown; updated_at?: string | null };
+          const remoteState = normalizeBoardState(remoteRecord.board_state);
           const remoteJson = JSON.stringify(remoteState);
-          if (remoteJson === lastSavedJsonRef.current) return;
+          if (!shouldApplyRemoteBoard(remoteJson, remoteRecord.updated_at)) return;
           applyingRemoteRef.current = true;
-          lastSavedJsonRef.current = remoteJson;
+          markRemoteBoardApplied(remoteJson, remoteRecord.updated_at);
           setBoardState(remoteState);
           setSelectedId(null);
           setSaveStatus("saved");
@@ -518,15 +561,18 @@ function ProjectDesignBoardsPage() {
 
   const removeSelectedBackground = async () => {
     if (!selected || selected.type !== "image" || !selected.src) return;
+    const targetId = selected.id;
     pushUndo();
+    removingBackgroundRef.current = true;
     setRemovingBackground(true);
     try {
       const source = await imageSourceForCanvas(selected.src);
       const cutout = await removeFlatImageBackground(source);
-      updateElement(selected.id, { src: cutout });
+      setElements((current) => current.map((element) => (element.id === targetId ? { ...element, src: cutout } : element)));
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not remove background.");
     } finally {
+      removingBackgroundRef.current = false;
       setRemovingBackground(false);
     }
   };
