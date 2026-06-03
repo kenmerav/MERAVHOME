@@ -1324,7 +1324,7 @@ async function imageSourceForCanvas(src: string) {
 }
 
 async function removeFlatImageBackground(src: string) {
-  const { default: removeBackground } = await import("@imgly/background-removal");
+  const { removeBackground } = await import("@imgly/background-removal");
   const cutout = await removeBackground(src, {
     device: "cpu",
     model: "isnet_fp16",
