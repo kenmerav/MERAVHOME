@@ -216,13 +216,12 @@ function ProjectDetailPage() {
                 <CheckCircle2 className="w-4 h-4" /> Client View
               </Link>
               {canViewProcurement(profile) && (
-                <Link
-                  to="/procurement"
-                  search={{ project: id }}
+                <a
+                  href={`/procurement?project=${id}`}
                   className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
                 >
                   <Truck className="w-4 h-4" /> Procurement
-                </Link>
+                </a>
               )}
               {canViewFinancials(profile) && (
                 <Link
