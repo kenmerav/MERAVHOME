@@ -1158,10 +1158,11 @@ async function removeFlatImageBackground(src: string) {
   return canvas.toDataURL("image/png");
 }
 
-function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, height: number, tolerance = 44) {
+function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, height: number, tolerance = 58) {
   const background = averageCornerColor(data, width, height);
   const visited = new Uint8Array(width * height);
   const queue: number[] = [];
+  const removed = new Uint8Array(width * height);
 
   const enqueue = (x: number, y: number) => {
     if (x < 0 || x >= width || y < 0 || y >= height) return;
@@ -1188,13 +1189,100 @@ function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, heig
     const x = pixel % width;
     const y = Math.floor(pixel / width);
     const index = pixel * 4;
-    const distance = colorDistance(data, index, background);
-    data[index + 3] = Math.max(0, Math.round(((tolerance - distance) / tolerance) * 40));
+    data[index + 3] = 0;
+    removed[pixel] = 1;
 
     enqueue(x + 1, y);
     enqueue(x - 1, y);
     enqueue(x, y + 1);
     enqueue(x, y - 1);
+  }
+
+  removeInteriorBackgroundIslands(data, width, height, background, visited, removed, tolerance);
+  softenCutoutEdges(data, width, height, removed);
+}
+
+function removeInteriorBackgroundIslands(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  background: [number, number, number],
+  visited: Uint8Array,
+  removed: Uint8Array,
+  tolerance: number,
+) {
+  const minIslandSize = Math.max(20, Math.round(width * height * 0.00045));
+  const maxProductHoleSize = Math.round(width * height * 0.08);
+
+  for (let startPixel = 0; startPixel < width * height; startPixel += 1) {
+    if (visited[startPixel] || removed[startPixel]) continue;
+    const startIndex = startPixel * 4;
+    if (data[startIndex + 3] === 0 || !isBackgroundLikePixel(data, startIndex, background, tolerance)) continue;
+
+    const component: number[] = [];
+    const queue = [startPixel];
+    visited[startPixel] = 1;
+    let touchesEdge = false;
+
+    while (queue.length) {
+      const pixel = queue.shift()!;
+      component.push(pixel);
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      if (x === 0 || x === width - 1 || y === 0 || y === height - 1) touchesEdge = true;
+
+      const neighbors = [pixel - 1, pixel + 1, pixel - width, pixel + width];
+      for (const next of neighbors) {
+        if (next < 0 || next >= width * height || visited[next] || removed[next]) continue;
+        const nextX = next % width;
+        if ((next === pixel - 1 && nextX === width - 1) || (next === pixel + 1 && nextX === 0)) continue;
+        const index = next * 4;
+        if (data[index + 3] === 0 || !isBackgroundLikePixel(data, index, background, tolerance)) continue;
+        visited[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    if (touchesEdge || (component.length >= minIslandSize && component.length <= maxProductHoleSize)) {
+      for (const pixel of component) {
+        data[pixel * 4 + 3] = 0;
+        removed[pixel] = 1;
+      }
+    }
+  }
+}
+
+function isBackgroundLikePixel(data: Uint8ClampedArray, index: number, background: [number, number, number], tolerance: number) {
+  const maxChannel = Math.max(data[index], data[index + 1], data[index + 2]);
+  const minChannel = Math.min(data[index], data[index + 1], data[index + 2]);
+  const lowSaturation = maxChannel - minChannel < 32;
+  const bright = maxChannel > 168;
+  return colorDistance(data, index, background) <= tolerance || (bright && lowSaturation && colorDistance(data, index, background) <= tolerance + 32);
+}
+
+function softenCutoutEdges(data: Uint8ClampedArray, width: number, height: number, removed: Uint8Array) {
+  const nextAlpha = new Uint8ClampedArray(width * height);
+
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const index = pixel * 4;
+    nextAlpha[pixel] = data[index + 3];
+    if (removed[pixel] || data[index + 3] === 0) continue;
+
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    let transparentNeighborCount = 0;
+    for (let yy = y - 1; yy <= y + 1; yy += 1) {
+      for (let xx = x - 1; xx <= x + 1; xx += 1) {
+        if (xx < 0 || xx >= width || yy < 0 || yy >= height || (xx === x && yy === y)) continue;
+        if (removed[yy * width + xx]) transparentNeighborCount += 1;
+      }
+    }
+
+    if (transparentNeighborCount >= 5) nextAlpha[pixel] = Math.min(nextAlpha[pixel], 210);
+  }
+
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    data[pixel * 4 + 3] = nextAlpha[pixel];
   }
 }
 
