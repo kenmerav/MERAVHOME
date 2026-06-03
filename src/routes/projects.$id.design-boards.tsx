@@ -516,7 +516,7 @@ function ProjectDesignBoardsPage() {
           </div>
         </div>
 
-        <main className="relative mx-auto max-w-[1680px] px-5 py-5 pb-40 pr-16">
+        <main className="relative mx-auto max-w-[1680px] px-5 py-5 pb-32 pr-16">
           <section
             ref={boardStripRef}
             className="overflow-x-auto overflow-y-hidden rounded-xl border border-stone-200 bg-white/70 p-3 shadow-sm"
@@ -618,16 +618,16 @@ function ProjectDesignBoardsPage() {
             </div>
           </section>
 
-          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-stone-200 bg-[#f6f4f0]/95 shadow-[0_-16px_50px_rgba(40,34,25,0.12)] backdrop-blur print:hidden">
-            <div className="flex items-center gap-4 px-4 py-3">
-              <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto pb-1">
+          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-stone-200 bg-[#f6f4f0]/95 shadow-[0_-12px_36px_rgba(40,34,25,0.1)] backdrop-blur print:hidden">
+            <div className="flex items-center gap-3 px-4 py-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-0.5">
                 {pages.map((page, index) => (
                   <button
                     key={page.id}
                     type="button"
                     onClick={() => selectPage(page.id)}
                     className={cn(
-                      "group shrink-0 rounded-xl border bg-white p-1 text-left shadow-sm transition",
+                      "group shrink-0 rounded-lg border bg-white p-0.5 text-left shadow-sm transition",
                       page.id === selectedPageId ? "border-[#6d4cff] ring-2 ring-[#6d4cff]" : "border-stone-200 hover:border-ink",
                     )}
                   >
@@ -637,25 +637,25 @@ function ProjectDesignBoardsPage() {
                 <button
                   type="button"
                   onClick={addPage}
-                  className="flex h-[82px] w-[130px] shrink-0 items-center justify-center gap-2 rounded-xl border border-dashed border-stone-300 bg-white text-sm text-ink transition hover:border-ink"
+                  className="flex h-[64px] w-[112px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-ink transition hover:border-ink"
                 >
-                  <Plus className="h-4 w-4" /> Page
+                  <Plus className="h-3.5 w-3.5" /> Page
                 </button>
               </div>
 
-              <div className="hidden shrink-0 items-center gap-3 md:flex">
+              <div className="hidden shrink-0 items-center gap-2 md:flex">
                 <input
                   type="range"
                   min={Math.round(MIN_ZOOM * 100)}
                   max={Math.round(MAX_ZOOM * 100)}
                   value={Math.round(boardScale * 100)}
                   onChange={(event) => updateZoom(Number(event.target.value))}
-                  className="w-44 accent-ink"
+                  className="w-36 accent-ink"
                   aria-label="Board zoom"
                 />
-                <div className="w-12 text-right text-sm font-medium text-stone-600">{Math.round(boardScale * 100)}%</div>
-                <div className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-stone-700">Pages</div>
-                <div className="w-16 text-sm font-medium text-stone-600">
+                <div className="w-10 text-right text-xs font-medium text-stone-600">{Math.round(boardScale * 100)}%</div>
+                <div className="rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700">Pages</div>
+                <div className="w-14 text-xs font-medium text-stone-600">
                   {pages.findIndex((page) => page.id === selectedPageId) + 1} / {pages.length}
                 </div>
               </div>
@@ -773,12 +773,12 @@ function ProjectDesignBoardsPage() {
 }
 
 function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
-  const scale = 0.075;
+  const scale = 0.058;
   const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
 
   return (
-    <div className="flex items-end gap-2">
-      <div className="relative h-[68px] w-[106px] overflow-hidden rounded-lg border border-stone-100 bg-[#fbfaf7]">
+    <div className="flex items-end gap-1.5">
+      <div className="relative h-[52px] w-[82px] overflow-hidden rounded-md border border-stone-100 bg-[#fbfaf7]">
         <div
           className="absolute left-0 top-0 origin-top-left"
           style={{ width: BOARD_WIDTH, height: BOARD_HEIGHT, transform: `scale(${scale})` }}
@@ -819,9 +819,9 @@ function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: numb
           ))}
         </div>
       </div>
-      <div className="max-w-[72px] pb-1">
-        <div className="text-sm font-medium text-ink">{pageNumber}</div>
-        <div className="truncate text-[11px] text-stone-500">{page.title || `Board ${pageNumber}`}</div>
+      <div className="max-w-[60px] pb-0.5">
+        <div className="text-xs font-medium text-ink">{pageNumber}</div>
+        <div className="truncate text-[10px] text-stone-500">{page.title || `Board ${pageNumber}`}</div>
       </div>
     </div>
   );
