@@ -243,6 +243,21 @@ function ProjectDesignBoardsPage() {
         undoLastChange();
         return;
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v") {
+        const copiedElement = copiedElementRef.current;
+        if (!copiedElement) return;
+        event.preventDefault();
+        pushUndo();
+        const copyItem = {
+          ...copiedElement,
+          id: crypto.randomUUID(),
+          x: copiedElement.x + 32,
+          y: copiedElement.y + 32,
+        };
+        setElements((current) => [...current, { ...copyItem, zIndex: nextZIndex(current) }]);
+        setSelectedId(copyItem.id);
+        return;
+      }
       if (!selectedId) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selected) {
         event.preventDefault();
@@ -256,7 +271,7 @@ function ProjectDesignBoardsPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, selectedId, undoLastChange]);
+  }, [pushUndo, selected, selectedId, undoLastChange]);
 
   const updateElement = (elementId: string, patch: Partial<BoardElement>) => {
     pushUndo();
