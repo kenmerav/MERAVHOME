@@ -37,6 +37,7 @@ type BoardElement = {
   height: number;
   zIndex: number;
   src?: string;
+  originalSrc?: string;
   label?: string;
   text?: string;
   background?: string;
@@ -519,16 +520,17 @@ function ProjectDesignBoardsPage() {
     if (!selected || selected.type !== "image" || !selected.src) return;
     const targetId = selected.id;
     const targetPageId = selectedPageId;
+    const originalSrc = selected.originalSrc || selected.src;
     pushUndo();
     removingBackgroundRef.current = true;
     localEditShieldUntilRef.current = Date.now() + 6000;
     setRemovingBackground(true);
     try {
-      const source = await imageSourceForCanvas(selected.src);
+      const source = await imageSourceForCanvas(originalSrc);
       const cutout = await removeFlatImageBackground(source);
       localEditShieldUntilRef.current = Date.now() + 6000;
       setElementsForPage(targetPageId, (current) =>
-        current.map((element) => (element.id === targetId ? { ...element, src: cutout } : element)),
+        current.map((element) => (element.id === targetId ? { ...element, originalSrc, src: cutout } : element)),
       );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not remove background.");
@@ -538,6 +540,15 @@ function ProjectDesignBoardsPage() {
       }, 1500);
       setRemovingBackground(false);
     }
+  };
+
+  const restoreSelectedOriginal = () => {
+    if (!selected || selected.type !== "image" || !selected.originalSrc) return;
+    const targetId = selected.id;
+    pushUndo();
+    setElements((current) =>
+      current.map((element) => (element.id === targetId ? { ...element, src: element.originalSrc, originalSrc: undefined } : element)),
+    );
   };
 
   const handleBoardDrop = async (event: ReactDragEvent<HTMLDivElement>, pageId = selectedPageId) => {
@@ -680,6 +691,9 @@ function ProjectDesignBoardsPage() {
               </ToolbarButton>
               <ToolbarButton onClick={removeSelectedBackground} disabled={!selected || selected.type !== "image" || removingBackground}>
                 <Scissors className="h-4 w-4" /> {removingBackground ? "Cutting..." : "Remove BG"}
+              </ToolbarButton>
+              <ToolbarButton onClick={restoreSelectedOriginal} disabled={!selected || selected.type !== "image" || !selected.originalSrc}>
+                Restore Original
               </ToolbarButton>
               <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
@@ -1345,7 +1359,7 @@ function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, heig
     if (visited[pixel]) return;
     const index = pixel * 4;
     if (data[index + 3] === 0) return;
-    if (!isBackgroundLikePixel(data, index, background, tolerance)) return;
+    if (colorDistance(data, index, background) > tolerance) return;
     visited[pixel] = 1;
     queue.push(pixel);
   };
@@ -1374,7 +1388,6 @@ function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, heig
   }
 
   removeInteriorBackgroundIslands(data, width, height, background, visited, removed, tolerance);
-  removeBackgroundHaze(data, width, height, background, removed, tolerance);
   softenCutoutEdges(data, width, height, removed);
 }
 
@@ -1387,8 +1400,8 @@ function removeInteriorBackgroundIslands(
   removed: Uint8Array,
   tolerance: number,
 ) {
-  const minIslandSize = Math.max(8, Math.round(width * height * 0.00008));
-  const maxProductHoleSize = Math.round(width * height * 0.22);
+  const minIslandSize = Math.max(20, Math.round(width * height * 0.00045));
+  const maxProductHoleSize = Math.round(width * height * 0.08);
 
   for (let startPixel = 0; startPixel < width * height; startPixel += 1) {
     if (visited[startPixel] || removed[startPixel]) continue;
@@ -1431,60 +1444,9 @@ function removeInteriorBackgroundIslands(
 function isBackgroundLikePixel(data: Uint8ClampedArray, index: number, background: [number, number, number], tolerance: number) {
   const maxChannel = Math.max(data[index], data[index + 1], data[index + 2]);
   const minChannel = Math.min(data[index], data[index + 1], data[index + 2]);
-  const lowSaturation = maxChannel - minChannel < 40;
-  const bright = maxChannel > 156;
-  const distance = colorDistance(data, index, background);
-  return distance <= tolerance || (bright && lowSaturation && distance <= tolerance + 54);
-}
-
-function removeBackgroundHaze(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  background: [number, number, number],
-  removed: Uint8Array,
-  tolerance: number,
-) {
-  const nextAlpha = new Uint8ClampedArray(width * height);
-  for (let pixel = 0; pixel < width * height; pixel += 1) {
-    nextAlpha[pixel] = data[pixel * 4 + 3];
-  }
-
-  for (let pixel = 0; pixel < width * height; pixel += 1) {
-    const index = pixel * 4;
-    if (removed[pixel] || data[index + 3] === 0) continue;
-    if (!isBackgroundLikePixel(data, index, background, tolerance + 10)) continue;
-
-    const x = pixel % width;
-    const y = Math.floor(pixel / width);
-    let transparentNeighborCount = 0;
-    let backgroundNeighborCount = 0;
-
-    for (let yy = y - 2; yy <= y + 2; yy += 1) {
-      for (let xx = x - 2; xx <= x + 2; xx += 1) {
-        if (xx < 0 || xx >= width || yy < 0 || yy >= height || (xx === x && yy === y)) continue;
-        const neighborPixel = yy * width + xx;
-        const neighborIndex = neighborPixel * 4;
-        if (removed[neighborPixel] || data[neighborIndex + 3] === 0) transparentNeighborCount += 1;
-        else if (isBackgroundLikePixel(data, neighborIndex, background, tolerance + 10)) backgroundNeighborCount += 1;
-      }
-    }
-
-    const inBackgroundField = transparentNeighborCount >= 4 || backgroundNeighborCount >= 18;
-    if (!inBackgroundField) continue;
-
-    const maxChannel = Math.max(data[index], data[index + 1], data[index + 2]);
-    const minChannel = Math.min(data[index], data[index + 1], data[index + 2]);
-    const lowSaturation = maxChannel - minChannel < 36;
-    if (!lowSaturation) continue;
-
-    nextAlpha[pixel] = transparentNeighborCount >= 7 ? 0 : Math.min(nextAlpha[pixel], 72);
-    if (nextAlpha[pixel] === 0) removed[pixel] = 1;
-  }
-
-  for (let pixel = 0; pixel < width * height; pixel += 1) {
-    data[pixel * 4 + 3] = nextAlpha[pixel];
-  }
+  const lowSaturation = maxChannel - minChannel < 32;
+  const bright = maxChannel > 168;
+  return colorDistance(data, index, background) <= tolerance || (bright && lowSaturation && colorDistance(data, index, background) <= tolerance + 32);
 }
 
 function softenCutoutEdges(data: Uint8ClampedArray, width: number, height: number, removed: Uint8Array) {
