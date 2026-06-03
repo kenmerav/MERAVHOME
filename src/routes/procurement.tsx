@@ -32,12 +32,16 @@ type ProductInvoiceSummary = {
 
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    project: typeof search.project === "string" ? search.project : undefined,
+  }),
   component: ProcurementPage,
 });
 
 function ProcurementPage() {
   const qc = useQueryClient();
-  const [projectFilter, setProjectFilter] = useState("__overall");
+  const search = Route.useSearch();
+  const [projectFilter, setProjectFilter] = useState(search.project ?? "__overall");
   const [roomFilters, setRoomFilters] = useState<string[]>([]);
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [vendorFilters, setVendorFilters] = useState<string[]>([]);
@@ -84,6 +88,13 @@ function ProcurementPage() {
   useEffect(() => {
     window.localStorage.setItem("merav.procurement.taxRate", taxRate);
   }, [taxRate]);
+  useEffect(() => {
+    setProjectFilter(search.project ?? "__overall");
+    setRoomFilters([]);
+    setCategoryFilters([]);
+    setVendorFilters([]);
+    setInvoiceFilter("__all");
+  }, [search.project]);
 
   const projectItems =
     projectFilter === "__overall"

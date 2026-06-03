@@ -2,11 +2,42 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BookOpen, CalendarDays, ClipboardList, LayoutTemplate, Plus, DoorOpen, Trash2, Sparkles, Image as ImageIcon, X, DollarSign, CheckCircle2, SlidersHorizontal, Pencil, FileText } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  CalendarDays,
+  ClipboardList,
+  LayoutTemplate,
+  Plus,
+  DoorOpen,
+  Trash2,
+  Sparkles,
+  Image as ImageIcon,
+  X,
+  DollarSign,
+  CheckCircle2,
+  SlidersHorizontal,
+  Pencil,
+  FileText,
+  Truck,
+} from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, PROJECT_LABELS, PROJECT_STATUSES, type ProjectLabel, type ProjectStatus, type ProjectTimeline } from "@/lib/db";
+import {
+  db,
+  PROJECT_LABELS,
+  PROJECT_STATUSES,
+  type ProjectLabel,
+  type ProjectStatus,
+  type ProjectTimeline,
+} from "@/lib/db";
 import { StatusBadge } from "./index";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -18,10 +49,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canViewFinancials } from "@/lib/permissions";
+import { canViewFinancials, canViewProcurement } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
 
@@ -35,10 +72,22 @@ function ProjectDetailPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
-  const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
-  const { data: allImages = [] } = useQuery({ queryKey: ["projectImages", id], queryFn: async () => (await db.listProjectRoomImages(id)) ?? [] });
-  const { data: timelines = [] } = useQuery({ queryKey: ["projectTimelines", id], queryFn: async () => (await db.listProjectTimelines(id)) ?? [] });
+  const { data: project } = useQuery({
+    queryKey: ["project", id],
+    queryFn: () => db.getProject(id),
+  });
+  const { data: rooms = [] } = useQuery({
+    queryKey: ["rooms", id],
+    queryFn: async () => (await db.listRooms(id)) ?? [],
+  });
+  const { data: allImages = [] } = useQuery({
+    queryKey: ["projectImages", id],
+    queryFn: async () => (await db.listProjectRoomImages(id)) ?? [],
+  });
+  const { data: timelines = [] } = useQuery({
+    queryKey: ["projectTimelines", id],
+    queryFn: async () => (await db.listProjectTimelines(id)) ?? [],
+  });
   const { data: profile } = useQuery({
     queryKey: ["currentProfile"],
     queryFn: async () => {
@@ -50,7 +99,11 @@ function ProjectDetailPage() {
   });
 
   if (!project) {
-    return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading…</div>
+      </AppShell>
+    );
   }
 
   const isClientUser = profile?.role === "Client";
@@ -62,7 +115,9 @@ function ProjectDetailPage() {
   };
 
   const setProjectLabel = async (label: string) => {
-    await db.updateProject(id, { project_label: label === "none" ? null : label as ProjectLabel });
+    await db.updateProject(id, {
+      project_label: label === "none" ? null : (label as ProjectLabel),
+    });
     qc.invalidateQueries({ queryKey: ["project", id] });
     qc.invalidateQueries({ queryKey: ["projects"] });
   };
@@ -70,7 +125,10 @@ function ProjectDetailPage() {
   return (
     <AppShell>
       <div className="page-pad max-w-[1500px]">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8"
+        >
           <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
         </Link>
 
@@ -92,41 +150,94 @@ function ProjectDetailPage() {
           </div>
           {!isClientUser && (
             <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
-              <Select value={project.status} onValueChange={v => setStatus(v as ProjectStatus)}>
-                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+              <Select value={project.status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  {PROJECT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  {PROJECT_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select value={project.project_label ?? "none"} onValueChange={setProjectLabel}>
-                <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="Project label" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-56">
+                  <SelectValue placeholder="Project label" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No label</SelectItem>
-                  {PROJECT_LABELS.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
+                  {PROJECT_LABELS.map((label) => (
+                    <SelectItem key={label} value={label}>
+                      {label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <CoverImageDialog projectId={id} currentUrl={project.cover_image_url} allImages={allImages} />
-              <Link to="/projects/$id/materials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <CoverImageDialog
+                projectId={id}
+                currentUrl={project.cover_image_url}
+                allImages={allImages}
+              />
+              <Link
+                to="/projects/$id/materials"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
                 <ClipboardList className="w-4 h-4" /> Materials
               </Link>
-              <Link to="/specbooks/$id" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <Link
+                to="/specbooks/$id"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
                 <BookOpen className="w-4 h-4" /> Spec Book
               </Link>
-              <Link to="/projects/$id/renderings" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <Link
+                to="/projects/$id/renderings"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
                 <Sparkles className="w-4 h-4" /> Renderings
               </Link>
-              <Link to="/projects/$id/approvals" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <Link
+                to="/projects/$id/approvals"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
                 <SlidersHorizontal className="w-4 h-4" /> Approval Setup
               </Link>
-              <Link to="/client/approvals/$projectId" params={{ projectId: id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+              <Link
+                to="/client/approvals/$projectId"
+                params={{ projectId: id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
                 <CheckCircle2 className="w-4 h-4" /> Client View
               </Link>
+              {canViewProcurement(profile) && (
+                <Link
+                  to="/procurement"
+                  search={{ project: id }}
+                  className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+                >
+                  <Truck className="w-4 h-4" /> Procurement
+                </Link>
+              )}
               {canViewFinancials(profile) && (
-                <Link to="/projects/$id/financials" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+                <Link
+                  to="/projects/$id/financials"
+                  params={{ id }}
+                  className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+                >
                   <DollarSign className="w-4 h-4" /> Financials
                 </Link>
               )}
-              <Link to="/projects/$id/presentation" params={{ id }} className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm">
+              <Link
+                to="/projects/$id/presentation"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-ink text-primary-foreground text-sm"
+              >
                 <LayoutTemplate className="w-4 h-4" /> Presentation
               </Link>
               {profile?.is_owner && profile.role === "Admin" && (
@@ -163,7 +274,9 @@ function ProjectDetailPage() {
           <div>
             <div className="eyebrow mb-2">Rooms</div>
             <h2 className="font-display text-3xl">Project rooms</h2>
-            <p className="text-sm text-muted-foreground mt-1">Every selection, rendering, presentation, and spec is tied to a room.</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Every selection, rendering, presentation, and spec is tied to a room.
+            </p>
           </div>
           {!isClientUser && <AddRoomDialog projectId={id} />}
         </div>
@@ -172,11 +285,15 @@ function ProjectDetailPage() {
           <div className="border border-dashed border-border py-20 text-center">
             <DoorOpen className="w-6 h-6 mx-auto text-muted-foreground mb-3" />
             <p className="font-display text-2xl">Start by adding the first room</p>
-            <p className="text-sm text-muted-foreground mt-2">e.g. Kitchen, Pantry, Powder Bath, Primary Bath…</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              e.g. Kitchen, Pantry, Powder Bath, Primary Bath…
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rooms.map(r => <RoomCard key={r.id} room={r} projectId={id} canDelete={!isClientUser} />)}
+            {rooms.map((r) => (
+              <RoomCard key={r.id} room={r} projectId={id} canDelete={!isClientUser} />
+            ))}
           </div>
         )}
 
@@ -240,8 +357,8 @@ function EditableProjectName({
       toast.success("Project name updated");
       setEditing(false);
       onSaved();
-    } catch (e: any) {
-      toast.error(e?.message || "Unable to update project name.");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Unable to update project name."));
       setValue(name);
     } finally {
       setSaving(false);
@@ -299,8 +416,12 @@ function TimelineCard({ timeline }: { timeline: ProjectTimeline }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="eyebrow mb-2">{timeline.timeline_date || "Timeline"}</div>
-          <h3 className="font-display text-2xl leading-tight">{timeline.title || "Service Timeline"}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{timeline.project_name || timeline.client_name || "Project"}</p>
+          <h3 className="font-display text-2xl leading-tight">
+            {timeline.title || "Service Timeline"}
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {timeline.project_name || timeline.client_name || "Project"}
+          </p>
         </div>
         <CalendarDays className="w-5 h-5 text-muted-foreground" />
       </div>
@@ -308,11 +429,18 @@ function TimelineCard({ timeline }: { timeline: ProjectTimeline }) {
       {milestones.length > 0 && (
         <div className="mt-5 divide-y divide-border">
           {milestones.slice(0, 5).map((milestone, index) => (
-            <div key={`${milestone.weekLabel}-${index}`} className="py-3 grid grid-cols-[110px_1fr] gap-4 text-sm">
+            <div
+              key={`${milestone.weekLabel}-${index}`}
+              className="py-3 grid grid-cols-[110px_1fr] gap-4 text-sm"
+            >
               <div className="font-medium">{milestone.weekLabel || `Week ${index + 1}`}</div>
               <div>
                 <div className="line-clamp-2">{milestone.description}</div>
-                {milestone.estimatedDate && <div className="text-xs text-muted-foreground mt-1">{formatTimelineDate(milestone.estimatedDate)}</div>}
+                {milestone.estimatedDate && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {formatTimelineDate(milestone.estimatedDate)}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -321,12 +449,20 @@ function TimelineCard({ timeline }: { timeline: ProjectTimeline }) {
 
       <div className="mt-5 flex flex-wrap gap-3">
         {draft && (
-          <button type="button" onClick={() => printTimelineDraft(draft)} className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
+          <button
+            type="button"
+            onClick={() => printTimelineDraft(draft)}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink"
+          >
             <FileText className="w-4 h-4" /> Download PDF
           </button>
         )}
         {timeline.html_data_url && (
-          <button type="button" onClick={openSavedTimeline} className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink">
+          <button
+            type="button"
+            onClick={openSavedTimeline}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm hover:border-ink"
+          >
             Open Timeline
           </button>
         )}
@@ -340,6 +476,10 @@ function formatTimelineDate(value: string) {
   if (!year || !month || !day) return value;
   const date = new Date(Number(year), Number(month) - 1, Number(day));
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function DeleteProjectDialog({
@@ -375,15 +515,21 @@ function DeleteProjectDialog({
       toast.success("Project deleted");
       setOpen(false);
       await onDeleted();
-    } catch (e: any) {
-      toast.error(e?.message || "Unable to delete project.");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, "Unable to delete project."));
     } finally {
       setDeleting(false);
     }
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setConfirmName(""); }}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setConfirmName("");
+      }}
+    >
       <AlertDialogTrigger asChild>
         <button className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-destructive/40 text-destructive text-sm hover:bg-destructive hover:text-destructive-foreground transition-colors">
           <Trash2 className="w-4 h-4" /> Delete
@@ -391,17 +537,28 @@ function DeleteProjectDialog({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="font-display text-2xl font-normal">Delete this project?</AlertDialogTitle>
+          <AlertDialogTitle className="font-display text-2xl font-normal">
+            Delete this project?
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            This permanently deletes the project, rooms, renderings, material checklist, selections, procurement links, and financial invoices. The global product catalog will stay intact.
+            This permanently deletes the project, rooms, renderings, material checklist, selections,
+            procurement links, and financial invoices. The global product catalog will stay intact.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-3">
           <Label className="eyebrow">Type project name to confirm</Label>
-          <Input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={projectName} />
+          <Input
+            value={confirmName}
+            onChange={(e) => setConfirmName(e.target.value)}
+            placeholder={projectName}
+          />
         </div>
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
-          <button type="button" onClick={() => setOpen(false)} className="px-5 py-2.5 border border-border text-sm">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="px-5 py-2.5 border border-border text-sm"
+          >
             Cancel
           </button>
           <button
@@ -418,18 +575,34 @@ function DeleteProjectDialog({
   );
 }
 
-function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: string }; projectId: string; canDelete: boolean }) {
+function RoomCard({
+  room,
+  projectId,
+  canDelete,
+}: {
+  room: { id: string; name: string };
+  projectId: string;
+  canDelete: boolean;
+}) {
   const qc = useQueryClient();
-  const { data: images = [] } = useQuery({ queryKey: ["roomImages", room.id], queryFn: async () => (await db.listRoomImages(room.id)) ?? [] });
-  const { data: selections = [] } = useQuery({ queryKey: ["roomProducts", room.id], queryFn: async () => (await db.listRoomProducts(room.id)) ?? [] });
+  const { data: images = [] } = useQuery({
+    queryKey: ["roomImages", room.id],
+    queryFn: async () => (await db.listRoomImages(room.id)) ?? [],
+  });
+  const { data: selections = [] } = useQuery({
+    queryKey: ["roomProducts", room.id],
+    queryFn: async () => (await db.listRoomProducts(room.id)) ?? [],
+  });
 
-  const sketchups = images.filter(i => i.kind === "sketchup").length;
-  const renderings = images.filter(i => i.kind === "rendering").length;
-  const hero = images.find(i => i.kind === "rendering") || images.find(i => i.kind === "sketchup");
+  const sketchups = images.filter((i) => i.kind === "sketchup").length;
+  const renderings = images.filter((i) => i.kind === "rendering").length;
+  const hero =
+    images.find((i) => i.kind === "rendering") || images.find((i) => i.kind === "sketchup");
 
   const remove = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!confirm(`Delete room "${room.name}"? This removes its selections, images, and specs.`)) return;
+    if (!confirm(`Delete room "${room.name}"? This removes its selections, images, and specs.`))
+      return;
     await db.deleteRoom(room.id);
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
     toast.success("Room deleted");
@@ -440,13 +613,15 @@ function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: st
     if (!name) return toast.error("Room name required.");
     if (name === room.name) return;
 
-    await db.updateRoom(room.id, { name } as any);
-    const materialItems = ((await db.listMaterialItemsByProject(projectId)) ?? []).filter((item) => item.room_id === room.id);
+    await db.updateRoom(room.id, { name });
+    const materialItems = ((await db.listMaterialItemsByProject(projectId)) ?? []).filter(
+      (item) => item.room_id === room.id,
+    );
     await Promise.all(
       materialItems.map((item) =>
         db.updateMaterialItem(item.id, {
           client_product_name: buildClientProductName(name, item.item_label),
-        } as any),
+        }),
       ),
     );
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
@@ -456,10 +631,23 @@ function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: st
   };
 
   return (
-    <Link to="/projects/$id/rooms/$roomId" params={{ id: projectId, roomId: room.id }} className="group block border border-border hover:border-ink transition-colors">
+    <Link
+      to="/projects/$id/rooms/$roomId"
+      params={{ id: projectId, roomId: room.id }}
+      className="group block border border-border hover:border-ink transition-colors"
+    >
       <div className="aspect-[4/3] bg-bone overflow-hidden">
-        {hero ? <img src={hero.url} alt={room.name} className="w-full h-full object-cover" loading="lazy" /> : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground font-display text-3xl">{room.name.charAt(0)}</div>
+        {hero ? (
+          <img
+            src={hero.url}
+            alt={room.name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground font-display text-3xl">
+            {room.name.charAt(0)}
+          </div>
         )}
       </div>
       <div className="p-5 flex items-start justify-between gap-3">
@@ -482,7 +670,13 @@ function RoomCard({ room, projectId, canDelete }: { room: { id: string; name: st
   );
 }
 
-function EditRoomNameDialog({ currentName, onSave }: { currentName: string; onSave: (name: string) => Promise<void> }) {
+function EditRoomNameDialog({
+  currentName,
+  onSave,
+}: {
+  currentName: string;
+  onSave: (name: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
   const [saving, setSaving] = useState(false);
@@ -524,7 +718,11 @@ function EditRoomNameDialog({ currentName, onSave }: { currentName: string; onSa
         <div className="space-y-4">
           <div>
             <Label className="eyebrow">Room Name</Label>
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Kitchen" />
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Kitchen"
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             This will also update this room's client product names.
@@ -571,18 +769,41 @@ function AddRoomDialog({ projectId }: { projectId: string }) {
         </button>
       </DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Add Room</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">Add Room</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
             <Label className="eyebrow">Room Name</Label>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Primary Bath" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Primary Bath"
+            />
           </div>
-          <button onClick={submit} className="w-full py-3 bg-ink text-primary-foreground text-sm">Add Room</button>
+          <button onClick={submit} className="w-full py-3 bg-ink text-primary-foreground text-sm">
+            Add Room
+          </button>
           <div className="pt-4 border-t border-border">
             <div className="eyebrow mb-2">Quick add</div>
             <div className="flex flex-wrap gap-2">
-              {["Kitchen","Pantry","Powder Bath","Primary Bath","Primary Bedroom","Great Room","Mudroom","Office"].map(n => (
-                <button key={n} onClick={() => quickAdd(n)} className="text-xs px-3 py-1.5 border border-border hover:border-ink">{n}</button>
+              {[
+                "Kitchen",
+                "Pantry",
+                "Powder Bath",
+                "Primary Bath",
+                "Primary Bedroom",
+                "Great Room",
+                "Mudroom",
+                "Office",
+              ].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => quickAdd(n)}
+                  className="text-xs px-3 py-1.5 border border-border hover:border-ink"
+                >
+                  {n}
+                </button>
               ))}
             </div>
           </div>
@@ -592,7 +813,15 @@ function AddRoomDialog({ projectId }: { projectId: string }) {
   );
 }
 
-function CoverImageDialog({ projectId, currentUrl, allImages }: { projectId: string; currentUrl: string | null; allImages: Array<{ id: string; url: string; kind: string; caption: string | null }> }) {
+function CoverImageDialog({
+  projectId,
+  currentUrl,
+  allImages,
+}: {
+  projectId: string;
+  currentUrl: string | null;
+  allImages: Array<{ id: string; url: string; kind: string; caption: string | null }>;
+}) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -633,14 +862,19 @@ function CoverImageDialog({ projectId, currentUrl, allImages }: { projectId: str
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
-        <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Set Cover Image</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">Set Cover Image</DialogTitle>
+        </DialogHeader>
         <div className="space-y-5">
           {currentUrl && (
             <div className="flex items-center gap-4">
               <div className="w-32 aspect-[4/3] bg-bone overflow-hidden border border-border">
                 <img src={currentUrl} alt="current cover" className="w-full h-full object-cover" />
               </div>
-              <button onClick={() => save(null)} className="text-xs inline-flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-ink">
+              <button
+                onClick={() => save(null)}
+                className="text-xs inline-flex items-center gap-1.5 px-3 py-1.5 border border-border hover:border-ink"
+              >
                 <X className="w-3.5 h-3.5" /> Remove cover
               </button>
             </div>
@@ -648,25 +882,50 @@ function CoverImageDialog({ projectId, currentUrl, allImages }: { projectId: str
 
           <div>
             <Label className="eyebrow">Upload image</Label>
-            <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading} />
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e) => onFile(e.target.files?.[0])}
+              disabled={uploading}
+            />
           </div>
 
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <Label className="eyebrow">Or paste image URL</Label>
-              <Input value={urlInput} onChange={e => setUrlInput(e.target.value)} placeholder="https://…" />
+              <Input
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="https://…"
+              />
             </div>
-            <button onClick={() => urlInput.trim() && save(urlInput.trim())} className="px-4 py-2 bg-ink text-primary-foreground text-sm">Use URL</button>
+            <button
+              onClick={() => urlInput.trim() && save(urlInput.trim())}
+              className="px-4 py-2 bg-ink text-primary-foreground text-sm"
+            >
+              Use URL
+            </button>
           </div>
 
           {allImages.length > 0 && (
             <div>
               <div className="eyebrow mb-2">Or pick from project images</div>
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-80 overflow-auto">
-                {allImages.map(img => (
-                  <button key={img.id} onClick={() => save(img.url)} className="group relative aspect-[4/3] bg-bone overflow-hidden border border-border hover:border-ink">
-                    <img src={img.url} alt={img.caption ?? ""} className="w-full h-full object-cover" loading="lazy" />
-                    <span className="absolute bottom-1 left-1 right-1 text-[10px] uppercase tracking-wider bg-ink/70 text-primary-foreground px-1.5 py-0.5 truncate">{img.kind}</span>
+                {allImages.map((img) => (
+                  <button
+                    key={img.id}
+                    onClick={() => save(img.url)}
+                    className="group relative aspect-[4/3] bg-bone overflow-hidden border border-border hover:border-ink"
+                  >
+                    <img
+                      src={img.url}
+                      alt={img.caption ?? ""}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    <span className="absolute bottom-1 left-1 right-1 text-[10px] uppercase tracking-wider bg-ink/70 text-primary-foreground px-1.5 py-0.5 truncate">
+                      {img.kind}
+                    </span>
                   </button>
                 ))}
               </div>
