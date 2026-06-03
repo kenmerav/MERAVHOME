@@ -89,6 +89,7 @@ const BOARD_HEIGHT = 900;
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
   const boardRef = useRef<HTMLDivElement | null>(null);
+  const copiedElementRef = useRef<BoardElement | null>(null);
   const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -192,8 +193,26 @@ function ProjectDesignBoardsPage() {
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditingText = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if (isEditingText) return;
       const file = Array.from(event.clipboardData?.files ?? []).find((item) => item.type.startsWith("image/"));
-      if (file) void addFile(file);
+      if (file) {
+        event.preventDefault();
+        void addFile(file);
+        return;
+      }
+      const copiedElement = copiedElementRef.current;
+      if (!copiedElement) return;
+      event.preventDefault();
+      const copyItem = {
+        ...copiedElement,
+        id: crypto.randomUUID(),
+        x: copiedElement.x + 32,
+        y: copiedElement.y + 32,
+      };
+      setElements((current) => [...current, { ...copyItem, zIndex: nextZIndex(current) }]);
+      setSelectedId(copyItem.id);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -204,6 +223,11 @@ function ProjectDesignBoardsPage() {
       const target = event.target as HTMLElement | null;
       const isEditingText = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
       if (isEditingText || !selectedId) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selected) {
+        event.preventDefault();
+        copiedElementRef.current = selected;
+        return;
+      }
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
         removeSelected();
@@ -211,7 +235,7 @@ function ProjectDesignBoardsPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId]);
+  }, [selected, selectedId]);
 
   const updateElement = (elementId: string, patch: Partial<BoardElement>) => {
     setElements((current) => current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)));
