@@ -265,6 +265,14 @@ export interface EmployeeTimeEntry {
   user?: Pick<UserProfile, "id" | "email" | "full_name" | "hourly_rate"> | null;
 }
 
+export interface DesignBoardRecord {
+  project_id: string;
+  board_state: unknown;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 async function getCurrentProjectAccess() {
   const { data: sessionData } = await supabase.auth.getSession();
   const userId = sessionData.session?.user.id;
@@ -301,6 +309,11 @@ async function getCurrentProjectAccess() {
 }
 
 export const db = {
+  getCurrentUserProfile: async () => {
+    const { profile } = await getCurrentProjectAccess();
+    return profile;
+  },
+
   /* PROJECTS */
   listProjects: async () => {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
@@ -537,6 +550,20 @@ export const db = {
     (await supabase.from("project_timelines" as any).update(patch as any).eq("id", id).select().single()).data as ProjectTimeline | null,
   deleteProjectTimeline: async (id: string) =>
     supabase.from("project_timelines" as any).delete().eq("id", id),
+
+  /* DESIGN BOARDS */
+  getDesignBoard: async (projectId: string) =>
+    (await supabase
+      .from("design_boards" as any)
+      .select("*")
+      .eq("project_id", projectId)
+      .maybeSingle()).data as DesignBoardRecord | null,
+  upsertDesignBoard: async (projectId: string, boardState: unknown, updatedBy?: string | null) =>
+    (await supabase
+      .from("design_boards" as any)
+      .upsert({ project_id: projectId, board_state: boardState, updated_by: updatedBy ?? null } as any, { onConflict: "project_id" })
+      .select()
+      .single()).data as DesignBoardRecord | null,
 
   /* HOURS */
   listEmployeeTimeEntries: async () =>

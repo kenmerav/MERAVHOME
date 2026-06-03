@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PRODUCT_CATEGORIES, type Product, type ProductCategory } from "@/lib/db";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/projects/$id/design-boards")({
@@ -97,6 +98,10 @@ function ProjectDesignBoardsPage() {
   const undoStackRef = useRef<BoardState[]>([]);
   const hasCustomZoomRef = useRef(false);
   const scrollSelectionRef = useRef<number | null>(null);
+  const saveTimeoutRef = useRef<number | null>(null);
+  const remoteLoadedRef = useRef(false);
+  const lastSavedJsonRef = useRef("");
+  const applyingRemoteRef = useRef(false);
   const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -104,8 +109,16 @@ function ProjectDesignBoardsPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ProductCategory | "All">("All");
   const [removingBackground, setRemovingBackground] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "saving" | "saved" | "error">("loading");
 
+  const { data: profile, isLoading: loadingProfile } = useQuery({ queryKey: ["currentUserProfile"], queryFn: () => db.getCurrentUserProfile() });
+  const canEditDesignBoards = profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
+  const { data: sharedBoard, isLoading: loadingSharedBoard } = useQuery({
+    queryKey: ["designBoard", id],
+    queryFn: () => db.getDesignBoard(id),
+    enabled: canEditDesignBoards,
+  });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
@@ -163,14 +176,119 @@ function ProjectDesignBoardsPage() {
   };
 
   useEffect(() => {
-    setBoardState(loadBoardState(id));
+    const localState = loadBoardState(id);
+    setBoardState(localState);
     setSelectedId(null);
     undoStackRef.current = [];
+    remoteLoadedRef.current = false;
+    lastSavedJsonRef.current = "";
+    applyingRemoteRef.current = false;
+    setSaveStatus("loading");
   }, [id]);
 
   useEffect(() => {
     window.localStorage.setItem(storageKey(id), JSON.stringify(boardState));
   }, [boardState, id]);
+
+  useEffect(() => {
+    if (loadingProfile || loadingSharedBoard) return;
+    if (!canEditDesignBoards) {
+      remoteLoadedRef.current = false;
+      setSaveStatus("local");
+      return;
+    }
+    if (remoteLoadedRef.current) return;
+
+    if (sharedBoard?.board_state) {
+      const remoteState = normalizeBoardState(sharedBoard.board_state);
+      applyingRemoteRef.current = true;
+      setBoardState(remoteState);
+      lastSavedJsonRef.current = JSON.stringify(remoteState);
+      remoteLoadedRef.current = true;
+      setSaveStatus("saved");
+      return;
+    }
+
+    const localState = loadBoardState(id);
+    remoteLoadedRef.current = true;
+    if (!hasMeaningfulBoardState(localState)) {
+      setSaveStatus("saved");
+      return;
+    }
+
+    const seedJson = JSON.stringify(localState);
+    lastSavedJsonRef.current = seedJson;
+    setSaveStatus("saving");
+    void db.upsertDesignBoard(id, localState, profile?.id).then(
+      () => setSaveStatus("saved"),
+      () => setSaveStatus("error"),
+    );
+  }, [canEditDesignBoards, id, loadingProfile, loadingSharedBoard, profile?.id, sharedBoard]);
+
+  useEffect(() => {
+    if (!canEditDesignBoards || !remoteLoadedRef.current) return;
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
+
+    const nextJson = JSON.stringify(boardState);
+    if (nextJson === lastSavedJsonRef.current) return;
+    if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+    setSaveStatus("saving");
+    saveTimeoutRef.current = window.setTimeout(() => {
+      void db.upsertDesignBoard(id, boardState, profile?.id).then(
+        () => {
+          lastSavedJsonRef.current = JSON.stringify(boardState);
+          setSaveStatus("saved");
+        },
+        () => setSaveStatus("error"),
+      );
+    }, 650);
+
+    return () => {
+      if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+    };
+  }, [boardState, canEditDesignBoards, id, profile?.id]);
+
+  useEffect(() => {
+    if (!canEditDesignBoards) return;
+    const channel = supabase
+      .channel(`design-board-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "design_boards", filter: `project_id=eq.${id}` },
+        (payload) => {
+          const remoteState = normalizeBoardState((payload.new as { board_state?: unknown }).board_state);
+          const remoteJson = JSON.stringify(remoteState);
+          if (remoteJson === lastSavedJsonRef.current) return;
+          applyingRemoteRef.current = true;
+          lastSavedJsonRef.current = remoteJson;
+          setBoardState(remoteState);
+          setSelectedId(null);
+          setSaveStatus("saved");
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "design_boards", filter: `project_id=eq.${id}` },
+        (payload) => {
+          const remoteState = normalizeBoardState((payload.new as { board_state?: unknown }).board_state);
+          const remoteJson = JSON.stringify(remoteState);
+          if (remoteJson === lastSavedJsonRef.current) return;
+          applyingRemoteRef.current = true;
+          lastSavedJsonRef.current = remoteJson;
+          setBoardState(remoteState);
+          setSelectedId(null);
+          setSaveStatus("saved");
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [canEditDesignBoards, id]);
 
   useEffect(() => {
     const updateScale = () => {
@@ -455,6 +573,20 @@ function ProjectDesignBoardsPage() {
     );
   }
 
+  if (!loadingProfile && !canEditDesignBoards) {
+    return (
+      <AppShell>
+        <div className="p-16">
+          <div className="eyebrow">Design Boards</div>
+          <h1 className="mt-3 font-display text-5xl">Employee access only</h1>
+          <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+            Design boards are currently available to MERAV admins and employees only. Client and contractor sharing can be added later when we define what they should see.
+          </p>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="min-h-screen bg-[#f4f1ec] text-ink">
@@ -469,6 +601,13 @@ function ProjectDesignBoardsPage() {
               <p className="mt-2 max-w-2xl text-sm text-stone-600">
                 Build the board here so product links, labels, vendor info, pricing, and finish details stay connected instead of being trapped inside a PDF.
               </p>
+              <div className="mt-3 text-xs uppercase tracking-[0.18em] text-stone-500">
+                {saveStatus === "loading" && "Loading shared board"}
+                {saveStatus === "saving" && "Saving shared board"}
+                {saveStatus === "saved" && "Shared board saved"}
+                {saveStatus === "error" && "Could not save shared board"}
+                {saveStatus === "local" && "Local-only view"}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ToolbarButton onClick={() => addElement({ type: "text", text: "Add text", x: 540, y: 90, width: 300, height: 56, color: "#1f1d1b", fontSize: 30, letterSpacing: 2 })}>
@@ -1321,17 +1460,61 @@ function colorDistance(data: Uint8ClampedArray, index: number, color: [number, n
   return Math.sqrt(dr * dr + dg * dg + db * db);
 }
 
+function normalizeBoardState(value: unknown): BoardState {
+  if (!value || typeof value !== "object") return defaultBoardState();
+  const candidate = value as Partial<BoardState>;
+  if (!Array.isArray(candidate.pages) || candidate.pages.length === 0) return defaultBoardState();
+
+  const pages = candidate.pages
+    .map((page, pageIndex) => normalizeBoardPage(page, pageIndex))
+    .filter((page): page is BoardPage => Boolean(page));
+  if (!pages.length) return defaultBoardState();
+
+  const selectedPageId =
+    typeof candidate.selectedPageId === "string" && pages.some((page) => page.id === candidate.selectedPageId)
+      ? candidate.selectedPageId
+      : pages[0].id;
+
+  return { pages, selectedPageId };
+}
+
+function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null {
+  if (!value || typeof value !== "object") return null;
+  const page = value as Partial<BoardPage>;
+  const id = typeof page.id === "string" && page.id ? page.id : crypto.randomUUID();
+  const title = typeof page.title === "string" && page.title.trim() ? page.title : `Design Board ${pageIndex + 1}`;
+  const roomId = typeof page.roomId === "string" && page.roomId ? page.roomId : null;
+  const elements = Array.isArray(page.elements) ? page.elements.map(normalizeBoardElement).filter((element): element is BoardElement => Boolean(element)) : [];
+  return { id, title, roomId, elements };
+}
+
+function normalizeBoardElement(value: unknown): BoardElement | null {
+  if (!value || typeof value !== "object") return null;
+  const element = value as Partial<BoardElement>;
+  if (element.type !== "image" && element.type !== "text" && element.type !== "shape") return null;
+  return {
+    ...element,
+    id: typeof element.id === "string" && element.id ? element.id : crypto.randomUUID(),
+    type: element.type,
+    x: typeof element.x === "number" ? element.x : 100,
+    y: typeof element.y === "number" ? element.y : 100,
+    width: typeof element.width === "number" ? element.width : 240,
+    height: typeof element.height === "number" ? element.height : 180,
+    zIndex: typeof element.zIndex === "number" ? element.zIndex : 10,
+  };
+}
+
+function hasMeaningfulBoardState(state: BoardState) {
+  return state.pages.some((page) => page.elements.length > 0) || state.pages.length > 1;
+}
+
 function loadBoardState(projectId: string): BoardState {
   if (typeof window === "undefined") return defaultBoardState();
   const stored = window.localStorage.getItem(storageKey(projectId));
   if (!stored) return defaultBoardState();
 
   try {
-    const parsed = JSON.parse(stored) as BoardState;
-    if (Array.isArray(parsed.pages) && parsed.pages.length) {
-      const selectedPageId = parsed.pages.some((page) => page.id === parsed.selectedPageId) ? parsed.selectedPageId : parsed.pages[0].id;
-      return { pages: parsed.pages, selectedPageId };
-    }
+    return normalizeBoardState(JSON.parse(stored));
   } catch {
     window.localStorage.removeItem(storageKey(projectId));
   }
