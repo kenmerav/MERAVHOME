@@ -119,6 +119,8 @@ function ProjectDesignBoardsPage() {
     [category, products],
   );
   const linkedProductCount = elements.filter((element) => element.productId).length;
+  const imageElements = elements.filter((element) => element.type === "image");
+  const allBoardDetailsHidden = imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
 
   const setElements = (updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
     setBoardState((current) => {
@@ -213,6 +215,13 @@ function ProjectDesignBoardsPage() {
 
   const updateElement = (elementId: string, patch: Partial<BoardElement>) => {
     setElements((current) => current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)));
+  };
+
+  const toggleBoardDetails = () => {
+    const shouldHide = !allBoardDetailsHidden;
+    setElements((current) =>
+      current.map((element) => (element.type === "image" ? { ...element, hideDetails: shouldHide } : element)),
+    );
   };
 
   const addElement = (element: Omit<BoardElement, "id" | "zIndex">) => {
@@ -381,6 +390,9 @@ function ProjectDesignBoardsPage() {
               <ToolbarButton onClick={removeSelectedBackground} disabled={!selected || selected.type !== "image" || removingBackground}>
                 <Scissors className="h-4 w-4" /> {removingBackground ? "Cutting..." : "Remove BG"}
               </ToolbarButton>
+              <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
+                {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
+              </ToolbarButton>
               <ToolbarButton onClick={removeSelected} disabled={!selected} destructive>
                 <Trash2 className="h-4 w-4" /> Delete
               </ToolbarButton>
@@ -528,6 +540,8 @@ function ProjectDesignBoardsPage() {
                 selected={selected}
                 products={products}
                 onUpdate={(patch) => updateElement(selected.id, patch)}
+                allBoardDetailsHidden={allBoardDetailsHidden}
+                onToggleBoardDetails={toggleBoardDetails}
                 onRemoveBackground={removeSelectedBackground}
                 removingBackground={removingBackground}
               />
@@ -683,12 +697,16 @@ function SelectedPanel({
   selected,
   products,
   onUpdate,
+  allBoardDetailsHidden,
+  onToggleBoardDetails,
   onRemoveBackground,
   removingBackground,
 }: {
   selected: BoardElement;
   products: Product[];
   onUpdate: (patch: Partial<BoardElement>) => void;
+  allBoardDetailsHidden: boolean;
+  onToggleBoardDetails: () => void;
   onRemoveBackground: () => void;
   removingBackground: boolean;
 }) {
@@ -744,15 +762,15 @@ function SelectedPanel({
           </p>
           <button
             type="button"
-            onClick={() => onUpdate({ hideDetails: !selected.hideDetails })}
+            onClick={onToggleBoardDetails}
             className={cn(
               "inline-flex w-full items-center justify-center gap-2 border px-4 py-2 text-sm transition",
-              selected.hideDetails
+              allBoardDetailsHidden
                 ? "border-ink bg-ink text-white"
                 : "border-stone-300 bg-white hover:border-ink",
             )}
           >
-            {selected.hideDetails ? "Show Text / Link on Board" : "Hide Text / Link on Board"}
+            {allBoardDetailsHidden ? "Show All Text / Links on Board" : "Hide All Text / Links on Board"}
           </button>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
             Image Label
