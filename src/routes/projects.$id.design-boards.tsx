@@ -201,6 +201,20 @@ function ProjectDesignBoardsPage() {
 
     if (sharedBoard?.board_state) {
       const remoteState = normalizeBoardState(sharedBoard.board_state);
+      const localState = loadBoardState(id);
+      if (!hasMeaningfulBoardState(remoteState) && hasMeaningfulBoardState(localState)) {
+        const localJson = JSON.stringify(localState);
+        applyingRemoteRef.current = true;
+        setBoardState(localState);
+        lastSavedJsonRef.current = localJson;
+        remoteLoadedRef.current = true;
+        setSaveStatus("saving");
+        void db.upsertDesignBoard(id, localState, profile?.id).then(
+          () => setSaveStatus("saved"),
+          () => setSaveStatus("error"),
+        );
+        return;
+      }
       applyingRemoteRef.current = true;
       setBoardState(remoteState);
       lastSavedJsonRef.current = JSON.stringify(remoteState);
@@ -1505,7 +1519,7 @@ function normalizeBoardElement(value: unknown): BoardElement | null {
 }
 
 function hasMeaningfulBoardState(state: BoardState) {
-  return state.pages.some((page) => page.elements.length > 0) || state.pages.length > 1;
+  return state.pages.some((page) => page.elements.length > 0);
 }
 
 function loadBoardState(projectId: string): BoardState {
