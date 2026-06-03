@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
-import { db } from "@/lib/db";
+import { db, type FinancialInvoice } from "@/lib/db";
 import { Check, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,15 @@ type ProcurementMaterialDetails = {
   cad_label: string | null;
 };
 
+type ProductInvoiceSummary = {
+  id: string;
+  projectId: string | null;
+  name: string;
+  total: number;
+  sortDate: string;
+  sourceIds: Set<string>;
+};
+
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
   component: ProcurementPage,
@@ -30,6 +39,7 @@ function ProcurementPage() {
   const [roomFilter, setRoomFilter] = useState("__all");
   const [categoryFilter, setCategoryFilter] = useState("__all");
   const [vendorFilter, setVendorFilter] = useState("__all");
+  const [invoiceFilter, setInvoiceFilter] = useState("__all");
   const [taxRate, setTaxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -47,6 +57,11 @@ function ProcurementPage() {
   const { data: procurementItems = [] } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
+    enabled: allowed,
+  });
+  const { data: financialInvoices = [] } = useQuery({
+    queryKey: ["financialInvoices", "all"],
+    queryFn: async () => (await db.listAllFinancialInvoices()) ?? [],
     enabled: allowed,
   });
   const projectOptions = useMemo(() => {
@@ -102,6 +117,29 @@ function ProcurementPage() {
     return Array.from(set).sort();
   }, [projectItems]);
 
+  const productInvoices = useMemo(
+    () =>
+      financialInvoices
+        .map(productInvoiceFromFinancialInvoice)
+        .filter((invoice): invoice is ProductInvoiceSummary => !!invoice),
+    [financialInvoices],
+  );
+
+  const selectedProjectInvoices = useMemo(
+    () =>
+      productInvoices
+        .filter((invoice) => projectFilter === "__overall" || invoice.projectId === projectFilter)
+        .sort((a, b) => b.sortDate.localeCompare(a.sortDate)),
+    [productInvoices, projectFilter],
+  );
+
+  const selectedInvoiceItemIds = useMemo(() => {
+    if (invoiceFilter === "__all") return null;
+    return (
+      selectedProjectInvoices.find((invoice) => invoice.id === invoiceFilter)?.sourceIds ?? null
+    );
+  }, [invoiceFilter, selectedProjectInvoices]);
+
   const visibleItems = useMemo(
     () =>
       projectItems.filter((item) => {
@@ -110,9 +148,10 @@ function ProcurementPage() {
         if (roomFilter !== "__all" && room?.id !== roomFilter) return false;
         if (categoryFilter !== "__all" && product?.category !== categoryFilter) return false;
         if (vendorFilter !== "__all" && product?.vendor !== vendorFilter) return false;
+        if (selectedInvoiceItemIds && !selectedInvoiceItemIds.has(item.id)) return false;
         return true;
       }),
-    [projectItems, roomFilter, categoryFilter, vendorFilter],
+    [projectItems, roomFilter, categoryFilter, selectedInvoiceItemIds, vendorFilter],
   );
 
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
@@ -211,6 +250,7 @@ function ProcurementPage() {
                 setRoomFilter("__all");
                 setCategoryFilter("__all");
                 setVendorFilter("__all");
+                setInvoiceFilter("__all");
               }}
               className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
             >
@@ -268,20 +308,51 @@ function ProcurementPage() {
               ))}
             </select>
           </div>
+          <div className="w-full sm:min-w-[240px] sm:w-auto">
+            <label className="eyebrow block mb-2">Invoice</label>
+            <select
+              value={invoiceFilter}
+              onChange={(e) => setInvoiceFilter(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="__all">All Product Invoices</option>
+              {selectedProjectInvoices.map((invoice) => (
+                <option key={invoice.id} value={invoice.id}>
+                  {invoice.name} · {formatMoney(invoice.total)}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="w-full sm:w-auto sm:ml-auto">
             <label className="eyebrow block mb-2">Invoice</label>
-            <ProductInvoiceCreator
-              projectId={selectedProject?.id ?? null}
-              projectName={selectedProject?.name ?? ""}
-              clientName={selectedProject?.client_name ?? ""}
-              items={visibleItems}
-              defaultTaxRate={taxRate}
-              disabled={!selectedProject || visibleItems.length === 0}
-              onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
-                qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
-              }}
-            />
+            <div className="flex flex-col sm:flex-row gap-2">
+              <ProductInvoiceCreator
+                projectId={selectedProject?.id ?? null}
+                projectName={selectedProject?.name ?? ""}
+                clientName={selectedProject?.client_name ?? ""}
+                items={visibleItems}
+                defaultTaxRate={taxRate}
+                disabled={!selectedProject || visibleItems.length === 0}
+                onSaved={() => {
+                  qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
+                  qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+                }}
+              />
+              <ProductInvoiceCreator
+                projectId={selectedProject?.id ?? null}
+                projectName={selectedProject?.name ?? ""}
+                clientName={selectedProject?.client_name ?? ""}
+                items={visibleItems}
+                defaultTaxRate={taxRate}
+                onlyApproved
+                buttonLabel="Invoice Approved"
+                disabled={!selectedProject || visibleItems.length === 0}
+                onSaved={() => {
+                  qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
+                  qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+                }}
+              />
+            </div>
             {!selectedProject && (
               <div className="mt-2 text-xs text-muted-foreground">
                 Choose one project to create an invoice.
@@ -550,4 +621,35 @@ function Stat({ label, n, total }: { label: string; n: number; total?: number })
       )}
     </div>
   );
+}
+
+function productInvoiceFromFinancialInvoice(
+  invoice: FinancialInvoice,
+): ProductInvoiceSummary | null {
+  if (!invoice.raw_text) return null;
+  try {
+    const parsed = JSON.parse(invoice.raw_text) as {
+      type?: string;
+      draft?: {
+        invoiceName?: string;
+        lines?: Array<{ sourceId?: string; selected?: boolean }>;
+      };
+    };
+    if (parsed.type !== "product_invoice") return null;
+    const sourceIds = new Set(
+      (parsed.draft?.lines ?? [])
+        .filter((line) => line.selected !== false && line.sourceId)
+        .map((line) => line.sourceId as string),
+    );
+    return {
+      id: invoice.id,
+      projectId: invoice.project_id,
+      name: invoice.file_name || parsed.draft?.invoiceName || "Product Invoice",
+      total: Number(invoice.total_amount || 0),
+      sortDate: invoice.invoice_date || invoice.created_at || "",
+      sourceIds,
+    };
+  } catch {
+    return null;
+  }
 }

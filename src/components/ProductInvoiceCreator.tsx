@@ -87,6 +87,8 @@ export function ProductInvoiceCreator({
   clientName,
   items,
   defaultTaxRate,
+  onlyApproved = false,
+  buttonLabel = "Create Product Invoice",
   disabled,
   onSaved,
 }: {
@@ -95,6 +97,8 @@ export function ProductInvoiceCreator({
   clientName: string;
   items: ProcurementInvoiceItem[];
   defaultTaxRate: string;
+  onlyApproved?: boolean;
+  buttonLabel?: string;
   disabled?: boolean;
   onSaved?: () => void;
 }) {
@@ -102,13 +106,13 @@ export function ProductInvoiceCreator({
   const [saving, setSaving] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [draft, setDraft] = useState<ProductInvoiceDraft>(() =>
-    makeDraft({ projectName, clientName, items, defaultTaxRate }),
+    makeDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }),
   );
 
   useEffect(() => {
     if (!open) return;
-    setDraft(makeDraft({ projectName, clientName, items, defaultTaxRate }));
-  }, [clientName, defaultTaxRate, items, open, projectName]);
+    setDraft(makeDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }));
+  }, [clientName, defaultTaxRate, items, onlyApproved, open, projectName]);
 
   const totals = useMemo(() => productInvoiceTotals(draft), [draft]);
   const selectedCount = draft.lines.filter((line) => line.selected).length;
@@ -211,7 +215,7 @@ export function ProductInvoiceCreator({
           disabled={disabled}
           className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-40"
         >
-          <Plus className="w-4 h-4" /> Create Product Invoice
+          <Plus className="w-4 h-4" /> {buttonLabel}
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-[96vw] max-h-[94vh] overflow-y-auto">
@@ -479,11 +483,13 @@ function makeDraft({
   clientName,
   items,
   defaultTaxRate,
+  onlyApproved,
 }: {
   projectName: string;
   clientName: string;
   items: ProcurementInvoiceItem[];
   defaultTaxRate: string;
+  onlyApproved: boolean;
 }): ProductInvoiceDraft {
   const today = new Date().toISOString().slice(0, 10);
   return {
@@ -503,7 +509,7 @@ function makeDraft({
       return {
         sourceId: item.id,
         productId: product?.id ?? null,
-        selected: true,
+        selected: onlyApproved ? item.room_product?.approval_status === "approved" : true,
         name: material?.client_product_name || product?.name || "Product",
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",
