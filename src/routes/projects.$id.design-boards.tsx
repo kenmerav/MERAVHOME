@@ -1323,191 +1323,27 @@ async function imageSourceForCanvas(src: string) {
   return body.image as string;
 }
 
-function loadCanvasImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Could not load image."));
-    image.src = src;
-  });
-}
-
 async function removeFlatImageBackground(src: string) {
-  const image = await loadCanvasImage(src);
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("Could not edit image.");
-
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  removeFlatBackgroundPixels(imageData.data, canvas.width, canvas.height);
-  context.putImageData(imageData, 0, 0);
-  return canvas.toDataURL("image/png");
+  const { default: removeBackground } = await import("@imgly/background-removal");
+  const cutout = await removeBackground(src, {
+    device: "cpu",
+    model: "isnet_fp16",
+    output: {
+      format: "image/png",
+      quality: 1,
+      type: "foreground",
+    },
+  });
+  return blobToDataUrl(cutout);
 }
 
-function removeFlatBackgroundPixels(data: Uint8ClampedArray, width: number, height: number, tolerance = 58) {
-  const background = averageCornerColor(data, width, height);
-  const visited = new Uint8Array(width * height);
-  const queue: number[] = [];
-  const removed = new Uint8Array(width * height);
-
-  const enqueue = (x: number, y: number) => {
-    if (x < 0 || x >= width || y < 0 || y >= height) return;
-    const pixel = y * width + x;
-    if (visited[pixel]) return;
-    const index = pixel * 4;
-    if (data[index + 3] === 0) return;
-    if (colorDistance(data, index, background) > tolerance) return;
-    visited[pixel] = 1;
-    queue.push(pixel);
-  };
-
-  for (let x = 0; x < width; x += 1) {
-    enqueue(x, 0);
-    enqueue(x, height - 1);
-  }
-  for (let y = 0; y < height; y += 1) {
-    enqueue(0, y);
-    enqueue(width - 1, y);
-  }
-
-  while (queue.length) {
-    const pixel = queue.shift()!;
-    const x = pixel % width;
-    const y = Math.floor(pixel / width);
-    const index = pixel * 4;
-    data[index + 3] = 0;
-    removed[pixel] = 1;
-
-    enqueue(x + 1, y);
-    enqueue(x - 1, y);
-    enqueue(x, y + 1);
-    enqueue(x, y - 1);
-  }
-
-  removeInteriorBackgroundIslands(data, width, height, background, visited, removed, tolerance);
-  softenCutoutEdges(data, width, height, removed);
-}
-
-function removeInteriorBackgroundIslands(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  background: [number, number, number],
-  visited: Uint8Array,
-  removed: Uint8Array,
-  tolerance: number,
-) {
-  const minIslandSize = Math.max(20, Math.round(width * height * 0.00045));
-  const maxProductHoleSize = Math.round(width * height * 0.08);
-
-  for (let startPixel = 0; startPixel < width * height; startPixel += 1) {
-    if (visited[startPixel] || removed[startPixel]) continue;
-    const startIndex = startPixel * 4;
-    if (data[startIndex + 3] === 0 || !isBackgroundLikePixel(data, startIndex, background, tolerance)) continue;
-
-    const component: number[] = [];
-    const queue = [startPixel];
-    visited[startPixel] = 1;
-    let touchesEdge = false;
-
-    while (queue.length) {
-      const pixel = queue.shift()!;
-      component.push(pixel);
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      if (x === 0 || x === width - 1 || y === 0 || y === height - 1) touchesEdge = true;
-
-      const neighbors = [pixel - 1, pixel + 1, pixel - width, pixel + width];
-      for (const next of neighbors) {
-        if (next < 0 || next >= width * height || visited[next] || removed[next]) continue;
-        const nextX = next % width;
-        if ((next === pixel - 1 && nextX === width - 1) || (next === pixel + 1 && nextX === 0)) continue;
-        const index = next * 4;
-        if (data[index + 3] === 0 || !isBackgroundLikePixel(data, index, background, tolerance)) continue;
-        visited[next] = 1;
-        queue.push(next);
-      }
-    }
-
-    if (touchesEdge || (component.length >= minIslandSize && component.length <= maxProductHoleSize)) {
-      for (const pixel of component) {
-        data[pixel * 4 + 3] = 0;
-        removed[pixel] = 1;
-      }
-    }
-  }
-}
-
-function isBackgroundLikePixel(data: Uint8ClampedArray, index: number, background: [number, number, number], tolerance: number) {
-  const maxChannel = Math.max(data[index], data[index + 1], data[index + 2]);
-  const minChannel = Math.min(data[index], data[index + 1], data[index + 2]);
-  const lowSaturation = maxChannel - minChannel < 32;
-  const bright = maxChannel > 168;
-  return colorDistance(data, index, background) <= tolerance || (bright && lowSaturation && colorDistance(data, index, background) <= tolerance + 32);
-}
-
-function softenCutoutEdges(data: Uint8ClampedArray, width: number, height: number, removed: Uint8Array) {
-  const nextAlpha = new Uint8ClampedArray(width * height);
-
-  for (let pixel = 0; pixel < width * height; pixel += 1) {
-    const index = pixel * 4;
-    nextAlpha[pixel] = data[index + 3];
-    if (removed[pixel] || data[index + 3] === 0) continue;
-
-    const x = pixel % width;
-    const y = Math.floor(pixel / width);
-    let transparentNeighborCount = 0;
-    for (let yy = y - 1; yy <= y + 1; yy += 1) {
-      for (let xx = x - 1; xx <= x + 1; xx += 1) {
-        if (xx < 0 || xx >= width || yy < 0 || yy >= height || (xx === x && yy === y)) continue;
-        if (removed[yy * width + xx]) transparentNeighborCount += 1;
-      }
-    }
-
-    if (transparentNeighborCount >= 5) nextAlpha[pixel] = Math.min(nextAlpha[pixel], 210);
-  }
-
-  for (let pixel = 0; pixel < width * height; pixel += 1) {
-    data[pixel * 4 + 3] = nextAlpha[pixel];
-  }
-}
-
-function averageCornerColor(data: Uint8ClampedArray, width: number, height: number): [number, number, number] {
-  const sampleSize = Math.max(4, Math.round(Math.min(width, height) * 0.025));
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let count = 0;
-  const corners = [
-    [0, 0],
-    [width - sampleSize, 0],
-    [0, height - sampleSize],
-    [width - sampleSize, height - sampleSize],
-  ];
-
-  for (const [startX, startY] of corners) {
-    for (let y = startY; y < Math.min(height, startY + sampleSize); y += 1) {
-      for (let x = startX; x < Math.min(width, startX + sampleSize); x += 1) {
-        const index = (y * width + x) * 4;
-        r += data[index];
-        g += data[index + 1];
-        b += data[index + 2];
-        count += 1;
-      }
-    }
-  }
-
-  return [r / count, g / count, b / count];
-}
-
-function colorDistance(data: Uint8ClampedArray, index: number, color: [number, number, number]) {
-  const dr = data[index] - color[0];
-  const dg = data[index + 1] - color[1];
-  const db = data[index + 2] - color[2];
-  return Math.sqrt(dr * dr + dg * dg + db * db);
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read background-removed image."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function normalizeBoardState(value: unknown): BoardState {
