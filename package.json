@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "validate:design-board-collab": "node scripts/validate-design-board-collab.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {

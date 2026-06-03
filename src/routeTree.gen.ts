@@ -25,6 +25,7 @@ import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
+import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
@@ -124,6 +125,12 @@ const ApiUploadRoomImageRoute = ApiUploadRoomImageRouteImport.update({
   path: '/api/upload-room-image',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUploadDesignBoardImageRoute =
+  ApiUploadDesignBoardImageRouteImport.update({
+    id: '/api/upload-design-board-image',
+    path: '/api/upload-design-board-image',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
   id: '/api/scrape-url',
   path: '/api/scrape-url',
@@ -231,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
@@ -267,6 +275,7 @@ export interface FileRoutesByTo {
   '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
@@ -304,6 +313,7 @@ export interface FileRoutesById {
   '/api/projects': typeof ApiProjectsRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
@@ -342,6 +352,7 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/upload-design-board-image'
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
@@ -378,6 +389,7 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/upload-design-board-image'
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
@@ -414,6 +426,7 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/upload-design-board-image'
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog_/$productId'
@@ -451,6 +464,7 @@ export interface RootRouteChildren {
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
+  ApiUploadDesignBoardImageRoute: typeof ApiUploadDesignBoardImageRoute
   ApiUploadRoomImageRoute: typeof ApiUploadRoomImageRoute
   ApiUsersRoute: typeof ApiUsersRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
@@ -586,6 +600,13 @@ declare module '@tanstack/react-router' {
       path: '/api/upload-room-image'
       fullPath: '/api/upload-room-image'
       preLoaderRoute: typeof ApiUploadRoomImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-design-board-image': {
+      id: '/api/upload-design-board-image'
+      path: '/api/upload-design-board-image'
+      fullPath: '/api/upload-design-board-image'
+      preLoaderRoute: typeof ApiUploadDesignBoardImageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/scrape-url': {
@@ -731,6 +752,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProjectsRoute: ApiProjectsRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
+  ApiUploadDesignBoardImageRoute: ApiUploadDesignBoardImageRoute,
   ApiUploadRoomImageRoute: ApiUploadRoomImageRoute,
   ApiUsersRoute: ApiUsersRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
