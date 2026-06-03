@@ -20,6 +20,7 @@ import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as PresentationsIndexRouteImport } from './routes/presentations.index'
 import { Route as HoursIndexRouteImport } from './routes/hours.index'
 import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
+import { Route as PrototypeDesignBoardRouteImport } from './routes/prototype.design-board'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
@@ -36,6 +37,7 @@ import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
 import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
+import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
 import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
@@ -93,6 +95,11 @@ const HoursIndexRoute = HoursIndexRouteImport.update({
 const SpecbooksIdRoute = SpecbooksIdRouteImport.update({
   id: '/specbooks/$id',
   path: '/specbooks/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrototypeDesignBoardRoute = PrototypeDesignBoardRouteImport.update({
+  id: '/prototype/design-board',
+  path: '/prototype/design-board',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PresentationsIdRoute = PresentationsIdRouteImport.update({
@@ -176,6 +183,11 @@ const ProjectsIdFinancialsRoute = ProjectsIdFinancialsRouteImport.update({
   path: '/projects/$id/financials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdDesignBoardsRoute = ProjectsIdDesignBoardsRouteImport.update({
+  id: '/projects/$id/design-boards',
+  path: '/projects/$id/design-boards',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsIdApprovalsRoute = ProjectsIdApprovalsRouteImport.update({
   id: '/projects/$id/approvals',
   path: '/projects/$id/approvals',
@@ -210,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
+  '/prototype/design-board': typeof PrototypeDesignBoardRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/hours/': typeof HoursIndexRoute
   '/presentations/': typeof PresentationsIndexRoute
@@ -218,6 +231,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof UsersIndexRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
+  '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
@@ -242,6 +256,7 @@ export interface FileRoutesByTo {
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
+  '/prototype/design-board': typeof PrototypeDesignBoardRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/hours': typeof HoursIndexRoute
   '/presentations': typeof PresentationsIndexRoute
@@ -250,6 +265,7 @@ export interface FileRoutesByTo {
   '/users': typeof UsersIndexRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
+  '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
@@ -275,6 +291,7 @@ export interface FileRoutesById {
   '/api/users': typeof ApiUsersRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
   '/presentations/$id': typeof PresentationsIdRoute
+  '/prototype/design-board': typeof PrototypeDesignBoardRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
   '/hours/': typeof HoursIndexRoute
   '/presentations/': typeof PresentationsIndexRoute
@@ -283,6 +300,7 @@ export interface FileRoutesById {
   '/users/': typeof UsersIndexRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
+  '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
@@ -309,6 +327,7 @@ export interface FileRouteTypes {
     | '/api/users'
     | '/catalog/$productId'
     | '/presentations/$id'
+    | '/prototype/design-board'
     | '/specbooks/$id'
     | '/hours/'
     | '/presentations/'
@@ -317,6 +336,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
+    | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
@@ -341,6 +361,7 @@ export interface FileRouteTypes {
     | '/api/users'
     | '/catalog/$productId'
     | '/presentations/$id'
+    | '/prototype/design-board'
     | '/specbooks/$id'
     | '/hours'
     | '/presentations'
@@ -349,6 +370,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
+    | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
@@ -373,6 +395,7 @@ export interface FileRouteTypes {
     | '/api/users'
     | '/catalog_/$productId'
     | '/presentations/$id'
+    | '/prototype/design-board'
     | '/specbooks/$id'
     | '/hours/'
     | '/presentations/'
@@ -381,6 +404,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
+    | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
@@ -406,6 +430,7 @@ export interface RootRouteChildren {
   ApiUsersRoute: typeof ApiUsersRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
   PresentationsIdRoute: typeof PresentationsIdRoute
+  PrototypeDesignBoardRoute: typeof PrototypeDesignBoardRoute
   SpecbooksIdRoute: typeof SpecbooksIdRoute
   HoursIndexRoute: typeof HoursIndexRoute
   PresentationsIndexRoute: typeof PresentationsIndexRoute
@@ -414,6 +439,7 @@ export interface RootRouteChildren {
   UsersIndexRoute: typeof UsersIndexRoute
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
   ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
+  ProjectsIdDesignBoardsRoute: typeof ProjectsIdDesignBoardsRoute
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
@@ -499,6 +525,13 @@ declare module '@tanstack/react-router' {
       path: '/specbooks/$id'
       fullPath: '/specbooks/$id'
       preLoaderRoute: typeof SpecbooksIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prototype/design-board': {
+      id: '/prototype/design-board'
+      path: '/prototype/design-board'
+      fullPath: '/prototype/design-board'
+      preLoaderRoute: typeof PrototypeDesignBoardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/presentations/$id': {
@@ -613,6 +646,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdFinancialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id/design-boards': {
+      id: '/projects/$id/design-boards'
+      path: '/projects/$id/design-boards'
+      fullPath: '/projects/$id/design-boards'
+      preLoaderRoute: typeof ProjectsIdDesignBoardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/approvals': {
       id: '/projects/$id/approvals'
       path: '/projects/$id/approvals'
@@ -654,6 +694,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUsersRoute: ApiUsersRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
   PresentationsIdRoute: PresentationsIdRoute,
+  PrototypeDesignBoardRoute: PrototypeDesignBoardRoute,
   SpecbooksIdRoute: SpecbooksIdRoute,
   HoursIndexRoute: HoursIndexRoute,
   PresentationsIndexRoute: PresentationsIndexRoute,
@@ -662,6 +703,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsersIndexRoute: UsersIndexRoute,
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
   ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,
+  ProjectsIdDesignBoardsRoute: ProjectsIdDesignBoardsRoute,
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,

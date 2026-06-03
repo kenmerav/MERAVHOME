@@ -20,6 +20,7 @@ import {
   Pencil,
   FileText,
   Truck,
+  Palette,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -180,6 +181,13 @@ function ProjectDetailPage() {
                 currentUrl={project.cover_image_url}
                 allImages={allImages}
               />
+              <Link
+                to="/projects/$id/design-boards"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
+                <Palette className="w-4 h-4" /> Design Boards
+              </Link>
               <Link
                 to="/projects/$id/materials"
                 params={{ id }}

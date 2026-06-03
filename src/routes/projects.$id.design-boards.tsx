@@ -1,0 +1,881 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Copy,
+  ExternalLink,
+  Image as ImageIcon,
+  MousePointer2,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+  Type,
+  Upload,
+} from "lucide-react";
+import { AppShell } from "@/components/AppShell";
+import { db, PRODUCT_CATEGORIES, type Product, type ProductCategory } from "@/lib/db";
+import { cn } from "@/lib/utils";
+
+export const Route = createFileRoute("/projects/$id/design-boards")({
+  head: () => ({ meta: [{ title: "Design Boards — MERAV Studio" }] }),
+  component: ProjectDesignBoardsPage,
+});
+
+type BoardElementType = "image" | "text" | "shape";
+
+type BoardElement = {
+  id: string;
+  type: BoardElementType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  src?: string;
+  label?: string;
+  text?: string;
+  background?: string;
+  color?: string;
+  fontSize?: number;
+  letterSpacing?: number;
+  link?: string;
+  productId?: string | null;
+  productName?: string | null;
+  vendor?: string | null;
+  price?: string | null;
+  finish?: string | null;
+};
+
+type BoardPage = {
+  id: string;
+  title: string;
+  roomId: string | null;
+  elements: BoardElement[];
+};
+
+type BoardState = {
+  pages: BoardPage[];
+  selectedPageId: string;
+};
+
+type DragMode =
+  | {
+      kind: "move";
+      id: string;
+      startX: number;
+      startY: number;
+      originalPositions: Record<string, { x: number; y: number }>;
+    }
+  | {
+      kind: "resize";
+      id: string;
+      startX: number;
+      startY: number;
+      originalWidth: number;
+      originalHeight: number;
+    }
+  | null;
+
+const BOARD_WIDTH = 1400;
+const BOARD_HEIGHT = 900;
+
+function ProjectDesignBoardsPage() {
+  const { id } = Route.useParams();
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dragMode, setDragMode] = useState<DragMode>(null);
+  const [boardScale, setBoardScale] = useState(1);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<ProductCategory | "All">("All");
+
+  const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
+  const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
+  const { data: products = [] } = useQuery({
+    queryKey: ["catalog", search],
+    queryFn: async () => (await db.listCatalog(search)) ?? [],
+  });
+  const { data: roomImages = [] } = useQuery({
+    queryKey: ["projectImages", id],
+    queryFn: async () => (await db.listProjectRoomImages(id)) ?? [],
+  });
+
+  const pages = boardState.pages.length ? boardState.pages : defaultPages();
+  const selectedPageId = pages.some((page) => page.id === boardState.selectedPageId) ? boardState.selectedPageId : pages[0].id;
+  const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
+  const elements = activePage.elements;
+  const selected = elements.find((element) => element.id === selectedId) ?? null;
+  const orderedElements = useMemo(() => [...elements].sort((a, b) => a.zIndex - b.zIndex), [elements]);
+  const filteredProducts = useMemo(
+    () => (category === "All" ? products : products.filter((product) => product.category === category)),
+    [category, products],
+  );
+  const linkedProductCount = elements.filter((element) => element.productId).length;
+
+  const setElements = (updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
+    setBoardState((current) => {
+      const safePages = current.pages.length ? current.pages : defaultPages();
+      const safeSelectedPageId = safePages.some((page) => page.id === current.selectedPageId) ? current.selectedPageId : safePages[0].id;
+      return {
+        selectedPageId: safeSelectedPageId,
+        pages: safePages.map((page) =>
+          page.id === safeSelectedPageId
+            ? { ...page, elements: typeof updater === "function" ? updater(page.elements) : updater }
+            : page,
+        ),
+      };
+    });
+  };
+
+  useEffect(() => {
+    setBoardState(loadBoardState(id));
+    setSelectedId(null);
+  }, [id]);
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey(id), JSON.stringify(boardState));
+  }, [boardState, id]);
+
+  useEffect(() => {
+    const updateScale = () => {
+      const width = boardRef.current?.parentElement?.clientWidth ?? BOARD_WIDTH;
+      setBoardScale(Math.min(1, Math.max(0.45, (width - 24) / BOARD_WIDTH)));
+    };
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      if (!dragMode) return;
+      const dx = (event.clientX - dragMode.startX) / boardScale;
+      const dy = (event.clientY - dragMode.startY) / boardScale;
+      setElements((current) =>
+        current.map((element) => {
+          if (dragMode.kind === "move") {
+            const original = dragMode.originalPositions[element.id];
+            if (!original) return element;
+            return {
+              ...element,
+              x: clamp(original.x + dx, -element.width + 40, BOARD_WIDTH - 40),
+              y: clamp(original.y + dy, -element.height + 40, BOARD_HEIGHT - 40),
+            };
+          }
+          if (element.id !== dragMode.id) return element;
+          return {
+            ...element,
+            width: Math.max(40, dragMode.originalWidth + dx),
+            height: Math.max(40, dragMode.originalHeight + dy),
+          };
+        }),
+      );
+    };
+    const onPointerUp = () => setDragMode(null);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [boardScale, dragMode, selectedPageId]);
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const file = Array.from(event.clipboardData?.files ?? []).find((item) => item.type.startsWith("image/"));
+      if (file) void addFile(file);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [selectedPageId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditingText = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if (isEditingText || !selectedId) return;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        removeSelected();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedId]);
+
+  const updateElement = (elementId: string, patch: Partial<BoardElement>) => {
+    setElements((current) => current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)));
+  };
+
+  const addElement = (element: Omit<BoardElement, "id" | "zIndex">) => {
+    const next: BoardElement = { ...element, id: crypto.randomUUID(), zIndex: nextZIndex(elements) };
+    setElements((current) => [...current, next]);
+    setSelectedId(next.id);
+  };
+
+  const addPage = () => {
+    const nextPage: BoardPage = { id: crypto.randomUUID(), title: `Board ${pages.length + 1}`, roomId: null, elements: [] };
+    setBoardState((current) => ({
+      selectedPageId: nextPage.id,
+      pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
+    }));
+    setSelectedId(null);
+  };
+
+  const selectPage = (pageId: string) => {
+    setBoardState((current) => ({ ...current, selectedPageId: pageId }));
+    setSelectedId(null);
+  };
+
+  const updateActivePage = (patch: Partial<BoardPage>) => {
+    setBoardState((current) => ({
+      ...current,
+      pages: current.pages.map((page) => (page.id === selectedPageId ? { ...page, ...patch } : page)),
+    }));
+  };
+
+  const addFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const src = await fileToDataUrl(file);
+    addElement({ type: "image", src, label: file.name.replace(/\.[^.]+$/, ""), x: 480, y: 250, width: 340, height: 260 });
+  };
+
+  const duplicateSelected = () => {
+    if (!selected) return;
+    const copyItem = { ...selected, id: crypto.randomUUID(), x: selected.x + 32, y: selected.y + 32, zIndex: nextZIndex(elements) };
+    setElements((current) => [...current, copyItem]);
+    setSelectedId(copyItem.id);
+  };
+
+  const moveLayer = (direction: "front" | "back") => {
+    if (!selected) return;
+    const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+    const nextSorted = sorted.filter((element) => element.id !== selected.id);
+    if (direction === "front") nextSorted.push(selected);
+    else nextSorted.unshift(selected);
+    const normalizedZ = new Map(nextSorted.map((element, index) => [element.id, (index + 1) * 10]));
+    setElements((current) => current.map((element) => ({ ...element, zIndex: normalizedZ.get(element.id) ?? element.zIndex })));
+  };
+
+  const removeSelected = () => {
+    if (!selectedId) return;
+    setElements((current) => current.filter((element) => element.id !== selectedId));
+    setSelectedId(null);
+  };
+
+  const resetCurrentBoard = () => {
+    setElements([]);
+    setSelectedId(null);
+  };
+
+  const handleBoardDrop = async (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const productJson = event.dataTransfer.getData("application/x-merav-product");
+    const imageJson = event.dataTransfer.getData("application/x-merav-room-image");
+    const rect = boardRef.current?.getBoundingClientRect();
+    const x = rect ? (event.clientX - rect.left) / boardScale : 500;
+    const y = rect ? (event.clientY - rect.top) / boardScale : 260;
+
+    if (productJson) {
+      const product = JSON.parse(productJson) as Product;
+      addElement(productToBoardElement(product, x - 130, y - 115));
+      return;
+    }
+
+    if (imageJson) {
+      const image = JSON.parse(imageJson) as { url: string; caption?: string | null };
+      addElement({
+        type: "image",
+        src: image.url,
+        label: image.caption || "Project image",
+        x: x - 160,
+        y: y - 115,
+        width: 320,
+        height: 230,
+      });
+      return;
+    }
+
+    const file = Array.from(event.dataTransfer.files ?? []).find((item) => item.type.startsWith("image/"));
+    if (file) await addFile(file);
+  };
+
+  if (!project) {
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading design boards...</div>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <div className="min-h-screen bg-[#f4f1ec] text-ink">
+        <div className="border-b border-stone-200 bg-white/85 backdrop-blur">
+          <div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-4 px-5 py-5">
+            <div>
+              <Link to="/projects/$id" params={{ id }} className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+                <ArrowLeft className="h-3.5 w-3.5" /> {project.name}
+              </Link>
+              <div className="eyebrow">Studio Design Boards</div>
+              <h1 className="font-display text-4xl leading-tight">{activePage.title}</h1>
+              <p className="mt-2 max-w-2xl text-sm text-stone-600">
+                Build the board here so product links, labels, vendor info, pricing, and finish details stay connected instead of being trapped inside a PDF.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ToolbarButton onClick={() => addElement({ type: "text", text: "Add text", x: 540, y: 90, width: 300, height: 56, color: "#1f1d1b", fontSize: 30, letterSpacing: 2 })}>
+                <Type className="h-4 w-4" /> Text
+              </ToolbarButton>
+              <ToolbarButton onClick={() => addElement({ type: "shape", x: 280, y: 250, width: 430, height: 160, background: "#dcd9ce" })}>
+                <MousePointer2 className="h-4 w-4" /> Color Block
+              </ToolbarButton>
+              <label className="inline-flex cursor-pointer items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink">
+                <Upload className="h-4 w-4" />
+                Upload
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void addFile(file);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              <ToolbarButton onClick={addPage}>
+                <Plus className="h-4 w-4" /> New Page
+              </ToolbarButton>
+              <ToolbarButton onClick={duplicateSelected} disabled={!selected}>
+                <Copy className="h-4 w-4" /> Duplicate
+              </ToolbarButton>
+              <ToolbarButton onClick={() => moveLayer("front")} disabled={!selected}>
+                <ArrowUp className="h-4 w-4" /> Front
+              </ToolbarButton>
+              <ToolbarButton onClick={() => moveLayer("back")} disabled={!selected}>
+                <ArrowDown className="h-4 w-4" /> Back
+              </ToolbarButton>
+              <ToolbarButton onClick={removeSelected} disabled={!selected} destructive>
+                <Trash2 className="h-4 w-4" /> Delete
+              </ToolbarButton>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-b border-stone-200 bg-[#f8f6f1]">
+          <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-2 px-5 py-3">
+            <div className="mr-2 text-xs uppercase tracking-[0.22em] text-stone-500">Pages</div>
+            {pages.map((page, index) => (
+              <button
+                key={page.id}
+                type="button"
+                onClick={() => selectPage(page.id)}
+                className={cn(
+                  "border px-4 py-2 text-sm transition",
+                  page.id === selectedPageId ? "border-ink bg-ink text-white" : "border-stone-300 bg-white text-stone-700 hover:border-ink",
+                )}
+              >
+                {page.title || `Board ${index + 1}`}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={addPage}
+              className="inline-flex items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink"
+            >
+              <Plus className="h-4 w-4" /> Add New Page
+            </button>
+          </div>
+        </div>
+
+        <main className="relative mx-auto max-w-[1680px] px-5 py-5 pr-16">
+          <section className="overflow-auto rounded-xl border border-stone-200 bg-white/70 p-3 shadow-sm">
+            <div
+              ref={boardRef}
+              className="relative mx-auto origin-top-left overflow-hidden bg-[#fbfaf7] shadow-[0_24px_80px_rgba(40,34,25,0.13)]"
+              style={{
+                width: BOARD_WIDTH,
+                height: BOARD_HEIGHT,
+                transform: `scale(${boardScale})`,
+                marginBottom: BOARD_HEIGHT * (boardScale - 1),
+              }}
+              onDrop={handleBoardDrop}
+              onDragOver={(event) => event.preventDefault()}
+              onPointerDown={(event) => {
+                if (event.target === event.currentTarget) setSelectedId(null);
+              }}
+            >
+              {elements.length === 0 && (
+                <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 text-center text-stone-300">
+                  <div>
+                    <div className="font-display text-4xl">Blank board</div>
+                    <div className="mt-2 text-xs uppercase tracking-[0.28em]">Drag products, project images, or uploads onto the page</div>
+                  </div>
+                </div>
+              )}
+
+              {orderedElements.map((element) => (
+                <BoardObject
+                  key={element.id}
+                  element={element}
+                  selected={element.id === selectedId}
+                  onSelect={() => setSelectedId(element.id)}
+                  onChange={(patch) => updateElement(element.id, patch)}
+                  onStartMove={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    setSelectedId(element.id);
+                    setDragMode({
+                      kind: "move",
+                      id: element.id,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      originalPositions: { [element.id]: { x: element.x, y: element.y } },
+                    });
+                  }}
+                  onStartResize={(event) => {
+                    event.stopPropagation();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    setSelectedId(element.id);
+                    setDragMode({
+                      kind: "resize",
+                      id: element.id,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      originalWidth: element.width,
+                      originalHeight: element.height,
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+
+          <aside className="group fixed right-0 top-0 z-50 flex h-screen translate-x-[360px] transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden">
+            <div className="mt-32 flex h-32 w-12 items-center justify-center rounded-l-xl border border-r-0 border-stone-200 bg-white shadow-sm">
+              <div className="-rotate-90 whitespace-nowrap text-xs uppercase tracking-[0.22em] text-stone-500">Board Tools</div>
+            </div>
+            <div className="h-full w-[360px] space-y-4 overflow-y-auto border-l border-stone-200 bg-white p-4 shadow-[-20px_0_60px_rgba(40,34,25,0.12)]">
+              <div>
+              <div className="eyebrow">Board Setup</div>
+              <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
+                Page Title
+                <input
+                  value={activePage.title}
+                  onChange={(event) => updateActivePage({ title: event.target.value })}
+                  className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                />
+              </label>
+              <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
+                Room
+                <select
+                  value={activePage.roomId ?? ""}
+                  onChange={(event) => updateActivePage({ roomId: event.target.value || null })}
+                  className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+                >
+                  <option value="">No room assigned</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>{room.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+                <div className="border border-stone-200 p-3">
+                  <div className="font-display text-2xl">{elements.length}</div>
+                  <div className="eyebrow mt-1">Items</div>
+                </div>
+                <div className="border border-stone-200 p-3">
+                  <div className="font-display text-2xl">{linkedProductCount}</div>
+                  <div className="eyebrow mt-1">Linked</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={resetCurrentBoard}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm hover:border-ink"
+              >
+                <RotateCcw className="h-4 w-4" /> Clear Current Board
+              </button>
+              </div>
+
+            {selected && (
+              <SelectedPanel
+                selected={selected}
+                products={products}
+                onUpdate={(patch) => updateElement(selected.id, patch)}
+              />
+            )}
+
+            <div className="border-t border-stone-200 pt-4">
+              <div className="eyebrow mb-3">Product Catalog</div>
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search products"
+                  className="w-full border border-stone-200 py-2 pl-9 pr-3 text-sm"
+                />
+              </div>
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value as ProductCategory | "All")}
+                className="mb-3 w-full border border-stone-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="All">All categories</option>
+                {PRODUCT_CATEGORIES.map((productCategory) => (
+                  <option key={productCategory} value={productCategory}>{productCategory}</option>
+                ))}
+              </select>
+              <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
+                {filteredProducts.slice(0, 80).map((product) => (
+                  <ProductTrayItem key={product.id} product={product} />
+                ))}
+              </div>
+            </div>
+
+            {roomImages.length > 0 && (
+              <div className="border-t border-stone-200 pt-4">
+                <div className="eyebrow mb-3">Project Images</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {roomImages.slice(0, 24).map((image) => (
+                    <div
+                      key={image.id}
+                      draggable
+                      onDragStart={(event) =>
+                        event.dataTransfer.setData("application/x-merav-room-image", JSON.stringify({ url: image.url, caption: image.caption }))
+                      }
+                      className="cursor-grab rounded-lg border border-stone-200 bg-[#faf9f5] p-2 active:cursor-grabbing"
+                    >
+                      <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
+                        <img src={image.url} alt={image.caption ?? ""} className="max-h-full max-w-full object-contain" />
+                      </div>
+                      <div className="mt-1 truncate text-[11px] text-stone-500">{image.caption || image.kind}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            </div>
+          </aside>
+        </main>
+      </div>
+    </AppShell>
+  );
+}
+
+function BoardObject({
+  element,
+  selected,
+  onSelect,
+  onChange,
+  onStartMove,
+  onStartResize,
+}: {
+  element: BoardElement;
+  selected: boolean;
+  onSelect: () => void;
+  onChange: (patch: Partial<BoardElement>) => void;
+  onStartMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onStartResize: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <div
+      className={cn("absolute select-none", selected && "outline outline-2 outline-offset-2 outline-[#1f4e5f]", element.type !== "text" && "cursor-move")}
+      style={{ left: element.x, top: element.y, width: element.width, height: element.height, zIndex: element.zIndex }}
+      onPointerDown={onStartMove}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
+    >
+      {element.type === "image" && element.src && (
+        <>
+          <img src={element.src} alt={element.label ?? ""} className="h-full w-full object-contain" draggable={false} />
+          {(element.label || element.productName) && (
+            <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 shadow-sm">
+              {element.label || element.productName}
+            </div>
+          )}
+          {element.productId && (
+            <div className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#1f4e5f] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white shadow-sm">
+              Product
+            </div>
+          )}
+          {element.link && (
+            <div className="pointer-events-none absolute right-1 top-1 rounded-full bg-white/90 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-stone-500 shadow-sm">
+              Link
+            </div>
+          )}
+        </>
+      )}
+      {element.type === "shape" && <div className="h-full w-full" style={{ background: element.background ?? "#dcd9ce" }} />}
+      {element.type === "text" && (
+        <>
+          {selected && (
+            <div
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                onStartMove(event);
+              }}
+              className="absolute -top-8 left-0 z-10 cursor-move border border-[#1f4e5f] bg-white px-2 py-1 font-[var(--font-montserrat)] text-[10px] uppercase tracking-[0.14em] text-[#1f4e5f] shadow-sm"
+            >
+              Drag text
+            </div>
+          )}
+          <textarea
+            value={element.text ?? ""}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              onSelect();
+            }}
+            onChange={(event) => onChange({ text: event.target.value })}
+            className="h-full w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-center uppercase leading-tight outline-none"
+            style={{
+              color: element.color ?? "#1f1d1b",
+              fontSize: element.fontSize ?? 24,
+              letterSpacing: element.letterSpacing ?? 1,
+              fontFamily: "var(--font-montserrat)",
+            }}
+          />
+        </>
+      )}
+      {selected && (
+        <button
+          type="button"
+          aria-label="Resize selected item"
+          onPointerDown={onStartResize}
+          className="absolute -bottom-2 -right-2 h-5 w-5 border border-[#1f4e5f] bg-white shadow-sm"
+        />
+      )}
+    </div>
+  );
+}
+
+function SelectedPanel({
+  selected,
+  products,
+  onUpdate,
+}: {
+  selected: BoardElement;
+  products: Product[];
+  onUpdate: (patch: Partial<BoardElement>) => void;
+}) {
+  const linkedProduct = selected.productId ? products.find((product) => product.id === selected.productId) : null;
+
+  return (
+    <div className="border-t border-stone-200 pt-4">
+      <div className="eyebrow mb-3">Selected Item</div>
+      {selected.type === "text" && (
+        <div className="space-y-3">
+          <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+            Text
+            <textarea
+              value={selected.text ?? ""}
+              onChange={(event) => onUpdate({ text: event.target.value })}
+              className="mt-1 min-h-20 w-full resize-y border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+            />
+          </label>
+          <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+            Font size
+            <input
+              type="number"
+              value={selected.fontSize ?? 24}
+              onChange={(event) => onUpdate({ fontSize: Number(event.target.value) || 24 })}
+              className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+            />
+          </label>
+        </div>
+      )}
+      {selected.type === "shape" && (
+        <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+          Color
+          <input
+            type="color"
+            value={selected.background ?? "#dcd9ce"}
+            onChange={(event) => onUpdate({ background: event.target.value })}
+            className="mt-1 h-10 w-full border border-stone-200 bg-white"
+          />
+        </label>
+      )}
+      {selected.type === "image" && (
+        <div className="space-y-3">
+          <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+            Image Label
+            <input
+              value={selected.label ?? ""}
+              onChange={(event) => onUpdate({ label: event.target.value })}
+              placeholder="Primary bath mirror"
+              className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+            />
+          </label>
+          <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+            Link
+            <input
+              value={selected.link ?? ""}
+              onChange={(event) => onUpdate({ link: event.target.value })}
+              placeholder="https://..."
+              className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+            />
+          </label>
+          {linkedProduct && (
+            <div className="rounded-lg border border-stone-200 bg-[#faf9f5] p-3 text-sm text-stone-600">
+              <div className="eyebrow mb-2">Connected Catalog Product</div>
+              <div className="font-medium text-ink">{linkedProduct.name}</div>
+              {linkedProduct.vendor && <div>{linkedProduct.vendor}</div>}
+              {linkedProduct.finish && <div>Finish: {linkedProduct.finish}</div>}
+              {linkedProduct.price && <div>Client price: {linkedProduct.price}</div>}
+              {linkedProduct.product_url && (
+                <a href={linkedProduct.product_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs underline">
+                  Open product link <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductTrayItem({ product }: { product: Product }) {
+  return (
+    <div
+      draggable
+      onDragStart={(event) => event.dataTransfer.setData("application/x-merav-product", JSON.stringify(product))}
+      className="group cursor-grab rounded-lg border border-stone-200 bg-[#faf9f5] p-3 active:cursor-grabbing"
+    >
+      <div className="flex gap-3">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-white">
+          {product.image_url ? (
+            <img src={product.image_url} alt={product.name} className="max-h-full max-w-full object-contain transition group-hover:scale-105" />
+          ) : (
+            <ImageIcon className="h-5 w-5 text-stone-300" />
+          )}
+        </div>
+        <div className="min-w-0 text-sm">
+          <div className="line-clamp-2 font-medium leading-tight text-ink">{product.name}</div>
+          <div className="mt-1 text-xs text-stone-500">{product.vendor || product.category}</div>
+          {product.finish && <div className="text-xs text-stone-500">{product.finish}</div>}
+          {product.price && <div className="text-xs text-stone-500">{product.price}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolbarButton({
+  children,
+  onClick,
+  disabled,
+  destructive,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-2 border px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-35",
+        destructive ? "border-red-200 bg-white text-red-700 hover:border-red-400" : "border-stone-300 bg-white text-ink hover:border-ink",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function productToBoardElement(product: Product, x: number, y: number): Omit<BoardElement, "id" | "zIndex"> {
+  return {
+    type: "image",
+    src: product.image_url || productPlaceholderDataUrl(product.name),
+    label: product.name,
+    link: product.product_url || "",
+    productId: product.id,
+    productName: product.name,
+    vendor: product.vendor,
+    price: product.price,
+    finish: product.finish,
+    x,
+    y,
+    width: 260,
+    height: 230,
+  };
+}
+
+function productPlaceholderDataUrl(name: string) {
+  const safeName = name.replace(/[<>&]/g, "").slice(0, 80);
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 420">
+      <rect width="520" height="420" fill="#f4f1ec"/>
+      <rect x="36" y="36" width="448" height="348" fill="#fbfaf7" stroke="#d9d3c8"/>
+      <text x="260" y="198" text-anchor="middle" font-family="Georgia, serif" font-size="30" fill="#302a24">${safeName}</text>
+      <text x="260" y="238" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" letter-spacing="6" fill="#9b9389">PRODUCT IMAGE</text>
+    </svg>
+  `.replace(/\s+/g, " ").trim())}`;
+}
+
+function loadBoardState(projectId: string): BoardState {
+  if (typeof window === "undefined") return defaultBoardState();
+  const stored = window.localStorage.getItem(storageKey(projectId));
+  if (!stored) return defaultBoardState();
+
+  try {
+    const parsed = JSON.parse(stored) as BoardState;
+    if (Array.isArray(parsed.pages) && parsed.pages.length) {
+      const selectedPageId = parsed.pages.some((page) => page.id === parsed.selectedPageId) ? parsed.selectedPageId : parsed.pages[0].id;
+      return { pages: parsed.pages, selectedPageId };
+    }
+  } catch {
+    window.localStorage.removeItem(storageKey(projectId));
+  }
+
+  return defaultBoardState();
+}
+
+function defaultBoardState(): BoardState {
+  const pages = defaultPages();
+  return { pages, selectedPageId: pages[0].id };
+}
+
+function defaultPages(): BoardPage[] {
+  return [
+    {
+      id: "board-1",
+      title: "Design Board 1",
+      roomId: null,
+      elements: [],
+    },
+  ];
+}
+
+function storageKey(projectId: string) {
+  return `merav-studio-design-boards-v2-${projectId}`;
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function nextZIndex(elements: BoardElement[]) {
+  return Math.max(0, ...elements.map((element) => element.zIndex)) + 1;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
