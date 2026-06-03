@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, PRODUCT_CATEGORIES, type Product, type ProductCategory } from "@/lib/db";
-import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/projects/$id/design-boards")({
@@ -123,7 +122,6 @@ function ProjectDesignBoardsPage() {
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
     enabled: canEditDesignBoards,
-    refetchInterval: canEditDesignBoards ? 3000 : false,
   });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: products = [] } = useQuery({
@@ -179,15 +177,6 @@ function ProjectDesignBoardsPage() {
 
   const setElements = (updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
     setElementsForPage(selectedPageId, updater);
-  };
-
-  const shouldApplyRemoteBoard = (remoteJson: string, updatedAt?: string | null) => {
-    if (remoteJson === lastSavedJsonRef.current) return false;
-    if (removingBackgroundRef.current) return false;
-    if (Date.now() < localEditShieldUntilRef.current) return false;
-    if (pendingSaveJsonRef.current && remoteJson !== pendingSaveJsonRef.current) return false;
-    if (updatedAt && lastRemoteUpdatedAtRef.current && Date.parse(updatedAt) <= Date.parse(lastRemoteUpdatedAtRef.current)) return false;
-    return true;
   };
 
   const markRemoteBoardApplied = (remoteJson: string, updatedAt?: string | null) => {
@@ -326,62 +315,6 @@ function ProjectDesignBoardsPage() {
       if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
     };
   }, [boardState, canEditDesignBoards, id, profile?.id]);
-
-  useEffect(() => {
-    if (!canEditDesignBoards || !remoteLoadedRef.current || !sharedBoard?.board_state || saveStatus === "saving") return;
-    const remoteState = normalizeBoardState(sharedBoard.board_state);
-    const remoteJson = JSON.stringify(remoteState);
-    if (!shouldApplyRemoteBoard(remoteJson, sharedBoard.updated_at)) return;
-    applyingRemoteRef.current = true;
-    markRemoteBoardApplied(remoteJson, sharedBoard.updated_at);
-    boardStateRef.current = remoteState;
-    setBoardState(remoteState);
-    setSelectedId(null);
-    setSaveStatus("saved");
-  }, [canEditDesignBoards, saveStatus, sharedBoard?.board_state, sharedBoard?.updated_at]);
-
-  useEffect(() => {
-    if (!canEditDesignBoards) return;
-    const channel = supabase
-      .channel(`design-board-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "design_boards", filter: `project_id=eq.${id}` },
-        (payload) => {
-          const remoteRecord = payload.new as { board_state?: unknown; updated_at?: string | null };
-          const remoteState = normalizeBoardState(remoteRecord.board_state);
-          const remoteJson = JSON.stringify(remoteState);
-          if (!shouldApplyRemoteBoard(remoteJson, remoteRecord.updated_at)) return;
-          applyingRemoteRef.current = true;
-          markRemoteBoardApplied(remoteJson, remoteRecord.updated_at);
-          boardStateRef.current = remoteState;
-          setBoardState(remoteState);
-          setSelectedId(null);
-          setSaveStatus("saved");
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "design_boards", filter: `project_id=eq.${id}` },
-        (payload) => {
-          const remoteRecord = payload.new as { board_state?: unknown; updated_at?: string | null };
-          const remoteState = normalizeBoardState(remoteRecord.board_state);
-          const remoteJson = JSON.stringify(remoteState);
-          if (!shouldApplyRemoteBoard(remoteJson, remoteRecord.updated_at)) return;
-          applyingRemoteRef.current = true;
-          markRemoteBoardApplied(remoteJson, remoteRecord.updated_at);
-          boardStateRef.current = remoteState;
-          setBoardState(remoteState);
-          setSelectedId(null);
-          setSaveStatus("saved");
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [canEditDesignBoards, id]);
 
   useEffect(() => {
     const updateScale = () => {
