@@ -64,6 +64,7 @@ type ServiceInvoiceDraft = {
   designFee: string;
   currentPhase: InvoicePhaseName;
   stripeLink: string;
+  stripePaymentLinkId: string;
   notes: string;
   phases: Array<{ name: InvoicePhaseName; percent: string; dueDate: string }>;
 };
@@ -275,6 +276,7 @@ function FinancialsPage() {
       designFee: "",
       currentPhase: "Project Start",
       stripeLink: "",
+      stripePaymentLinkId: "",
       notes: "",
       phases: SERVICE_PHASES.map((name, index) => ({ name, percent: DEFAULT_PHASE_SPLITS[index], dueDate: "" })),
     });
@@ -317,6 +319,10 @@ function FinancialsPage() {
         due_date: phase.dueDate || null,
         status: "due" as const,
         notes: serviceDraft.currentPhase === phase.name && serviceDraft.stripeLink ? `Stripe payment link: ${serviceDraft.stripeLink}` : null,
+        stripe_payment_link_id: serviceDraft.currentPhase === phase.name ? serviceDraft.stripePaymentLinkId || null : null,
+        stripe_checkout_session_id: null,
+        stripe_payment_intent_id: null,
+        paid_at: null,
         sort_order: index,
       }));
       const invoiceHtml = buildServiceInvoiceHtml(serviceDraft, fee, payments);
@@ -362,11 +368,16 @@ function FinancialsPage() {
           name: `${serviceDraft.projectName || "Design Service"} ${serviceDraft.currentPhase}`,
           amount: paymentAmount,
           description: `${serviceDraft.clientName || "Client"} - ${serviceDraft.projectType}`,
+          metadata: {
+            invoice_type: "design_service_invoice",
+            project_id: id,
+            payment_phase: serviceDraft.currentPhase,
+          },
         }),
       });
       const body = await res.json();
       if (!res.ok || !body?.url) throw new Error(body?.error || "Could not create payment link.");
-      setServiceDraft({ ...serviceDraft, stripeLink: body.url });
+      setServiceDraft({ ...serviceDraft, stripeLink: body.url, stripePaymentLinkId: body.id || "" });
       toast.success("Stripe payment link added");
     } catch (e: any) {
       toast.error(e?.message || "Could not create Stripe payment link.");

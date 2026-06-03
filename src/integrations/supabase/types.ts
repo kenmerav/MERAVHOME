@@ -73,9 +73,13 @@ export type Database = {
           invoice_id: string
           label: string
           notes: string | null
+          paid_at: string | null
           project_id: string
           sort_order: number
           status: string
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          stripe_payment_link_id: string | null
           updated_at: string
         }
         Insert: {
@@ -86,9 +90,13 @@ export type Database = {
           invoice_id: string
           label: string
           notes?: string | null
+          paid_at?: string | null
           project_id: string
           sort_order?: number
           status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_payment_link_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -99,9 +107,13 @@ export type Database = {
           invoice_id?: string
           label?: string
           notes?: string | null
+          paid_at?: string | null
           project_id?: string
           sort_order?: number
           status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_payment_link_id?: string | null
           updated_at?: string
         }
         Relationships: [

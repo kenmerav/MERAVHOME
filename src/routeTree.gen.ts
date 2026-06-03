@@ -40,6 +40,7 @@ import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.
 import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
 import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
 const ProcurementRoute = ProcurementRouteImport.update({
@@ -199,6 +200,11 @@ const ClientApprovalsProjectIdRoute =
     path: '/client/approvals/$projectId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe/webhook',
+  path: '/api/stripe/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
   id: '/projects/$id/rooms/$roomId',
   path: '/projects/$id/rooms/$roomId',
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
@@ -263,6 +270,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/specbooks': typeof SpecbooksIndexRoute
   '/users': typeof UsersIndexRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
@@ -298,6 +306,7 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
@@ -334,6 +343,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/specbooks/'
     | '/users/'
+    | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
     | '/projects/$id/design-boards'
@@ -368,6 +378,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/specbooks'
     | '/users'
+    | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
     | '/projects/$id/design-boards'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/specbooks/'
     | '/users/'
+    | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
     | '/projects/$id/design-boards'
@@ -437,6 +449,7 @@ export interface RootRouteChildren {
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
   ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
   ProjectsIdDesignBoardsRoute: typeof ProjectsIdDesignBoardsRoute
@@ -667,6 +680,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientApprovalsProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/stripe/webhook': {
+      id: '/api/stripe/webhook'
+      path: '/api/stripe/webhook'
+      fullPath: '/api/stripe/webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/rooms/$roomId': {
       id: '/projects/$id/rooms/$roomId'
       path: '/projects/$id/rooms/$roomId'
@@ -701,6 +721,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIndexRoute: ProjectsIndexRoute,
   SpecbooksIndexRoute: SpecbooksIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
   ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,
   ProjectsIdDesignBoardsRoute: ProjectsIdDesignBoardsRoute,

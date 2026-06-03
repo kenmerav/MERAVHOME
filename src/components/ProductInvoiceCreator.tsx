@@ -78,6 +78,7 @@ type ProductInvoiceDraft = {
   paid: string;
   taxRate: string;
   stripeLink: string;
+  stripePaymentLinkId: string;
   notes: string;
   lines: ProductInvoiceLine[];
 };
@@ -145,11 +146,15 @@ export function ProductInvoiceCreator({
           name: `${draft.invoiceName || "Product Invoice"} - ${draft.clientName || draft.projectName}`,
           amount: Math.max(totals.balance, 0),
           description: `${selectedCount} product${selectedCount === 1 ? "" : "s"} for ${draft.projectName}`,
+          metadata: {
+            invoice_type: "product_invoice",
+            project_id: projectId,
+          },
         }),
       });
       const body = await res.json();
       if (!res.ok || !body?.url) throw new Error(body?.error || "Could not create payment link.");
-      updateDraft({ stripeLink: body.url });
+      updateDraft({ stripeLink: body.url, stripePaymentLinkId: body.id || "" });
       toast.success("Stripe payment link added");
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Could not create Stripe payment link."));
@@ -191,6 +196,10 @@ export function ProductInvoiceCreator({
             due_date: draft.dueDate || null,
             status: totals.balance <= 0 ? "paid" : "due",
             notes: draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
+            stripe_payment_link_id: draft.stripePaymentLinkId || null,
+            stripe_checkout_session_id: null,
+            stripe_payment_intent_id: null,
+            paid_at: null,
             sort_order: 0,
           },
         ],
@@ -503,6 +512,7 @@ function makeDraft({
     paid: "",
     taxRate: defaultTaxRate || "0",
     stripeLink: "",
+    stripePaymentLinkId: "",
     notes: "",
     lines: (onlyApproved
       ? items.filter((item) => item.room_product?.approval_status === "approved")

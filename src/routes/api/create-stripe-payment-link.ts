@@ -50,10 +50,11 @@ export const Route = createFileRoute("/api/create-stripe-payment-link")({
           const access = await requireInvoiceAccess(request);
           if ("error" in access) return access.error;
 
-          const { name, amount, description } = (await request.json()) as {
+          const { name, amount, description, metadata } = (await request.json()) as {
             name?: string;
             amount?: number;
             description?: string;
+            metadata?: Record<string, string | number | boolean | null | undefined>;
           };
           const apiKey = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET;
           if (!apiKey) return json({ error: "Missing STRIPE_SECRET_KEY in Vercel environment variables." }, 500);
@@ -71,10 +72,14 @@ export const Route = createFileRoute("/api/create-stripe-payment-link")({
             unit_amount: String(cents),
             currency: "usd",
           }), apiKey);
-          const link = await stripePost("payment_links", new URLSearchParams({
+          const linkParams = new URLSearchParams({
             "line_items[0][price]": price.id,
             "line_items[0][quantity]": "1",
-          }), apiKey);
+          });
+          Object.entries(metadata ?? {}).forEach(([key, value]) => {
+            if (value != null && value !== "") linkParams.set(`metadata[${key}]`, String(value));
+          });
+          const link = await stripePost("payment_links", linkParams, apiKey);
 
           return json({ id: link.id, url: link.url, amount: cents / 100 });
         } catch (e: any) {
