@@ -100,12 +100,14 @@ function ProjectDesignBoardsPage() {
   const scrollSelectionRef = useRef<number | null>(null);
   const saveTimeoutRef = useRef<number | null>(null);
   const remoteLoadedRef = useRef(false);
+  const boardStateRef = useRef<BoardState>(loadBoardState(id));
   const lastSavedJsonRef = useRef("");
   const lastRemoteUpdatedAtRef = useRef("");
   const pendingSaveJsonRef = useRef<string | null>(null);
+  const localEditShieldUntilRef = useRef(0);
   const removingBackgroundRef = useRef(false);
   const applyingRemoteRef = useRef(false);
-  const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
+  const [boardState, setBoardState] = useState<BoardState>(() => boardStateRef.current);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [boardScale, setBoardScale] = useState(1);
@@ -155,13 +157,13 @@ function ProjectDesignBoardsPage() {
     const previous = undoStackRef.current.at(-1);
     if (!previous) return;
     undoStackRef.current = undoStackRef.current.slice(0, -1);
-    setBoardState(previous);
+    applyLocalBoardUpdate(previous);
     setSelectedId(null);
     setDragMode(null);
   }, []);
 
   const setElementsForPage = (pageId: string, updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
-    setBoardState((current) => {
+    applyLocalBoardUpdate((current) => {
       const safePages = current.pages.length ? current.pages : defaultPages();
       const safeSelectedPageId = safePages.some((page) => page.id === current.selectedPageId) ? current.selectedPageId : safePages[0].id;
       return {
@@ -182,6 +184,7 @@ function ProjectDesignBoardsPage() {
   const shouldApplyRemoteBoard = (remoteJson: string, updatedAt?: string | null) => {
     if (remoteJson === lastSavedJsonRef.current) return false;
     if (removingBackgroundRef.current) return false;
+    if (Date.now() < localEditShieldUntilRef.current) return false;
     if (pendingSaveJsonRef.current && remoteJson !== pendingSaveJsonRef.current) return false;
     if (updatedAt && lastRemoteUpdatedAtRef.current && Date.parse(updatedAt) <= Date.parse(lastRemoteUpdatedAtRef.current)) return false;
     return true;
@@ -192,8 +195,18 @@ function ProjectDesignBoardsPage() {
     if (updatedAt) lastRemoteUpdatedAtRef.current = updatedAt;
   };
 
+  const applyLocalBoardUpdate = (updater: BoardState | ((current: BoardState) => BoardState)) => {
+    localEditShieldUntilRef.current = Date.now() + 2500;
+    setBoardState((current) => {
+      const next = typeof updater === "function" ? updater(current) : updater;
+      boardStateRef.current = next;
+      return next;
+    });
+  };
+
   useEffect(() => {
     const localState = loadBoardState(id);
+    boardStateRef.current = localState;
     setBoardState(localState);
     setSelectedId(null);
     undoStackRef.current = [];
@@ -201,12 +214,14 @@ function ProjectDesignBoardsPage() {
     lastSavedJsonRef.current = "";
     lastRemoteUpdatedAtRef.current = "";
     pendingSaveJsonRef.current = null;
+    localEditShieldUntilRef.current = 0;
     removingBackgroundRef.current = false;
     applyingRemoteRef.current = false;
     setSaveStatus("loading");
   }, [id]);
 
   useEffect(() => {
+    boardStateRef.current = boardState;
     window.localStorage.setItem(storageKey(id), JSON.stringify(boardState));
   }, [boardState, id]);
 
@@ -225,6 +240,7 @@ function ProjectDesignBoardsPage() {
       if (!hasMeaningfulBoardState(remoteState) && hasMeaningfulBoardState(localState)) {
         const localJson = JSON.stringify(localState);
         applyingRemoteRef.current = true;
+        boardStateRef.current = localState;
         setBoardState(localState);
         lastSavedJsonRef.current = localJson;
         remoteLoadedRef.current = true;
@@ -244,6 +260,7 @@ function ProjectDesignBoardsPage() {
         return;
       }
       applyingRemoteRef.current = true;
+      boardStateRef.current = remoteState;
       setBoardState(remoteState);
       markRemoteBoardApplied(JSON.stringify(remoteState), sharedBoard.updated_at);
       remoteLoadedRef.current = true;
@@ -288,10 +305,13 @@ function ProjectDesignBoardsPage() {
     pendingSaveJsonRef.current = nextJson;
     setSaveStatus("saving");
     saveTimeoutRef.current = window.setTimeout(() => {
-      void db.upsertDesignBoard(id, boardState, profile?.id).then(
+      const latestState = boardStateRef.current;
+      const latestJson = JSON.stringify(latestState);
+      pendingSaveJsonRef.current = latestJson;
+      void db.upsertDesignBoard(id, latestState, profile?.id).then(
         (savedBoard) => {
           pendingSaveJsonRef.current = null;
-          lastSavedJsonRef.current = JSON.stringify(boardState);
+          lastSavedJsonRef.current = latestJson;
           if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
           setSaveStatus("saved");
         },
@@ -314,6 +334,7 @@ function ProjectDesignBoardsPage() {
     if (!shouldApplyRemoteBoard(remoteJson, sharedBoard.updated_at)) return;
     applyingRemoteRef.current = true;
     markRemoteBoardApplied(remoteJson, sharedBoard.updated_at);
+    boardStateRef.current = remoteState;
     setBoardState(remoteState);
     setSelectedId(null);
     setSaveStatus("saved");
@@ -333,6 +354,7 @@ function ProjectDesignBoardsPage() {
           if (!shouldApplyRemoteBoard(remoteJson, remoteRecord.updated_at)) return;
           applyingRemoteRef.current = true;
           markRemoteBoardApplied(remoteJson, remoteRecord.updated_at);
+          boardStateRef.current = remoteState;
           setBoardState(remoteState);
           setSelectedId(null);
           setSaveStatus("saved");
@@ -348,6 +370,7 @@ function ProjectDesignBoardsPage() {
           if (!shouldApplyRemoteBoard(remoteJson, remoteRecord.updated_at)) return;
           applyingRemoteRef.current = true;
           markRemoteBoardApplied(remoteJson, remoteRecord.updated_at);
+          boardStateRef.current = remoteState;
           setBoardState(remoteState);
           setSelectedId(null);
           setSaveStatus("saved");
@@ -490,14 +513,14 @@ function ProjectDesignBoardsPage() {
     const next: BoardElement = { ...element, id: crypto.randomUUID(), zIndex: nextZIndex(pageElements) };
     pushUndo();
     setElementsForPage(pageId, (current) => [...current, next]);
-    setBoardState((current) => ({ ...current, selectedPageId: pageId }));
+    applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: pageId }));
     setSelectedId(next.id);
   };
 
   const addPage = () => {
     const nextPage: BoardPage = { id: crypto.randomUUID(), title: `Board ${pages.length + 1}`, roomId: null, elements: [] };
     pushUndo();
-    setBoardState((current) => ({
+    applyLocalBoardUpdate((current) => ({
       selectedPageId: nextPage.id,
       pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
     }));
@@ -510,7 +533,7 @@ function ProjectDesignBoardsPage() {
   };
 
   const selectPage = (pageId: string, scrollToPage = true) => {
-    setBoardState((current) => ({ ...current, selectedPageId: pageId }));
+    applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: pageId }));
     setSelectedId(null);
     if (scrollToPage) {
       requestAnimationFrame(() => {
@@ -521,7 +544,7 @@ function ProjectDesignBoardsPage() {
 
   const updateActivePage = (patch: Partial<BoardPage>) => {
     pushUndo();
-    setBoardState((current) => ({
+    applyLocalBoardUpdate((current) => ({
       ...current,
       pages: current.pages.map((page) => (page.id === selectedPageId ? { ...page, ...patch } : page)),
     }));
@@ -562,17 +585,24 @@ function ProjectDesignBoardsPage() {
   const removeSelectedBackground = async () => {
     if (!selected || selected.type !== "image" || !selected.src) return;
     const targetId = selected.id;
+    const targetPageId = selectedPageId;
     pushUndo();
     removingBackgroundRef.current = true;
+    localEditShieldUntilRef.current = Date.now() + 6000;
     setRemovingBackground(true);
     try {
       const source = await imageSourceForCanvas(selected.src);
       const cutout = await removeFlatImageBackground(source);
-      setElements((current) => current.map((element) => (element.id === targetId ? { ...element, src: cutout } : element)));
+      localEditShieldUntilRef.current = Date.now() + 6000;
+      setElementsForPage(targetPageId, (current) =>
+        current.map((element) => (element.id === targetId ? { ...element, src: cutout } : element)),
+      );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not remove background.");
     } finally {
-      removingBackgroundRef.current = false;
+      window.setTimeout(() => {
+        removingBackgroundRef.current = false;
+      }, 1500);
       setRemovingBackground(false);
     }
   };
@@ -632,7 +662,7 @@ function ProjectDesignBoardsPage() {
         }
       }
       if (closestPageId !== selectedPageId) {
-        setBoardState((current) => ({ ...current, selectedPageId: closestPageId }));
+        applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: closestPageId }));
         setSelectedId(null);
       }
     }, 80);
