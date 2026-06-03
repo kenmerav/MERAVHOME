@@ -1907,7 +1907,67 @@ async function removeFlatImageBackground(src: string) {
       type: "foreground",
     },
   });
-  return blobToDataUrl(cutout);
+  return rescueForegroundDetails(src, await blobToDataUrl(cutout));
+}
+
+async function rescueForegroundDetails(originalSrc: string, cutoutSrc: string) {
+  const [original, cutout] = await Promise.all([
+    loadImageElement(originalSrc),
+    loadImageElement(cutoutSrc),
+  ]);
+  const width = original.naturalWidth || cutout.naturalWidth;
+  const height = original.naturalHeight || cutout.naturalHeight;
+  if (!width || !height) return cutoutSrc;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return cutoutSrc;
+
+  ctx.drawImage(original, 0, 0, width, height);
+  const originalPixels = ctx.getImageData(0, 0, width, height);
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(cutout, 0, 0, width, height);
+  const cutoutPixels = ctx.getImageData(0, 0, width, height);
+
+  for (let index = 0; index < cutoutPixels.data.length; index += 4) {
+    const alpha = cutoutPixels.data[index + 3];
+    if (alpha > 20) continue;
+    const red = originalPixels.data[index];
+    const green = originalPixels.data[index + 1];
+    const blue = originalPixels.data[index + 2];
+    const originalAlpha = originalPixels.data[index + 3];
+    if (!isStrongForegroundPixel(red, green, blue, originalAlpha)) continue;
+
+    cutoutPixels.data[index] = red;
+    cutoutPixels.data[index + 1] = green;
+    cutoutPixels.data[index + 2] = blue;
+    cutoutPixels.data[index + 3] = originalAlpha;
+  }
+
+  ctx.putImageData(cutoutPixels, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function isStrongForegroundPixel(red: number, green: number, blue: number, alpha: number) {
+  if (alpha < 20) return false;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const chroma = max - min;
+  const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+
+  // Rescue only confident product/detail pixels so plain white backgrounds stay transparent.
+  return luma < 214 || (luma < 238 && chroma > 28);
+}
+
+function loadImageElement(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not inspect background-removed image."));
+    image.src = src;
+  });
 }
 
 function blobToDataUrl(blob: Blob) {
