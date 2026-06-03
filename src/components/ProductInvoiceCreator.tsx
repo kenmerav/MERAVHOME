@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 type ProcurementInvoiceItem = {
   id: string;
   room_product?: {
+    approval_status?: string | null;
     product?: {
       id: string;
       name: string;
@@ -503,13 +504,16 @@ function makeDraft({
     taxRate: defaultTaxRate || "0",
     stripeLink: "",
     notes: "",
-    lines: items.map((item) => {
+    lines: (onlyApproved
+      ? items.filter((item) => item.room_product?.approval_status === "approved")
+      : items
+    ).map((item) => {
       const product = item.room_product?.product;
       const material = item.material;
       return {
         sourceId: item.id,
         productId: product?.id ?? null,
-        selected: onlyApproved ? item.room_product?.approval_status === "approved" : true,
+        selected: true,
         name: material?.client_product_name || product?.name || "Product",
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",

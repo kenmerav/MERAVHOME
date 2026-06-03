@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice } from "@/lib/db";
-import { Check, ExternalLink } from "lucide-react";
+import { Check, ChevronDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
 import { formatMoney, normalizeMoneyInput, procurementTotals } from "@/lib/money";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type ProcurementMaterialDetails = {
   client_product_name: string | null;
@@ -36,9 +38,9 @@ export const Route = createFileRoute("/procurement")({
 function ProcurementPage() {
   const qc = useQueryClient();
   const [projectFilter, setProjectFilter] = useState("__overall");
-  const [roomFilter, setRoomFilter] = useState("__all");
-  const [categoryFilter, setCategoryFilter] = useState("__all");
-  const [vendorFilter, setVendorFilter] = useState("__all");
+  const [roomFilters, setRoomFilters] = useState<string[]>([]);
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
+  const [vendorFilters, setVendorFilters] = useState<string[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState("__all");
   const [taxRate, setTaxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
@@ -145,13 +147,21 @@ function ProcurementPage() {
       projectItems.filter((item) => {
         const product = item.room_product?.product;
         const room = item.room_product?.room;
-        if (roomFilter !== "__all" && room?.id !== roomFilter) return false;
-        if (categoryFilter !== "__all" && product?.category !== categoryFilter) return false;
-        if (vendorFilter !== "__all" && product?.vendor !== vendorFilter) return false;
+        if (roomFilters.length > 0 && (!room?.id || !roomFilters.includes(room.id))) return false;
+        if (
+          categoryFilters.length > 0 &&
+          (!product?.category || !categoryFilters.includes(product.category))
+        )
+          return false;
+        if (
+          vendorFilters.length > 0 &&
+          (!product?.vendor || !vendorFilters.includes(product.vendor))
+        )
+          return false;
         if (selectedInvoiceItemIds && !selectedInvoiceItemIds.has(item.id)) return false;
         return true;
       }),
-    [projectItems, roomFilter, categoryFilter, selectedInvoiceItemIds, vendorFilter],
+    [projectItems, roomFilters, categoryFilters, selectedInvoiceItemIds, vendorFilters],
   );
 
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
@@ -174,6 +184,9 @@ function ProcurementPage() {
   const ordered = visibleItems.filter((i) => i.ordered).length;
   const received = visibleItems.filter((i) => i.received).length;
   const installed = visibleItems.filter((i) => i.installed).length;
+  const approvedVisibleItems = visibleItems.filter(
+    (item) => item.room_product?.approval_status === "approved",
+  );
   const money = procurementTotals(visibleItems, taxRate);
   const selectedProject =
     projectFilter === "__overall"
@@ -247,9 +260,9 @@ function ProcurementPage() {
               value={projectFilter}
               onChange={(e) => {
                 setProjectFilter(e.target.value);
-                setRoomFilter("__all");
-                setCategoryFilter("__all");
-                setVendorFilter("__all");
+                setRoomFilters([]);
+                setCategoryFilters([]);
+                setVendorFilters([]);
                 setInvoiceFilter("__all");
               }}
               className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
@@ -264,49 +277,31 @@ function ProcurementPage() {
             </select>
           </div>
           <div className="w-full sm:min-w-[200px] sm:w-auto">
-            <label className="eyebrow block mb-2">Room</label>
-            <select
-              value={roomFilter}
-              onChange={(e) => setRoomFilter(e.target.value)}
-              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="__all">All Rooms</option>
-              {roomOptions.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.name}
-                </option>
-              ))}
-            </select>
+            <MultiFilter
+              label="Room"
+              allLabel="All Rooms"
+              options={roomOptions}
+              selected={roomFilters}
+              onChange={setRoomFilters}
+            />
           </div>
           <div className="w-full sm:min-w-[200px] sm:w-auto">
-            <label className="eyebrow block mb-2">Category</label>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="__all">All Categories</option>
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+            <MultiFilter
+              label="Category"
+              allLabel="All Categories"
+              options={categoryOptions.map((category) => ({ id: category, name: category }))}
+              selected={categoryFilters}
+              onChange={setCategoryFilters}
+            />
           </div>
           <div className="w-full sm:min-w-[220px] sm:w-auto">
-            <label className="eyebrow block mb-2">Vendor</label>
-            <select
-              value={vendorFilter}
-              onChange={(e) => setVendorFilter(e.target.value)}
-              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="__all">All Vendors</option>
-              {vendorOptions.map((vendor) => (
-                <option key={vendor} value={vendor}>
-                  {vendor}
-                </option>
-              ))}
-            </select>
+            <MultiFilter
+              label="Vendor"
+              allLabel="All Vendors"
+              options={vendorOptions.map((vendor) => ({ id: vendor, name: vendor }))}
+              selected={vendorFilters}
+              onChange={setVendorFilters}
+            />
           </div>
           <div className="w-full sm:min-w-[240px] sm:w-auto">
             <label className="eyebrow block mb-2">Invoice</label>
@@ -346,7 +341,7 @@ function ProcurementPage() {
                 defaultTaxRate={taxRate}
                 onlyApproved
                 buttonLabel="Invoice Approved"
-                disabled={!selectedProject || visibleItems.length === 0}
+                disabled={!selectedProject || approvedVisibleItems.length === 0}
                 onSaved={() => {
                   qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
                   qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
@@ -581,6 +576,85 @@ function EditableMoneyCell({
       className="h-8 w-24 border border-input bg-background px-2 text-right text-xs"
       placeholder="$0.00"
     />
+  );
+}
+
+function MultiFilter({
+  label,
+  allLabel,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  options: Array<{ id: string; name: string }>;
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const selectedNames = options
+    .filter((option) => selected.includes(option.id))
+    .map((option) => option.name);
+  const display =
+    selectedNames.length === 0
+      ? allLabel
+      : selectedNames.length === 1
+        ? selectedNames[0]
+        : `${selectedNames.length} selected`;
+
+  const toggleOption = (id: string) => {
+    onChange(selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]);
+  };
+
+  return (
+    <div>
+      <label className="eyebrow block mb-2">{label}</label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="h-10 w-full border border-input bg-background px-3 py-2 text-sm flex items-center justify-between gap-3"
+          >
+            <span className="truncate">{display}</span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-0" align="start">
+          <div className="border-b border-border p-3 flex items-center justify-between gap-3">
+            <div className="eyebrow">{label}</div>
+            {selected.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-xs text-muted-foreground underline-offset-4 hover:text-ink hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="max-h-72 overflow-y-auto p-2">
+            {options.length === 0 ? (
+              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                No options yet.
+              </div>
+            ) : (
+              options.map((option) => (
+                <label
+                  key={option.id}
+                  className="flex cursor-pointer items-center gap-3 px-2 py-2 text-sm hover:bg-bone"
+                >
+                  <Checkbox
+                    checked={selected.includes(option.id)}
+                    onCheckedChange={() => toggleOption(option.id)}
+                  />
+                  <span className="truncate">{option.name}</span>
+                </label>
+              ))
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 
