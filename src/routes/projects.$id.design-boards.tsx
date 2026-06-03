@@ -118,6 +118,7 @@ function ProjectDesignBoardsPage() {
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
     enabled: canEditDesignBoards,
+    refetchInterval: canEditDesignBoards ? 3000 : false,
   });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: products = [] } = useQuery({
@@ -264,6 +265,18 @@ function ProjectDesignBoardsPage() {
       if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
     };
   }, [boardState, canEditDesignBoards, id, profile?.id]);
+
+  useEffect(() => {
+    if (!canEditDesignBoards || !remoteLoadedRef.current || !sharedBoard?.board_state || saveStatus === "saving") return;
+    const remoteState = normalizeBoardState(sharedBoard.board_state);
+    const remoteJson = JSON.stringify(remoteState);
+    if (remoteJson === lastSavedJsonRef.current) return;
+    applyingRemoteRef.current = true;
+    lastSavedJsonRef.current = remoteJson;
+    setBoardState(remoteState);
+    setSelectedId(null);
+    setSaveStatus("saved");
+  }, [canEditDesignBoards, saveStatus, sharedBoard?.board_state, sharedBoard?.updated_at]);
 
   useEffect(() => {
     if (!canEditDesignBoards) return;
