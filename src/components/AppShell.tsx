@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -27,6 +27,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("merav.sidebar.collapsed") === "true";
+  });
 
   useEffect(() => {
     let active = true;
@@ -76,6 +80,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     setMobileOpen(false);
   }, [loc.pathname]);
 
+  useEffect(() => {
+    window.localStorage.setItem("merav.sidebar.collapsed", String(desktopCollapsed));
+  }, [desktopCollapsed]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
     navigate({ to: "/login" });
@@ -91,14 +99,30 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex bg-background">
-      <aside className="hidden lg:flex w-64 flex-col border-r border-border bg-sidebar sticky top-0 h-screen print:hidden">
-        <div className="px-7 pt-8 pb-10">
-          <Link to="/" className="block">
-            <div className="font-display text-2xl tracking-tight leading-none">MERAV</div>
-            <div className="eyebrow mt-1.5">Studio</div>
-          </Link>
+      <aside
+        className={cn(
+          "hidden lg:flex flex-col border-r border-border bg-sidebar sticky top-0 h-screen print:hidden transition-[width] duration-200",
+          desktopCollapsed ? "w-[76px]" : "w-64",
+        )}
+      >
+        <div className={cn("pt-8 pb-10", desktopCollapsed ? "px-3" : "px-7")}>
+          <div className={cn("flex items-start justify-between gap-3", desktopCollapsed && "flex-col items-center")}>
+            <Link to="/" className={cn("block", desktopCollapsed && "text-center")}>
+              <div className={cn("font-display tracking-tight leading-none", desktopCollapsed ? "text-xl" : "text-2xl")}>MERAV</div>
+              {!desktopCollapsed && <div className="eyebrow mt-1.5">Studio</div>}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setDesktopCollapsed((collapsed) => !collapsed)}
+              className="inline-flex h-8 w-8 items-center justify-center border border-border bg-background text-muted-foreground transition hover:border-ink hover:text-ink"
+              aria-label={desktopCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={desktopCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {desktopCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
-        <nav className="flex-1 px-3 space-y-0.5">
+        <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !profile?.is_owner) return null;
             if (to === "/catalog" && profile?.role === "Client") return null;
@@ -110,28 +134,38 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={to}
                 to={to}
+                title={desktopCollapsed ? label : undefined}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-2.5 text-sm rounded-sm transition-colors",
+                  "flex items-center rounded-sm text-sm transition-colors",
+                  desktopCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5",
                   active ? "bg-bone text-ink font-medium" : "text-muted-foreground hover:text-ink hover:bg-bone/60"
                 )}
               >
-                <Icon className="w-[15px] h-[15px] stroke-[1.5]" />
-                {label}
+                <Icon className="w-[15px] h-[15px] shrink-0 stroke-[1.5]" />
+                {!desktopCollapsed && label}
               </Link>
             );
           })}
         </nav>
-        <div className="px-7 py-6 border-t border-border">
+        <div className={cn("border-t border-border py-6", desktopCollapsed ? "px-3" : "px-7")}>
           {profile && (
-            <div className="mb-5">
-              <div className="text-sm text-ink truncate">{profile.full_name}</div>
-              <div className="eyebrow mt-1">{profile.is_owner ? "Overall Admin" : profile.role}</div>
+            <div className={cn("mb-5", desktopCollapsed && "text-center")}>
+              {!desktopCollapsed && (
+                <>
+                  <div className="text-sm text-ink truncate">{profile.full_name}</div>
+                  <div className="eyebrow mt-1">{profile.is_owner ? "Overall Admin" : profile.role}</div>
+                </>
+              )}
               <button
                 type="button"
                 onClick={signOut}
-                className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-ink"
+                title={desktopCollapsed ? "Sign out" : undefined}
+                className={cn(
+                  "inline-flex items-center text-xs text-muted-foreground hover:text-ink",
+                  desktopCollapsed ? "mt-0 justify-center" : "mt-3 gap-2",
+                )}
               >
-                <LogOut className="w-3 h-3" /> Sign out
+                <LogOut className="w-3 h-3" /> {!desktopCollapsed && "Sign out"}
               </button>
             </div>
           )}
