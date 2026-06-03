@@ -67,6 +67,7 @@ type BoardState = {
 type DragMode =
   | {
       kind: "move";
+      pageId: string;
       id: string;
       startX: number;
       startY: number;
@@ -74,6 +75,7 @@ type DragMode =
     }
   | {
       kind: "resize";
+      pageId: string;
       id: string;
       startX: number;
       startY: number;
@@ -89,10 +91,12 @@ const MAX_ZOOM = 1.25;
 
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
-  const boardRef = useRef<HTMLDivElement | null>(null);
+  const boardStripRef = useRef<HTMLDivElement | null>(null);
+  const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const copiedElementRef = useRef<BoardElement | null>(null);
   const undoStackRef = useRef<BoardState[]>([]);
   const hasCustomZoomRef = useRef(false);
+  const scrollSelectionRef = useRef<number | null>(null);
   const [boardState, setBoardState] = useState<BoardState>(() => loadBoardState(id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -139,19 +143,23 @@ function ProjectDesignBoardsPage() {
     setDragMode(null);
   }, []);
 
-  const setElements = (updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
+  const setElementsForPage = (pageId: string, updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
     setBoardState((current) => {
       const safePages = current.pages.length ? current.pages : defaultPages();
       const safeSelectedPageId = safePages.some((page) => page.id === current.selectedPageId) ? current.selectedPageId : safePages[0].id;
       return {
         selectedPageId: safeSelectedPageId,
         pages: safePages.map((page) =>
-          page.id === safeSelectedPageId
+          page.id === pageId
             ? { ...page, elements: typeof updater === "function" ? updater(page.elements) : updater }
             : page,
         ),
       };
     });
+  };
+
+  const setElements = (updater: BoardElement[] | ((current: BoardElement[]) => BoardElement[])) => {
+    setElementsForPage(selectedPageId, updater);
   };
 
   useEffect(() => {
@@ -166,7 +174,7 @@ function ProjectDesignBoardsPage() {
 
   useEffect(() => {
     const updateScale = () => {
-      const width = boardRef.current?.parentElement?.clientWidth ?? BOARD_WIDTH;
+      const width = boardStripRef.current?.clientWidth ?? BOARD_WIDTH;
       if (!hasCustomZoomRef.current) setBoardScale(Math.min(1, Math.max(MIN_ZOOM, (width - 24) / BOARD_WIDTH)));
     };
     updateScale();
@@ -179,7 +187,7 @@ function ProjectDesignBoardsPage() {
       if (!dragMode) return;
       const dx = (event.clientX - dragMode.startX) / boardScale;
       const dy = (event.clientY - dragMode.startY) / boardScale;
-      setElements((current) =>
+      setElementsForPage(dragMode.pageId, (current) =>
         current.map((element) => {
           if (dragMode.kind === "move") {
             const original = dragMode.originalPositions[element.id];
@@ -276,9 +284,9 @@ function ProjectDesignBoardsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pushUndo, selected, selectedId, undoLastChange]);
 
-  const updateElement = (elementId: string, patch: Partial<BoardElement>) => {
+  const updateElement = (elementId: string, patch: Partial<BoardElement>, pageId = selectedPageId) => {
     pushUndo();
-    setElements((current) => current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)));
+    setElementsForPage(pageId, (current) => current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)));
   };
 
   const toggleBoardDetails = () => {
@@ -289,10 +297,12 @@ function ProjectDesignBoardsPage() {
     );
   };
 
-  const addElement = (element: Omit<BoardElement, "id" | "zIndex">) => {
-    const next: BoardElement = { ...element, id: crypto.randomUUID(), zIndex: nextZIndex(elements) };
+  const addElement = (element: Omit<BoardElement, "id" | "zIndex">, pageId = selectedPageId) => {
+    const pageElements = pages.find((page) => page.id === pageId)?.elements ?? elements;
+    const next: BoardElement = { ...element, id: crypto.randomUUID(), zIndex: nextZIndex(pageElements) };
     pushUndo();
-    setElements((current) => [...current, next]);
+    setElementsForPage(pageId, (current) => [...current, next]);
+    setBoardState((current) => ({ ...current, selectedPageId: pageId }));
     setSelectedId(next.id);
   };
 
@@ -311,9 +321,14 @@ function ProjectDesignBoardsPage() {
     setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
   };
 
-  const selectPage = (pageId: string) => {
+  const selectPage = (pageId: string, scrollToPage = true) => {
     setBoardState((current) => ({ ...current, selectedPageId: pageId }));
     setSelectedId(null);
+    if (scrollToPage) {
+      requestAnimationFrame(() => {
+        pageRefs.current[pageId]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      });
+    }
   };
 
   const updateActivePage = (patch: Partial<BoardPage>) => {
@@ -371,17 +386,17 @@ function ProjectDesignBoardsPage() {
     }
   };
 
-  const handleBoardDrop = async (event: ReactDragEvent<HTMLDivElement>) => {
+  const handleBoardDrop = async (event: ReactDragEvent<HTMLDivElement>, pageId = selectedPageId) => {
     event.preventDefault();
     const productJson = event.dataTransfer.getData("application/x-merav-product");
     const imageJson = event.dataTransfer.getData("application/x-merav-room-image");
-    const rect = boardRef.current?.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect();
     const x = rect ? (event.clientX - rect.left) / boardScale : 500;
     const y = rect ? (event.clientY - rect.top) / boardScale : 260;
 
     if (productJson) {
       const product = JSON.parse(productJson) as Product;
-      addElement(productToBoardElement(product, x - 130, y - 115));
+      addElement(productToBoardElement(product, x - 130, y - 115), pageId);
       return;
     }
 
@@ -395,12 +410,41 @@ function ProjectDesignBoardsPage() {
         y: y - 115,
         width: 320,
         height: 230,
-      });
+      }, pageId);
       return;
     }
 
     const file = Array.from(event.dataTransfer.files ?? []).find((item) => item.type.startsWith("image/"));
-    if (file) await addFile(file);
+    if (file) {
+      const src = await fileToDataUrl(file);
+      addElement({ type: "image", src, label: file.name.replace(/\.[^.]+$/, ""), x: x - 170, y: y - 130, width: 340, height: 260 }, pageId);
+    }
+  };
+
+  const handleBoardStripScroll = () => {
+    if (scrollSelectionRef.current) window.clearTimeout(scrollSelectionRef.current);
+    scrollSelectionRef.current = window.setTimeout(() => {
+      const strip = boardStripRef.current;
+      if (!strip) return;
+      const stripRect = strip.getBoundingClientRect();
+      const stripCenter = stripRect.left + stripRect.width / 2;
+      let closestPageId = selectedPageId;
+      let closestDistance = Number.POSITIVE_INFINITY;
+      for (const page of pages) {
+        const node = pageRefs.current[page.id];
+        if (!node) continue;
+        const rect = node.getBoundingClientRect();
+        const distance = Math.abs(rect.left + rect.width / 2 - stripCenter);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestPageId = page.id;
+        }
+      }
+      if (closestPageId !== selectedPageId) {
+        setBoardState((current) => ({ ...current, selectedPageId: closestPageId }));
+        setSelectedId(null);
+      }
+    }, 80);
   };
 
   if (!project) {
@@ -473,66 +517,104 @@ function ProjectDesignBoardsPage() {
         </div>
 
         <main className="relative mx-auto max-w-[1680px] px-5 py-5 pb-40 pr-16">
-          <section className="overflow-auto rounded-xl border border-stone-200 bg-white/70 p-3 shadow-sm">
+          <section
+            ref={boardStripRef}
+            className="overflow-x-auto overflow-y-hidden rounded-xl border border-stone-200 bg-white/70 p-3 shadow-sm"
+            onScroll={handleBoardStripScroll}
+          >
             <div
-              ref={boardRef}
-              className="relative mx-auto origin-top-left overflow-hidden bg-[#fbfaf7] shadow-[0_24px_80px_rgba(40,34,25,0.13)]"
+              className="flex items-start gap-10"
               style={{
-                width: BOARD_WIDTH,
-                height: BOARD_HEIGHT,
-                transform: `scale(${boardScale})`,
-                marginBottom: BOARD_HEIGHT * (boardScale - 1),
-              }}
-              onDrop={handleBoardDrop}
-              onDragOver={(event) => event.preventDefault()}
-              onPointerDown={(event) => {
-                if (event.target === event.currentTarget) setSelectedId(null);
+                width: pages.length * BOARD_WIDTH * boardScale + Math.max(0, pages.length - 1) * 40,
+                minHeight: BOARD_HEIGHT * boardScale,
               }}
             >
-              {elements.length === 0 && (
-                <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 text-center text-stone-300">
-                  <div>
-                    <div className="font-display text-4xl">Blank board</div>
-                    <div className="mt-2 text-xs uppercase tracking-[0.28em]">Drag products, project images, or uploads onto the page</div>
-                  </div>
-                </div>
-              )}
+              {pages.map((page, pageIndex) => {
+                const pageElements = page.elements;
+                const sortedPageElements = [...pageElements].sort((a, b) => a.zIndex - b.zIndex);
+                const isActivePage = page.id === selectedPageId;
 
-              {orderedElements.map((element) => (
-                <BoardObject
-                  key={element.id}
-                  element={element}
-                  selected={element.id === selectedId}
-                  onSelect={() => setSelectedId(element.id)}
-                  onChange={(patch) => updateElement(element.id, patch)}
-	                  onStartMove={(event) => {
-	                    pushUndo();
-	                    event.currentTarget.setPointerCapture(event.pointerId);
-	                    setSelectedId(element.id);
-                    setDragMode({
-                      kind: "move",
-                      id: element.id,
-                      startX: event.clientX,
-                      startY: event.clientY,
-                      originalPositions: { [element.id]: { x: element.x, y: element.y } },
-                    });
-                  }}
-	                  onStartResize={(event) => {
-	                    event.stopPropagation();
-	                    pushUndo();
-	                    event.currentTarget.setPointerCapture(event.pointerId);
-                    setSelectedId(element.id);
-                    setDragMode({
-                      kind: "resize",
-                      id: element.id,
-                      startX: event.clientX,
-                      startY: event.clientY,
-                      originalWidth: element.width,
-                      originalHeight: element.height,
-                    });
-                  }}
-                />
-              ))}
+                return (
+                  <div
+                    key={page.id}
+                    ref={(node) => {
+                      pageRefs.current[page.id] = node;
+                    }}
+                    className="shrink-0"
+                    style={{ width: BOARD_WIDTH * boardScale, height: BOARD_HEIGHT * boardScale }}
+                  >
+                    <div
+                      className={cn(
+                        "relative origin-top-left overflow-hidden bg-[#fbfaf7] shadow-[0_24px_80px_rgba(40,34,25,0.13)] transition",
+                        isActivePage && "ring-2 ring-[#6d4cff]",
+                      )}
+                      style={{
+                        width: BOARD_WIDTH,
+                        height: BOARD_HEIGHT,
+                        transform: `scale(${boardScale})`,
+                      }}
+                      onDrop={(event) => handleBoardDrop(event, page.id)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onPointerDown={(event) => {
+                        selectPage(page.id, false);
+                        if (event.target === event.currentTarget) setSelectedId(null);
+                      }}
+                    >
+                      {pageElements.length === 0 && (
+                        <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 text-center text-stone-300">
+                          <div>
+                            <div className="font-display text-4xl">Blank board</div>
+                            <div className="mt-2 text-xs uppercase tracking-[0.28em]">Page {pageIndex + 1} · drag products, project images, or uploads here</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {sortedPageElements.map((element) => (
+                        <BoardObject
+                          key={element.id}
+                          element={element}
+                          selected={isActivePage && element.id === selectedId}
+                          onSelect={() => {
+                            selectPage(page.id, false);
+                            setSelectedId(element.id);
+                          }}
+                          onChange={(patch) => updateElement(element.id, patch, page.id)}
+                          onStartMove={(event) => {
+                            pushUndo();
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                            selectPage(page.id, false);
+                            setSelectedId(element.id);
+                            setDragMode({
+                              kind: "move",
+                              pageId: page.id,
+                              id: element.id,
+                              startX: event.clientX,
+                              startY: event.clientY,
+                              originalPositions: { [element.id]: { x: element.x, y: element.y } },
+                            });
+                          }}
+                          onStartResize={(event) => {
+                            event.stopPropagation();
+                            pushUndo();
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                            selectPage(page.id, false);
+                            setSelectedId(element.id);
+                            setDragMode({
+                              kind: "resize",
+                              pageId: page.id,
+                              id: element.id,
+                              startX: event.clientX,
+                              startY: event.clientY,
+                              originalWidth: element.width,
+                              originalHeight: element.height,
+                            });
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
