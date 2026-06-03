@@ -45,6 +45,7 @@ type BoardElement = {
   fontSize?: number;
   letterSpacing?: number;
   link?: string;
+  hideDetails?: boolean;
   productId?: string | null;
   productName?: string | null;
   vendor?: string | null;
@@ -618,17 +619,17 @@ function BoardObject({
       {element.type === "image" && element.src && (
         <>
           <img src={element.src} alt={element.label ?? ""} className="h-full w-full object-contain" draggable={false} />
-          {(element.label || element.productName) && (
+          {!element.hideDetails && (element.label || element.productName) && (
             <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 shadow-sm">
               {element.label || element.productName}
             </div>
           )}
-          {element.productId && (
+          {!element.hideDetails && element.productId && (
             <div className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#1f4e5f] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white shadow-sm">
               Product
             </div>
           )}
-          {element.link && (
+          {!element.hideDetails && element.link && (
             <div className="pointer-events-none absolute right-1 top-1 rounded-full bg-white/90 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-stone-500 shadow-sm">
               Link
             </div>
@@ -741,6 +742,18 @@ function SelectedPanel({
           <p className="text-xs leading-relaxed text-stone-500">
             Best for product images on white or solid backgrounds. Messy lifestyle photos may still need manual cleanup later.
           </p>
+          <button
+            type="button"
+            onClick={() => onUpdate({ hideDetails: !selected.hideDetails })}
+            className={cn(
+              "inline-flex w-full items-center justify-center gap-2 border px-4 py-2 text-sm transition",
+              selected.hideDetails
+                ? "border-ink bg-ink text-white"
+                : "border-stone-300 bg-white hover:border-ink",
+            )}
+          >
+            {selected.hideDetails ? "Show Text / Link on Board" : "Hide Text / Link on Board"}
+          </button>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
             Image Label
             <input
