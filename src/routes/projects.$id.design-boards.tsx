@@ -112,6 +112,7 @@ type ActiveBoardUser = {
   color: string;
   selectedPageId?: string | null;
   selectedLayerId?: string | null;
+  selectedAt?: string | null;
   onlineAt: string;
 };
 
@@ -141,6 +142,7 @@ const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 1.25;
 const AUTOSAVE_DELAY_MS = 700;
 const VERSION_SNAPSHOT_INTERVAL_MS = 45_000;
+const REMOTE_SELECTION_STALE_MS = 1500;
 
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
@@ -176,6 +178,7 @@ function ProjectDesignBoardsPage() {
   const [category, setCategory] = useState<ProductCategory | "All">("All");
   const [removingBackground, setRemovingBackground] = useState(false);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "saving" | "saved" | "error">(
     "loading",
   );
@@ -232,11 +235,13 @@ function ProjectDesignBoardsPage() {
     const selections = new Map<string, ActiveBoardUser[]>();
     for (const user of activeUsers) {
       if (!user.selectedLayerId || !user.selectedPageId) continue;
+      const selectedAt = user.selectedAt ? new Date(user.selectedAt).getTime() : 0;
+      if (!selectedAt || presenceNow - selectedAt > REMOTE_SELECTION_STALE_MS) continue;
       const key = `${user.selectedPageId}:${user.selectedLayerId}`;
       selections.set(key, [...(selections.get(key) ?? []), user]);
     }
     return selections;
-  }, [activeUsers]);
+  }, [activeUsers, presenceNow]);
 
   const pushUndo = useCallback(() => {
     undoStackRef.current = [...undoStackRef.current.slice(-49), cloneBoardState(boardState)];
@@ -401,6 +406,7 @@ function ProjectDesignBoardsPage() {
           color: userPresenceColor(profile.id),
           selectedPageId: null,
           selectedLayerId: null,
+          selectedAt: null,
           onlineAt: new Date().toISOString(),
         } satisfies ActiveBoardUser);
       });
@@ -423,6 +429,7 @@ function ProjectDesignBoardsPage() {
   useEffect(() => {
     const channel = realtimeChannelRef.current;
     if (!channel || !canEditDesignBoards || !profile?.id) return;
+    const now = new Date().toISOString();
     void channel.track({
       clientId: clientIdRef.current,
       userId: profile.id,
@@ -431,7 +438,8 @@ function ProjectDesignBoardsPage() {
       color: userPresenceColor(profile.id),
       selectedPageId,
       selectedLayerId: selectedId,
-      onlineAt: new Date().toISOString(),
+      selectedAt: selectedId ? now : null,
+      onlineAt: now,
     } satisfies ActiveBoardUser);
   }, [
     canEditDesignBoards,
@@ -441,6 +449,12 @@ function ProjectDesignBoardsPage() {
     selectedId,
     selectedPageId,
   ]);
+
+  useEffect(() => {
+    if (!activeUsers.some((user) => user.selectedLayerId)) return;
+    const timer = window.setInterval(() => setPresenceNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [activeUsers]);
 
   useEffect(() => {
     boardStateRef.current = boardState;
