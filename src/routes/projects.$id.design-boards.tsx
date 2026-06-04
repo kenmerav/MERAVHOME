@@ -14,7 +14,6 @@ import {
   Copy,
   ExternalLink,
   Image as ImageIcon,
-  MousePointer2,
   Plus,
   Search,
   Scissors,
@@ -1205,20 +1204,6 @@ function ProjectDesignBoardsPage() {
                 }
               >
                 <Type className="h-4 w-4" /> Text
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() =>
-                  addElement({
-                    type: "shape",
-                    x: 280,
-                    y: 250,
-                    width: 430,
-                    height: 160,
-                    background: "#dcd9ce",
-                  })
-                }
-              >
-                <MousePointer2 className="h-4 w-4" /> Color Block
               </ToolbarButton>
               <label className="inline-flex cursor-pointer items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink">
                 <Upload className="h-4 w-4" />
