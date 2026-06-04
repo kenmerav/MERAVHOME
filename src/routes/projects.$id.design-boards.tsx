@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
@@ -23,8 +23,17 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
-import { db, PRODUCT_CATEGORIES, type Product, type ProductCategory } from "@/lib/db";
+import {
+  db,
+  PRODUCT_CATEGORIES,
+  type MaterialItem,
+  type Product,
+  type ProductCategory,
+  type Room,
+} from "@/lib/db";
+import { buildClientProductName } from "@/lib/clientProductName";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/projects/$id/design-boards")({
   head: () => ({ meta: [{ title: "Design Boards — MERAV Studio" }] }),
@@ -60,6 +69,11 @@ type BoardElement = {
   vendor?: string | null;
   price?: string | null;
   finish?: string | null;
+  materialItemId?: string | null;
+  materialRoomId?: string | null;
+  materialCategory?: ProductCategory | null;
+  materialQuantity?: number | null;
+  materialFinish?: string | null;
 };
 
 type BoardPage = {
@@ -171,6 +185,7 @@ const REMOTE_SELECTION_STALE_MS = 1500;
 
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
+  const queryClient = useQueryClient();
   const boardStripRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const copiedElementsRef = useRef<BoardElement[]>([]);
@@ -204,6 +219,7 @@ function ProjectDesignBoardsPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ProductCategory | "All">("All");
   const [removingBackground, setRemovingBackground] = useState(false);
+  const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "saving" | "saved" | "error">(
@@ -236,6 +252,11 @@ function ProjectDesignBoardsPage() {
   const { data: roomImages = [] } = useQuery({
     queryKey: ["projectImages", id],
     queryFn: async () => (await db.listProjectRoomImages(id)) ?? [],
+  });
+  const { data: materialItems = [] } = useQuery({
+    queryKey: ["materialItems", id],
+    queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
+    enabled: canEditDesignBoards,
   });
 
   const pages = boardState.pages.length ? boardState.pages : defaultPages();
@@ -755,6 +776,140 @@ function ProjectDesignBoardsPage() {
     setElementsForPage(pageId, (current) =>
       current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)),
     );
+  };
+
+  const sendSelectedToMaterials = async () => {
+    if (!selected || selected.type !== "image") return;
+    const roomId = selected.materialRoomId || activePage.roomId;
+    const room = rooms.find((candidate) => candidate.id === roomId);
+    if (!room) {
+      toast.error("Choose a room before sending this to Materials.");
+      return;
+    }
+
+    const itemLabel = (selected.label || selected.productName || "").trim();
+    if (!itemLabel) {
+      toast.error("Add an image label first so Materials has an item name.");
+      return;
+    }
+
+    const linkedProduct = selected.productId
+      ? products.find((product) => product.id === selected.productId)
+      : null;
+    const category = selected.materialCategory || linkedProduct?.category || "Decor";
+    const productUrl = selected.link?.trim() ? normalizeExternalUrl(selected.link) : null;
+    const finish = selected.materialFinish || selected.finish || null;
+    const quantity =
+      selected.materialQuantity && selected.materialQuantity > 0 ? selected.materialQuantity : 1;
+
+    setSendingMaterialId(selected.id);
+    try {
+      let product = linkedProduct;
+      if (!product && productUrl) product = await db.findProductByUrl(productUrl);
+      if (!product) {
+        product = await db.createProduct({
+          name: itemLabel,
+          category,
+          product_url: productUrl,
+          image_url: selected.src || null,
+          finish,
+          notes: selected.notes || null,
+        });
+      } else {
+        const productPatch: Partial<Product> = {};
+        if (!product.image_url && selected.src) productPatch.image_url = selected.src;
+        if (!product.product_url && productUrl) productPatch.product_url = productUrl;
+        if (!product.finish && finish) productPatch.finish = finish;
+        if (Object.keys(productPatch).length) {
+          product = await db.updateProduct(product.id, productPatch);
+        }
+      }
+      if (!product) throw new Error("Could not create catalog product.");
+
+      const existingMaterialId = selected.materialItemId || null;
+      const existingMaterial = existingMaterialId
+        ? materialItems.find((item) => item.id === existingMaterialId)
+        : null;
+      const sortOrder =
+        existingMaterial?.sort_order ??
+        Math.max(
+          0,
+          ...materialItems
+            .filter((item) => item.room_id === room.id)
+            .map((item) => item.sort_order),
+        ) + 1;
+      const materialPatch: Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product"> = {
+        room_id: room.id,
+        project_id: id,
+        item_label: itemLabel,
+        client_product_name: buildClientProductName(room.name, itemLabel),
+        category,
+        is_required: false,
+        sort_order: sortOrder,
+        cad_label: null,
+        product_url: productUrl,
+        quantity,
+        color: finish,
+        notes: selected.notes || null,
+        not_needed: false,
+        product_id: product.id,
+        scrape_status: "scraped",
+        scrape_error: null,
+      };
+
+      let materialItem = existingMaterial ?? null;
+      if (existingMaterialId) {
+        await db.updateMaterialItem(existingMaterialId, materialPatch);
+        materialItem = {
+          ...(existingMaterial ?? { id: existingMaterialId }),
+          ...materialPatch,
+          product,
+        } as MaterialItem;
+      } else {
+        const { data, error } = await supabase
+          .from("material_items")
+          .insert(materialPatch)
+          .select("*, product:products(*)")
+          .single();
+        if (error) throw error;
+        materialItem = data as MaterialItem | null;
+      }
+
+      const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+      if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
+        await db.addRoomProduct({
+          room_id: room.id,
+          product_id: product.id,
+          is_key_selection: false,
+        });
+      }
+
+      updateElement(selected.id, {
+        productId: product.id,
+        productName: product.name,
+        vendor: product.vendor,
+        price: product.price,
+        finish: product.finish,
+        link: product.product_url || selected.link || "",
+        materialItemId: materialItem?.id ?? selected.materialItemId ?? null,
+        materialRoomId: room.id,
+        materialCategory: category,
+        materialQuantity: quantity,
+        materialFinish: finish,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
+        queryClient.invalidateQueries({ queryKey: ["roomProducts", room.id] }),
+        queryClient.invalidateQueries({ queryKey: ["catalog"] }),
+      ]);
+      toast.success(
+        existingMaterialId ? "Updated this material item." : "Sent to project materials.",
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send this to Materials.");
+    } finally {
+      setSendingMaterialId(null);
+    }
   };
 
   const toggleBoardDetails = () => {
@@ -1578,8 +1733,12 @@ function ProjectDesignBoardsPage() {
               {selected && selectedCount <= 1 && (
                 <SelectedPanel
                   selected={selected}
+                  rooms={rooms}
                   products={products}
+                  activePageRoomId={activePage.roomId}
                   onUpdate={(patch) => updateElement(selected.id, patch)}
+                  onSendToMaterials={sendSelectedToMaterials}
+                  sendingToMaterials={sendingMaterialId === selected.id}
                   allBoardDetailsHidden={allBoardDetailsHidden}
                   onToggleBoardDetails={toggleBoardDetails}
                   onRemoveBackground={removeSelectedBackground}
@@ -1875,16 +2034,24 @@ function BoardObject({
 
 function SelectedPanel({
   selected,
+  rooms,
   products,
+  activePageRoomId,
   onUpdate,
+  onSendToMaterials,
+  sendingToMaterials,
   allBoardDetailsHidden,
   onToggleBoardDetails,
   onRemoveBackground,
   removingBackground,
 }: {
   selected: BoardElement;
+  rooms: Room[];
   products: Product[];
+  activePageRoomId: string | null;
   onUpdate: (patch: Partial<BoardElement>) => void;
+  onSendToMaterials: () => void;
+  sendingToMaterials: boolean;
   allBoardDetailsHidden: boolean;
   onToggleBoardDetails: () => void;
   onRemoveBackground: () => void;
@@ -2020,6 +2187,76 @@ function SelectedPanel({
               className="mt-1 min-h-20 w-full resize-y border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
             />
           </label>
+          <div className="border border-stone-200 bg-[#faf9f5] p-3">
+            <div className="eyebrow mb-3">Materials</div>
+            <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+              Room
+              <select
+                value={selected.materialRoomId || activePageRoomId || ""}
+                onChange={(event) => onUpdate({ materialRoomId: event.target.value || null })}
+                className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+              >
+                <option value="">Choose room</option>
+                {rooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
+              Category
+              <select
+                value={selected.materialCategory || linkedProduct?.category || "Decor"}
+                onChange={(event) =>
+                  onUpdate({ materialCategory: event.target.value as ProductCategory })
+                }
+                className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+              >
+                {PRODUCT_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                Qty
+                <input
+                  type="number"
+                  min={1}
+                  value={selected.materialQuantity ?? 1}
+                  onChange={(event) =>
+                    onUpdate({ materialQuantity: Math.max(1, Number(event.target.value) || 1) })
+                  }
+                  className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                />
+              </label>
+              <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                Finish
+                <input
+                  value={selected.materialFinish ?? selected.finish ?? ""}
+                  onChange={(event) => onUpdate({ materialFinish: event.target.value })}
+                  placeholder="Color / finish"
+                  className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={onSendToMaterials}
+              disabled={sendingToMaterials}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              {sendingToMaterials
+                ? "Sending..."
+                : selected.materialItemId
+                  ? "Update Material Item"
+                  : "Send to Materials"}
+            </button>
+          </div>
           {linkedProduct && (
             <div className="rounded-lg border border-stone-200 bg-[#faf9f5] p-3 text-sm text-stone-600">
               <div className="eyebrow mb-2">Connected Catalog Product</div>
@@ -2120,6 +2357,8 @@ function productToBoardElement(
     vendor: product.vendor,
     price: product.price,
     finish: product.finish,
+    materialCategory: product.category,
+    materialFinish: product.finish,
     x,
     y,
     width: 260,
@@ -2366,6 +2605,11 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "vendor",
     "price",
     "finish",
+    "materialItemId",
+    "materialRoomId",
+    "materialCategory",
+    "materialQuantity",
+    "materialFinish",
   ];
   for (const key of keys) {
     if (before[key] !== after[key]) {
