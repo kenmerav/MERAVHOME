@@ -842,9 +842,21 @@ function ProjectDesignBoardsPage() {
     }
     if (!product) throw new Error("Could not create catalog product.");
 
-    const existingMaterialId = element.materialItemId || null;
+    const matchingMaterial = materialItems.find((item) => {
+      if (item.room_id !== room.id) return false;
+      if (element.materialItemId && item.id === element.materialItemId) return true;
+      if (item.product_id && item.product_id === product.id) return true;
+      if (productUrl && item.product_url && normalizeExternalUrl(item.product_url) === productUrl) {
+        return true;
+      }
+      return (
+        item.item_label.trim().toLowerCase() === itemLabel.toLowerCase() &&
+        item.category.toLowerCase() === category.toLowerCase()
+      );
+    });
+    const existingMaterialId = element.materialItemId || matchingMaterial?.id || null;
     const existingMaterial = existingMaterialId
-      ? materialItems.find((item) => item.id === existingMaterialId)
+      ? materialItems.find((item) => item.id === existingMaterialId) || matchingMaterial || null
       : null;
     const sortOrder =
       existingMaterial?.sort_order ??
@@ -1081,7 +1093,7 @@ function ProjectDesignBoardsPage() {
       }
       if (sent) {
         toast.success(
-          `Sent ${sent} ${sent === 1 ? "item" : "items"} to Materials${
+          `Synced ${sent} ${sent === 1 ? "item" : "items"} to Materials${
             skipped ? ` and skipped ${skipped} missing label or room.` : "."
           }`,
         );
