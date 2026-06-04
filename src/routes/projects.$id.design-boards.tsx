@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
@@ -120,7 +121,7 @@ type DragMode =
   | {
       kind: "move";
       pageId: string;
-      id: string;
+      id?: string;
       startX: number;
       startY: number;
       originalPositions: Record<string, { x: number; y: number }>;
@@ -134,7 +135,32 @@ type DragMode =
       originalWidth: number;
       originalHeight: number;
     }
+  | {
+      kind: "resize-group";
+      pageId: string;
+      startX: number;
+      startY: number;
+      originalBounds: BoardRect;
+      originalElements: Record<string, BoardRect>;
+    }
   | null;
+
+type BoardRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type SelectionMarquee = {
+  pageId: string;
+  boardLeft: number;
+  boardTop: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+} | null;
 
 const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
@@ -148,7 +174,7 @@ function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
   const boardStripRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const copiedElementRef = useRef<BoardElement | null>(null);
+  const copiedElementsRef = useRef<BoardElement[]>([]);
   const undoStackRef = useRef<BoardState[]>([]);
   const hasCustomZoomRef = useRef(false);
   const scrollSelectionRef = useRef<number | null>(null);
@@ -172,7 +198,9 @@ function ProjectDesignBoardsPage() {
   );
   const [boardState, setBoardState] = useState<BoardState>(() => boardStateRef.current);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dragMode, setDragMode] = useState<DragMode>(null);
+  const [selectionMarquee, setSelectionMarquee] = useState<SelectionMarquee>(null);
   const [boardScale, setBoardScale] = useState(1);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ProductCategory | "All">("All");
@@ -217,7 +245,15 @@ function ProjectDesignBoardsPage() {
     : pages[0].id;
   const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
   const elements = activePage.elements;
-  const selected = elements.find((element) => element.id === selectedId) ?? null;
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedElements = useMemo(
+    () => elements.filter((element) => selectedIdSet.has(element.id)),
+    [elements, selectedIdSet],
+  );
+  const selected =
+    elements.find((element) => element.id === selectedId) ?? selectedElements[0] ?? null;
+  const selectedBounds = useMemo(() => getElementsBounds(selectedElements), [selectedElements]);
+  const selectedCount = selectedElements.length;
   const orderedElements = useMemo(
     () => [...elements].sort((a, b) => a.zIndex - b.zIndex),
     [elements],
@@ -271,6 +307,7 @@ function ProjectDesignBoardsPage() {
     undoStackRef.current = undoStackRef.current.slice(0, -1);
     applyLocalBoardUpdate(previous);
     setSelectedId(null);
+    setSelectedIds([]);
     setDragMode(null);
   }, [applyLocalBoardUpdate]);
 
@@ -352,11 +389,39 @@ function ProjectDesignBoardsPage() {
     [selectedPageId, setElementsForPage],
   );
 
+  const clearSelection = useCallback(() => {
+    setSelectedId(null);
+    setSelectedIds([]);
+  }, []);
+
+  const selectOnly = useCallback((elementId: string | null) => {
+    setSelectedId(elementId);
+    setSelectedIds(elementId ? [elementId] : []);
+  }, []);
+
+  const selectMany = useCallback((elementIds: string[], primaryId = elementIds[0] ?? null) => {
+    const uniqueIds = Array.from(new Set(elementIds));
+    setSelectedIds(uniqueIds);
+    setSelectedId(primaryId && uniqueIds.includes(primaryId) ? primaryId : (uniqueIds[0] ?? null));
+  }, []);
+
+  const toggleSelectedElement = useCallback((elementId: string) => {
+    setSelectedIds((current) => {
+      const next = current.includes(elementId)
+        ? current.filter((id) => id !== elementId)
+        : [...current, elementId];
+      setSelectedId(next.includes(elementId) ? elementId : (next[0] ?? null));
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     const localState = loadBoardState(id);
     boardStateRef.current = localState;
     setBoardState(localState);
     setSelectedId(null);
+    setSelectedIds([]);
+    setSelectionMarquee(null);
     undoStackRef.current = [];
     remoteLoadedRef.current = false;
     lastSavedJsonRef.current = "";
@@ -600,6 +665,18 @@ function ProjectDesignBoardsPage() {
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
+      if (selectionMarquee) {
+        setSelectionMarquee((current) =>
+          current
+            ? {
+                ...current,
+                currentX: clamp((event.clientX - current.boardLeft) / boardScale, 0, BOARD_WIDTH),
+                currentY: clamp((event.clientY - current.boardTop) / boardScale, 0, BOARD_HEIGHT),
+              }
+            : current,
+        );
+        return;
+      }
       if (!dragMode) return;
       const dx = (event.clientX - dragMode.startX) / boardScale;
       const dy = (event.clientY - dragMode.startY) / boardScale;
@@ -614,6 +691,21 @@ function ProjectDesignBoardsPage() {
               y: clamp(original.y + dy, -element.height + 40, BOARD_HEIGHT - 40),
             };
           }
+          if (dragMode.kind === "resize-group") {
+            const original = dragMode.originalElements[element.id];
+            if (!original) return element;
+            const nextWidth = Math.max(40, dragMode.originalBounds.width + dx);
+            const nextHeight = Math.max(40, dragMode.originalBounds.height + dy);
+            const scaleX = nextWidth / Math.max(1, dragMode.originalBounds.width);
+            const scaleY = nextHeight / Math.max(1, dragMode.originalBounds.height);
+            return {
+              ...element,
+              x: dragMode.originalBounds.x + (original.x - dragMode.originalBounds.x) * scaleX,
+              y: dragMode.originalBounds.y + (original.y - dragMode.originalBounds.y) * scaleY,
+              width: Math.max(20, original.width * scaleX),
+              height: Math.max(20, original.height * scaleY),
+            };
+          }
           if (element.id !== dragMode.id) return element;
           return {
             ...element,
@@ -623,14 +715,29 @@ function ProjectDesignBoardsPage() {
         }),
       );
     };
-    const onPointerUp = () => setDragMode(null);
+    const onPointerUp = () => {
+      if (selectionMarquee) {
+        const marqueeRect = rectFromPoints(
+          selectionMarquee.startX,
+          selectionMarquee.startY,
+          selectionMarquee.currentX,
+          selectionMarquee.currentY,
+        );
+        const selectedFromBox = elements
+          .filter((element) => rectsIntersect(elementToRect(element), marqueeRect))
+          .map((element) => element.id);
+        selectMany(selectedFromBox);
+        setSelectionMarquee(null);
+      }
+      setDragMode(null);
+    };
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [boardScale, dragMode, selectedPageId, setElementsForPage]);
+  }, [boardScale, dragMode, elements, selectMany, selectionMarquee, setElementsForPage]);
 
   const updateElement = (
     elementId: string,
@@ -664,9 +771,17 @@ function ProjectDesignBoardsPage() {
       pushUndo();
       setElementsForPage(pageId, (current) => [...current, next]);
       applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: pageId }));
-      setSelectedId(next.id);
+      selectOnly(next.id);
     },
-    [applyLocalBoardUpdate, elements, pages, pushUndo, selectedPageId, setElementsForPage],
+    [
+      applyLocalBoardUpdate,
+      elements,
+      pages,
+      pushUndo,
+      selectedPageId,
+      selectOnly,
+      setElementsForPage,
+    ],
   );
 
   const addPage = () => {
@@ -682,7 +797,7 @@ function ProjectDesignBoardsPage() {
       pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
     }));
     broadcastPatch({ kind: "upsert-page", page: nextPage });
-    setSelectedId(null);
+    clearSelection();
   };
 
   const updateZoom = (zoomPercent: number) => {
@@ -690,9 +805,9 @@ function ProjectDesignBoardsPage() {
     setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
   };
 
-  const selectPage = (pageId: string, scrollToPage = true) => {
+  const selectPage = (pageId: string, scrollToPage = true, clearCurrentSelection = true) => {
     applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: pageId }));
-    setSelectedId(null);
+    if (clearCurrentSelection) clearSelection();
     if (scrollToPage) {
       requestAnimationFrame(() => {
         pageRefs.current[pageId]?.scrollIntoView({
@@ -720,7 +835,7 @@ function ProjectDesignBoardsPage() {
     pushUndo();
     applyLocalBoardUpdate(restored);
     broadcastPatch({ kind: "restore-state", state: restored });
-    setSelectedId(null);
+    clearSelection();
   };
 
   const addFile = useCallback(
@@ -741,25 +856,33 @@ function ProjectDesignBoardsPage() {
   );
 
   const duplicateSelected = () => {
-    if (!selected) return;
-    const copyItem = {
-      ...selected,
+    const targets = selectedElements.length ? selectedElements : selected ? [selected] : [];
+    if (!targets.length) return;
+    let nextZ = nextZIndex(elements);
+    const copies = targets.map((target) => ({
+      ...target,
       id: crypto.randomUUID(),
-      x: selected.x + 32,
-      y: selected.y + 32,
-      zIndex: nextZIndex(elements),
-    };
+      x: target.x + 32,
+      y: target.y + 32,
+      zIndex: nextZ++,
+    }));
     pushUndo();
-    setElements((current) => [...current, copyItem]);
-    setSelectedId(copyItem.id);
+    setElements((current) => [...current, ...copies]);
+    selectMany(copies.map((copy) => copy.id));
   };
 
   const moveLayer = (direction: "front" | "back") => {
-    if (!selected) return;
+    const targetIds = selectedElements.length
+      ? new Set(selectedElements.map((element) => element.id))
+      : selected
+        ? new Set([selected.id])
+        : null;
+    if (!targetIds) return;
     const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
-    const nextSorted = sorted.filter((element) => element.id !== selected.id);
-    if (direction === "front") nextSorted.push(selected);
-    else nextSorted.unshift(selected);
+    const targets = sorted.filter((element) => targetIds.has(element.id));
+    const nextSorted = sorted.filter((element) => !targetIds.has(element.id));
+    if (direction === "front") nextSorted.push(...targets);
+    else nextSorted.unshift(...targets);
     const normalizedZ = new Map(nextSorted.map((element, index) => [element.id, (index + 1) * 10]));
     pushUndo();
     setElements((current) =>
@@ -771,11 +894,13 @@ function ProjectDesignBoardsPage() {
   };
 
   const removeSelected = useCallback(() => {
-    if (!selectedId) return;
+    const idsToRemove = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+    if (!idsToRemove.length) return;
+    const idSet = new Set(idsToRemove);
     pushUndo();
-    setElements((current) => current.filter((element) => element.id !== selectedId));
-    setSelectedId(null);
-  }, [pushUndo, selectedId, setElements]);
+    setElements((current) => current.filter((element) => !idSet.has(element.id)));
+    clearSelection();
+  }, [clearSelection, pushUndo, selectedId, selectedIds, setElements]);
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -791,22 +916,24 @@ function ProjectDesignBoardsPage() {
         void addFile(file);
         return;
       }
-      const copiedElement = copiedElementRef.current;
-      if (!copiedElement) return;
+      const copiedElements = copiedElementsRef.current;
+      if (!copiedElements.length) return;
       event.preventDefault();
       pushUndo();
-      const copyItem = {
+      let nextZ = nextZIndex(elements);
+      const copyItems = copiedElements.map((copiedElement) => ({
         ...copiedElement,
         id: crypto.randomUUID(),
         x: copiedElement.x + 32,
         y: copiedElement.y + 32,
-      };
-      setElements((current) => [...current, { ...copyItem, zIndex: nextZIndex(current) }]);
-      setSelectedId(copyItem.id);
+        zIndex: nextZ++,
+      }));
+      setElements((current) => [...current, ...copyItems]);
+      selectMany(copyItems.map((copyItem) => copyItem.id));
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [addFile, pushUndo, setElements]);
+  }, [addFile, elements, pushUndo, selectMany, setElements]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -820,24 +947,28 @@ function ProjectDesignBoardsPage() {
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v") {
-        const copiedElement = copiedElementRef.current;
-        if (!copiedElement) return;
+        const copiedElements = copiedElementsRef.current;
+        if (!copiedElements.length) return;
         event.preventDefault();
         pushUndo();
-        const copyItem = {
+        let nextZ = nextZIndex(elements);
+        const copyItems = copiedElements.map((copiedElement) => ({
           ...copiedElement,
           id: crypto.randomUUID(),
           x: copiedElement.x + 32,
           y: copiedElement.y + 32,
-        };
-        setElements((current) => [...current, { ...copyItem, zIndex: nextZIndex(current) }]);
-        setSelectedId(copyItem.id);
+          zIndex: nextZ++,
+        }));
+        setElements((current) => [...current, ...copyItems]);
+        selectMany(copyItems.map((copyItem) => copyItem.id));
         return;
       }
-      if (!selectedId) return;
+      if (!selectedId && !selectedIds.length) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && selected) {
         event.preventDefault();
-        copiedElementRef.current = selected;
+        copiedElementsRef.current = selectedElements.length
+          ? cloneBoardElements(selectedElements)
+          : [selected];
         return;
       }
       if (event.key === "Delete" || event.key === "Backspace") {
@@ -847,7 +978,18 @@ function ProjectDesignBoardsPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pushUndo, removeSelected, selected, selectedId, setElements, undoLastChange]);
+  }, [
+    pushUndo,
+    removeSelected,
+    elements,
+    selectMany,
+    selected,
+    selectedElements,
+    selectedId,
+    selectedIds.length,
+    setElements,
+    undoLastChange,
+  ]);
 
   const removeSelectedBackground = async () => {
     if (!selected || selected.type !== "image" || !selected.src) return;
@@ -970,7 +1112,7 @@ function ProjectDesignBoardsPage() {
       }
       if (closestPageId !== selectedPageId) {
         applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: closestPageId }));
-        setSelectedId(null);
+        clearSelection();
       }
     }, 80);
   };
@@ -1095,31 +1237,41 @@ function ProjectDesignBoardsPage() {
               <ToolbarButton onClick={addPage}>
                 <Plus className="h-4 w-4" /> New Page
               </ToolbarButton>
-              <ToolbarButton onClick={duplicateSelected} disabled={!selected}>
+              <ToolbarButton onClick={duplicateSelected} disabled={!selectedCount}>
                 <Copy className="h-4 w-4" /> Duplicate
               </ToolbarButton>
-              <ToolbarButton onClick={() => moveLayer("front")} disabled={!selected}>
+              <ToolbarButton onClick={() => moveLayer("front")} disabled={!selectedCount}>
                 <ArrowUp className="h-4 w-4" /> Front
               </ToolbarButton>
-              <ToolbarButton onClick={() => moveLayer("back")} disabled={!selected}>
+              <ToolbarButton onClick={() => moveLayer("back")} disabled={!selectedCount}>
                 <ArrowDown className="h-4 w-4" /> Back
               </ToolbarButton>
               <ToolbarButton
                 onClick={removeSelectedBackground}
-                disabled={!selected || selected.type !== "image" || removingBackground}
+                disabled={
+                  !selected ||
+                  selectedCount !== 1 ||
+                  selected.type !== "image" ||
+                  removingBackground
+                }
               >
                 <Scissors className="h-4 w-4" /> {removingBackground ? "Cutting..." : "Remove BG"}
               </ToolbarButton>
               <ToolbarButton
                 onClick={restoreSelectedOriginal}
-                disabled={!selected || selected.type !== "image" || !selected.originalSrc}
+                disabled={
+                  !selected ||
+                  selectedCount !== 1 ||
+                  selected.type !== "image" ||
+                  !selected.originalSrc
+                }
               >
                 Restore Original
               </ToolbarButton>
               <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
               </ToolbarButton>
-              <ToolbarButton onClick={removeSelected} disabled={!selected} destructive>
+              <ToolbarButton onClick={removeSelected} disabled={!selectedCount} destructive>
                 <Trash2 className="h-4 w-4" /> Delete
               </ToolbarButton>
             </div>
@@ -1166,8 +1318,29 @@ function ProjectDesignBoardsPage() {
                       onDrop={(event) => handleBoardDrop(event, page.id)}
                       onDragOver={(event) => event.preventDefault()}
                       onPointerDown={(event) => {
-                        selectPage(page.id, false);
-                        if (event.target === event.currentTarget) setSelectedId(null);
+                        if (event.target !== event.currentTarget) return;
+                        selectPage(page.id, false, false);
+                        clearSelection();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const pointX = clamp(
+                          (event.clientX - rect.left) / boardScale,
+                          0,
+                          BOARD_WIDTH,
+                        );
+                        const pointY = clamp(
+                          (event.clientY - rect.top) / boardScale,
+                          0,
+                          BOARD_HEIGHT,
+                        );
+                        setSelectionMarquee({
+                          pageId: page.id,
+                          boardLeft: rect.left,
+                          boardTop: rect.top,
+                          startX: pointX,
+                          startY: pointY,
+                          currentX: pointX,
+                          currentY: pointY,
+                        });
                       }}
                     >
                       {pageElements.length === 0 && (
@@ -1185,33 +1358,51 @@ function ProjectDesignBoardsPage() {
                         <BoardObject
                           key={element.id}
                           element={element}
-                          selected={isActivePage && element.id === selectedId}
+                          selected={isActivePage && selectedIdSet.has(element.id)}
+                          showResizeHandle={isActivePage && selectedCount <= 1}
                           remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
-                          onSelect={() => {
-                            selectPage(page.id, false);
-                            setSelectedId(element.id);
+                          onSelect={(event) => {
+                            selectPage(page.id, false, false);
+                            if (event.shiftKey || event.metaKey) {
+                              toggleSelectedElement(element.id);
+                            } else if (selectedCount > 1 && selectedIdSet.has(element.id)) {
+                              setSelectedId(element.id);
+                            } else {
+                              selectOnly(element.id);
+                            }
                           }}
                           onChange={(patch) => updateElement(element.id, patch, page.id)}
                           onStartMove={(event) => {
                             pushUndo();
                             event.currentTarget.setPointerCapture(event.pointerId);
-                            selectPage(page.id, false);
-                            setSelectedId(element.id);
+                            selectPage(page.id, false, false);
+                            const isPartOfGroup = selectedIdSet.has(element.id);
+                            const moveTargets =
+                              isPartOfGroup && selectedElements.length > 1
+                                ? selectedElements
+                                : [element];
+                            if (!isPartOfGroup) selectOnly(element.id);
+                            else setSelectedId(element.id);
                             setDragMode({
                               kind: "move",
                               pageId: page.id,
                               id: element.id,
                               startX: event.clientX,
                               startY: event.clientY,
-                              originalPositions: { [element.id]: { x: element.x, y: element.y } },
+                              originalPositions: Object.fromEntries(
+                                moveTargets.map((target) => [
+                                  target.id,
+                                  { x: target.x, y: target.y },
+                                ]),
+                              ),
                             });
                           }}
                           onStartResize={(event) => {
                             event.stopPropagation();
                             pushUndo();
                             event.currentTarget.setPointerCapture(event.pointerId);
-                            selectPage(page.id, false);
-                            setSelectedId(element.id);
+                            selectPage(page.id, false, false);
+                            selectOnly(element.id);
                             setDragMode({
                               kind: "resize",
                               pageId: page.id,
@@ -1224,6 +1415,56 @@ function ProjectDesignBoardsPage() {
                           }}
                         />
                       ))}
+
+                      {isActivePage && selectedBounds && selectedCount > 1 && (
+                        <div
+                          className="pointer-events-none absolute border-2 border-[#1f4e5f]"
+                          style={{
+                            left: selectedBounds.x,
+                            top: selectedBounds.y,
+                            width: selectedBounds.width,
+                            height: selectedBounds.height,
+                            zIndex: 999_998,
+                          }}
+                        >
+                          <div className="absolute -top-8 left-0 whitespace-nowrap bg-[#1f4e5f] px-2 py-1 font-[var(--font-montserrat)] text-[10px] uppercase tracking-[0.14em] text-white shadow-sm">
+                            {selectedCount} selected
+                          </div>
+                          <button
+                            type="button"
+                            aria-label="Resize selected group"
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                              pushUndo();
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                              setDragMode({
+                                kind: "resize-group",
+                                pageId: page.id,
+                                startX: event.clientX,
+                                startY: event.clientY,
+                                originalBounds: selectedBounds,
+                                originalElements: makeOriginalElementRects(selectedElements),
+                              });
+                            }}
+                            className="pointer-events-auto absolute -bottom-2 -right-2 h-5 w-5 border border-[#1f4e5f] bg-white shadow-sm"
+                          />
+                        </div>
+                      )}
+
+                      {selectionMarquee?.pageId === page.id && (
+                        <div
+                          className="pointer-events-none absolute border border-[#6d4cff] bg-[#6d4cff]/10"
+                          style={{
+                            ...rectFromPoints(
+                              selectionMarquee.startX,
+                              selectionMarquee.startY,
+                              selectionMarquee.currentX,
+                              selectionMarquee.currentY,
+                            ),
+                            zIndex: 999_999,
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 );
@@ -1348,7 +1589,7 @@ function ProjectDesignBoardsPage() {
                 </div>
               </div>
 
-              {selected && (
+              {selected && selectedCount <= 1 && (
                 <SelectedPanel
                   selected={selected}
                   products={products}
@@ -1501,6 +1742,7 @@ function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: numb
 function BoardObject({
   element,
   selected,
+  showResizeHandle,
   remoteUsers,
   onSelect,
   onChange,
@@ -1509,8 +1751,9 @@ function BoardObject({
 }: {
   element: BoardElement;
   selected: boolean;
+  showResizeHandle: boolean;
   remoteUsers: ActiveBoardUser[];
-  onSelect: () => void;
+  onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onChange: (patch: Partial<BoardElement>) => void;
   onStartMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStartResize: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -1544,7 +1787,7 @@ function BoardObject({
       }}
       onClick={(event) => {
         event.stopPropagation();
-        onSelect();
+        onSelect(event);
       }}
     >
       {remoteUser && (
@@ -1615,8 +1858,8 @@ function BoardObject({
             value={element.text ?? ""}
             onPointerDown={(event) => {
               event.stopPropagation();
-              onSelect();
             }}
+            onClick={(event) => onSelect(event)}
             onChange={(event) => onChange({ text: event.target.value })}
             className="h-full w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-center uppercase leading-tight outline-none"
             style={{
@@ -1628,7 +1871,7 @@ function BoardObject({
           />
         </>
       )}
-      {selected && (
+      {selected && showResizeHandle && (
         <button
           type="button"
           aria-label="Resize selected item"
@@ -2335,6 +2578,48 @@ function fileToDataUrl(file: File) {
 
 function nextZIndex(elements: BoardElement[]) {
   return Math.max(0, ...elements.map((element) => element.zIndex)) + 1;
+}
+
+function cloneBoardElements(elements: BoardElement[]) {
+  return JSON.parse(JSON.stringify(elements)) as BoardElement[];
+}
+
+function elementToRect(element: BoardElement): BoardRect {
+  return { x: element.x, y: element.y, width: element.width, height: element.height };
+}
+
+function rectFromPoints(
+  startX: number,
+  startY: number,
+  currentX: number,
+  currentY: number,
+): BoardRect {
+  const x = Math.min(startX, currentX);
+  const y = Math.min(startY, currentY);
+  return {
+    x,
+    y,
+    width: Math.abs(currentX - startX),
+    height: Math.abs(currentY - startY),
+  };
+}
+
+function rectsIntersect(a: BoardRect, b: BoardRect) {
+  if (b.width < 4 && b.height < 4) return false;
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function getElementsBounds(elements: BoardElement[]): BoardRect | null {
+  if (!elements.length) return null;
+  const left = Math.min(...elements.map((element) => element.x));
+  const top = Math.min(...elements.map((element) => element.y));
+  const right = Math.max(...elements.map((element) => element.x + element.width));
+  const bottom = Math.max(...elements.map((element) => element.y + element.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function makeOriginalElementRects(elements: BoardElement[]) {
+  return Object.fromEntries(elements.map((element) => [element.id, elementToRect(element)]));
 }
 
 function clamp(value: number, min: number, max: number) {
