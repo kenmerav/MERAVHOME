@@ -845,7 +845,7 @@ function ProjectDesignBoardsPage() {
       addElement({
         type: "image",
         src,
-        label: file.name.replace(/\.[^.]+$/, ""),
+        label: "",
         x: 480,
         y: 250,
         width: 340,
@@ -1080,7 +1080,7 @@ function ProjectDesignBoardsPage() {
         {
           type: "image",
           src,
-          label: file.name.replace(/\.[^.]+$/, ""),
+          label: "",
           x: x - 170,
           y: y - 130,
           width: 340,
