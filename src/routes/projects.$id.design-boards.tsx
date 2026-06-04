@@ -266,6 +266,14 @@ function ProjectDesignBoardsPage() {
   const imageElements = elements.filter((element) => element.type === "image");
   const allBoardDetailsHidden =
     imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
+  const onlineUsers = useMemo(() => {
+    const usersByIdentity = new Map<string, ActiveBoardUser>();
+    for (const user of activeUsers) {
+      const identity = user.userId || user.email || user.name || user.clientId;
+      if (!usersByIdentity.has(identity)) usersByIdentity.set(identity, user);
+    }
+    return Array.from(usersByIdentity.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [activeUsers]);
   const remoteSelections = useMemo(() => {
     const selections = new Map<string, ActiveBoardUser[]>();
     for (const user of activeUsers) {
@@ -1167,14 +1175,11 @@ function ProjectDesignBoardsPage() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
-                  Live editing{" "}
-                  {activeUsers.length
-                    ? `with ${activeUsers.length} other${activeUsers.length === 1 ? "" : "s"}`
-                    : "ready"}
+                  {onlineUsers.length ? `${onlineUsers.length} online` : "Live editing ready"}
                 </div>
-                {activeUsers.slice(0, 6).map((user) => (
+                {onlineUsers.slice(0, 8).map((user) => (
                   <div
-                    key={user.clientId}
+                    key={user.userId || user.email || user.clientId}
                     className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-700"
                   >
                     <span
@@ -1182,7 +1187,6 @@ function ProjectDesignBoardsPage() {
                       style={{ backgroundColor: user.color }}
                     />
                     <span>{user.name}</span>
-                    {user.selectedLayerId && <span className="text-stone-400">selecting</span>}
                   </div>
                 ))}
               </div>
