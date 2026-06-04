@@ -60,15 +60,24 @@ function sectionsForRoom(name: string): Section[] {
 }
 
 function slug(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function SpecBookPage() {
   const [view, setView] = useState<"room" | "category">("room");
 
   const { id } = Route.useParams();
-  const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
-  const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
+  const { data: project } = useQuery({
+    queryKey: ["project", id],
+    queryFn: () => db.getProject(id),
+  });
+  const { data: rooms = [] } = useQuery({
+    queryKey: ["rooms", id],
+    queryFn: async () => (await db.listRooms(id)) ?? [],
+  });
   const { data: items = [] } = useQuery({
     queryKey: ["materialItems", id],
     queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
@@ -86,16 +95,29 @@ function SpecBookPage() {
     return map;
   }, [items]);
 
-  if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
+  if (!project)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading…</div>
+      </AppShell>
+    );
 
-  const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const today = new Date().toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
 
   return (
     <AppShell>
       <div className="page-pad print:p-0 bg-white text-ink">
         <div className="flex items-center justify-between mb-8 print:hidden">
-          <Link to="/projects/$id/materials" params={{ id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+          <Link
+            to="/projects/$id/materials"
+            params={{ id }}
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
+          >
             <ArrowLeft className="w-3.5 h-3.5" /> Materials
           </Link>
           <div className="flex items-center gap-4">
@@ -113,10 +135,17 @@ function SpecBookPage() {
                 By Category
               </button>
             </div>
-            <Link to="/projects/$id/presentation" params={{ id }} className="text-sm text-muted-foreground hover:text-ink underline-offset-4 hover:underline">
+            <Link
+              to="/projects/$id/presentation"
+              params={{ id }}
+              className="text-sm text-muted-foreground hover:text-ink underline-offset-4 hover:underline"
+            >
               View Presentation
             </Link>
-            <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm">
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
+            >
               <Printer className="w-4 h-4" /> Print / PDF
             </button>
           </div>
@@ -127,7 +156,9 @@ function SpecBookPage() {
           <div className="eyebrow">MERAV Studio · Specification Book</div>
           <div>
             <h1 className="font-display text-5xl lg:text-7xl leading-[1.05]">{project.name}</h1>
-            <p className="font-display text-2xl text-muted-foreground mt-6">{project.client_name}</p>
+            <p className="font-display text-2xl text-muted-foreground mt-6">
+              {project.client_name}
+            </p>
           </div>
           <div className="flex items-end justify-between text-xs tracking-[0.2em] uppercase text-muted-foreground">
             <div>{today}</div>
@@ -143,17 +174,33 @@ function SpecBookPage() {
             <TocRow num="01" label="Materials Overview" href="#materials-overview" />
             {view === "room"
               ? populatedRooms.map((r, i) => (
-                  <TocRow key={r.id} num={String(i + 2).padStart(2, "0")} label={r.name} href={`#room-${slug(r.name)}-${r.id.slice(0, 6)}`} />
+                  <TocRow
+                    key={r.id}
+                    num={String(i + 2).padStart(2, "0")}
+                    label={r.name}
+                    href={`#room-${slug(r.name)}-${r.id.slice(0, 6)}`}
+                  />
                 ))
-              : ALL_CATEGORIES.filter((c) => items.some((it) => !it.not_needed && it.product_id && it.product && it.category === c))
-                  .map((c, i) => (
-                    <TocRow key={c} num={String(i + 2).padStart(2, "0")} label={c} href={`#cat-${slug(c)}`} />
-                  ))}
+              : ALL_CATEGORIES.filter((c) =>
+                  items.some(
+                    (it) => !it.not_needed && it.product_id && it.product && it.category === c,
+                  ),
+                ).map((c, i) => (
+                  <TocRow
+                    key={c}
+                    num={String(i + 2).padStart(2, "0")}
+                    label={c}
+                    href={`#cat-${slug(c)}`}
+                  />
+                ))}
           </ol>
         </section>
 
         {/* MATERIALS OVERVIEW */}
-        <section id="materials-overview" className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page">
+        <section
+          id="materials-overview"
+          className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page"
+        >
           <div className="eyebrow mb-3">01 · Overview</div>
           <h2 className="font-display text-4xl mb-10">Materials Overview</h2>
           {populatedRooms.length === 0 ? (
@@ -177,7 +224,9 @@ function SpecBookPage() {
                       <td className="py-3 pr-4 font-display">{room.name}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{it.category || "—"}</td>
                       <td className="py-3 pr-4">{clientProductName(it, room)}</td>
-                      <td className="py-3 pr-4 text-muted-foreground">{it.product?.vendor || "—"}</td>
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {it.product?.vendor || "—"}
+                      </td>
                       <td className="py-3 pr-4">{it.quantity ?? "—"}</td>
                     </tr>
                   ));
@@ -201,7 +250,9 @@ function SpecBookPage() {
           : (() => {
               const rooms = populatedRooms;
               const roomById = new Map(rooms.map((r) => [r.id, r] as const));
-              const visibleItems = items.filter((it) => !it.not_needed && it.product_id && it.product);
+              const visibleItems = items.filter(
+                (it) => !it.not_needed && it.product_id && it.product,
+              );
               return ALL_CATEGORIES.map((cat) => {
                 const list = visibleItems.filter((it) => it.category === cat);
                 if (list.length === 0) return null;
@@ -276,7 +327,9 @@ function CategorySpec({
           <div key={room!.id}>
             <div className="eyebrow mb-6">{room!.name}</div>
             <div className="space-y-10">
-              {list.map((it) => <SpecCard key={it.id} item={it} room={room!} />)}
+              {list.map((it) => (
+                <SpecCard key={it.id} item={it} room={room!} />
+              ))}
             </div>
           </div>
         ))}
@@ -285,15 +338,27 @@ function CategorySpec({
   );
 }
 
-function RoomSpec({ num, room, items, projectName }: { num: string; room: Room; items: MaterialItem[]; projectName: string }) {
+function RoomSpec({
+  num,
+  room,
+  items,
+  projectName,
+}: {
+  num: string;
+  room: Room;
+  items: MaterialItem[];
+  projectName: string;
+}) {
   const sections = sectionsForRoom(room.name);
   const grouped = useMemo(() => {
     const used = new Set<string>();
-    const out = sections.map((sec) => {
-      const list = items.filter((it) => it.category && sec.sources.includes(it.category));
-      list.forEach((it) => used.add(it.id));
-      return { label: sec.label, list };
-    }).filter((g) => g.list.length > 0);
+    const out = sections
+      .map((sec) => {
+        const list = items.filter((it) => it.category && sec.sources.includes(it.category));
+        list.forEach((it) => used.add(it.id));
+        return { label: sec.label, list };
+      })
+      .filter((g) => g.list.length > 0);
     const leftover = items.filter((it) => !used.has(it.id));
     if (leftover.length > 0) out.push({ label: "Other", list: leftover });
     return out;
@@ -306,7 +371,9 @@ function RoomSpec({ num, room, items, projectName }: { num: string; room: Room; 
     >
       <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border">
         <div>
-          <div className="eyebrow">{num} · {projectName}</div>
+          <div className="eyebrow">
+            {num} · {projectName}
+          </div>
           <h2 className="font-display text-5xl mt-2">{room.name}</h2>
         </div>
         <div className="text-xs tracking-wide text-muted-foreground">
@@ -319,7 +386,9 @@ function RoomSpec({ num, room, items, projectName }: { num: string; room: Room; 
           <div key={g.label}>
             <div className="eyebrow mb-6">{g.label}</div>
             <div className="space-y-10">
-              {g.list.map((it) => <SpecCard key={it.id} item={it} room={room} />)}
+              {g.list.map((it) => (
+                <SpecCard key={it.id} item={it} room={room} />
+              ))}
             </div>
           </div>
         ))}
@@ -335,7 +404,12 @@ function SpecCard({ item, room }: { item: MaterialItem; room: Room }) {
     <article className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:break-inside-avoid">
       <div className="aspect-square bg-bone overflow-hidden">
         {p?.image_url ? (
-          <img src={p.image_url} alt={p?.name ?? displayName} className="w-full h-full object-cover" loading="lazy" />
+          <img
+            src={p.image_url}
+            alt={p?.name ?? displayName}
+            className="w-full h-full object-contain p-4"
+            loading="lazy"
+          />
         ) : (
           <div className="w-full h-full grid place-items-center text-muted-foreground font-display text-4xl">
             {displayName.charAt(0)}
@@ -346,12 +420,16 @@ function SpecCard({ item, room }: { item: MaterialItem; room: Room }) {
         <div className="flex items-baseline justify-between gap-4 mb-1">
           <div className="eyebrow">{item.item_label}</div>
           {item.cad_label && (
-            <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-0.5 border border-border">{item.cad_label}</span>
+            <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-0.5 border border-border">
+              {item.cad_label}
+            </span>
           )}
         </div>
         <h3 className="font-display text-3xl leading-tight">{displayName}</h3>
         {p?.name && <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.name}</p>}
-        {p?.vendor && <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.vendor}</p>}
+        {p?.vendor && (
+          <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.vendor}</p>
+        )}
 
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6">
           <Detail label="Finish" value={p?.finish} />

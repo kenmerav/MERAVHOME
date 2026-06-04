@@ -1,6 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Printer, Maximize2, X, ChevronLeft, ChevronRight, Eye, EyeOff, Type } from "lucide-react";
+import {
+  ArrowLeft,
+  Printer,
+  Maximize2,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Type,
+} from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
@@ -24,46 +34,62 @@ type RoomData = {
 };
 
 const DEFAULT_OVERLAY_LABEL = "Photoreal Visualization";
-const DEFAULT_OVERLAY_BODY = "A true-to-life preview of your space, designed to give you confidence in every material, finish, and detail.";
+const DEFAULT_OVERLAY_BODY =
+  "A true-to-life preview of your space, designed to give you confidence in every material, finish, and detail.";
 
-function buildRoomData(room: any, images: any[], selections: any[], materials: MaterialItem[]): RoomData {
-  const approvedRenders = images.filter(i => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false);
+function buildRoomData(
+  room: any,
+  images: any[],
+  selections: any[],
+  materials: MaterialItem[],
+): RoomData {
+  const approvedRenders = images.filter(
+    (i) => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false,
+  );
   approvedRenders.sort((a, b) => {
     const score = (x: any) => (x.is_favorite ? 0 : 0.1);
     return score(a) - score(b) || (a.sort_order ?? 0) - (b.sort_order ?? 0);
   });
-  const sketchups = images.filter(i => i.kind === "sketchup");
-  const linkedSketchIds = new Set(approvedRenders.map(r => r.linked_sketchup_id).filter(Boolean));
+  const sketchups = images.filter((i) => i.kind === "sketchup");
+  const linkedSketchIds = new Set(approvedRenders.map((r) => r.linked_sketchup_id).filter(Boolean));
   const fallbackSketch = room.presentation_sketchup_image_id
     ? sketchups.find((image) => image.id === room.presentation_sketchup_image_id) || sketchups[0]
     : sketchups[0];
 
   const views: RoomData["views"] = [];
   for (const r of approvedRenders) {
-    const sketch = sketchups.find(s => s.id === r.linked_sketchup_id) || fallbackSketch;
+    const sketch = sketchups.find((s) => s.id === r.linked_sketchup_id) || fallbackSketch;
     views.push({ hero: r, sketch, label: r.caption, visible: r.presentation_visible !== false });
   }
   // Sketchups not linked to any rendering — show on their own page
   for (const s of sketchups) {
-    if (!linkedSketchIds.has(s.id) && !views.some(v => v.sketch?.id === s.id && !v.hero)) {
+    if (!linkedSketchIds.has(s.id) && !views.some((v) => v.sketch?.id === s.id && !v.hero)) {
       // only add as standalone if there are no renderings (so we don't duplicate the fallback)
-      if (approvedRenders.length === 0) views.push({ sketch: s, visible: s.presentation_visible !== false });
+      if (approvedRenders.length === 0)
+        views.push({ sketch: s, visible: s.presentation_visible !== false });
     }
   }
-  if (views.length === 0) views.push({ sketch: fallbackSketch, visible: fallbackSketch?.presentation_visible !== false });
+  if (views.length === 0)
+    views.push({ sketch: fallbackSketch, visible: fallbackSketch?.presentation_visible !== false });
 
-  const key = selections.filter(s => s.is_key_selection);
+  const key = selections.filter((s) => s.is_key_selection);
   const pickProduct = (cat: string) =>
-    key.find(s => s.product?.category === cat) || selections.find(s => s.product?.category === cat);
+    key.find((s) => s.product?.category === cat) ||
+    selections.find((s) => s.product?.category === cat);
   const pickMaterialItem = (...labels: string[]) => {
-    const wanted = labels.map(label => label.toLowerCase());
-    return materials.find(m => wanted.includes(m.item_label.toLowerCase()))
-      || materials.find(m => wanted.some(label => m.category?.toLowerCase().includes(label)));
+    const wanted = labels.map((label) => label.toLowerCase());
+    return (
+      materials.find((m) => wanted.includes(m.item_label.toLowerCase())) ||
+      materials.find((m) => wanted.some((label) => m.category?.toLowerCase().includes(label)))
+    );
   };
   const materialById = new Map(materials.map((m) => [m.id, m]));
-  const pickById = (id?: string | null) => id ? materialById.get(id) ?? null : null;
+  const pickById = (id?: string | null) => (id ? (materialById.get(id) ?? null) : null);
   const paletteMaterials = room.presentation_palette_item_ids?.length
-    ? room.presentation_palette_item_ids.map((id: string) => materialById.get(id)).filter(Boolean).slice(0, 4) as MaterialItem[]
+    ? (room.presentation_palette_item_ids
+        .map((id: string) => materialById.get(id))
+        .filter(Boolean)
+        .slice(0, 4) as MaterialItem[])
     : materials.slice(0, 4);
 
   return {
@@ -73,17 +99,32 @@ function buildRoomData(room: any, images: any[], selections: any[], materials: M
     materials,
     paletteMaterials,
     cabinetProduct: pickProduct("Hardware"),
-    cabinetMaterial: pickById(room.presentation_cabinet_item_id) || pickMaterialItem("Cabinet Finish", "Cabinet Hardware") || null,
-    counter: pickById(room.presentation_counter_item_id) || pickMaterialItem("Countertop", "Countertops") || null,
-    faucet: pickById(room.presentation_faucet_item_id) || pickMaterialItem("Faucet") || pickProduct("Plumbing"),
+    cabinetMaterial:
+      pickById(room.presentation_cabinet_item_id) ||
+      pickMaterialItem("Cabinet Finish", "Cabinet Hardware") ||
+      null,
+    counter:
+      pickById(room.presentation_counter_item_id) ||
+      pickMaterialItem("Countertop", "Countertops") ||
+      null,
+    faucet:
+      pickById(room.presentation_faucet_item_id) ||
+      pickMaterialItem("Faucet") ||
+      pickProduct("Plumbing"),
   };
 }
 
 function PresentationPage() {
   const { id: projectId } = Route.useParams();
   const qc = useQueryClient();
-  const { data: project } = useQuery({ queryKey: ["project", projectId], queryFn: () => db.getProject(projectId) });
-  const { data: rooms = [] } = useQuery({ queryKey: ["rooms", projectId], queryFn: async () => (await db.listRooms(projectId)) ?? [] });
+  const { data: project } = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => db.getProject(projectId),
+  });
+  const { data: rooms = [] } = useQuery({
+    queryKey: ["rooms", projectId],
+    queryFn: async () => (await db.listRooms(projectId)) ?? [],
+  });
   const { data: materialItems = [] } = useQuery({
     queryKey: ["materialItems", projectId],
     queryFn: async () => (await db.listMaterialItemsByProject(projectId)) ?? [],
@@ -91,9 +132,15 @@ function PresentationPage() {
 
   // Fetch data for all rooms in parallel
   const roomQueries = useQueries({
-    queries: rooms.flatMap(r => [
-      { queryKey: ["roomImages", r.id], queryFn: async () => (await db.listRoomImages(r.id)) ?? [] },
-      { queryKey: ["roomProducts", r.id], queryFn: async () => (await db.listRoomProducts(r.id)) ?? [] },
+    queries: rooms.flatMap((r) => [
+      {
+        queryKey: ["roomImages", r.id],
+        queryFn: async () => (await db.listRoomImages(r.id)) ?? [],
+      },
+      {
+        queryKey: ["roomProducts", r.id],
+        queryFn: async () => (await db.listRoomProducts(r.id)) ?? [],
+      },
     ]),
   });
 
@@ -104,15 +151,22 @@ function PresentationPage() {
       const materials = materialItems.filter((m) => m.room_id === r.id && !m.not_needed);
       return { room: r, data: buildRoomData(r, images, selections, materials) };
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rooms, materialItems, roomQueries.map(q => q.dataUpdatedAt).join(",")]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rooms, materialItems, roomQueries.map((q) => q.dataUpdatedAt).join(",")]);
 
-  const updatePresentationPicks = async (roomId: string, patch: Record<string, string | string[] | null>) => {
+  const updatePresentationPicks = async (
+    roomId: string,
+    patch: Record<string, string | string[] | null>,
+  ) => {
     await db.updateRoom(roomId, patch as any);
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
   };
 
-  const updateRenderingSketchLink = async (roomId: string, renderingId: string, linkedSketchupId: string | null) => {
+  const updateRenderingSketchLink = async (
+    roomId: string,
+    renderingId: string,
+    linkedSketchupId: string | null,
+  ) => {
     await db.updateRoomImage(renderingId, { linked_sketchup_id: linkedSketchupId });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
@@ -138,10 +192,27 @@ function PresentationPage() {
     roomData.forEach(({ room, data }) => {
       const visibleViews = data.views.filter((view) => view.visible);
       visibleViews.forEach((view, vi) => {
-        list.push({ kind: "view", room, data, view, viewIndex: vi, viewCount: visibleViews.length });
+        list.push({
+          kind: "view",
+          room,
+          data,
+          view,
+          viewIndex: vi,
+          viewCount: visibleViews.length,
+        });
       });
     });
-    return list as ({ kind: "cover" } | { kind: "view"; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number })[];
+    return list as (
+      | { kind: "cover" }
+      | {
+          kind: "view";
+          room: any;
+          data: RoomData;
+          view: RoomData["views"][number];
+          viewIndex: number;
+          viewCount: number;
+        }
+    )[];
   }, [roomData]);
 
   const [presenting, setPresenting] = useState(false);
@@ -161,12 +232,18 @@ function PresentationPage() {
   const enterPresent = useCallback(async () => {
     setSlide(0);
     setPresenting(true);
-    try { await document.documentElement.requestFullscreen?.(); } catch {}
+    try {
+      await document.documentElement.requestFullscreen?.();
+    } catch {}
   }, []);
 
   const exitPresent = useCallback(async () => {
     setPresenting(false);
-    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch {} }
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {}
+    }
   }, []);
 
   useEffect(() => {
@@ -174,21 +251,31 @@ function PresentationPage() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
         e.preventDefault();
-        setSlide(s => Math.min(s + 1, slides.length - 1));
+        setSlide((s) => Math.min(s + 1, slides.length - 1));
       } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
         e.preventDefault();
-        setSlide(s => Math.max(s - 1, 0));
+        setSlide((s) => Math.max(s - 1, 0));
       } else if (e.key === "Escape") {
         exitPresent();
       }
     };
-    const onFs = () => { if (!document.fullscreenElement) setPresenting(false); };
+    const onFs = () => {
+      if (!document.fullscreenElement) setPresenting(false);
+    };
     window.addEventListener("keydown", onKey);
     document.addEventListener("fullscreenchange", onFs);
-    return () => { window.removeEventListener("keydown", onKey); document.removeEventListener("fullscreenchange", onFs); };
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("fullscreenchange", onFs);
+    };
   }, [presenting, slides.length, exitPresent]);
 
-  if (!project) return <AppShell><div className="p-16">Loading…</div></AppShell>;
+  if (!project)
+    return (
+      <AppShell>
+        <div className="p-16">Loading…</div>
+      </AppShell>
+    );
 
   if (presenting) {
     const total = slides.length;
@@ -199,17 +286,26 @@ function PresentationPage() {
           {current.kind === "cover" ? (
             <CoverSlide project={project} />
           ) : (
-            <RoomSlide project={project} room={current.room} data={current.data} view={current.view} viewIndex={current.viewIndex} viewCount={current.viewCount} />
+            <RoomSlide
+              project={project}
+              room={current.room}
+              data={current.data}
+              view={current.view}
+              viewIndex={current.viewIndex}
+              viewCount={current.viewCount}
+            />
           )}
         </div>
         <div className="absolute top-4 right-4 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity">
-          <span className="text-xs text-muted-foreground">{slide + 1} / {total}</span>
+          <span className="text-xs text-muted-foreground">
+            {slide + 1} / {total}
+          </span>
           <button onClick={exitPresent} className="p-2 hover:bg-muted rounded" aria-label="Exit">
             <X className="w-4 h-4" />
           </button>
         </div>
         <button
-          onClick={() => setSlide(s => Math.max(s - 1, 0))}
+          onClick={() => setSlide((s) => Math.max(s - 1, 0))}
           disabled={slide === 0}
           className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-background/60 backdrop-blur border border-border hover:bg-background disabled:opacity-20"
           aria-label="Previous"
@@ -217,7 +313,7 @@ function PresentationPage() {
           <ChevronLeft className="w-5 h-5" />
         </button>
         <button
-          onClick={() => setSlide(s => Math.min(s + 1, total - 1))}
+          onClick={() => setSlide((s) => Math.min(s + 1, total - 1))}
           disabled={slide >= total - 1}
           className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-background/60 backdrop-blur border border-border hover:bg-background disabled:opacity-20"
           aria-label="Next"
@@ -232,20 +328,36 @@ function PresentationPage() {
     <AppShell>
       <div className="page-pad print:p-0">
         <div className="flex items-center justify-between mb-8 print:hidden">
-          <Link to="/projects/$id" params={{ id: project.id }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+          <Link
+            to="/projects/$id"
+            params={{ id: project.id }}
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
+          >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to project
           </Link>
           <div className="flex items-center gap-2">
-            <button onClick={() => setEditingPicks((value) => !value)} className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors">
+            <button
+              onClick={() => setEditingPicks((value) => !value)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
+            >
               {editingPicks ? "Done Editing" : "Edit Picks"}
             </button>
-            <button onClick={() => setEditingText((value) => !value)} className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors">
+            <button
+              onClick={() => setEditingText((value) => !value)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
+            >
               <Type className="w-4 h-4" /> {editingText ? "Done Text" : "Edit Text"}
             </button>
-            <button onClick={enterPresent} className="inline-flex items-center gap-2 px-5 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+            <button
+              onClick={enterPresent}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+            >
               <Maximize2 className="w-4 h-4" /> Present
             </button>
-            <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm">
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
+            >
               <Printer className="w-4 h-4" /> Print / PDF
             </button>
           </div>
@@ -260,8 +372,14 @@ function PresentationPage() {
           <h1 className="editorial-hero text-5xl lg:text-7xl mt-2">{project.name}</h1>
           {rooms.length > 1 && (
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-              {rooms.map(r => (
-                <a key={r.id} href={`#room-${r.id}`} className="hover:text-ink underline-offset-4 hover:underline">{r.name}</a>
+              {rooms.map((r) => (
+                <a
+                  key={r.id}
+                  href={`#room-${r.id}`}
+                  className="hover:text-ink underline-offset-4 hover:underline"
+                >
+                  {r.name}
+                </a>
               ))}
             </div>
           )}
@@ -269,7 +387,10 @@ function PresentationPage() {
 
         <div className="space-y-12 print:space-y-0">
           <section className="print:hidden bg-white border border-border min-h-[72vh]">
-            <BrandCover project={project} onTextChange={editingText ? updateCoverText : undefined} />
+            <BrandCover
+              project={project}
+              onTextChange={editingText ? updateCoverText : undefined}
+            />
           </section>
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
           {roomData.map(({ room, data }) => {
@@ -284,12 +405,22 @@ function PresentationPage() {
                 viewIndex={vi}
                 viewCount={views.length}
                 anchor={vi === 0 ? `room-${room.id}` : undefined}
-                onPick={editingPicks ? (patch) => updatePresentationPicks(room.id, patch) : undefined}
-                onUpdateViewSketch={editingPicks && view.hero ? (sketchupId) => updateRenderingSketchLink(room.id, view.hero.id, sketchupId) : undefined}
-                onToggleViewVisibility={editingPicks ? () => {
-                  const image = view.hero || view.sketch;
-                  if (image) updateViewVisibility(room.id, image.id, !view.visible);
-                } : undefined}
+                onPick={
+                  editingPicks ? (patch) => updatePresentationPicks(room.id, patch) : undefined
+                }
+                onUpdateViewSketch={
+                  editingPicks && view.hero
+                    ? (sketchupId) => updateRenderingSketchLink(room.id, view.hero.id, sketchupId)
+                    : undefined
+                }
+                onToggleViewVisibility={
+                  editingPicks
+                    ? () => {
+                        const image = view.hero || view.sketch;
+                        if (image) updateViewVisibility(room.id, image.id, !view.visible);
+                      }
+                    : undefined
+                }
                 onTextChange={editingText ? (patch) => updateSlideText(room.id, patch) : undefined}
               />
             ));
@@ -308,7 +439,13 @@ function CoverSlide({ project }: { project: any }) {
   );
 }
 
-function BrandCover({ project, onTextChange }: { project: any; onTextChange?: (patch: Record<string, string | null>) => void }) {
+function BrandCover({
+  project,
+  onTextChange,
+}: {
+  project: any;
+  onTextChange?: (patch: Record<string, string | null>) => void;
+}) {
   const editingText = !!onTextChange;
   const conceptText = project.design_concept || "Conceptual Design";
   return (
@@ -325,7 +462,9 @@ function BrandCover({ project, onTextChange }: { project: any; onTextChange?: (p
             <input
               key={`cover-name-${project.name}`}
               defaultValue={project.name}
-              onBlur={(event) => onTextChange?.({ name: event.target.value.trim() || project.name })}
+              onBlur={(event) =>
+                onTextChange?.({ name: event.target.value.trim() || project.name })
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter") event.currentTarget.blur();
               }}
@@ -335,7 +474,9 @@ function BrandCover({ project, onTextChange }: { project: any; onTextChange?: (p
             <input
               key={`cover-concept-${conceptText}`}
               defaultValue={conceptText}
-              onBlur={(event) => onTextChange?.({ design_concept: event.target.value.trim() || null })}
+              onBlur={(event) =>
+                onTextChange?.({ design_concept: event.target.value.trim() || null })
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter") event.currentTarget.blur();
               }}
@@ -355,8 +496,12 @@ function BrandCover({ project, onTextChange }: { project: any; onTextChange?: (p
         )}
         {editingText && (
           <div className="hidden print:block">
-            <div className="mt-24 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight">{project.name}</div>
-            <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">{conceptText}</div>
+            <div className="mt-24 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.12em] text-[clamp(1.4rem,2.8vw,3rem)] font-light leading-tight">
+              {project.name}
+            </div>
+            <div className="mt-5 font-[var(--font-montserrat)] text-ink uppercase tracking-[0.28em] text-[clamp(0.95rem,1.5vw,1.45rem)] font-light">
+              {conceptText}
+            </div>
           </div>
         )}
       </div>
@@ -377,16 +522,36 @@ function PresentationFooter() {
   );
 }
 
-function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { project: any; room: any; data: RoomData; view: RoomData["views"][number]; viewIndex: number; viewCount: number }) {
+function RoomSlide({
+  project,
+  room,
+  data,
+  view,
+  viewIndex,
+  viewCount,
+}: {
+  project: any;
+  room: any;
+  data: RoomData;
+  view: RoomData["views"][number];
+  viewIndex: number;
+  viewCount: number;
+}) {
   return (
     <div className="relative w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone px-8 pt-8 pb-24 lg:px-12 lg:pt-12 lg:pb-28">
       <div className="flex flex-col min-h-0">
         <div className="mb-4">
           <div className="eyebrow text-[11px]">
             {project.name} · {project.client_name}
-            {viewCount > 1 && <span className="ml-2 opacity-60">· View {viewIndex + 1} of {viewCount}</span>}
+            {viewCount > 1 && (
+              <span className="ml-2 opacity-60">
+                · View {viewIndex + 1} of {viewCount}
+              </span>
+            )}
           </div>
-          <h2 className="font-display text-4xl lg:text-6xl text-ink mt-2 leading-tight">{room.name}</h2>
+          <h2 className="font-display text-4xl lg:text-6xl text-ink mt-2 leading-tight">
+            {room.name}
+          </h2>
         </div>
         <div className="relative overflow-hidden flex-1 min-h-0">
           {view.hero ? (
@@ -394,7 +559,9 @@ function RoomSlide({ project, room, data, view, viewIndex, viewCount }: { projec
           ) : view.sketch ? (
             <img src={view.sketch.url} alt={room.name} className="w-full h-full object-contain" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">No image yet</div>
+            <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+              No image yet
+            </div>
           )}
         </div>
       </div>
@@ -432,13 +599,20 @@ function RoomSpread({
   const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
   const editingText = !!onTextChange;
   return (
-    <section id={anchor} className={`relative bg-bone border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}>
+    <section
+      id={anchor}
+      className={`relative bg-bone border border-border print:border-0 print-page scroll-mt-24 ${!view.visible ? "opacity-55" : ""}`}
+    >
       <div className="px-10 lg:px-14 pt-10 pb-6 print:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="eyebrow text-[11px]">
               {project.name} · {project.client_name}
-              {viewCount > 1 && <span className="ml-2 opacity-60">· View {viewIndex + 1} of {viewCount}</span>}
+              {viewCount > 1 && (
+                <span className="ml-2 opacity-60">
+                  · View {viewIndex + 1} of {viewCount}
+                </span>
+              )}
               {!view.visible && <span className="ml-2 text-destructive">· Hidden</span>}
             </div>
             {editingText ? (
@@ -453,7 +627,9 @@ function RoomSpread({
                 aria-label="Slide room title"
               />
             ) : (
-              <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">{room.name}</h2>
+              <h2 className="font-display text-4xl lg:text-5xl text-ink mt-2 leading-tight">
+                {room.name}
+              </h2>
             )}
           </div>
           {onToggleViewVisibility && (
@@ -463,7 +639,9 @@ function RoomSpread({
               aria-label={view.visible ? "Hide presentation view" : "Show presentation view"}
               onClick={onToggleViewVisibility}
               className={`print:hidden inline-flex h-10 w-10 items-center justify-center border transition-colors ${
-                view.visible ? "border-ink bg-ink text-primary-foreground" : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
+                view.visible
+                  ? "border-ink bg-ink text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
               }`}
             >
               {view.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -479,16 +657,24 @@ function RoomSpread({
           ) : view.sketch ? (
             <img src={view.sketch.url} alt={room.name} className="w-full h-full object-contain" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">No image yet</div>
+            <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+              No image yet
+            </div>
           )}
           {view.hero && (
-            <div className={`absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground ${editingText ? "" : "pointer-events-none"}`}>
+            <div
+              className={`absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground ${editingText ? "" : "pointer-events-none"}`}
+            >
               {editingText ? (
                 <div className="max-w-xl space-y-2 print:hidden">
                   <input
                     key={`label-${room.id}-${room.presentation_overlay_label || ""}`}
                     defaultValue={room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
-                    onBlur={(event) => onTextChange?.({ presentation_overlay_label: event.target.value.trim() || null })}
+                    onBlur={(event) =>
+                      onTextChange?.({
+                        presentation_overlay_label: event.target.value.trim() || null,
+                      })
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "Enter") event.currentTarget.blur();
                     }}
@@ -498,7 +684,11 @@ function RoomSpread({
                   <textarea
                     key={`body-${room.id}-${room.presentation_overlay_body || ""}`}
                     defaultValue={room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
-                    onBlur={(event) => onTextChange?.({ presentation_overlay_body: event.target.value.trim() || null })}
+                    onBlur={(event) =>
+                      onTextChange?.({
+                        presentation_overlay_body: event.target.value.trim() || null,
+                      })
+                    }
                     rows={2}
                     className="w-full resize-none border border-white/40 bg-black/30 px-2 py-1 font-display text-sm lg:text-base leading-snug text-primary-foreground placeholder:text-primary-foreground/50"
                     aria-label="Slide overlay body"
@@ -506,7 +696,9 @@ function RoomSpread({
                 </div>
               ) : (
                 <>
-                  <div className="eyebrow text-[10px] text-primary-foreground/80">{room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}</div>
+                  <div className="eyebrow text-[10px] text-primary-foreground/80">
+                    {room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
+                  </div>
                   <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">
                     {room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
                   </p>
@@ -514,14 +706,24 @@ function RoomSpread({
               )}
               {editingText && (
                 <div className="hidden print:block">
-                  <div className="eyebrow text-[10px] text-primary-foreground/80">{room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}</div>
-                  <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">{room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}</p>
+                  <div className="eyebrow text-[10px] text-primary-foreground/80">
+                    {room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
+                  </div>
+                  <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">
+                    {room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
+                  </p>
                 </div>
               )}
             </div>
           )}
         </div>
-        <SpreadSidebar data={data} view={view} showSketch={showSketchInCard} onPick={onPick} onUpdateViewSketch={onUpdateViewSketch} />
+        <SpreadSidebar
+          data={data}
+          view={view}
+          showSketch={showSketchInCard}
+          onPick={onPick}
+          onUpdateViewSketch={onUpdateViewSketch}
+        />
       </div>
       <PresentationFooter />
     </section>
@@ -542,7 +744,9 @@ function SpreadSidebar({
   onUpdateViewSketch?: (sketchupId: string | null) => void;
 }) {
   const editing = !!onPick;
-  const paletteItems = data.paletteMaterials.filter((material) => material.product?.image_url).slice(0, 4);
+  const paletteItems = data.paletteMaterials
+    .filter((material) => material.product?.image_url)
+    .slice(0, 4);
   const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
   const hasCounter = !!data.counter;
   const hasFaucet = !!data.faucet?.item_label || !!data.faucet?.product;
@@ -551,7 +755,9 @@ function SpreadSidebar({
     ids[index] = id;
     const trimmed = ids.map((value) => value || null);
     while (trimmed.length && !trimmed[trimmed.length - 1]) trimmed.pop();
-    onPick?.({ presentation_palette_item_ids: trimmed.length ? trimmed.filter(Boolean) as string[] : null });
+    onPick?.({
+      presentation_palette_item_ids: trimmed.length ? (trimmed.filter(Boolean) as string[]) : null,
+    });
   };
 
   return (
@@ -562,7 +768,9 @@ function SpreadSidebar({
             {view.sketch ? (
               <img src={view.sketch.url} alt="" className="w-full h-full object-contain" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-[11px] text-muted-foreground">No SketchUp yet</div>
+              <div className="w-full h-full flex items-center justify-center text-[11px] text-muted-foreground">
+                No SketchUp yet
+              </div>
             )}
           </div>
           {onPick && (
@@ -590,15 +798,30 @@ function SpreadSidebar({
           <div className="grid grid-cols-2 gap-1.5">
             {paletteItems.map((m) => (
               <div key={m.id} className="aspect-square bg-bone overflow-hidden">
-                {m.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, { name: "" })} className="w-full h-full object-cover" />}
+                {m.product?.image_url && (
+                  <img
+                    src={m.product.image_url}
+                    alt={clientProductName(m, { name: "" })}
+                    className="w-full h-full object-contain p-1"
+                  />
+                )}
               </div>
             ))}
-            {!paletteItems.length && <div className="col-span-2 text-[11px] text-muted-foreground">No palette selections yet.</div>}
+            {!paletteItems.length && (
+              <div className="col-span-2 text-[11px] text-muted-foreground">
+                No palette selections yet.
+              </div>
+            )}
           </div>
           {onPick && (
             <div className="mt-3 space-y-1 print:hidden">
               {Array.from({ length: 4 }).map((_, i) => (
-                <PresentationPickSelect key={`palette-pick-${i}`} value={data.paletteMaterials[i]?.id ?? ""} materials={data.materials} onChange={(id) => setPaletteSlot(i, id)} />
+                <PresentationPickSelect
+                  key={`palette-pick-${i}`}
+                  value={data.paletteMaterials[i]?.id ?? ""}
+                  materials={data.materials}
+                  onChange={(id) => setPaletteSlot(i, id)}
+                />
               ))}
             </div>
           )}
@@ -608,10 +831,20 @@ function SpreadSidebar({
             <Detail
               product={data.cabinetProduct?.product}
               fallbackImage={data.cabinetMaterial?.product?.image_url}
-              fallbackName={data.cabinetMaterial ? clientProductName(data.cabinetMaterial, { name: "" }) : "Cabinet finish + hardware"}
+              fallbackName={
+                data.cabinetMaterial
+                  ? clientProductName(data.cabinetMaterial, { name: "" })
+                  : "Cabinet finish + hardware"
+              }
               fallbackSub={data.cabinetMaterial?.product?.vendor || data.cabinetMaterial?.color}
             />
-            {onPick && <PresentationPickSelect value={data.cabinetMaterial?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_cabinet_item_id: id || null })} />}
+            {onPick && (
+              <PresentationPickSelect
+                value={data.cabinetMaterial?.id ?? ""}
+                materials={data.materials}
+                onChange={(id) => onPick({ presentation_cabinet_item_id: id || null })}
+              />
+            )}
           </Card>
         )}
       </div>
@@ -622,18 +855,40 @@ function SpreadSidebar({
             <Card label="Countertop">
               <div className="flex gap-3">
                 <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-                  {data.counter?.product?.image_url && <img src={data.counter.product.image_url} alt="" className="w-full h-full object-cover" />}
+                  {data.counter?.product?.image_url && (
+                    <img
+                      src={data.counter.product.image_url}
+                      alt=""
+                      className="w-full h-full object-contain p-1"
+                    />
+                  )}
                 </div>
                 <div className="min-w-0 self-center">
-                  <div className="font-display text-sm leading-tight">{data.counter ? clientProductName(data.counter, { name: "" }) : "—"}</div>
-                  {(data.counter?.product?.name || data.counter?.product?.vendor || data.counter?.color) && (
+                  <div className="font-display text-sm leading-tight">
+                    {data.counter ? clientProductName(data.counter, { name: "" }) : "—"}
+                  </div>
+                  {(data.counter?.product?.name ||
+                    data.counter?.product?.vendor ||
+                    data.counter?.color) && (
                     <div className="text-[10px] text-muted-foreground mt-0.5">
-                      {[data.counter?.product?.name, data.counter?.product?.vendor, data.counter?.color].filter(Boolean).join(" · ")}
+                      {[
+                        data.counter?.product?.name,
+                        data.counter?.product?.vendor,
+                        data.counter?.color,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </div>
                   )}
                 </div>
               </div>
-              {onPick && <PresentationPickSelect value={data.counter?.id ?? ""} materials={data.materials} onChange={(id) => onPick({ presentation_counter_item_id: id || null })} />}
+              {onPick && (
+                <PresentationPickSelect
+                  value={data.counter?.id ?? ""}
+                  materials={data.materials}
+                  onChange={(id) => onPick({ presentation_counter_item_id: id || null })}
+                />
+              )}
             </Card>
           )}
           {(editing || hasFaucet) && (
@@ -641,10 +896,20 @@ function SpreadSidebar({
               <Detail
                 product={data.faucet?.product}
                 fallbackImage={data.faucet?.product?.image_url}
-                fallbackName={data.faucet?.item_label ? clientProductName(data.faucet, { name: "" }) : "Bridge faucet"}
+                fallbackName={
+                  data.faucet?.item_label
+                    ? clientProductName(data.faucet, { name: "" })
+                    : "Bridge faucet"
+                }
                 fallbackSub={data.faucet?.product?.vendor || data.faucet?.color}
               />
-              {onPick && <PresentationPickSelect value={data.faucet?.item_label ? data.faucet.id : ""} materials={data.materials} onChange={(id) => onPick({ presentation_faucet_item_id: id || null })} />}
+              {onPick && (
+                <PresentationPickSelect
+                  value={data.faucet?.item_label ? data.faucet.id : ""}
+                  materials={data.materials}
+                  onChange={(id) => onPick({ presentation_faucet_item_id: id || null })}
+                />
+              )}
             </Card>
           )}
         </div>
@@ -719,13 +984,23 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function Detail({ product, fallbackName, fallbackImage, fallbackSub }: { product?: any; fallbackName: string; fallbackImage?: string | null; fallbackSub?: string | null }) {
+function Detail({
+  product,
+  fallbackName,
+  fallbackImage,
+  fallbackSub,
+}: {
+  product?: any;
+  fallbackName: string;
+  fallbackImage?: string | null;
+  fallbackSub?: string | null;
+}) {
   const img = product?.image_url || fallbackImage;
   const sub = product?.finish || product?.vendor || fallbackSub;
   return (
     <div className="flex gap-3">
       <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-        {img && <img src={img} alt="" className="w-full h-full object-cover" />}
+        {img && <img src={img} alt="" className="w-full h-full object-contain p-1" />}
       </div>
       <div className="min-w-0 self-center">
         <div className="font-display text-sm leading-tight">{product?.name || fallbackName}</div>
