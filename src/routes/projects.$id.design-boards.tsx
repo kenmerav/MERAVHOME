@@ -130,6 +130,16 @@ type ActiveBoardUser = {
   onlineAt: string;
 };
 
+type SendMaterialResult =
+  | {
+      status: "sent";
+      materialItemId: string | null;
+      productId: string | null;
+      roomId: string;
+      quantity: number;
+    }
+  | { status: "skipped" };
+
 type DragMode =
   | {
       kind: "move";
@@ -783,17 +793,18 @@ function ProjectDesignBoardsPage() {
     element: BoardElement,
     page: BoardPage,
     sortOrderOverride?: number,
-  ): Promise<"sent" | "skipped"> => {
-    if (element.type !== "image") return "skipped";
+    quantityOverride?: number,
+  ): Promise<SendMaterialResult> => {
+    if (element.type !== "image") return { status: "skipped" };
     const roomId = element.materialRoomId || page.roomId;
     const room = rooms.find((candidate) => candidate.id === roomId);
     if (!room) {
-      return "skipped";
+      return { status: "skipped" };
     }
 
     const itemLabel = (element.label || element.productName || "").trim();
     if (!itemLabel) {
-      return "skipped";
+      return { status: "skipped" };
     }
 
     const linkedProduct = element.productId
@@ -803,7 +814,11 @@ function ProjectDesignBoardsPage() {
     const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : null;
     const finish = element.materialFinish || element.finish || null;
     const quantity =
-      element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
+      quantityOverride && quantityOverride > 0
+        ? quantityOverride
+        : element.materialQuantity && element.materialQuantity > 0
+          ? element.materialQuantity
+          : 1;
 
     let product = linkedProduct;
     if (!product && productUrl) product = await db.findProductByUrl(productUrl);
@@ -909,7 +924,13 @@ function ProjectDesignBoardsPage() {
       queryClient.invalidateQueries({ queryKey: ["roomProducts", room.id] }),
       queryClient.invalidateQueries({ queryKey: ["catalog"] }),
     ]);
-    return "sent";
+    return {
+      status: "sent",
+      materialItemId: materialItem?.id ?? element.materialItemId ?? null,
+      productId: product.id,
+      roomId: room.id,
+      quantity,
+    };
   };
 
   const sendSelectedToMaterials = async () => {
@@ -946,26 +967,116 @@ function ProjectDesignBoardsPage() {
       let sent = 0;
       let skipped = 0;
       const nextSortOrderByRoom = new Map<string, number>();
+      const groups = new Map<
+        string,
+        {
+          page: BoardPage;
+          primary: BoardElement;
+          elements: Array<{ page: BoardPage; element: BoardElement }>;
+          quantity: number;
+          roomId: string;
+        }
+      >();
+
       for (const page of targetPages) {
         for (const element of page.elements) {
           if (element.type !== "image") continue;
           const roomId = element.materialRoomId || page.roomId;
-          let sortOrderOverride: number | undefined;
-          if (roomId && !element.materialItemId) {
-            const nextSortOrder =
-              nextSortOrderByRoom.get(roomId) ??
-              Math.max(
-                0,
-                ...materialItems
-                  .filter((item) => item.room_id === roomId)
-                  .map((item) => item.sort_order),
-              ) + 1;
-            sortOrderOverride = nextSortOrder;
-            nextSortOrderByRoom.set(roomId, nextSortOrder + 1);
+          const linkedProduct = element.productId
+            ? products.find((product) => product.id === element.productId)
+            : null;
+          const itemLabel = (element.label || element.productName || "").trim();
+          if (!roomId || !itemLabel) {
+            skipped += 1;
+            continue;
           }
-          const result = await sendElementToMaterials(element, page, sortOrderOverride);
-          if (result === "sent") sent += 1;
-          else skipped += 1;
+          const category = element.materialCategory || linkedProduct?.category || "Decor";
+          const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : "";
+          const finish = (element.materialFinish || element.finish || "").trim();
+          const identity = element.productId || productUrl || element.src || itemLabel;
+          const key = [
+            roomId,
+            identity.trim().toLowerCase(),
+            itemLabel.toLowerCase(),
+            category.toLowerCase(),
+            finish.toLowerCase(),
+          ].join("::");
+          const quantity =
+            element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
+          const existing = groups.get(key);
+          if (existing) {
+            existing.elements.push({ page, element });
+            existing.quantity += quantity;
+          } else {
+            groups.set(key, {
+              page,
+              primary: element,
+              elements: [{ page, element }],
+              quantity,
+              roomId,
+            });
+          }
+        }
+      }
+
+      for (const group of groups.values()) {
+        const primaryMaterialId =
+          group.primary.materialItemId ||
+          group.elements.find(({ element }) => element.materialItemId)?.element.materialItemId ||
+          null;
+        const primaryElement = primaryMaterialId
+          ? { ...group.primary, materialItemId: primaryMaterialId }
+          : group.primary;
+        let sortOrderOverride: number | undefined;
+        if (!primaryMaterialId) {
+          const nextSortOrder =
+            nextSortOrderByRoom.get(group.roomId) ??
+            Math.max(
+              0,
+              ...materialItems
+                .filter((item) => item.room_id === group.roomId)
+                .map((item) => item.sort_order),
+            ) + 1;
+          sortOrderOverride = nextSortOrder;
+          nextSortOrderByRoom.set(group.roomId, nextSortOrder + 1);
+        }
+        const result = await sendElementToMaterials(
+          primaryElement,
+          group.page,
+          sortOrderOverride,
+          group.quantity,
+        );
+        if (result.status === "sent") {
+          sent += 1;
+          const duplicateMaterialIds = Array.from(
+            new Set(
+              group.elements
+                .map(({ element }) => element.materialItemId)
+                .filter((materialItemId): materialItemId is string =>
+                  Boolean(materialItemId && materialItemId !== result.materialItemId),
+                ),
+            ),
+          );
+          for (const materialItemId of duplicateMaterialIds) {
+            await db.deleteMaterialItem(materialItemId);
+          }
+          for (const { page, element } of group.elements) {
+            setElementsForPage(page.id, (current) =>
+              current.map((candidate) =>
+                candidate.id === element.id
+                  ? {
+                      ...candidate,
+                      productId: result.productId,
+                      materialItemId: result.materialItemId,
+                      materialRoomId: result.roomId,
+                      materialQuantity: group.quantity,
+                    }
+                  : candidate,
+              ),
+            );
+          }
+        } else {
+          skipped += group.elements.length;
         }
       }
       if (sent) {
