@@ -220,6 +220,7 @@ function ProjectDesignBoardsPage() {
   const [category, setCategory] = useState<ProductCategory | "All">("All");
   const [removingBackground, setRemovingBackground] = useState(false);
   const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
+  const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "saving" | "saved" | "error">(
@@ -778,6 +779,139 @@ function ProjectDesignBoardsPage() {
     );
   };
 
+  const sendElementToMaterials = async (
+    element: BoardElement,
+    page: BoardPage,
+    sortOrderOverride?: number,
+  ): Promise<"sent" | "skipped"> => {
+    if (element.type !== "image") return "skipped";
+    const roomId = element.materialRoomId || page.roomId;
+    const room = rooms.find((candidate) => candidate.id === roomId);
+    if (!room) {
+      return "skipped";
+    }
+
+    const itemLabel = (element.label || element.productName || "").trim();
+    if (!itemLabel) {
+      return "skipped";
+    }
+
+    const linkedProduct = element.productId
+      ? products.find((product) => product.id === element.productId)
+      : null;
+    const category = element.materialCategory || linkedProduct?.category || "Decor";
+    const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : null;
+    const finish = element.materialFinish || element.finish || null;
+    const quantity =
+      element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
+
+    let product = linkedProduct;
+    if (!product && productUrl) product = await db.findProductByUrl(productUrl);
+    if (!product) {
+      product = await db.createProduct({
+        name: itemLabel,
+        category,
+        product_url: productUrl,
+        image_url: element.src || null,
+        finish,
+        notes: element.notes || null,
+      });
+    } else {
+      const productPatch: Partial<Product> = {};
+      if (!product.image_url && element.src) productPatch.image_url = element.src;
+      if (!product.product_url && productUrl) productPatch.product_url = productUrl;
+      if (!product.finish && finish) productPatch.finish = finish;
+      if (Object.keys(productPatch).length) {
+        product = await db.updateProduct(product.id, productPatch);
+      }
+    }
+    if (!product) throw new Error("Could not create catalog product.");
+
+    const existingMaterialId = element.materialItemId || null;
+    const existingMaterial = existingMaterialId
+      ? materialItems.find((item) => item.id === existingMaterialId)
+      : null;
+    const sortOrder =
+      existingMaterial?.sort_order ??
+      sortOrderOverride ??
+      Math.max(
+        0,
+        ...materialItems.filter((item) => item.room_id === room.id).map((item) => item.sort_order),
+      ) + 1;
+    const materialPatch: Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product"> = {
+      room_id: room.id,
+      project_id: id,
+      item_label: itemLabel,
+      client_product_name: buildClientProductName(room.name, itemLabel),
+      category,
+      is_required: false,
+      sort_order: sortOrder,
+      cad_label: null,
+      product_url: productUrl,
+      quantity,
+      color: finish,
+      notes: element.notes || null,
+      not_needed: false,
+      product_id: product.id,
+      scrape_status: "scraped",
+      scrape_error: null,
+    };
+
+    let materialItem = existingMaterial ?? null;
+    if (existingMaterialId) {
+      await db.updateMaterialItem(existingMaterialId, materialPatch);
+      materialItem = {
+        ...(existingMaterial ?? { id: existingMaterialId }),
+        ...materialPatch,
+        product,
+      } as MaterialItem;
+    } else {
+      const { data, error } = await supabase
+        .from("material_items")
+        .insert(materialPatch)
+        .select("*, product:products(*)")
+        .single();
+      if (error) throw error;
+      materialItem = data as MaterialItem | null;
+    }
+
+    const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+    if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
+      await db.addRoomProduct({
+        room_id: room.id,
+        product_id: product.id,
+        is_key_selection: false,
+      });
+    }
+
+    setElementsForPage(page.id, (current) =>
+      current.map((candidate) =>
+        candidate.id === element.id
+          ? {
+              ...candidate,
+              productId: product.id,
+              productName: product.name,
+              vendor: product.vendor,
+              price: product.price,
+              finish: product.finish,
+              link: product.product_url || element.link || "",
+              materialItemId: materialItem?.id ?? element.materialItemId ?? null,
+              materialRoomId: room.id,
+              materialCategory: category,
+              materialQuantity: quantity,
+              materialFinish: finish,
+            }
+          : candidate,
+      ),
+    );
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
+      queryClient.invalidateQueries({ queryKey: ["roomProducts", room.id] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog"] }),
+    ]);
+    return "sent";
+  };
+
   const sendSelectedToMaterials = async () => {
     if (!selected || selected.type !== "image") return;
     const roomId = selected.materialRoomId || activePage.roomId;
@@ -793,123 +927,69 @@ function ProjectDesignBoardsPage() {
       return;
     }
 
-    const linkedProduct = selected.productId
-      ? products.find((product) => product.id === selected.productId)
-      : null;
-    const category = selected.materialCategory || linkedProduct?.category || "Decor";
-    const productUrl = selected.link?.trim() ? normalizeExternalUrl(selected.link) : null;
-    const finish = selected.materialFinish || selected.finish || null;
-    const quantity =
-      selected.materialQuantity && selected.materialQuantity > 0 ? selected.materialQuantity : 1;
-
     setSendingMaterialId(selected.id);
     try {
-      let product = linkedProduct;
-      if (!product && productUrl) product = await db.findProductByUrl(productUrl);
-      if (!product) {
-        product = await db.createProduct({
-          name: itemLabel,
-          category,
-          product_url: productUrl,
-          image_url: selected.src || null,
-          finish,
-          notes: selected.notes || null,
-        });
-      } else {
-        const productPatch: Partial<Product> = {};
-        if (!product.image_url && selected.src) productPatch.image_url = selected.src;
-        if (!product.product_url && productUrl) productPatch.product_url = productUrl;
-        if (!product.finish && finish) productPatch.finish = finish;
-        if (Object.keys(productPatch).length) {
-          product = await db.updateProduct(product.id, productPatch);
-        }
-      }
-      if (!product) throw new Error("Could not create catalog product.");
-
-      const existingMaterialId = selected.materialItemId || null;
-      const existingMaterial = existingMaterialId
-        ? materialItems.find((item) => item.id === existingMaterialId)
-        : null;
-      const sortOrder =
-        existingMaterial?.sort_order ??
-        Math.max(
-          0,
-          ...materialItems
-            .filter((item) => item.room_id === room.id)
-            .map((item) => item.sort_order),
-        ) + 1;
-      const materialPatch: Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product"> = {
-        room_id: room.id,
-        project_id: id,
-        item_label: itemLabel,
-        client_product_name: buildClientProductName(room.name, itemLabel),
-        category,
-        is_required: false,
-        sort_order: sortOrder,
-        cad_label: null,
-        product_url: productUrl,
-        quantity,
-        color: finish,
-        notes: selected.notes || null,
-        not_needed: false,
-        product_id: product.id,
-        scrape_status: "scraped",
-        scrape_error: null,
-      };
-
-      let materialItem = existingMaterial ?? null;
-      if (existingMaterialId) {
-        await db.updateMaterialItem(existingMaterialId, materialPatch);
-        materialItem = {
-          ...(existingMaterial ?? { id: existingMaterialId }),
-          ...materialPatch,
-          product,
-        } as MaterialItem;
-      } else {
-        const { data, error } = await supabase
-          .from("material_items")
-          .insert(materialPatch)
-          .select("*, product:products(*)")
-          .single();
-        if (error) throw error;
-        materialItem = data as MaterialItem | null;
-      }
-
-      const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
-      if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
-        await db.addRoomProduct({
-          room_id: room.id,
-          product_id: product.id,
-          is_key_selection: false,
-        });
-      }
-
-      updateElement(selected.id, {
-        productId: product.id,
-        productName: product.name,
-        vendor: product.vendor,
-        price: product.price,
-        finish: product.finish,
-        link: product.product_url || selected.link || "",
-        materialItemId: materialItem?.id ?? selected.materialItemId ?? null,
-        materialRoomId: room.id,
-        materialCategory: category,
-        materialQuantity: quantity,
-        materialFinish: finish,
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
-        queryClient.invalidateQueries({ queryKey: ["roomProducts", room.id] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog"] }),
-      ]);
+      await sendElementToMaterials(selected, activePage);
       toast.success(
-        existingMaterialId ? "Updated this material item." : "Sent to project materials.",
+        selected.materialItemId ? "Updated this material item." : "Sent to project materials.",
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not send this to Materials.");
     } finally {
       setSendingMaterialId(null);
     }
+  };
+
+  const sendMaterialsForPages = async (targetPages: BoardPage[], scope: "page" | "board") => {
+    setBulkMaterialScope(scope);
+    try {
+      let sent = 0;
+      let skipped = 0;
+      const nextSortOrderByRoom = new Map<string, number>();
+      for (const page of targetPages) {
+        for (const element of page.elements) {
+          if (element.type !== "image") continue;
+          const roomId = element.materialRoomId || page.roomId;
+          let sortOrderOverride: number | undefined;
+          if (roomId && !element.materialItemId) {
+            const nextSortOrder =
+              nextSortOrderByRoom.get(roomId) ??
+              Math.max(
+                0,
+                ...materialItems
+                  .filter((item) => item.room_id === roomId)
+                  .map((item) => item.sort_order),
+              ) + 1;
+            sortOrderOverride = nextSortOrder;
+            nextSortOrderByRoom.set(roomId, nextSortOrder + 1);
+          }
+          const result = await sendElementToMaterials(element, page, sortOrderOverride);
+          if (result === "sent") sent += 1;
+          else skipped += 1;
+        }
+      }
+      if (sent) {
+        toast.success(
+          `Sent ${sent} ${sent === 1 ? "item" : "items"} to Materials${
+            skipped ? ` and skipped ${skipped} missing label or room.` : "."
+          }`,
+        );
+      } else {
+        toast.error("No image items were ready. Add labels and assign rooms first.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send materials.");
+    } finally {
+      setBulkMaterialScope(null);
+    }
+  };
+
+  const sendCurrentPageToMaterials = () => {
+    void sendMaterialsForPages([activePage], "page");
+  };
+
+  const sendFullBoardToMaterials = () => {
+    void sendMaterialsForPages(pages, "board");
   };
 
   const toggleBoardDetails = () => {
@@ -1415,6 +1495,13 @@ function ProjectDesignBoardsPage() {
               <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
               </ToolbarButton>
+              <ToolbarButton
+                onClick={sendCurrentPageToMaterials}
+                disabled={!imageElements.length || bulkMaterialScope !== null}
+              >
+                <Plus className="h-4 w-4" />
+                {bulkMaterialScope === "page" ? "Sending Page..." : "Send Page to Materials"}
+              </ToolbarButton>
               <ToolbarButton onClick={removeSelected} disabled={!selectedCount} destructive>
                 <Trash2 className="h-4 w-4" /> Delete
               </ToolbarButton>
@@ -1705,6 +1792,20 @@ function ProjectDesignBoardsPage() {
                     <div className="eyebrow mt-1">Linked</div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={sendFullBoardToMaterials}
+                  disabled={
+                    bulkMaterialScope !== null ||
+                    !pages.some((page) => page.elements.some((element) => element.type === "image"))
+                  }
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  {bulkMaterialScope === "board"
+                    ? "Sending Full Board..."
+                    : "Send Full Board to Materials"}
+                </button>
                 <div className="mt-4 border-t border-stone-200 pt-4">
                   <div className="eyebrow mb-2">Version History</div>
                   <div className="space-y-2">
