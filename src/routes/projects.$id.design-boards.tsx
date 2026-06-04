@@ -1454,15 +1454,12 @@ function ProjectDesignBoardsPage() {
                       {selectionMarquee?.pageId === page.id && (
                         <div
                           className="pointer-events-none absolute border border-[#6d4cff] bg-[#6d4cff]/10"
-                          style={{
-                            ...rectFromPoints(
-                              selectionMarquee.startX,
-                              selectionMarquee.startY,
-                              selectionMarquee.currentX,
-                              selectionMarquee.currentY,
-                            ),
-                            zIndex: 999_999,
-                          }}
+                          style={marqueeStyleFromPoints(
+                            selectionMarquee.startX,
+                            selectionMarquee.startY,
+                            selectionMarquee.currentX,
+                            selectionMarquee.currentY,
+                          )}
                         />
                       )}
                     </div>
@@ -2601,6 +2598,22 @@ function rectFromPoints(
     y,
     width: Math.abs(currentX - startX),
     height: Math.abs(currentY - startY),
+  };
+}
+
+function marqueeStyleFromPoints(
+  startX: number,
+  startY: number,
+  currentX: number,
+  currentY: number,
+) {
+  const rect = rectFromPoints(startX, startY, currentX, currentY);
+  return {
+    left: rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+    zIndex: 999_999,
   };
 }
 
