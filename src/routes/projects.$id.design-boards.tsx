@@ -186,6 +186,17 @@ type SelectionMarquee = {
   currentY: number;
 } | null;
 
+type ImageVariantKind = "thumbnail" | "preview" | "original";
+
+type OptimizedBoardImageProps = {
+  src: string;
+  alt: string;
+  kind: ImageVariantKind;
+  className?: string;
+  draggable?: boolean;
+  loading?: "eager" | "lazy";
+};
+
 const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
 const MIN_ZOOM = 0.35;
@@ -2049,10 +2060,12 @@ function ProjectDesignBoardsPage() {
                         className="cursor-grab rounded-lg border border-stone-200 bg-[#faf9f5] p-2 active:cursor-grabbing"
                       >
                         <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
-                          <img
+                          <OptimizedBoardImage
                             src={image.url}
                             alt={image.caption ?? ""}
+                            kind="thumbnail"
                             className="max-h-full max-w-full object-contain"
+                            loading="lazy"
                           />
                         </div>
                         <div className="mt-1 truncate text-[11px] text-stone-500">
@@ -2100,11 +2113,13 @@ function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: numb
               }}
             >
               {element.type === "image" && element.src && (
-                <img
+                <OptimizedBoardImage
                   src={element.src}
                   alt=""
+                  kind="thumbnail"
                   className="h-full w-full object-contain"
                   draggable={false}
+                  loading="lazy"
                 />
               )}
               {element.type === "shape" && (
@@ -2203,9 +2218,10 @@ function BoardObject({
       {element.type === "image" && (
         <>
           {element.src ? (
-            <img
+            <OptimizedBoardImage
               src={element.src}
               alt={element.label ?? ""}
+              kind="preview"
               className="h-full w-full object-contain"
               draggable={false}
             />
@@ -2567,10 +2583,12 @@ function ProductTrayItem({ product }: { product: Product }) {
       <div className="flex gap-3">
         <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-white">
           {product.image_url ? (
-            <img
+            <OptimizedBoardImage
               src={product.image_url}
               alt={product.name}
+              kind="thumbnail"
               className="max-h-full max-w-full object-contain transition group-hover:scale-105"
+              loading="lazy"
             />
           ) : (
             <ImageIcon className="h-5 w-5 text-stone-300" />
@@ -2585,6 +2603,72 @@ function ProductTrayItem({ product }: { product: Product }) {
       </div>
     </div>
   );
+}
+
+function OptimizedBoardImage({
+  src,
+  alt,
+  kind,
+  className,
+  draggable,
+  loading,
+}: OptimizedBoardImageProps) {
+  const [failedVariant, setFailedVariant] = useState<string | null>(null);
+  const displaySrc = imageVariantUrl(src, kind);
+  const finalSrc = failedVariant === displaySrc ? src : displaySrc;
+
+  useEffect(() => {
+    setFailedVariant(null);
+  }, [src, kind]);
+
+  return (
+    <img
+      src={finalSrc}
+      alt={alt}
+      className={className}
+      draggable={draggable}
+      loading={loading}
+      decoding="async"
+      data-original-src={src}
+      onError={() => {
+        if (finalSrc !== src) setFailedVariant(finalSrc);
+      }}
+    />
+  );
+}
+
+function imageVariantUrl(src: string, kind: ImageVariantKind) {
+  if (kind === "original") return src;
+  const transform =
+    kind === "thumbnail"
+      ? { width: 240, height: 240, quality: 72 }
+      : { width: BOARD_WIDTH, height: BOARD_HEIGHT, quality: 82 };
+  return supabaseImageTransformUrl(src, transform) ?? src;
+}
+
+function supabaseImageTransformUrl(
+  src: string,
+  transform: { width: number; height: number; quality: number },
+) {
+  if (!src || src.startsWith("data:image/")) return null;
+  try {
+    const url = new URL(src);
+    const marker = "/storage/v1/object/public/";
+    const index = url.pathname.indexOf(marker);
+    if (index === -1) return null;
+    url.pathname =
+      url.pathname.slice(0, index) +
+      "/storage/v1/render/image/public/" +
+      url.pathname.slice(index + marker.length);
+    url.search = "";
+    url.searchParams.set("width", String(transform.width));
+    url.searchParams.set("height", String(transform.height));
+    url.searchParams.set("resize", "contain");
+    url.searchParams.set("quality", String(transform.quality));
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function ToolbarButton({
