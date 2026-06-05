@@ -234,7 +234,13 @@ const BOARD_FONT_OPTIONS = [
   { label: "Arial", value: "Arial, Helvetica, sans-serif" },
 ];
 const DEFAULT_BOARD_TEXT_FONT = BOARD_FONT_OPTIONS[0].value;
-const DEFAULT_BOARD_TEXT_COLOR = "#1f1d1b";
+const DEFAULT_BOARD_TEXT_COLOR = "#000000";
+const BOARD_TEXT_COLOR_OPTIONS = [
+  { label: "Black", value: "#000000" },
+  { label: "White", value: "#ffffff" },
+  { label: "Red", value: "#dc2626" },
+  { label: "Blue", value: "#2563eb" },
+];
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -1792,13 +1798,37 @@ function ProjectDesignBoardsPage() {
                   />
                   <label className="flex items-center gap-2 border-l border-stone-200 pl-2 text-xs uppercase tracking-[0.16em] text-stone-500">
                     Color
-                    <input
-                      aria-label="Text color"
-                      type="color"
-                      value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
-                      onChange={(event) => updateElement(selected.id, { color: event.target.value })}
-                      className="h-7 w-8 cursor-pointer border border-stone-200 bg-white p-0.5"
-                    />
+                    <div className="flex items-center gap-1">
+                      {BOARD_TEXT_COLOR_OPTIONS.map((colorOption) => {
+                        const isActive =
+                          (selected.color ?? DEFAULT_BOARD_TEXT_COLOR).toLowerCase() ===
+                          colorOption.value;
+                        return (
+                          <button
+                            key={colorOption.value}
+                            type="button"
+                            aria-label={`Set text color to ${colorOption.label}`}
+                            title={colorOption.label}
+                            onClick={() => updateElement(selected.id, { color: colorOption.value })}
+                            className={cn(
+                              "h-6 w-6 rounded-full border transition",
+                              isActive ? "border-ink ring-2 ring-ink/20" : "border-stone-300",
+                            )}
+                            style={{ backgroundColor: colorOption.value }}
+                          />
+                        );
+                      })}
+                      <label className="ml-1 inline-flex cursor-pointer items-center border-l border-stone-200 pl-2 text-[10px] text-stone-500 hover:text-ink">
+                        Custom
+                        <input
+                          aria-label="Custom text color"
+                          type="color"
+                          value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
+                          onChange={(event) => updateElement(selected.id, { color: event.target.value })}
+                          className="sr-only"
+                        />
+                      </label>
+                    </div>
                   </label>
                 </div>
               )}
@@ -2886,20 +2916,46 @@ function SelectedPanel({
           </label>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
             Font color
-            <div className="mt-1 flex items-center gap-2">
-              <input
-                type="color"
-                value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
-                onChange={(event) => onUpdate({ color: event.target.value })}
-                className="h-10 w-12 cursor-pointer border border-stone-200 bg-white p-1"
-              />
-              <input
-                type="text"
-                value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
-                onChange={(event) => onUpdate({ color: event.target.value })}
-                className="min-w-0 flex-1 border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
-              />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {BOARD_TEXT_COLOR_OPTIONS.map((colorOption) => {
+                const isActive =
+                  (selected.color ?? DEFAULT_BOARD_TEXT_COLOR).toLowerCase() === colorOption.value;
+                return (
+                  <button
+                    key={colorOption.value}
+                    type="button"
+                    onClick={() => onUpdate({ color: colorOption.value })}
+                    className={cn(
+                      "inline-flex items-center gap-2 border px-3 py-2 text-xs normal-case tracking-normal transition",
+                      isActive ? "border-ink bg-stone-100" : "border-stone-200 hover:border-ink",
+                    )}
+                  >
+                    <span
+                      className="h-4 w-4 rounded-full border border-stone-300"
+                      style={{ backgroundColor: colorOption.value }}
+                    />
+                    {colorOption.label}
+                  </button>
+                );
+              })}
             </div>
+            <details className="mt-2 rounded border border-stone-200 px-3 py-2 normal-case tracking-normal">
+              <summary className="cursor-pointer text-sm text-stone-600">Custom color</summary>
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="color"
+                  value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
+                  onChange={(event) => onUpdate({ color: event.target.value })}
+                  className="h-10 w-12 cursor-pointer border border-stone-200 bg-white p-1"
+                />
+                <input
+                  type="text"
+                  value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
+                  onChange={(event) => onUpdate({ color: event.target.value })}
+                  className="min-w-0 flex-1 border border-stone-200 px-3 py-2 text-sm"
+                />
+              </div>
+            </details>
           </label>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
             Font
