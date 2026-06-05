@@ -1856,6 +1856,14 @@ function ProjectDesignBoardsPage() {
                           selected={isActivePage && selectedIdSet.has(element.id)}
                           showResizeHandle={isActivePage && selectedCount <= 1}
                           remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
+                          commentCount={
+                            comments.filter(
+                              (comment) =>
+                                comment.targetType === "element" &&
+                                comment.pageId === page.id &&
+                                comment.targetId === element.id,
+                            ).length
+                          }
                           onSelect={(event) => {
                             selectPage(page.id, false, false);
                             if (event.shiftKey || event.metaKey) {
@@ -2303,6 +2311,7 @@ function BoardObject({
   selected,
   showResizeHandle,
   remoteUsers,
+  commentCount,
   onSelect,
   onChange,
   onStartMove,
@@ -2312,6 +2321,7 @@ function BoardObject({
   selected: boolean;
   showResizeHandle: boolean;
   remoteUsers: ActiveBoardUser[];
+  commentCount: number;
   onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onChange: (patch: Partial<BoardElement>) => void;
   onStartMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -2356,6 +2366,19 @@ function BoardObject({
           style={{ backgroundColor: remoteUser.color }}
         >
           {remoteUser.name}
+        </div>
+      )}
+      {commentCount > 0 && (
+        <div
+          className="pointer-events-none absolute -right-4 -top-4 z-30 flex h-9 min-w-9 items-center justify-center rounded-full border-2 border-white bg-white px-2 text-[#1f4e5f] shadow-[0_8px_22px_rgba(40,34,25,0.22)]"
+          title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
+        >
+          <MessageSquare className="h-4 w-4" />
+          {commentCount > 1 && (
+            <span className="ml-1 font-[var(--font-montserrat)] text-[10px] font-semibold">
+              {commentCount}
+            </span>
+          )}
         </div>
       )}
       {element.type === "image" && (
