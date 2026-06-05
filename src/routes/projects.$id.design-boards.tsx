@@ -349,6 +349,15 @@ function ProjectDesignBoardsPage() {
   const selectedTargetComments = selected
     ? comments.filter((comment) => comment.targetType === "element" && comment.targetId === selected.id)
     : [];
+  const commentCountsByElement = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const comment of comments) {
+      if (comment.targetType !== "element") continue;
+      const key = `${comment.pageId}:${comment.targetId}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
   const selectedBounds = useMemo(() => getElementsBounds(selectedElements), [selectedElements]);
   const selectedCount = selectedElements.length;
   const orderedElements = useMemo(
@@ -1856,14 +1865,7 @@ function ProjectDesignBoardsPage() {
                           selected={isActivePage && selectedIdSet.has(element.id)}
                           showResizeHandle={isActivePage && selectedCount <= 1}
                           remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
-                          commentCount={
-                            comments.filter(
-                              (comment) =>
-                                comment.targetType === "element" &&
-                                comment.pageId === page.id &&
-                                comment.targetId === element.id,
-                            ).length
-                          }
+                          commentCount={commentCountsByElement.get(`${page.id}:${element.id}`) ?? 0}
                           onSelect={(event) => {
                             selectPage(page.id, false, false);
                             if (event.shiftKey || event.metaKey) {
@@ -2370,7 +2372,8 @@ function BoardObject({
       )}
       {commentCount > 0 && (
         <div
-          className="pointer-events-none absolute -right-4 -top-4 z-30 flex h-9 min-w-9 items-center justify-center rounded-full border-2 border-white bg-white px-2 text-[#1f4e5f] shadow-[0_8px_22px_rgba(40,34,25,0.22)]"
+          data-comment-badge="true"
+          className="pointer-events-none absolute right-2 top-2 z-30 flex h-9 min-w-9 items-center justify-center rounded-full border-2 border-white bg-white px-2 text-[#1f4e5f] shadow-[0_8px_22px_rgba(40,34,25,0.22)]"
           title={`${commentCount} comment${commentCount === 1 ? "" : "s"}`}
         >
           <MessageSquare className="h-4 w-4" />
