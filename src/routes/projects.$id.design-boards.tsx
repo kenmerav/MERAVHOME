@@ -15,6 +15,7 @@ import {
   Copy,
   ExternalLink,
   Image as ImageIcon,
+  MessageSquare,
   Plus,
   Search,
   Scissors,
@@ -31,6 +32,7 @@ import {
   type Product,
   type ProductCategory,
   type Room,
+  type UserProfile,
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { cn } from "@/lib/utils";
@@ -84,9 +86,25 @@ type BoardPage = {
   elements: BoardElement[];
 };
 
+type BoardCommentTargetType = "page" | "element";
+
+type BoardComment = {
+  id: string;
+  targetType: BoardCommentTargetType;
+  targetId: string;
+  pageId: string;
+  body: string;
+  taggedUserIds: string[];
+  createdById?: string | null;
+  createdByName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type BoardState = {
   pages: BoardPage[];
   selectedPageId: string;
+  comments?: BoardComment[];
   versions?: BoardVersion[];
 };
 
@@ -105,6 +123,8 @@ type BoardPatch =
   | { kind: "upsert-layer"; pageId: string; layer: BoardElement }
   | { kind: "patch-layer"; pageId: string; layerId: string; patch: Partial<BoardElement> }
   | { kind: "delete-layer"; pageId: string; layerId: string }
+  | { kind: "upsert-comment"; comment: BoardComment }
+  | { kind: "delete-comment"; commentId: string }
   | {
       kind: "bulk-patch-layers";
       pageId: string;
@@ -235,6 +255,10 @@ function ProjectDesignBoardsPage() {
   const [boardState, setBoardState] = useState<BoardState>(() => boardStateRef.current);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [toolsPinned, setToolsPinned] = useState(false);
+  const [commentTargetMode, setCommentTargetMode] = useState<"page" | "selected">("page");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentTagIds, setCommentTagIds] = useState<string[]>([]);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [selectionMarquee, setSelectionMarquee] = useState<SelectionMarquee>(null);
   const [boardScale, setBoardScale] = useState(1);
@@ -281,8 +305,20 @@ function ProjectDesignBoardsPage() {
     queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
     enabled: canEditDesignBoards,
   });
+  const { data: taggableUsers = [] } = useQuery({
+    queryKey: ["designBoardTaggableUsers"],
+    queryFn: async () =>
+      ((await supabase
+        .from("user_profiles")
+        .select("*")
+        .in("role", ["Admin", "Employee"])
+        .eq("is_active", true)
+        .order("full_name")).data ?? []) as UserProfile[],
+    enabled: canEditDesignBoards,
+  });
 
   const pages = boardState.pages.length ? boardState.pages : defaultPages();
+  const comments = boardState.comments ?? [];
   const selectedPageId = pages.some((page) => page.id === boardState.selectedPageId)
     ? boardState.selectedPageId
     : pages[0].id;
@@ -295,6 +331,24 @@ function ProjectDesignBoardsPage() {
   );
   const selected =
     elements.find((element) => element.id === selectedId) ?? selectedElements[0] ?? null;
+  const commentTarget =
+    commentTargetMode === "selected" && selected
+      ? ({
+          targetType: "element" as const,
+          targetId: selected.id,
+          pageId: selectedPageId,
+          label: selected.type === "text" ? "Selected text box" : selected.label || selected.productName || "Selected item",
+        })
+      : ({
+          targetType: "page" as const,
+          targetId: activePage.id,
+          pageId: activePage.id,
+          label: activePage.title || "Current page",
+        });
+  const activePageComments = comments.filter((comment) => comment.pageId === activePage.id);
+  const selectedTargetComments = selected
+    ? comments.filter((comment) => comment.targetType === "element" && comment.targetId === selected.id)
+    : [];
   const selectedBounds = useMemo(() => getElementsBounds(selectedElements), [selectedElements]);
   const selectedCount = selectedElements.length;
   const orderedElements = useMemo(
@@ -434,6 +488,7 @@ function ProjectDesignBoardsPage() {
         const afterElements = typeof updater === "function" ? updater(beforeElements) : updater;
         if (!applyingRemoteRef.current) broadcastElementDiff(pageId, beforeElements, afterElements);
         return {
+          ...current,
           selectedPageId: safeSelectedPageId,
           pages: safePages.map((page) =>
             page.id === pageId ? { ...page, elements: afterElements } : page,
@@ -483,6 +538,10 @@ function ProjectDesignBoardsPage() {
     setBoardState(localState);
     setSelectedId(null);
     setSelectedIds([]);
+    setCommentTargetMode("page");
+    setCommentDraft("");
+    setCommentTagIds([]);
+    setToolsPinned(false);
     setSelectionMarquee(null);
     undoStackRef.current = [];
     remoteLoadedRef.current = false;
@@ -582,6 +641,10 @@ function ProjectDesignBoardsPage() {
     const timer = window.setInterval(() => setPresenceNow(Date.now()), 500);
     return () => window.clearInterval(timer);
   }, [activeUsers]);
+
+  useEffect(() => {
+    if (commentTargetMode === "selected" && !selected) setCommentTargetMode("page");
+  }, [commentTargetMode, selected]);
 
   useEffect(() => {
     boardStateRef.current = boardState;
@@ -1150,6 +1213,44 @@ function ProjectDesignBoardsPage() {
     );
   };
 
+  const addComment = () => {
+    const body = commentDraft.trim();
+    if (!body) {
+      toast.error("Write a comment first.");
+      return;
+    }
+    const comment: BoardComment = {
+      id: crypto.randomUUID(),
+      targetType: commentTarget.targetType,
+      targetId: commentTarget.targetId,
+      pageId: commentTarget.pageId,
+      body,
+      taggedUserIds: commentTagIds,
+      createdById: profile?.id ?? null,
+      createdByName: profile?.full_name || profile?.email || "MERAV teammate",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    pushUndo();
+    applyLocalBoardUpdate((current) => ({
+      ...current,
+      comments: [comment, ...(current.comments ?? [])],
+    }));
+    broadcastPatch({ kind: "upsert-comment", comment });
+    setCommentDraft("");
+    setCommentTagIds([]);
+    toast.success("Comment added.");
+  };
+
+  const deleteComment = (commentId: string) => {
+    pushUndo();
+    applyLocalBoardUpdate((current) => ({
+      ...current,
+      comments: (current.comments ?? []).filter((comment) => comment.id !== commentId),
+    }));
+    broadcastPatch({ kind: "delete-comment", commentId });
+  };
+
   const addElement = useCallback(
     (element: Omit<BoardElement, "id" | "zIndex">, pageId = selectedPageId) => {
       const pageElements = pages.find((page) => page.id === pageId)?.elements ?? elements;
@@ -1183,6 +1284,7 @@ function ProjectDesignBoardsPage() {
     };
     pushUndo();
     applyLocalBoardUpdate((current) => ({
+      ...current,
       selectedPageId: nextPage.id,
       pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
     }));
@@ -1650,6 +1752,14 @@ function ProjectDesignBoardsPage() {
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
               </ToolbarButton>
               <ToolbarButton
+                onClick={() => {
+                  setToolsPinned(true);
+                  setCommentTargetMode(selected ? "selected" : "page");
+                }}
+              >
+                <MessageSquare className="h-4 w-4" /> Comment
+              </ToolbarButton>
+              <ToolbarButton
                 onClick={sendCurrentPageToMaterials}
                 disabled={!imageElements.length || bulkMaterialScope !== null}
               >
@@ -1904,11 +2014,20 @@ function ProjectDesignBoardsPage() {
             </div>
           </div>
 
-          <aside className="group fixed right-0 top-0 z-50 flex h-screen translate-x-[360px] transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden">
+          <aside
+            className={cn(
+              "group fixed right-0 top-0 z-50 flex h-screen transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden",
+              toolsPinned ? "translate-x-0" : "translate-x-[360px]",
+            )}
+          >
             <div className="mt-32 flex h-32 w-12 items-center justify-center rounded-l-xl border border-r-0 border-stone-200 bg-white shadow-sm">
-              <div className="-rotate-90 whitespace-nowrap text-xs uppercase tracking-[0.22em] text-stone-500">
+              <button
+                type="button"
+                onClick={() => setToolsPinned((current) => !current)}
+                className="-rotate-90 whitespace-nowrap text-xs uppercase tracking-[0.22em] text-stone-500"
+              >
                 Board Tools
-              </div>
+              </button>
             </div>
             <div className="h-full w-[360px] space-y-4 overflow-y-auto border-l border-stone-200 bg-white p-4 shadow-[-20px_0_60px_rgba(40,34,25,0.12)]">
               <div>
@@ -1996,6 +2115,30 @@ function ProjectDesignBoardsPage() {
                   </div>
                 </div>
               </div>
+
+              <CommentsPanel
+                comments={activePageComments}
+                selectedComments={selectedTargetComments}
+                target={commentTarget}
+                targetMode={commentTargetMode}
+                canTargetSelected={Boolean(selected)}
+                selected={selected}
+                users={taggableUsers}
+                selectedTagIds={commentTagIds}
+                draft={commentDraft}
+                onDraftChange={setCommentDraft}
+                onTargetModeChange={setCommentTargetMode}
+                onAddTag={(userId) =>
+                  setCommentTagIds((current) =>
+                    current.includes(userId) ? current : [...current, userId],
+                  )
+                }
+                onRemoveTag={(userId) =>
+                  setCommentTagIds((current) => current.filter((id) => id !== userId))
+                }
+                onAddComment={addComment}
+                onDeleteComment={deleteComment}
+              />
 
               {selected && selectedCount <= 1 && (
                 <SelectedPanel
@@ -2307,6 +2450,193 @@ function BoardObject({
           className="absolute -bottom-2 -right-2 h-5 w-5 border border-[#1f4e5f] bg-white shadow-sm"
         />
       )}
+    </div>
+  );
+}
+
+function CommentsPanel({
+  comments,
+  selectedComments,
+  target,
+  targetMode,
+  canTargetSelected,
+  selected,
+  users,
+  selectedTagIds,
+  draft,
+  onDraftChange,
+  onTargetModeChange,
+  onAddTag,
+  onRemoveTag,
+  onAddComment,
+  onDeleteComment,
+}: {
+  comments: BoardComment[];
+  selectedComments: BoardComment[];
+  target: {
+    targetType: BoardCommentTargetType;
+    targetId: string;
+    pageId: string;
+    label: string;
+  };
+  targetMode: "page" | "selected";
+  canTargetSelected: boolean;
+  selected: BoardElement | null;
+  users: UserProfile[];
+  selectedTagIds: string[];
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onTargetModeChange: (value: "page" | "selected") => void;
+  onAddTag: (userId: string) => void;
+  onRemoveTag: (userId: string) => void;
+  onAddComment: () => void;
+  onDeleteComment: (commentId: string) => void;
+}) {
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const taggedUsers = selectedTagIds
+    .map((userId) => usersById.get(userId))
+    .filter((user): user is UserProfile => Boolean(user));
+  const unselectedUsers = users.filter((user) => !selectedTagIds.includes(user.id));
+  const sortedComments = [...comments].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  const selectedCommentIds = new Set(selectedComments.map((comment) => comment.id));
+
+  return (
+    <div className="border-t border-stone-200 pt-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="eyebrow">Comments</div>
+          <p className="mt-1 text-xs text-stone-500">
+            {comments.length} on this page
+            {selectedComments.length ? ` · ${selectedComments.length} on selected item` : ""}
+          </p>
+        </div>
+        <MessageSquare className="h-4 w-4 text-stone-400" />
+      </div>
+
+      <div className="rounded-lg border border-stone-200 bg-[#faf9f5] p-3">
+        <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+          Comment On
+          <select
+            value={targetMode}
+            onChange={(event) => onTargetModeChange(event.target.value as "page" | "selected")}
+            className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+          >
+            <option value="page">Current page</option>
+            <option value="selected" disabled={!canTargetSelected}>
+              {selected?.type === "text" ? "Selected text box" : "Selected item"}
+            </option>
+          </select>
+        </label>
+        <div className="mt-2 rounded border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
+          Target: <span className="font-medium text-ink">{target.label}</span>
+        </div>
+        <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
+          Comment
+          <textarea
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder="Add a note, question, or task..."
+            className="mt-1 min-h-20 w-full resize-y border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+          />
+        </label>
+        <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
+          Tag Admin / Employee
+          <select
+            value=""
+            onChange={(event) => {
+              if (event.target.value) onAddTag(event.target.value);
+            }}
+            className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+          >
+            <option value="">Choose person to tag</option>
+            {unselectedUsers.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.full_name || user.email} · {user.role}
+              </option>
+            ))}
+          </select>
+        </label>
+        {taggedUsers.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {taggedUsers.map((user) => (
+              <button
+                key={user.id}
+                type="button"
+                onClick={() => onRemoveTag(user.id)}
+                className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-700 transition hover:border-red-300 hover:text-red-700"
+                title="Remove tag"
+              >
+                @{user.full_name || user.email} ×
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onAddComment}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800"
+        >
+          <MessageSquare className="h-4 w-4" /> Add Comment
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {sortedComments.map((comment) => {
+          const tagged = comment.taggedUserIds
+            .map((userId) => usersById.get(userId))
+            .filter((user): user is UserProfile => Boolean(user));
+          return (
+            <div
+              key={comment.id}
+              className={cn(
+                "rounded-lg border bg-white p-3 text-sm",
+                selectedCommentIds.has(comment.id) ? "border-[#1f4e5f]" : "border-stone-200",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-stone-500">
+                    {comment.targetType === "page" ? "Page" : "Item"} Comment
+                  </div>
+                  <div className="mt-0.5 text-xs text-stone-500">
+                    {comment.createdByName || "MERAV teammate"} ·{" "}
+                    {new Date(comment.createdAt).toLocaleString()}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDeleteComment(comment.id)}
+                  className="text-stone-400 transition hover:text-red-700"
+                  aria-label="Delete comment"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="mt-3 whitespace-pre-wrap leading-6 text-stone-700">{comment.body}</p>
+              {tagged.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {tagged.map((user) => (
+                    <span
+                      key={user.id}
+                      className="rounded-full bg-[#e9f1ef] px-2.5 py-1 text-xs text-[#1f4e5f]"
+                    >
+                      @{user.full_name || user.email}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {!sortedComments.length && (
+          <p className="rounded-lg border border-dashed border-stone-200 p-4 text-xs leading-relaxed text-stone-500">
+            No comments on this page yet. Add one for the page, or select an image/text box and
+            comment directly on that item.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -2873,6 +3203,23 @@ function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardStat
       ),
     });
   }
+  if (patch.kind === "upsert-comment") {
+    const exists = (current.comments ?? []).some((comment) => comment.id === patch.comment.id);
+    return normalizeBoardState({
+      ...current,
+      comments: exists
+        ? (current.comments ?? []).map((comment) =>
+            comment.id === patch.comment.id ? patch.comment : comment,
+          )
+        : [patch.comment, ...(current.comments ?? [])],
+    });
+  }
+  if (patch.kind === "delete-comment") {
+    return normalizeBoardState({
+      ...current,
+      comments: (current.comments ?? []).filter((comment) => comment.id !== patch.commentId),
+    });
+  }
 
   return normalizeBoardState({
     ...current,
@@ -3002,6 +3349,7 @@ function prepareBoardStateForSave(state: BoardState): BoardState {
       ...page,
       elements: page.elements.map((element) => stripLargeInlineImageData(element)),
     })),
+    comments: normalized.comments ?? [],
     versions: (normalized.versions ?? []).slice(0, 12).map((version) => ({
       ...version,
       state: stripVersionsFromState(version.state),
@@ -3020,7 +3368,11 @@ function stripLargeInlineImageData(element: BoardElement): BoardElement {
 
 function stripVersionsFromState(state: BoardState): BoardState {
   const normalized = normalizeBoardState(state);
-  return { pages: normalized.pages, selectedPageId: normalized.selectedPageId };
+  return {
+    pages: normalized.pages,
+    selectedPageId: normalized.selectedPageId,
+    comments: normalized.comments ?? [],
+  };
 }
 
 function addBoardVersion(state: BoardState, createdBy: string, userId?: string | null): BoardState {
@@ -3069,7 +3421,43 @@ function normalizeBoardState(value: unknown): BoardState {
         .slice(0, 12)
     : [];
 
-  return { pages, selectedPageId, versions };
+  const comments = Array.isArray(candidate.comments)
+    ? candidate.comments
+        .map(normalizeBoardComment)
+        .filter((comment): comment is BoardComment => Boolean(comment))
+    : [];
+
+  return { pages, selectedPageId, comments, versions };
+}
+
+function normalizeBoardComment(value: unknown): BoardComment | null {
+  if (!value || typeof value !== "object") return null;
+  const comment = value as Partial<BoardComment>;
+  if (comment.targetType !== "page" && comment.targetType !== "element") return null;
+  if (typeof comment.targetId !== "string" || !comment.targetId) return null;
+  if (typeof comment.pageId !== "string" || !comment.pageId) return null;
+  const body = typeof comment.body === "string" ? comment.body.trim() : "";
+  if (!body) return null;
+  return {
+    id: typeof comment.id === "string" && comment.id ? comment.id : crypto.randomUUID(),
+    targetType: comment.targetType,
+    targetId: comment.targetId,
+    pageId: comment.pageId,
+    body,
+    taggedUserIds: Array.isArray(comment.taggedUserIds)
+      ? comment.taggedUserIds.filter((id): id is string => typeof id === "string" && Boolean(id))
+      : [],
+    createdById: typeof comment.createdById === "string" ? comment.createdById : null,
+    createdByName: typeof comment.createdByName === "string" ? comment.createdByName : null,
+    createdAt:
+      typeof comment.createdAt === "string" && comment.createdAt
+        ? comment.createdAt
+        : new Date().toISOString(),
+    updatedAt:
+      typeof comment.updatedAt === "string" && comment.updatedAt
+        ? comment.updatedAt
+        : new Date().toISOString(),
+  };
 }
 
 function normalizeBoardVersion(value: unknown): BoardVersion | null {
@@ -3143,7 +3531,7 @@ function loadBoardState(projectId: string): BoardState {
 
 function defaultBoardState(): BoardState {
   const pages = defaultPages();
-  return { pages, selectedPageId: pages[0].id };
+  return { pages, selectedPageId: pages[0].id, comments: [] };
 }
 
 function defaultPages(): BoardPage[] {
