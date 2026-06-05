@@ -1260,6 +1260,41 @@ function ProjectDesignBoardsPage() {
     broadcastPatch({ kind: "delete-comment", commentId });
   };
 
+  const quickCommentElement = (element: BoardElement, pageId: string) => {
+    selectPage(pageId, false, false);
+    selectOnly(element.id);
+    setToolsPinned(true);
+    setCommentTargetMode("selected");
+  };
+
+  const quickEditElementLabel = (element: BoardElement, pageId: string) => {
+    const nextLabel = window.prompt("Label for this item", element.label || element.productName || "");
+    if (nextLabel === null) return;
+    updateElement(element.id, { label: nextLabel.trim() }, pageId);
+  };
+
+  const quickEditElementLink = (element: BoardElement, pageId: string) => {
+    const nextLink = window.prompt("Product link", element.link || "");
+    if (nextLink === null) return;
+    updateElement(element.id, { link: nextLink.trim() }, pageId);
+  };
+
+  const quickDeleteElement = (element: BoardElement, pageId: string) => {
+    pushUndo();
+    setElementsForPage(pageId, (current) => current.filter((candidate) => candidate.id !== element.id));
+    const removedCommentIds = comments
+      .filter((comment) => comment.targetType === "element" && comment.targetId === element.id)
+      .map((comment) => comment.id);
+    if (removedCommentIds.length) {
+      applyLocalBoardUpdate((current) => ({
+        ...current,
+        comments: (current.comments ?? []).filter((comment) => !removedCommentIds.includes(comment.id)),
+      }));
+      removedCommentIds.forEach((commentId) => broadcastPatch({ kind: "delete-comment", commentId }));
+    }
+    clearSelection();
+  };
+
   const addElement = useCallback(
     (element: Omit<BoardElement, "id" | "zIndex">, pageId = selectedPageId) => {
       const pageElements = pages.find((page) => page.id === pageId)?.elements ?? elements;
@@ -1866,6 +1901,10 @@ function ProjectDesignBoardsPage() {
                           showResizeHandle={isActivePage && selectedCount <= 1}
                           remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
                           commentCount={commentCountsByElement.get(`${page.id}:${element.id}`) ?? 0}
+                          onQuickComment={() => quickCommentElement(element, page.id)}
+                          onQuickLink={() => quickEditElementLink(element, page.id)}
+                          onQuickLabel={() => quickEditElementLabel(element, page.id)}
+                          onQuickDelete={() => quickDeleteElement(element, page.id)}
                           onSelect={(event) => {
                             selectPage(page.id, false, false);
                             if (event.shiftKey || event.metaKey) {
@@ -2314,6 +2353,10 @@ function BoardObject({
   showResizeHandle,
   remoteUsers,
   commentCount,
+  onQuickComment,
+  onQuickLink,
+  onQuickLabel,
+  onQuickDelete,
   onSelect,
   onChange,
   onStartMove,
@@ -2324,6 +2367,10 @@ function BoardObject({
   showResizeHandle: boolean;
   remoteUsers: ActiveBoardUser[];
   commentCount: number;
+  onQuickComment: () => void;
+  onQuickLink: () => void;
+  onQuickLabel: () => void;
+  onQuickDelete: () => void;
   onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onChange: (patch: Partial<BoardElement>) => void;
   onStartMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -2382,6 +2429,37 @@ function BoardObject({
               {commentCount}
             </span>
           )}
+        </div>
+      )}
+      {selected && showResizeHandle && (
+        <div
+          className="absolute left-1/2 top-0 z-50 flex -translate-x-1/2 -translate-y-[calc(100%+14px)] items-center gap-1 rounded-full border border-stone-200 bg-white px-2 py-2 shadow-[0_10px_30px_rgba(31,29,27,0.18)]"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {element.link && (
+            <a
+              href={normalizeExternalUrl(element.link)}
+              target="_blank"
+              rel="noreferrer"
+              className="max-w-52 truncate px-2 font-[var(--font-montserrat)] text-sm text-blue-600 underline-offset-4 hover:underline"
+              title={element.link}
+            >
+              {element.link}
+            </a>
+          )}
+          <QuickActionButton label="Comment" onClick={onQuickComment}>
+            <MessageSquare className="h-5 w-5" />
+          </QuickActionButton>
+          <QuickActionButton label="Link" onClick={onQuickLink}>
+            <ExternalLink className="h-5 w-5" />
+          </QuickActionButton>
+          <QuickActionButton label="Label" onClick={onQuickLabel}>
+            <Type className="h-5 w-5" />
+          </QuickActionButton>
+          <QuickActionButton label="Delete" onClick={onQuickDelete} destructive>
+            <Trash2 className="h-5 w-5" />
+          </QuickActionButton>
         </div>
       )}
       {element.type === "image" && (
@@ -2477,6 +2555,33 @@ function BoardObject({
         />
       )}
     </div>
+  );
+}
+
+function QuickActionButton({
+  label,
+  children,
+  onClick,
+  destructive,
+}: {
+  label: string;
+  children: ReactNode;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-10 w-10 items-center justify-center rounded-full text-ink transition hover:bg-stone-100",
+        destructive && "text-red-700 hover:bg-red-50",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
