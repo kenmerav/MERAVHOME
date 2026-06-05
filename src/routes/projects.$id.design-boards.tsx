@@ -2140,29 +2140,6 @@ function ProjectDesignBoardsPage() {
                     ? "Sending Full Board..."
                     : "Send Full Board to Materials"}
                 </button>
-                <div className="mt-4 border-t border-stone-200 pt-4">
-                  <div className="eyebrow mb-2">Version History</div>
-                  <div className="space-y-2">
-                    {(boardState.versions ?? []).slice(0, 5).map((version) => (
-                      <button
-                        key={version.id}
-                        type="button"
-                        onClick={() => restoreVersion(version)}
-                        className="w-full border border-stone-200 bg-[#faf9f5] px-3 py-2 text-left text-xs transition hover:border-ink"
-                      >
-                        <div className="font-medium text-ink">{version.label}</div>
-                        <div className="mt-0.5 text-stone-500">
-                          {new Date(version.createdAt).toLocaleString()}
-                        </div>
-                      </button>
-                    ))}
-                    {!(boardState.versions ?? []).length && (
-                      <p className="text-xs leading-relaxed text-stone-500">
-                        Recent autosave versions will appear here as the board changes.
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
 
               <CommentsPanel
