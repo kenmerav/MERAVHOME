@@ -78,6 +78,7 @@ type BoardElement = {
   materialCategory?: ProductCategory | null;
   materialQuantity?: number | null;
   materialFinish?: string | null;
+  materialInfoNotNeeded?: boolean;
 };
 
 type BoardPage = {
@@ -898,6 +899,7 @@ function ProjectDesignBoardsPage() {
     quantityOverride?: number,
   ): Promise<SendMaterialResult> => {
     if (element.type !== "image") return { status: "skipped" };
+    if (element.materialInfoNotNeeded) return { status: "skipped" };
     const roomId = element.materialRoomId || page.roomId;
     const room = rooms.find((candidate) => candidate.id === roomId);
     if (!room) {
@@ -1050,6 +1052,10 @@ function ProjectDesignBoardsPage() {
 
   const sendSelectedToMaterials = async () => {
     if (!selected || selected.type !== "image") return;
+    if (selected.materialInfoNotNeeded) {
+      toast.error("This image is marked as not needing material info.");
+      return;
+    }
     const roomId = selected.materialRoomId || activePage.roomId;
     const room = rooms.find((candidate) => candidate.id === roomId);
     if (!room) {
@@ -1096,6 +1102,7 @@ function ProjectDesignBoardsPage() {
       for (const page of targetPages) {
         for (const element of page.elements) {
           if (element.type !== "image") continue;
+          if (element.materialInfoNotNeeded) continue;
           const roomId = element.materialRoomId || page.roomId;
           const linkedProduct = element.productId
             ? products.find((product) => product.id === element.productId)
@@ -2895,6 +2902,25 @@ function SelectedPanel({
       )}
       {selected.type === "image" && (
         <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => onUpdate({ materialInfoNotNeeded: !selected.materialInfoNotNeeded })}
+            className={cn(
+              "inline-flex w-full items-center justify-center gap-2 border px-4 py-2 text-sm transition",
+              selected.materialInfoNotNeeded
+                ? "border-[#1f4e5f] bg-[#e9f1ef] text-[#1f4e5f]"
+                : "border-stone-300 bg-white hover:border-ink",
+            )}
+          >
+            {selected.materialInfoNotNeeded
+              ? "No Label / Link Needed"
+              : "Requires Label + Link"}
+          </button>
+          {selected.materialInfoNotNeeded && (
+            <div className="rounded-lg border border-[#c8d9d4] bg-[#f3f7f5] px-3 py-2 text-xs leading-relaxed text-[#1f4e5f]">
+              This image will not be flagged and will be skipped when sending items to Materials.
+            </div>
+          )}
           {selectedMaterialIssues.length > 0 && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
               <div className="flex items-center gap-1.5 font-medium">
@@ -3017,7 +3043,7 @@ function SelectedPanel({
             <button
               type="button"
               onClick={onSendToMaterials}
-              disabled={sendingToMaterials}
+              disabled={sendingToMaterials || selected.materialInfoNotNeeded}
               className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
@@ -3210,7 +3236,7 @@ function imageMaterialLabel(element: BoardElement) {
 }
 
 function imageMaterialIssues(element: BoardElement) {
-  if (element.type !== "image") return [];
+  if (element.type !== "image" || element.materialInfoNotNeeded) return [];
   const issues: string[] = [];
   if (!imageMaterialLabel(element)) issues.push("label");
   if (!element.link?.trim()) issues.push("link");
@@ -3484,6 +3510,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "materialCategory",
     "materialQuantity",
     "materialFinish",
+    "materialInfoNotNeeded",
   ];
   for (const key of keys) {
     if (before[key] !== after[key]) {
