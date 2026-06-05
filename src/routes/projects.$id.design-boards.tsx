@@ -8,6 +8,7 @@ import type {
   ReactNode,
 } from "react";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -296,6 +297,17 @@ function ProjectDesignBoardsPage() {
   );
   const linkedProductCount = elements.filter((element) => element.productId).length;
   const imageElements = elements.filter((element) => element.type === "image");
+  const activePageMissingInfoCount = imageElements.filter(
+    (element) => imageMaterialIssues(element).length,
+  ).length;
+  const boardMissingInfoCount = pages.reduce(
+    (total, page) =>
+      total +
+      page.elements.filter(
+        (element) => element.type === "image" && imageMaterialIssues(element).length,
+      ).length,
+    0,
+  );
   const allBoardDetailsHidden =
     imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
   const onlineUsers = useMemo(() => {
@@ -802,10 +814,11 @@ function ProjectDesignBoardsPage() {
       return { status: "skipped" };
     }
 
-    const itemLabel = (element.label || element.productName || "").trim();
-    if (!itemLabel) {
+    const missingInfo = imageMaterialIssues(element);
+    if (missingInfo.length) {
       return { status: "skipped" };
     }
+    const itemLabel = imageMaterialLabel(element);
 
     const linkedProduct = element.productId
       ? products.find((product) => product.id === element.productId)
@@ -954,9 +967,9 @@ function ProjectDesignBoardsPage() {
       return;
     }
 
-    const itemLabel = (selected.label || selected.productName || "").trim();
-    if (!itemLabel) {
-      toast.error("Add an image label first so Materials has an item name.");
+    const missingInfo = imageMaterialIssues(selected);
+    if (missingInfo.length) {
+      toast.error(`Add ${joinMissingInfo(missingInfo)} before sending this to Materials.`);
       return;
     }
 
@@ -997,11 +1010,12 @@ function ProjectDesignBoardsPage() {
           const linkedProduct = element.productId
             ? products.find((product) => product.id === element.productId)
             : null;
-          const itemLabel = (element.label || element.productName || "").trim();
-          if (!roomId || !itemLabel) {
+          const missingInfo = imageMaterialIssues(element);
+          if (!roomId || missingInfo.length) {
             skipped += 1;
             continue;
           }
+          const itemLabel = imageMaterialLabel(element);
           const category = element.materialCategory || linkedProduct?.category || "Decor";
           const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : "";
           const finish = (element.materialFinish || element.finish || "").trim();
@@ -1094,11 +1108,11 @@ function ProjectDesignBoardsPage() {
       if (sent) {
         toast.success(
           `Synced ${sent} ${sent === 1 ? "item" : "items"} to Materials${
-            skipped ? ` and skipped ${skipped} missing label or room.` : "."
+            skipped ? ` and skipped ${skipped} missing label, link, or room.` : "."
           }`,
         );
       } else {
-        toast.error("No image items were ready. Add labels and assign rooms first.");
+        toast.error("No image items were ready. Add labels, links, and assign rooms first.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not send materials.");
@@ -1535,6 +1549,12 @@ function ProjectDesignBoardsPage() {
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
                   {onlineUsers.length ? `${onlineUsers.length} online` : "Live editing ready"}
                 </div>
+                {boardMissingInfoCount > 0 && (
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {boardMissingInfoCount} need label/link
+                  </div>
+                )}
                 {onlineUsers.slice(0, 8).map((user) => (
                   <div
                     key={user.userId || user.email || user.clientId}
@@ -1915,6 +1935,18 @@ function ProjectDesignBoardsPage() {
                     <div className="eyebrow mt-1">Linked</div>
                   </div>
                 </div>
+                {activePageMissingInfoCount > 0 && (
+                  <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      {activePageMissingInfoCount} image
+                      {activePageMissingInfoCount === 1 ? " needs" : "s need"} label/link
+                    </div>
+                    <p className="mt-1 text-amber-800">
+                      Add both before sending to Materials so specs and presentations stay clean.
+                    </p>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={sendFullBoardToMaterials}
@@ -2130,6 +2162,7 @@ function BoardObject({
   const isLocked = element.locked === true;
   const isHidden = element.visible === false;
   const remoteUser = remoteUsers[0];
+  const materialIssues = element.type === "image" ? imageMaterialIssues(element) : [];
 
   return (
     <div
@@ -2202,6 +2235,12 @@ function BoardObject({
           {!element.hideDetails && element.productId && (
             <div className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#1f4e5f] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white shadow-sm">
               Product
+            </div>
+          )}
+          {materialIssues.length > 0 && (
+            <div className="pointer-events-none absolute right-1 top-1 z-10 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-1 font-[var(--font-montserrat)] text-[10px] uppercase tracking-[0.12em] text-amber-900 shadow-sm">
+              <AlertTriangle className="h-3 w-3" />
+              Needs {materialIssues.join(" + ")}
             </div>
           )}
         </>
@@ -2284,6 +2323,7 @@ function SelectedPanel({
   const linkedProduct = selected.productId
     ? products.find((product) => product.id === selected.productId)
     : null;
+  const selectedMaterialIssues = selected.type === "image" ? imageMaterialIssues(selected) : [];
 
   return (
     <div className="border-t border-stone-200 pt-4">
@@ -2357,6 +2397,15 @@ function SelectedPanel({
       )}
       {selected.type === "image" && (
         <div className="space-y-3">
+          {selectedMaterialIssues.length > 0 && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+              <div className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Needs {joinMissingInfo(selectedMaterialIssues)}
+              </div>
+              <p className="mt-1 text-amber-800">Add this before sending the image to Materials.</p>
+            </div>
+          )}
           <button
             type="button"
             onClick={onRemoveBackground}
@@ -2588,6 +2637,23 @@ function productToBoardElement(
     width: 260,
     height: 230,
   };
+}
+
+function imageMaterialLabel(element: BoardElement) {
+  return (element.label || element.productName || "").trim();
+}
+
+function imageMaterialIssues(element: BoardElement) {
+  if (element.type !== "image") return [];
+  const issues: string[] = [];
+  if (!imageMaterialLabel(element)) issues.push("label");
+  if (!element.link?.trim()) issues.push("link");
+  return issues;
+}
+
+function joinMissingInfo(issues: string[]) {
+  if (issues.length <= 1) return issues[0] ?? "required info";
+  return `${issues.slice(0, -1).join(", ")} and ${issues.at(-1)}`;
 }
 
 async function imageSourceForCanvas(src: string) {
