@@ -265,6 +265,7 @@ function ProjectDesignBoardsPage() {
   const lastVersionAtRef = useRef(0);
   const pendingSaveJsonRef = useRef<string | null>(null);
   const localEditShieldUntilRef = useRef(0);
+  const localEditsBeforeRemoteLoadRef = useRef(false);
   const removingBackgroundRef = useRef(false);
   const applyingRemoteRef = useRef(false);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -436,6 +437,7 @@ function ProjectDesignBoardsPage() {
   const applyLocalBoardUpdate = useCallback(
     (updater: BoardState | ((current: BoardState) => BoardState)) => {
       localEditShieldUntilRef.current = Date.now() + 2500;
+      if (!remoteLoadedRef.current) localEditsBeforeRemoteLoadRef.current = true;
       setBoardState((current) => {
         const next = typeof updater === "function" ? updater(current) : updater;
         const normalized = normalizeBoardState(next);
@@ -444,6 +446,29 @@ function ProjectDesignBoardsPage() {
       });
     },
     [],
+  );
+
+  const saveBoardStateImmediately = useCallback(
+    async (state: BoardState) => {
+      if (!canEditDesignBoards) return;
+      const stateToSave = prepareBoardStateForSave(state);
+      const saveJson = JSON.stringify(stateToSave);
+      if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+      pendingSaveJsonRef.current = saveJson;
+      setSaveStatus("saving");
+      try {
+        const savedBoard = await db.upsertDesignBoard(id, stateToSave, profile?.id);
+        pendingSaveJsonRef.current = null;
+        lastSavedJsonRef.current = saveJson;
+        if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+        lastGoodBoardStateRef.current = stateToSave;
+        setSaveStatus("saved");
+      } catch {
+        pendingSaveJsonRef.current = null;
+        setSaveStatus("error");
+      }
+    },
+    [canEditDesignBoards, id, profile?.id],
   );
 
   const undoLastChange = useCallback(() => {
@@ -577,6 +602,7 @@ function ProjectDesignBoardsPage() {
     lastRemoteUpdatedAtRef.current = "";
     pendingSaveJsonRef.current = null;
     localEditShieldUntilRef.current = 0;
+    localEditsBeforeRemoteLoadRef.current = false;
     removingBackgroundRef.current = false;
     applyingRemoteRef.current = false;
     lastGoodBoardStateRef.current = localState;
@@ -686,6 +712,31 @@ function ProjectDesignBoardsPage() {
 
     if (sharedBoard?.board_state) {
       const remoteState = normalizeBoardState(sharedBoard.board_state);
+      const currentState = normalizeBoardState(boardStateRef.current);
+      const currentJson = JSON.stringify(currentState);
+      const remoteJson = JSON.stringify(remoteState);
+      if (localEditsBeforeRemoteLoadRef.current && currentJson !== remoteJson) {
+        const stateToSave = prepareBoardStateForSave(currentState);
+        const saveJson = JSON.stringify(stateToSave);
+        remoteLoadedRef.current = true;
+        localEditsBeforeRemoteLoadRef.current = false;
+        lastSavedJsonRef.current = saveJson;
+        pendingSaveJsonRef.current = saveJson;
+        setSaveStatus("saving");
+        void db.upsertDesignBoard(id, stateToSave, profile?.id).then(
+          (savedBoard) => {
+            pendingSaveJsonRef.current = null;
+            if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+            lastGoodBoardStateRef.current = stateToSave;
+            setSaveStatus("saved");
+          },
+          () => {
+            pendingSaveJsonRef.current = null;
+            setSaveStatus("error");
+          },
+        );
+        return;
+      }
       const localState = loadBoardState(id);
       if (!hasMeaningfulBoardState(remoteState) && hasMeaningfulBoardState(localState)) {
         const localJson = JSON.stringify(localState);
@@ -1350,14 +1401,18 @@ function ProjectDesignBoardsPage() {
       roomId: null,
       elements: [],
     };
-    pushUndo();
-    applyLocalBoardUpdate((current) => ({
+    const current = normalizeBoardState(boardStateRef.current);
+    const safePages = current.pages.length ? current.pages : defaultPages();
+    const nextState = normalizeBoardState({
       ...current,
       selectedPageId: nextPage.id,
-      pages: [...(current.pages.length ? current.pages : defaultPages()), nextPage],
-    }));
+      pages: [...safePages, nextPage],
+    });
+    pushUndo();
+    applyLocalBoardUpdate(nextState);
     broadcastPatch({ kind: "upsert-page", page: nextPage });
     clearSelection();
+    void saveBoardStateImmediately(nextState);
   };
 
   const updateZoom = (zoomPercent: number) => {
