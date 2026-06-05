@@ -269,7 +269,6 @@ function ProjectDesignBoardsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toolsPinned, setToolsPinned] = useState(false);
-  const [commentTargetMode, setCommentTargetMode] = useState<"page" | "selected">("page");
   const [commentDraft, setCommentDraft] = useState("");
   const [commentTagIds, setCommentTagIds] = useState<string[]>([]);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -345,7 +344,7 @@ function ProjectDesignBoardsPage() {
   const selected =
     elements.find((element) => element.id === selectedId) ?? selectedElements[0] ?? null;
   const commentTarget =
-    commentTargetMode === "selected" && selected
+    selected
       ? ({
           targetType: "element" as const,
           targetId: selected.id,
@@ -356,7 +355,7 @@ function ProjectDesignBoardsPage() {
           targetType: "page" as const,
           targetId: activePage.id,
           pageId: activePage.id,
-          label: activePage.title || "Current page",
+          label: "Select an item or text box",
         });
   const activePageComments = comments.filter((comment) => comment.pageId === activePage.id);
   const selectedTargetComments = selected
@@ -560,7 +559,6 @@ function ProjectDesignBoardsPage() {
     setBoardState(localState);
     setSelectedId(null);
     setSelectedIds([]);
-    setCommentTargetMode("page");
     setCommentDraft("");
     setCommentTagIds([]);
     setToolsPinned(false);
@@ -663,10 +661,6 @@ function ProjectDesignBoardsPage() {
     const timer = window.setInterval(() => setPresenceNow(Date.now()), 500);
     return () => window.clearInterval(timer);
   }, [activeUsers]);
-
-  useEffect(() => {
-    if (commentTargetMode === "selected" && !selected) setCommentTargetMode("page");
-  }, [commentTargetMode, selected]);
 
   useEffect(() => {
     boardStateRef.current = boardState;
@@ -1236,6 +1230,10 @@ function ProjectDesignBoardsPage() {
   };
 
   const addComment = () => {
+    if (!selected) {
+      toast.error("Select an image or text box before adding a comment.");
+      return;
+    }
     const body = commentDraft.trim();
     if (!body) {
       toast.error("Write a comment first.");
@@ -1277,7 +1275,6 @@ function ProjectDesignBoardsPage() {
     selectPage(pageId, false, false);
     selectOnly(element.id);
     setToolsPinned(true);
-    setCommentTargetMode("selected");
   };
 
   const quickEditElementLabel = (element: BoardElement, pageId: string) => {
@@ -1841,8 +1838,8 @@ function ProjectDesignBoardsPage() {
               <ToolbarButton
                 onClick={() => {
                   setToolsPinned(true);
-                  setCommentTargetMode(selected ? "selected" : "page");
                 }}
+                disabled={!selected}
               >
                 <MessageSquare className="h-4 w-4" /> Comment
               </ToolbarButton>
@@ -2189,14 +2186,11 @@ function ProjectDesignBoardsPage() {
                 comments={activePageComments}
                 selectedComments={selectedTargetComments}
                 target={commentTarget}
-                targetMode={commentTargetMode}
-                canTargetSelected={Boolean(selected)}
                 selected={selected}
                 users={taggableUsers}
                 selectedTagIds={commentTagIds}
                 draft={commentDraft}
                 onDraftChange={setCommentDraft}
-                onTargetModeChange={setCommentTargetMode}
                 onAddTag={(userId) =>
                   setCommentTagIds((current) =>
                     current.includes(userId) ? current : [...current, userId],
@@ -2609,14 +2603,11 @@ function CommentsPanel({
   comments,
   selectedComments,
   target,
-  targetMode,
-  canTargetSelected,
   selected,
   users,
   selectedTagIds,
   draft,
   onDraftChange,
-  onTargetModeChange,
   onAddTag,
   onRemoveTag,
   onAddComment,
@@ -2630,14 +2621,11 @@ function CommentsPanel({
     pageId: string;
     label: string;
   };
-  targetMode: "page" | "selected";
-  canTargetSelected: boolean;
   selected: BoardElement | null;
   users: UserProfile[];
   selectedTagIds: string[];
   draft: string;
   onDraftChange: (value: string) => void;
-  onTargetModeChange: (value: "page" | "selected") => void;
   onAddTag: (userId: string) => void;
   onRemoveTag: (userId: string) => void;
   onAddComment: () => void;
@@ -2667,29 +2655,22 @@ function CommentsPanel({
       </div>
 
       <div className="rounded-lg border border-stone-200 bg-[#faf9f5] p-3">
-        <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
-          Comment On
-          <select
-            value={targetMode}
-            onChange={(event) => onTargetModeChange(event.target.value as "page" | "selected")}
-            className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
-          >
-            <option value="page">Current page</option>
-            <option value="selected" disabled={!canTargetSelected}>
-              {selected?.type === "text" ? "Selected text box" : "Selected item"}
-            </option>
-          </select>
-        </label>
-        <div className="mt-2 rounded border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
+        <div className="rounded border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
           Target: <span className="font-medium text-ink">{target.label}</span>
         </div>
+        {!selected && (
+          <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+            Select an image or text box on the board to add a comment.
+          </div>
+        )}
         <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
           Comment
           <textarea
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder="Add a note, question, or task..."
-            className="mt-1 min-h-20 w-full resize-y border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+            disabled={!selected}
+            className="mt-1 min-h-20 w-full resize-y border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
           />
         </label>
         <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
@@ -2699,7 +2680,8 @@ function CommentsPanel({
             onChange={(event) => {
               if (event.target.value) onAddTag(event.target.value);
             }}
-            className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+            disabled={!selected}
+            className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
           >
             <option value="">Choose person to tag</option>
             {unselectedUsers.map((user) => (
@@ -2727,7 +2709,8 @@ function CommentsPanel({
         <button
           type="button"
           onClick={onAddComment}
-          className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800"
+          disabled={!selected}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <MessageSquare className="h-4 w-4" /> Add Comment
         </button>
