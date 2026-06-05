@@ -62,6 +62,7 @@ type BoardElement = {
   background?: string;
   color?: string;
   fontSize?: number;
+  fontFamily?: string;
   letterSpacing?: number;
   link?: string;
   locked?: boolean;
@@ -224,6 +225,18 @@ const MAX_ZOOM = 1.25;
 const AUTOSAVE_DELAY_MS = 700;
 const VERSION_SNAPSHOT_INTERVAL_MS = 45_000;
 const REMOTE_SELECTION_STALE_MS = 1500;
+const BOARD_FONT_OPTIONS = [
+  { label: "Montserrat", value: "var(--font-montserrat)" },
+  { label: "Cormorant", value: "var(--font-display)" },
+  { label: "Inter", value: "var(--font-sans)" },
+  { label: "Georgia", value: 'Georgia, "Times New Roman", serif' },
+  { label: "Arial", value: "Arial, Helvetica, sans-serif" },
+];
+const DEFAULT_BOARD_TEXT_FONT = BOARD_FONT_OPTIONS[0].value;
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
@@ -1738,12 +1751,42 @@ function ProjectDesignBoardsPage() {
                     height: 56,
                     color: "#1f1d1b",
                     fontSize: 30,
+                    fontFamily: DEFAULT_BOARD_TEXT_FONT,
                     letterSpacing: 2,
                   })
                 }
               >
                 <Type className="h-4 w-4" /> Text
               </ToolbarButton>
+              {selected?.type === "text" && selectedCount <= 1 && (
+                <div className="inline-flex items-center gap-2 border border-stone-300 bg-white px-3 py-2 text-sm">
+                  <select
+                    aria-label="Text font"
+                    value={selected.fontFamily ?? DEFAULT_BOARD_TEXT_FONT}
+                    onChange={(event) => updateElement(selected.id, { fontFamily: event.target.value })}
+                    className="w-32 bg-white text-sm outline-none"
+                  >
+                    {BOARD_FONT_OPTIONS.map((font) => (
+                      <option key={font.value} value={font.value}>
+                        {font.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label="Text font size"
+                    type="number"
+                    min={8}
+                    max={220}
+                    value={selected.fontSize ?? 24}
+                    onChange={(event) =>
+                      updateElement(selected.id, {
+                        fontSize: clampNumber(Number(event.target.value) || 24, 8, 220),
+                      })
+                    }
+                    className="w-16 border-l border-stone-200 pl-2 text-sm outline-none"
+                  />
+                </div>
+              )}
               <label className="inline-flex cursor-pointer items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink">
                 <Upload className="h-4 w-4" />
                 Upload
@@ -2304,7 +2347,7 @@ function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: numb
                     color: element.color ?? "#1f1d1b",
                     fontSize: element.fontSize ?? 24,
                     letterSpacing: element.letterSpacing ?? 1,
-                    fontFamily: "var(--font-montserrat)",
+                    fontFamily: element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
                   }}
                 >
                   {element.text}
@@ -2514,7 +2557,7 @@ function BoardObject({
               color: element.color ?? "#1f1d1b",
               fontSize: element.fontSize ?? 24,
               letterSpacing: element.letterSpacing ?? 1,
-              fontFamily: "var(--font-montserrat)",
+              fontFamily: element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
             }}
           />
         </>
@@ -2831,10 +2874,28 @@ function SelectedPanel({
             Font size
             <input
               type="number"
+              min={8}
+              max={220}
               value={selected.fontSize ?? 24}
-              onChange={(event) => onUpdate({ fontSize: Number(event.target.value) || 24 })}
+              onChange={(event) =>
+                onUpdate({ fontSize: clampNumber(Number(event.target.value) || 24, 8, 220) })
+              }
               className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
             />
+          </label>
+          <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+            Font
+            <select
+              value={selected.fontFamily ?? DEFAULT_BOARD_TEXT_FONT}
+              onChange={(event) => onUpdate({ fontFamily: event.target.value })}
+              className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+            >
+              {BOARD_FONT_OPTIONS.map((font) => (
+                <option key={font.value} value={font.value}>
+                  {font.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       )}
@@ -3424,6 +3485,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "background",
     "color",
     "fontSize",
+    "fontFamily",
     "letterSpacing",
     "link",
     "locked",
