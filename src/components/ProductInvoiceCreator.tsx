@@ -53,6 +53,7 @@ type ProductInvoiceLine = {
   sourceId: string;
   productId: string | null;
   selected: boolean;
+  approvalStatus: string;
   name: string;
   vendor: string;
   room: string;
@@ -83,6 +84,8 @@ type ProductInvoiceDraft = {
   lines: ProductInvoiceLine[];
 };
 
+type ProductInvoiceApprovalFilter = "all" | "approved" | "not_approved" | "declined";
+
 export function ProductInvoiceCreator({
   projectId,
   projectName,
@@ -107,6 +110,9 @@ export function ProductInvoiceCreator({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [approvalFilter, setApprovalFilter] = useState<ProductInvoiceApprovalFilter>("all");
+  const [roomFilter, setRoomFilter] = useState("__all");
+  const [categoryFilter, setCategoryFilter] = useState("__all");
   const [draft, setDraft] = useState<ProductInvoiceDraft>(() =>
     makeDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }),
   );
@@ -114,10 +120,37 @@ export function ProductInvoiceCreator({
   useEffect(() => {
     if (!open) return;
     setDraft(makeDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }));
+    setApprovalFilter("all");
+    setRoomFilter("__all");
+    setCategoryFilter("__all");
   }, [clientName, defaultTaxRate, items, onlyApproved, open, projectName]);
 
   const totals = useMemo(() => productInvoiceTotals(draft), [draft]);
   const selectedCount = draft.lines.filter((line) => line.selected).length;
+  const roomOptions = useMemo(
+    () => uniqueSorted(draft.lines.map((line) => line.room).filter(Boolean)),
+    [draft.lines],
+  );
+  const categoryOptions = useMemo(
+    () => uniqueSorted(draft.lines.map((line) => line.category).filter(Boolean)),
+    [draft.lines],
+  );
+  const visibleLines = useMemo(
+    () =>
+      draft.lines.filter((line) => {
+        if (roomFilter !== "__all" && line.room !== roomFilter) return false;
+        if (categoryFilter !== "__all" && line.category !== categoryFilter) return false;
+        if (approvalFilter === "approved" && line.approvalStatus !== "approved") return false;
+        if (approvalFilter === "declined" && line.approvalStatus !== "declined") return false;
+        if (approvalFilter === "not_approved" && line.approvalStatus === "approved") return false;
+        return true;
+      }),
+    [approvalFilter, categoryFilter, draft.lines, roomFilter],
+  );
+  const visibleSourceIds = useMemo(
+    () => new Set(visibleLines.map((line) => line.sourceId)),
+    [visibleLines],
+  );
   const canCreate = !!projectId && selectedCount > 0 && totals.total > 0;
   const html = useMemo(() => buildProductInvoiceHtml(draft, totals), [draft, totals]);
 
@@ -307,26 +340,64 @@ export function ProductInvoiceCreator({
             </section>
 
             <section className="border border-border">
-              <div className="p-4 border-b border-border flex items-center justify-between gap-4">
-                <div>
-                  <div className="eyebrow mb-1">Invoice Items</div>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedCount} of {draft.lines.length} selected from the current procurement
-                    view.
+              <div className="p-4 border-b border-border space-y-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="eyebrow mb-1">Invoice Items</div>
+                    <div className="text-sm text-muted-foreground">
+                      {selectedCount} selected · {visibleLines.length} visible of{" "}
+                      {draft.lines.length} from the current procurement view.
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        lines: current.lines.map((line) =>
+                          visibleSourceIds.has(line.sourceId) ? { ...line, selected: true } : line,
+                        ),
+                      }))
+                    }
+                    className="text-sm underline-offset-4 hover:underline"
+                  >
+                    Select visible
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      lines: current.lines.map((line) => ({ ...line, selected: true })),
-                    }))
-                  }
-                  className="text-sm underline-offset-4 hover:underline"
-                >
-                  Select all
-                </button>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <FilterSelect
+                    label="Approved"
+                    value={approvalFilter}
+                    onChange={(value) => setApprovalFilter(value as ProductInvoiceApprovalFilter)}
+                    options={[
+                      { value: "all", label: "All approval statuses" },
+                      { value: "approved", label: "Approved only" },
+                      { value: "not_approved", label: "Not approved" },
+                      { value: "declined", label: "Changes requested" },
+                    ]}
+                  />
+                  <FilterSelect
+                    label="Room"
+                    value={roomFilter}
+                    onChange={setRoomFilter}
+                    options={[
+                      { value: "__all", label: "All rooms" },
+                      ...roomOptions.map((room) => ({ value: room, label: room })),
+                    ]}
+                  />
+                  <FilterSelect
+                    label="Category"
+                    value={categoryFilter}
+                    onChange={setCategoryFilter}
+                    options={[
+                      { value: "__all", label: "All categories" },
+                      ...categoryOptions.map((category) => ({
+                        value: category,
+                        label: category,
+                      })),
+                    ]}
+                  />
+                </div>
               </div>
               <div className="mobile-card-scroll">
                 <table className="w-full text-sm">
@@ -342,7 +413,7 @@ export function ProductInvoiceCreator({
                     </tr>
                   </thead>
                   <tbody>
-                    {draft.lines.length === 0 && (
+                    {visibleLines.length === 0 && (
                       <tr>
                         <td
                           colSpan={7}
@@ -352,7 +423,7 @@ export function ProductInvoiceCreator({
                         </td>
                       </tr>
                     )}
-                    {draft.lines.map((line) => {
+                    {visibleLines.map((line) => {
                       const lineTotal = line.selected ? lineSubtotal(line) : 0;
                       return (
                         <tr key={line.sourceId} className="border-b border-border align-top">
@@ -528,6 +599,7 @@ function makeDraft({
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",
         category: product?.category || "",
+        approvalStatus: item.room_product?.approval_status || "undecided",
         imageUrl: product?.image_url || "",
         productUrl: material?.product_url || product?.product_url || "",
         finish: material?.color || product?.finish || "",
@@ -567,6 +639,35 @@ function quantityValue(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div>
+      <Label className="eyebrow mb-2 block">{label}</Label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function Field({
   label,
   value,
@@ -598,6 +699,10 @@ function Field({
       </div>
     </div>
   );
+}
+
+function uniqueSorted(values: string[]) {
+  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
 }
 
 function SummaryStat({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
