@@ -7,7 +7,6 @@ import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -90,7 +89,7 @@ function MaterialsPage() {
 
   const overall = useMemo(() => {
     const total = items.length;
-    const done = items.filter((it) => it.not_needed || (it.product_url && it.product_url.trim().length > 0)).length;
+    const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
     return { done, total };
   }, [items]);
 
@@ -107,7 +106,7 @@ function MaterialsPage() {
       if (!res.ok) throw new Error(body?.error || "Scrape failed");
       const rows = (body?.rows ?? []) as ScrapedRow[];
       if (rows.length === 0) {
-        toast.info("Nothing new to scrape — every row is either empty, marked Not Needed, or already linked.");
+        toast.info("Nothing new to scrape — every row is either empty or already linked.");
       } else {
         setReviewRows(rows);
       }
@@ -184,8 +183,8 @@ function MaterialsPage() {
             <div className="eyebrow mb-2">{project.name} · {project.client_name}</div>
             <h1 className="editorial-hero text-4xl lg:text-6xl">Materials</h1>
             <p className="text-sm text-muted-foreground mt-3 max-w-xl">
-              Fill in CAD label, product link, quantity, and color for every required item. Mark anything you don't need.
-              When you're ready, scrape every link to save the products into the catalog.
+              Fill in CAD label, product link, quantity, and color for every required item. Delete anything you don't need.
+              When you're ready, scrape every link to save products into the catalog.
             </p>
           </div>
           <div className="flex flex-col items-end gap-3">
@@ -258,7 +257,7 @@ function RoomMaterialsSection({
   projectId: string;
 }) {
   const qc = useQueryClient();
-  const done = items.filter((it) => it.not_needed || (it.product_url && it.product_url.trim().length > 0)).length;
+  const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" })),
     [items],
@@ -370,14 +369,13 @@ function RoomMaterialsSection({
                 <th className="py-3">Product Link</th>
                 <th className="py-3 w-[72px]">Qty</th>
                 <th className="py-3 w-[140px]">Color / Finish</th>
-                <th className="py-3 w-[100px]">Not Needed</th>
                 <th className="py-3 w-[60px]">Notes</th>
                 <th className="px-4 py-3 w-[40px]"></th>
               </tr>
             </thead>
             <tbody>
               {sortedItems.map((it) => {
-                const complete = it.not_needed || (it.product_url && it.product_url.trim().length > 0);
+                const complete = it.product_url && it.product_url.trim().length > 0;
                 const linkedProductId = cleanUuid(it.product?.id);
                 return (
                   <tr key={it.id} className="border-t border-border align-middle">
@@ -387,7 +385,7 @@ function RoomMaterialsSection({
                           className={`w-1.5 h-1.5 rounded-full ${complete ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
                           title={complete ? "Complete" : "Incomplete"}
                         />
-                        <span className={it.not_needed ? "line-through text-muted-foreground" : ""}>{it.item_label}</span>
+                        <span>{it.item_label}</span>
                         <EditItemNameButton
                           currentName={it.item_label}
                           onSave={(nextName) =>
@@ -409,7 +407,6 @@ function RoomMaterialsSection({
                         item={it}
                         products={products}
                         onSelect={(productId) => attachCatalogProduct(it, productId)}
-                        disabled={it.not_needed}
                       />
                       {it.product && linkedProductId && (
                         <Link
@@ -437,7 +434,6 @@ function RoomMaterialsSection({
                       <InlineInput
                         value={clientProductName(it, room)}
                         onSave={(v) => update(it.id, { client_product_name: v || buildClientProductName(room.name, it.item_label) })}
-                        disabled={it.not_needed}
                         placeholder="Kitchen Pendant"
                       />
                     </td>
@@ -445,7 +441,6 @@ function RoomMaterialsSection({
                       <Select
                         value={it.category ?? "Decor"}
                         onValueChange={(v) => update(it.id, { category: v })}
-                        disabled={it.not_needed}
                       >
                         <SelectTrigger className="h-8 border-transparent hover:border-input focus:border-input bg-transparent text-xs">
                           <SelectValue />
@@ -465,14 +460,12 @@ function RoomMaterialsSection({
                           return !usedCadLabels.has(option.value) || ownerId === it.id;
                         })}
                         onSave={(v) => update(it.id, { cad_label: v })}
-                        disabled={it.not_needed}
                       />
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput
                         value={it.product_url ?? ""}
                         onSave={(v) => update(it.id, { product_url: v || null, scrape_status: "pending" })}
-                        disabled={it.not_needed}
                       />
                     </td>
                     <td className="py-2 pr-3">
@@ -480,20 +473,12 @@ function RoomMaterialsSection({
                         type="number"
                         value={it.quantity?.toString() ?? ""}
                         onSave={(v) => update(it.id, { quantity: v ? parseInt(v, 10) : null })}
-                        disabled={it.not_needed}
                       />
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput
                         value={it.color ?? ""}
                         onSave={(v) => update(it.id, { color: v || null })}
-                        disabled={it.not_needed}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Checkbox
-                        checked={it.not_needed}
-                        onCheckedChange={(c) => update(it.id, { not_needed: !!c })}
                       />
                     </td>
                     <td className="py-2 pr-3">

@@ -112,7 +112,6 @@ export const Route = createFileRoute("/api/scrape-materials")({
             .from("material_items")
             .select("id, product_url, product_id, scrape_status")
             .eq("project_id", projectId)
-            .eq("not_needed", false)
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
 
