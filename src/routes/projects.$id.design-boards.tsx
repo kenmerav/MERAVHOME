@@ -125,7 +125,7 @@ type BoardVersion = {
 
 type BoardPatch =
   | { kind: "select-page"; pageId: string }
-  | { kind: "upsert-page"; page: BoardPage }
+  | { kind: "upsert-page"; page: BoardPage; afterPageId?: string | null }
   | { kind: "patch-page"; pageId: string; patch: Partial<Omit<BoardPage, "id" | "elements">> }
   | { kind: "upsert-layer"; pageId: string; layer: BoardElement }
   | { kind: "patch-layer"; pageId: string; layerId: string; patch: Partial<BoardElement> }
@@ -1713,7 +1713,7 @@ function ProjectDesignBoardsPage() {
     ],
   );
 
-  const addPage = () => {
+  const addPage = (afterPageId = selectedPageId) => {
     const nextPage: BoardPage = {
       id: crypto.randomUUID(),
       title: `Board ${pages.length + 1}`,
@@ -1722,14 +1722,20 @@ function ProjectDesignBoardsPage() {
     };
     const current = normalizeBoardState(boardStateRef.current);
     const safePages = current.pages.length ? current.pages : defaultPages();
+    const insertAfterIndex = safePages.findIndex((page) => page.id === afterPageId);
+    const insertAt = insertAfterIndex >= 0 ? insertAfterIndex + 1 : safePages.length;
     const nextState = normalizeBoardState({
       ...current,
       selectedPageId: nextPage.id,
-      pages: [...safePages, nextPage],
+      pages: [
+        ...safePages.slice(0, insertAt),
+        nextPage,
+        ...safePages.slice(insertAt),
+      ],
     });
     pushUndo();
     applyLocalBoardUpdate(nextState);
-    broadcastPatch({ kind: "upsert-page", page: nextPage });
+    broadcastPatch({ kind: "upsert-page", page: nextPage, afterPageId });
     pendingPageFocusRef.current = nextPage.id;
     clearSelection();
     void saveBoardStateImmediately(nextState);
@@ -2297,7 +2303,7 @@ function ProjectDesignBoardsPage() {
                   }}
                 />
               </label>
-              <ToolbarButton onClick={addPage}>
+              <ToolbarButton onClick={() => addPage(selectedPageId)}>
                 <Plus className="h-4 w-4" /> New Page
               </ToolbarButton>
               <ToolbarButton onClick={duplicateSelected} disabled={!selectedCount}>
@@ -2612,10 +2618,11 @@ function ProjectDesignBoardsPage() {
                 )}
                 <button
                   type="button"
-                  onClick={addPage}
+                  onClick={() => addPage(selectedPageId)}
+                  title="Add page after current page"
                   className="flex h-[64px] w-[112px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-ink transition hover:border-ink"
                 >
-                  <Plus className="h-3.5 w-3.5" /> Page
+                  <Plus className="h-3.5 w-3.5" /> After Current
                 </button>
               </div>
 
@@ -4163,6 +4170,8 @@ function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardStat
     return normalizeBoardState({ ...current, selectedPageId: patch.pageId });
   if (patch.kind === "upsert-page") {
     const exists = current.pages.some((page) => page.id === patch.page.id);
+    const insertAfterIndex = current.pages.findIndex((page) => page.id === patch.afterPageId);
+    const insertAt = insertAfterIndex >= 0 ? insertAfterIndex + 1 : current.pages.length;
     return normalizeBoardState({
       ...current,
       selectedPageId: exists ? current.selectedPageId : patch.page.id,
@@ -4172,7 +4181,11 @@ function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardStat
               ? (normalizeBoardPage({ ...page, ...patch.page }, 0) ?? page)
               : page,
           )
-        : [...current.pages, patch.page],
+        : [
+            ...current.pages.slice(0, insertAt),
+            patch.page,
+            ...current.pages.slice(insertAt),
+          ],
     });
   }
   if (patch.kind === "patch-page") {
