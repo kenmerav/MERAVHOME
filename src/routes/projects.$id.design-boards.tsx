@@ -473,7 +473,7 @@ function ProjectDesignBoardsPage() {
 
   const applySharedBoardSnapshot = useCallback(
     (remoteBoard: NonNullable<typeof sharedBoard>, message?: string) => {
-      const remoteState = normalizeBoardState(remoteBoard.board_state);
+      const remoteState = openBoardStateOnFirstPage(normalizeBoardState(remoteBoard.board_state));
       const remoteJson = JSON.stringify(remoteState);
       applyingRemoteRef.current = true;
       boardStateRef.current = remoteState;
@@ -3844,8 +3844,16 @@ function stripVersionsFromState(state: BoardState): BoardState {
   const normalized = normalizeBoardState(state);
   return {
     pages: normalized.pages,
-    selectedPageId: normalized.selectedPageId,
+    selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
     comments: normalized.comments ?? [],
+  };
+}
+
+function openBoardStateOnFirstPage(state: BoardState): BoardState {
+  const normalized = normalizeBoardState(state);
+  return {
+    ...normalized,
+    selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
   };
 }
 
