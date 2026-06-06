@@ -558,12 +558,15 @@ export const db = {
       .select("*")
       .eq("project_id", projectId)
       .maybeSingle()).data as DesignBoardRecord | null,
-  upsertDesignBoard: async (projectId: string, boardState: unknown, updatedBy?: string | null) =>
-    (await supabase
+  insertDesignBoard: async (projectId: string, boardState: unknown, updatedBy?: string | null) => {
+    const { data, error } = await supabase
       .from("design_boards" as any)
-      .upsert({ project_id: projectId, board_state: boardState, updated_by: updatedBy ?? null } as any, { onConflict: "project_id" })
+      .insert({ project_id: projectId, board_state: boardState, updated_by: updatedBy ?? null } as any)
       .select()
-      .single()).data as DesignBoardRecord | null,
+      .single();
+    if (error) throw error;
+    return data as DesignBoardRecord | null;
+  },
   updateDesignBoardIfFresh: async (
     projectId: string,
     boardState: unknown,

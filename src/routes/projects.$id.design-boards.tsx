@@ -289,7 +289,7 @@ function ProjectDesignBoardsPage() {
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
-  const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "saving" | "saved" | "error">(
+  const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "ready" | "saving" | "saved" | "error">(
     "loading",
   );
 
@@ -446,7 +446,7 @@ function ProjectDesignBoardsPage() {
       remoteLoadedRef.current = true;
       queryClient.setQueryData(["designBoard", id], remoteBoard);
       if (message) toast.warning(message);
-      setSaveStatus("saved");
+      setSaveStatus("ready");
     },
     [id, queryClient],
   );
@@ -458,9 +458,29 @@ function ProjectDesignBoardsPage() {
       const saveJson = JSON.stringify(stateToSave);
 
       if (!expectedUpdatedAt) {
-        const savedBoard = await db.upsertDesignBoard(id, stateToSave, profile?.id);
-        if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-        return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+        const latestBoard = await db.getDesignBoard(id);
+        if (latestBoard?.updated_at) {
+          applySharedBoardSnapshot(
+            latestBoard,
+            "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
+          );
+          throw new Error("Stale design board save blocked");
+        }
+
+        try {
+          const savedBoard = await db.insertDesignBoard(id, stateToSave, profile?.id);
+          if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+          return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+        } catch {
+          const newestBoard = await db.getDesignBoard(id);
+          if (newestBoard?.board_state) {
+            applySharedBoardSnapshot(
+              newestBoard,
+              "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
+            );
+          }
+          throw new Error("Stale design board save blocked");
+        }
       }
 
       const savedBoard = await db.updateDesignBoardIfFresh(
@@ -777,7 +797,7 @@ function ProjectDesignBoardsPage() {
     remoteLoadedRef.current = true;
     lastSavedJsonRef.current = emptyJson;
     pendingSaveJsonRef.current = null;
-    setSaveStatus("saved");
+    setSaveStatus("ready");
   }, [
     applySharedBoardSnapshot,
     canEditDesignBoards,
@@ -1768,6 +1788,7 @@ function ProjectDesignBoardsPage() {
               </p>
               <div className="mt-3 text-xs uppercase tracking-[0.18em] text-stone-500">
                 {saveStatus === "loading" && "Loading shared board"}
+                {saveStatus === "ready" && "Shared board ready"}
                 {saveStatus === "saving" && "Saving shared board"}
                 {saveStatus === "saved" && "Shared board saved"}
                 {saveStatus === "error" && "Could not save shared board"}
