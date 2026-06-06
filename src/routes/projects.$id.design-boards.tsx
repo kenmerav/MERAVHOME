@@ -524,7 +524,7 @@ function ProjectDesignBoardsPage() {
       const remoteState = options?.preserveSelectedPage
         ? preserveBoardSelectedPage(normalizedRemoteState, currentSelectedPageId)
         : openBoardStateOnFirstPage(normalizedRemoteState);
-      const remoteJson = JSON.stringify(remoteState);
+      const remoteJson = JSON.stringify(prepareBoardStateForSave(remoteState));
       applyingRemoteRef.current = true;
       boardStateRef.current = remoteState;
       lastGoodBoardStateRef.current = remoteState;
@@ -940,7 +940,7 @@ function ProjectDesignBoardsPage() {
       return;
     }
 
-    const nextJson = JSON.stringify(boardState);
+    const nextJson = JSON.stringify(prepareBoardStateForSave(boardState));
     if (nextJson === lastSavedJsonRef.current) return;
     if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
     pendingSaveJsonRef.current = nextJson;
@@ -4070,6 +4070,7 @@ function prepareBoardStateForSave(state: BoardState): BoardState {
   const normalized = normalizeBoardState(state);
   return {
     ...normalized,
+    selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
     pages: normalized.pages.map((page) => ({
       ...page,
       elements: page.elements.map((element) => stripLargeInlineImageData(element)),
