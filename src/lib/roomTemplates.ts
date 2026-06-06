@@ -79,6 +79,10 @@ function normalizeCategoryText(value: string) {
 export function inferMaterialCategory(label: string | null | undefined, productUrl?: string | null): ItemCategory {
   const text = normalizeCategoryText(`${label ?? ""} ${productUrl ?? ""}`);
 
+  if (/\b(sink|sinks|basin|lavatory|undermount sink|farmhouse sink|tub|tubs|bathtub|freestanding tub|soaking tub)\b/.test(text)) {
+    return "Plumbing";
+  }
+
   if (
     /\b(appliance|appliances|range|rangetop|cooktop|oven|double oven|wall oven|microwave|speed oven|refrigerator|fridge|freezer|dishwasher|washer|dryer|coffee maker|coffee machine|espresso|ice maker|wine cooler|beverage center|stove hood|range hood|hood insert|vent hood|ventilation|miele|subzero|sub zero|wolf|thermador|monogram|cafe appliances|kitchenaid|fisher paykel|bosch|ajmadison)\b/.test(text)
   ) {
@@ -103,7 +107,7 @@ export function inferMaterialCategory(label: string | null | undefined, productU
     return "Cabinetry & Hardware";
   }
 
-  if (/\b(faucet|sink|shower|tub|toilet|plumbing|pot filler|drain|valve|trim kit|hand shower)\b/.test(text)) {
+  if (/\b(faucet|shower|toilet|plumbing|pot filler|drain|valve|trim kit|hand shower)\b/.test(text)) {
     return "Plumbing";
   }
 
