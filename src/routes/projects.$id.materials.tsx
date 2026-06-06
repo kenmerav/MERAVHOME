@@ -451,7 +451,7 @@ function RoomMaterialsSection({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {PRODUCT_CATEGORIES.map((c) => (
+                          {ALL_CATEGORIES.map((c) => (
                             <SelectItem key={c} value={c}>{c}</SelectItem>
                           ))}
                         </SelectContent>
