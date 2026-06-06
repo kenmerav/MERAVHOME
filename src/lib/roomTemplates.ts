@@ -24,7 +24,6 @@ export const ALL_CATEGORIES = [
   "Tile & Stone",
   "Countertops",
   "Cabinetry & Hardware",
-  "Cabinet Finish & Hardware",
   "Doors Base & Case",
   "Accent Mirrors",
   "Wall Coverings",
@@ -60,7 +59,6 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
     Countertop: "Countertops",
     Countertops: "Countertops",
     "Cabinetry & Hardware": "Hardware",
-    "Cabinet Finish & Hardware": "Hardware",
     Cabinetry: "Hardware",
     "Doors Base & Case": "Hardware",
     "Accent Mirrors": "Decor",
@@ -102,7 +100,7 @@ export function inferMaterialCategory(label: string | null | undefined, productU
   if (
     /\b(cabinet|cabinetry|hardware|knob|knobs|pull|pulls|latch|latches|appliance pull|cabinet finish|cabinet color|cabinet paint)\b/.test(text)
   ) {
-    return "Cabinet Finish & Hardware";
+    return "Cabinetry & Hardware";
   }
 
   if (/\b(faucet|sink|shower|tub|toilet|plumbing|pot filler|drain|valve|trim kit|hand shower)\b/.test(text)) {
