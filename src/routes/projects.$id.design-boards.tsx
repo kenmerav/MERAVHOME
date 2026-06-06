@@ -516,7 +516,7 @@ function ProjectDesignBoardsPage() {
   const applySharedBoardSnapshot = useCallback(
     (
       remoteBoard: NonNullable<typeof sharedBoard>,
-      message?: string,
+      _message?: string,
       options?: { preserveSelectedPage?: boolean },
     ) => {
       const normalizedRemoteState = normalizeBoardState(remoteBoard.board_state);
@@ -533,7 +533,6 @@ function ProjectDesignBoardsPage() {
       pendingSaveJsonRef.current = null;
       remoteLoadedRef.current = true;
       queryClient.setQueryData(["designBoard", id], remoteBoard);
-      if (message) toast.warning(message);
       setSaveStatus("ready");
     },
     [id, queryClient],
@@ -548,12 +547,16 @@ function ProjectDesignBoardsPage() {
       if (!expectedUpdatedAt) {
         const latestBoard = await db.getDesignBoard(id);
         if (latestBoard?.updated_at) {
-          applySharedBoardSnapshot(
-            latestBoard,
-            "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
-            { preserveSelectedPage: remoteLoadedRef.current },
+          const savedBoard = await db.updateDesignBoardIfFresh(
+            id,
+            stateToSave,
+            latestBoard.updated_at,
+            profile?.id,
           );
-          throw new Error("Stale design board save blocked");
+          if (savedBoard?.updated_at) {
+            lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+            return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+          }
         }
 
         try {
@@ -562,14 +565,19 @@ function ProjectDesignBoardsPage() {
           return { savedBoard, savedJson: saveJson, savedState: stateToSave };
         } catch {
           const newestBoard = await db.getDesignBoard(id);
-          if (newestBoard?.board_state) {
-            applySharedBoardSnapshot(
-              newestBoard,
-              "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
-              { preserveSelectedPage: remoteLoadedRef.current },
+          if (newestBoard?.updated_at) {
+            const savedBoard = await db.updateDesignBoardIfFresh(
+              id,
+              stateToSave,
+              newestBoard.updated_at,
+              profile?.id,
             );
+            if (savedBoard?.updated_at) {
+              lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+              return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+            }
           }
-          throw new Error("Stale design board save blocked");
+          throw new Error("Design board save failed");
         }
       }
 
@@ -586,13 +594,26 @@ function ProjectDesignBoardsPage() {
 
       const latestBoard = await db.getDesignBoard(id);
       if (latestBoard?.board_state) {
-        applySharedBoardSnapshot(
-          latestBoard,
-          "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
-          { preserveSelectedPage: remoteLoadedRef.current },
-        );
+        const latestJson = JSON.stringify(prepareBoardStateForSave(latestBoard.board_state));
+        if (latestJson === saveJson) {
+          markRemoteBoardApplied(saveJson, latestBoard.updated_at);
+          return { savedBoard: latestBoard, savedJson: saveJson, savedState: stateToSave };
+        }
       }
-      throw new Error("Stale design board save blocked");
+
+      if (latestBoard?.updated_at) {
+        const retrySavedBoard = await db.updateDesignBoardIfFresh(
+          id,
+          stateToSave,
+          latestBoard.updated_at,
+          profile?.id,
+        );
+        if (retrySavedBoard?.updated_at) {
+          lastRemoteUpdatedAtRef.current = retrySavedBoard.updated_at;
+          return { savedBoard: retrySavedBoard, savedJson: saveJson, savedState: stateToSave };
+        }
+      }
+      throw new Error("Design board save failed");
     },
     [applySharedBoardSnapshot, id, profile?.id],
   );
@@ -961,7 +982,7 @@ function ProjectDesignBoardsPage() {
         boardStateRef.current = latestState;
         setBoardState(latestState);
       }
-      const latestJson = JSON.stringify(latestState);
+      const latestJson = JSON.stringify(prepareBoardStateForSave(latestState));
       pendingSaveJsonRef.current = latestJson;
       void saveBoardStateSafely(latestState).then(
         ({ savedState, savedJson }) => {
@@ -972,8 +993,6 @@ function ProjectDesignBoardsPage() {
         },
         () => {
           pendingSaveJsonRef.current = null;
-          boardStateRef.current = lastGoodBoardStateRef.current;
-          setBoardState(lastGoodBoardStateRef.current);
           setSaveStatus("error");
         },
       );
