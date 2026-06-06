@@ -27,7 +27,6 @@ import { AppShell } from "@/components/AppShell";
 import { supabase } from "@/integrations/supabase/client";
 import {
   db,
-  PRODUCT_CATEGORIES,
   type MaterialItem,
   type Product,
   type ProductCategory,
@@ -35,7 +34,12 @@ import {
   type UserProfile,
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
-import { ALL_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
+import {
+  ALL_CATEGORIES,
+  inferMaterialCategory,
+  toProductCategory,
+  type ItemCategory,
+} from "@/lib/roomTemplates";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -247,9 +251,40 @@ const BOARD_TEXT_COLOR_OPTIONS = [
   { label: "Red", value: "#dc2626" },
   { label: "Blue", value: "#2563eb" },
 ];
+const NARROW_BOARD_CATALOG_CATEGORIES = new Set<ItemCategory>([
+  "Accent Mirrors",
+  "Accessories",
+  "Cabinetry & Hardware",
+  "Doors Base & Case",
+  "Tile & Stone",
+  "Wall Coverings",
+]);
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function productMatchesBoardCatalogCategory(product: Product, category: ItemCategory) {
+  const productCategory = toProductCategory(category);
+  if (product.category !== productCategory) return false;
+
+  if (!NARROW_BOARD_CATALOG_CATEGORIES.has(category)) return true;
+
+  const inferredCategory = inferMaterialCategory(
+    [
+      product.name,
+      product.subcategory,
+      product.vendor,
+      product.finish,
+      product.sku,
+      product.notes,
+      product.product_url,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    product.product_url,
+  );
+  return inferredCategory === category;
 }
 
 function ProjectDesignBoardsPage() {
@@ -291,7 +326,7 @@ function ProjectDesignBoardsPage() {
   const [selectionMarquee, setSelectionMarquee] = useState<SelectionMarquee>(null);
   const [boardScale, setBoardScale] = useState(1);
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState<ProductCategory | "All">("All");
+  const [category, setCategory] = useState<ItemCategory | "All">("All");
   const [removingBackground, setRemovingBackground] = useState(false);
   const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
@@ -443,7 +478,9 @@ function ProjectDesignBoardsPage() {
   );
   const filteredProducts = useMemo(
     () =>
-      category === "All" ? products : products.filter((product) => product.category === category),
+      category === "All"
+        ? products
+        : products.filter((product) => productMatchesBoardCatalogCategory(product, category)),
     [category, products],
   );
   const linkedProductCount = elements.filter((element) => element.productId).length;
@@ -2646,11 +2683,11 @@ function ProjectDesignBoardsPage() {
                 </div>
                 <select
                   value={category}
-                  onChange={(event) => setCategory(event.target.value as ProductCategory | "All")}
+                  onChange={(event) => setCategory(event.target.value as ItemCategory | "All")}
                   className="mb-3 w-full border border-stone-200 bg-white px-3 py-2 text-sm"
                 >
                   <option value="All">All categories</option>
-                  {PRODUCT_CATEGORIES.map((productCategory) => (
+                  {ALL_CATEGORIES.map((productCategory) => (
                     <option key={productCategory} value={productCategory}>
                       {productCategory}
                     </option>
