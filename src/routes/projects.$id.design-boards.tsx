@@ -258,6 +258,7 @@ function ProjectDesignBoardsPage() {
   const boardStripRef = useRef<HTMLDivElement | null>(null);
   const thumbnailStripRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pendingPageFocusRef = useRef<string | null>(null);
   const copiedElementsRef = useRef<BoardElement[]>([]);
   const undoStackRef = useRef<BoardState[]>([]);
   const hasCustomZoomRef = useRef(false);
@@ -1610,6 +1611,7 @@ function ProjectDesignBoardsPage() {
     pushUndo();
     applyLocalBoardUpdate(nextState);
     broadcastPatch({ kind: "upsert-page", page: nextPage });
+    pendingPageFocusRef.current = nextPage.id;
     clearSelection();
     void saveBoardStateImmediately(nextState);
   };
@@ -1647,6 +1649,23 @@ function ProjectDesignBoardsPage() {
       });
     }
   };
+
+  useEffect(() => {
+    const pageId = pendingPageFocusRef.current;
+    if (!pageId || selectedPageId !== pageId) return;
+    const pageExists = pages.some((page) => page.id === pageId);
+    if (!pageExists) return;
+
+    requestAnimationFrame(() => {
+      pageRefs.current[pageId]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+      scrollThumbnailStripToPage(pageId);
+      pendingPageFocusRef.current = null;
+    });
+  }, [pages, selectedPageId]);
 
   const updateActivePage = (patch: Partial<BoardPage>) => {
     pushUndo();
