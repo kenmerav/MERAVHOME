@@ -1463,6 +1463,15 @@ function ProjectDesignBoardsPage() {
     updateElement(element.id, { link: nextLink.trim() }, pageId);
   };
 
+  const quickEditElementFinish = (element: BoardElement, pageId: string) => {
+    const nextFinish = window.prompt(
+      "Color / finish",
+      element.materialFinish || element.finish || "",
+    );
+    if (nextFinish === null) return;
+    updateElement(element.id, { materialFinish: nextFinish.trim() }, pageId);
+  };
+
   const quickDeleteElement = (element: BoardElement, pageId: string) => {
     pushUndo();
     setElementsForPage(pageId, (current) =>
@@ -2184,6 +2193,7 @@ function ProjectDesignBoardsPage() {
                           onQuickComment={() => quickCommentElement(element, page.id)}
                           onQuickLink={() => quickEditElementLink(element, page.id)}
                           onQuickLabel={() => quickEditElementLabel(element, page.id)}
+                          onQuickFinish={() => quickEditElementFinish(element, page.id)}
                           onQuickDelete={() => quickDeleteElement(element, page.id)}
                           onSelect={(event) => {
                             selectPage(page.id, false, false);
@@ -2611,6 +2621,7 @@ function BoardObject({
   onQuickComment,
   onQuickLink,
   onQuickLabel,
+  onQuickFinish,
   onQuickDelete,
   onSelect,
   onChange,
@@ -2625,6 +2636,7 @@ function BoardObject({
   onQuickComment: () => void;
   onQuickLink: () => void;
   onQuickLabel: () => void;
+  onQuickFinish: () => void;
   onQuickDelete: () => void;
   onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onChange: (patch: Partial<BoardElement>) => void;
@@ -2712,6 +2724,13 @@ function BoardObject({
           <QuickActionButton label="Label" onClick={onQuickLabel}>
             <Type className="h-5 w-5" />
           </QuickActionButton>
+          {element.type === "image" && (
+            <QuickActionButton label="Color / Finish" onClick={onQuickFinish}>
+              <span className="font-[var(--font-montserrat)] text-[10px] font-semibold tracking-[0.14em]">
+                CLR
+              </span>
+            </QuickActionButton>
+          )}
           <QuickActionButton label="Delete" onClick={onQuickDelete} destructive>
             <Trash2 className="h-5 w-5" />
           </QuickActionButton>
