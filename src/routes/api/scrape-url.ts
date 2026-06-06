@@ -13,6 +13,22 @@ function firstString(...values: unknown[]) {
   return values.find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim() ?? "";
 }
 
+function firstPrice(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const text = value.replace(/\s+/g, " ").trim();
+    if (!text) continue;
+
+    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\$?\s*\d+(?:\.\d{2})?/);
+    if (!match) continue;
+
+    const cleaned = match[0].replace(/\s+/g, "");
+    if (!/\d/.test(cleaned)) continue;
+    return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
+  }
+  return "";
+}
+
 export const Route = createFileRoute("/api/scrape-url")({
   server: {
     handlers: {
@@ -37,6 +53,12 @@ export const Route = createFileRoute("/api/scrape-url")({
               selected_color: { type: "string", description: "Selected color option when the page shows one" },
               finish: { type: "string", description: "Finish, color, or material variant" },
               selected_variant: { type: "string", description: "Selected variant or option when the page shows one" },
+              price: { type: "string", description: "Current product price shown to the customer" },
+              current_price: { type: "string" },
+              sale_price: { type: "string" },
+              regular_price: { type: "string" },
+              list_price: { type: "string" },
+              price_per_item: { type: "string" },
               image_url: { type: "string", description: "Absolute URL of the primary product image" },
             },
           };
@@ -75,6 +97,14 @@ export const Route = createFileRoute("/api/scrape-url")({
             vendor: firstString(extracted.vendor, metadata.ogSiteName, metadata["og:site_name"]),
             sku: firstString(extracted.sku, extracted.model, extracted.model_number),
             finish: firstString(extracted.finish, extracted.color, extracted.selected_color, extracted.selected_variant, extracted.variant),
+            price: firstPrice(
+              extracted.price,
+              extracted.current_price,
+              extracted.sale_price,
+              extracted.regular_price,
+              extracted.list_price,
+              extracted.price_per_item,
+            ),
             image_url: firstString(extracted.image_url, extracted.image, metadata.ogImage, metadata["og:image"]),
           };
 

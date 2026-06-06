@@ -17,6 +17,22 @@ function firstString(...vals: unknown[]) {
   return vals.find((v): v is string => typeof v === "string" && v.trim().length > 0)?.trim() ?? "";
 }
 
+function firstPrice(...vals: unknown[]) {
+  for (const val of vals) {
+    if (typeof val !== "string") continue;
+    const text = val.replace(/\s+/g, " ").trim();
+    if (!text) continue;
+
+    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\$?\s*\d+(?:\.\d{2})?/);
+    if (!match) continue;
+
+    const cleaned = match[0].replace(/\s+/g, "");
+    if (!/\d/.test(cleaned)) continue;
+    return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
+  }
+  return "";
+}
+
 type Scraped = {
   name?: string;
   vendor?: string;
@@ -48,7 +64,15 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       variant: { type: "string" },
       colorway: { type: "string" },
       dimensions: { type: "string" },
-      price: { type: "string" },
+      price: {
+        type: "string",
+        description: "Current product price shown to the customer, formatted with a dollar sign when available",
+      },
+      current_price: { type: "string" },
+      sale_price: { type: "string" },
+      regular_price: { type: "string" },
+      list_price: { type: "string" },
+      price_per_item: { type: "string" },
       unit_cost: { type: "string" },
       shipping: { type: "string" },
       image_url: { type: "string" },
@@ -85,7 +109,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
       finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
       dimensions: firstString(ex.dimensions, ex.size),
-      price: firstString(ex.price),
+      price: firstPrice(ex.price, ex.current_price, ex.sale_price, ex.regular_price, ex.list_price, ex.price_per_item),
       unit_cost: firstString(ex.unit_cost),
       shipping: firstString(ex.shipping),
       image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
@@ -130,21 +154,22 @@ export const Route = createFileRoute("/api/scrape-materials")({
               .maybeSingle();
 
             if (existing) {
+              const refreshed = existing.price ? null : await scrapeOne(url, fcKey);
               rows.push({
                 material_item_id: it.id,
                 url,
                 existing_product_id: existing.id,
                 scraped: {
-                  name: existing.name ?? "",
-                  vendor: existing.vendor ?? "",
-                  image_url: existing.image_url ?? "",
-                  color: existing.finish ?? "",
-                  finish: existing.finish ?? "",
-                  sku: existing.sku ?? "",
-                  dimensions: existing.dimensions ?? "",
-                  price: existing.price ?? "",
-                  unit_cost: existing.unit_cost ?? "",
-                  shipping: existing.shipping ?? "",
+                  name: firstString(existing.name, refreshed?.name),
+                  vendor: firstString(existing.vendor, refreshed?.vendor),
+                  image_url: firstString(existing.image_url, refreshed?.image_url),
+                  color: firstString(existing.finish, refreshed?.color),
+                  finish: firstString(existing.finish, refreshed?.finish, refreshed?.color),
+                  sku: firstString(existing.sku, refreshed?.sku),
+                  dimensions: firstString(existing.dimensions, refreshed?.dimensions),
+                  price: firstPrice(existing.price, refreshed?.price),
+                  unit_cost: firstPrice(existing.unit_cost, refreshed?.unit_cost),
+                  shipping: firstPrice(existing.shipping, refreshed?.shipping),
                 },
               });
               continue;
