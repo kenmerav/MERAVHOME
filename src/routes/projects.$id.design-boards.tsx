@@ -222,6 +222,11 @@ type OptimizedBoardImageProps = {
 
 const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
+const MAIN_PAGE_GAP = 40;
+const ACTIVE_PAGE_PRELOAD_RADIUS = 1;
+const PAGE_STRIP_VIRTUALIZE_AFTER = 40;
+const PAGE_THUMBNAIL_SLOT_WIDTH = 124;
+const PAGE_THUMBNAIL_OVERSCAN = 4;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 1.25;
 const AUTOSAVE_DELAY_MS = 700;
@@ -251,6 +256,7 @@ function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
   const queryClient = useQueryClient();
   const boardStripRef = useRef<HTMLDivElement | null>(null);
+  const thumbnailStripRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const copiedElementsRef = useRef<BoardElement[]>([]);
   const undoStackRef = useRef<BoardState[]>([]);
@@ -293,6 +299,7 @@ function ProjectDesignBoardsPage() {
   const [saveStatus, setSaveStatus] = useState<
     "local" | "loading" | "ready" | "saving" | "saved" | "error"
   >("loading");
+  const [thumbnailViewport, setThumbnailViewport] = useState({ scrollLeft: 0, width: 0 });
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -353,7 +360,41 @@ function ProjectDesignBoardsPage() {
   const selectedPageId = pages.some((page) => page.id === boardState.selectedPageId)
     ? boardState.selectedPageId
     : pages[0].id;
+  const selectedPageIndex = Math.max(
+    0,
+    pages.findIndex((page) => page.id === selectedPageId),
+  );
   const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
+  const editablePageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (
+      let index = Math.max(0, selectedPageIndex - ACTIVE_PAGE_PRELOAD_RADIUS);
+      index <= Math.min(pages.length - 1, selectedPageIndex + ACTIVE_PAGE_PRELOAD_RADIUS);
+      index += 1
+    ) {
+      ids.add(pages[index].id);
+    }
+    return ids;
+  }, [pages, selectedPageIndex]);
+  const virtualizeThumbnails = pages.length > PAGE_STRIP_VIRTUALIZE_AFTER;
+  const thumbnailWindow = useMemo(() => {
+    if (!virtualizeThumbnails) {
+      return { start: 0, end: pages.length, before: 0, after: 0 };
+    }
+    const viewportWidth = thumbnailViewport.width || 900;
+    const visibleStart = Math.floor(thumbnailViewport.scrollLeft / PAGE_THUMBNAIL_SLOT_WIDTH);
+    const visibleEnd = Math.ceil(
+      (thumbnailViewport.scrollLeft + viewportWidth) / PAGE_THUMBNAIL_SLOT_WIDTH,
+    );
+    const start = clampNumber(visibleStart - PAGE_THUMBNAIL_OVERSCAN, 0, pages.length);
+    const end = clampNumber(visibleEnd + PAGE_THUMBNAIL_OVERSCAN, start, pages.length);
+    return {
+      start,
+      end,
+      before: start * PAGE_THUMBNAIL_SLOT_WIDTH,
+      after: (pages.length - end) * PAGE_THUMBNAIL_SLOT_WIDTH,
+    };
+  }, [pages.length, thumbnailViewport.scrollLeft, thumbnailViewport.width, virtualizeThumbnails]);
   const elements = activePage.elements;
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedElements = useMemo(
@@ -1544,6 +1585,20 @@ function ProjectDesignBoardsPage() {
     setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
   };
 
+  const scrollThumbnailStripToPage = (pageId: string) => {
+    if (!virtualizeThumbnails) return;
+    const pageIndex = pages.findIndex((page) => page.id === pageId);
+    const strip = thumbnailStripRef.current;
+    if (!strip || pageIndex < 0) return;
+    strip.scrollTo({
+      left: Math.max(
+        0,
+        pageIndex * PAGE_THUMBNAIL_SLOT_WIDTH - strip.clientWidth / 2 + PAGE_THUMBNAIL_SLOT_WIDTH / 2,
+      ),
+      behavior: "smooth",
+    });
+  };
+
   const selectPage = (pageId: string, scrollToPage = true, clearCurrentSelection = true) => {
     applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: pageId }));
     if (clearCurrentSelection) clearSelection();
@@ -1554,6 +1609,7 @@ function ProjectDesignBoardsPage() {
           block: "nearest",
           inline: "center",
         });
+        scrollThumbnailStripToPage(pageId);
       });
     }
   };
@@ -1851,10 +1907,25 @@ function ProjectDesignBoardsPage() {
       }
       if (closestPageId !== selectedPageId) {
         applyLocalBoardUpdate((current) => ({ ...current, selectedPageId: closestPageId }));
+        scrollThumbnailStripToPage(closestPageId);
         clearSelection();
       }
     }, 80);
   };
+
+  useEffect(() => {
+    const strip = thumbnailStripRef.current;
+    if (!strip) return;
+    const updateViewport = () =>
+      setThumbnailViewport({ scrollLeft: strip.scrollLeft, width: strip.clientWidth });
+    updateViewport();
+    strip.addEventListener("scroll", updateViewport, { passive: true });
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      strip.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, [virtualizeThumbnails]);
 
   if (!project) {
     return (
@@ -2115,7 +2186,9 @@ function ProjectDesignBoardsPage() {
             <div
               className="flex items-start gap-10"
               style={{
-                width: pages.length * BOARD_WIDTH * boardScale + Math.max(0, pages.length - 1) * 40,
+                width:
+                  pages.length * BOARD_WIDTH * boardScale +
+                  Math.max(0, pages.length - 1) * MAIN_PAGE_GAP,
                 minHeight: BOARD_HEIGHT * boardScale,
               }}
             >
@@ -2123,6 +2196,7 @@ function ProjectDesignBoardsPage() {
                 const pageElements = page.elements;
                 const sortedPageElements = [...pageElements].sort((a, b) => a.zIndex - b.zIndex);
                 const isActivePage = page.id === selectedPageId;
+                const isNearbyPage = editablePageIds.has(page.id);
 
                 return (
                   <div
@@ -2171,7 +2245,15 @@ function ProjectDesignBoardsPage() {
                         });
                       }}
                     >
-                      {pageElements.length === 0 && (
+                      {!isActivePage && !isNearbyPage && (
+                        <LightweightPagePlaceholder page={page} pageNumber={pageIndex + 1} />
+                      )}
+
+                      {!isActivePage && isNearbyPage && (
+                        <LightweightPagePreview page={page} pageNumber={pageIndex + 1} />
+                      )}
+
+                      {isActivePage && pageElements.length === 0 && (
                         <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 text-center text-stone-300">
                           <div>
                             <div className="font-display text-4xl">Blank board</div>
@@ -2182,73 +2264,76 @@ function ProjectDesignBoardsPage() {
                         </div>
                       )}
 
-                      {sortedPageElements.map((element) => (
-                        <BoardObject
-                          key={element.id}
-                          element={element}
-                          selected={isActivePage && selectedIdSet.has(element.id)}
-                          showResizeHandle={isActivePage && selectedCount <= 1}
-                          remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
-                          commentCount={commentCountsByElement.get(`${page.id}:${element.id}`) ?? 0}
-                          onQuickComment={() => quickCommentElement(element, page.id)}
-                          onQuickLink={() => quickEditElementLink(element, page.id)}
-                          onQuickLabel={() => quickEditElementLabel(element, page.id)}
-                          onQuickFinish={() => quickEditElementFinish(element, page.id)}
-                          onQuickDelete={() => quickDeleteElement(element, page.id)}
-                          onSelect={(event) => {
-                            selectPage(page.id, false, false);
-                            if (event.shiftKey || event.metaKey) {
-                              toggleSelectedElement(element.id);
-                            } else if (selectedCount > 1 && selectedIdSet.has(element.id)) {
-                              setSelectedId(element.id);
-                            } else {
-                              selectOnly(element.id);
+                      {isActivePage &&
+                        sortedPageElements.map((element) => (
+                          <BoardObject
+                            key={element.id}
+                            element={element}
+                            selected={selectedIdSet.has(element.id)}
+                            showResizeHandle={selectedCount <= 1}
+                            remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
+                            commentCount={
+                              commentCountsByElement.get(`${page.id}:${element.id}`) ?? 0
                             }
-                          }}
-                          onChange={(patch) => updateElement(element.id, patch, page.id)}
-                          onStartMove={(event) => {
-                            pushUndo();
-                            event.currentTarget.setPointerCapture(event.pointerId);
-                            selectPage(page.id, false, false);
-                            const isPartOfGroup = selectedIdSet.has(element.id);
-                            const moveTargets =
-                              isPartOfGroup && selectedElements.length > 1
-                                ? selectedElements
-                                : [element];
-                            if (!isPartOfGroup) selectOnly(element.id);
-                            else setSelectedId(element.id);
-                            setDragMode({
-                              kind: "move",
-                              pageId: page.id,
-                              id: element.id,
-                              startX: event.clientX,
-                              startY: event.clientY,
-                              originalPositions: Object.fromEntries(
-                                moveTargets.map((target) => [
-                                  target.id,
-                                  { x: target.x, y: target.y },
-                                ]),
-                              ),
-                            });
-                          }}
-                          onStartResize={(event) => {
-                            event.stopPropagation();
-                            pushUndo();
-                            event.currentTarget.setPointerCapture(event.pointerId);
-                            selectPage(page.id, false, false);
-                            selectOnly(element.id);
-                            setDragMode({
-                              kind: "resize",
-                              pageId: page.id,
-                              id: element.id,
-                              startX: event.clientX,
-                              startY: event.clientY,
-                              originalWidth: element.width,
-                              originalHeight: element.height,
-                            });
-                          }}
-                        />
-                      ))}
+                            onQuickComment={() => quickCommentElement(element, page.id)}
+                            onQuickLink={() => quickEditElementLink(element, page.id)}
+                            onQuickLabel={() => quickEditElementLabel(element, page.id)}
+                            onQuickFinish={() => quickEditElementFinish(element, page.id)}
+                            onQuickDelete={() => quickDeleteElement(element, page.id)}
+                            onSelect={(event) => {
+                              selectPage(page.id, false, false);
+                              if (event.shiftKey || event.metaKey) {
+                                toggleSelectedElement(element.id);
+                              } else if (selectedCount > 1 && selectedIdSet.has(element.id)) {
+                                setSelectedId(element.id);
+                              } else {
+                                selectOnly(element.id);
+                              }
+                            }}
+                            onChange={(patch) => updateElement(element.id, patch, page.id)}
+                            onStartMove={(event) => {
+                              pushUndo();
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                              selectPage(page.id, false, false);
+                              const isPartOfGroup = selectedIdSet.has(element.id);
+                              const moveTargets =
+                                isPartOfGroup && selectedElements.length > 1
+                                  ? selectedElements
+                                  : [element];
+                              if (!isPartOfGroup) selectOnly(element.id);
+                              else setSelectedId(element.id);
+                              setDragMode({
+                                kind: "move",
+                                pageId: page.id,
+                                id: element.id,
+                                startX: event.clientX,
+                                startY: event.clientY,
+                                originalPositions: Object.fromEntries(
+                                  moveTargets.map((target) => [
+                                    target.id,
+                                    { x: target.x, y: target.y },
+                                  ]),
+                                ),
+                              });
+                            }}
+                            onStartResize={(event) => {
+                              event.stopPropagation();
+                              pushUndo();
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                              selectPage(page.id, false, false);
+                              selectOnly(element.id);
+                              setDragMode({
+                                kind: "resize",
+                                pageId: page.id,
+                                id: element.id,
+                                startX: event.clientX,
+                                startY: event.clientY,
+                                originalWidth: element.width,
+                                originalHeight: element.height,
+                              });
+                            }}
+                          />
+                        ))}
 
                       {isActivePage && selectedBounds && selectedCount > 1 && (
                         <div
@@ -2305,22 +2390,47 @@ function ProjectDesignBoardsPage() {
 
           <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-stone-200 bg-[#f6f4f0]/95 shadow-[0_-12px_36px_rgba(40,34,25,0.1)] backdrop-blur print:hidden">
             <div className="flex items-center gap-3 px-4 py-2">
-              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-0.5">
-                {pages.map((page, index) => (
-                  <button
-                    key={page.id}
-                    type="button"
-                    onClick={() => selectPage(page.id)}
-                    className={cn(
-                      "group shrink-0 rounded-lg border bg-white p-0.5 text-left shadow-sm transition",
-                      page.id === selectedPageId
-                        ? "border-[#6d4cff] ring-2 ring-[#6d4cff]"
-                        : "border-stone-200 hover:border-ink",
-                    )}
-                  >
-                    <PageThumbnail page={page} pageNumber={index + 1} />
-                  </button>
-                ))}
+              <div
+                ref={thumbnailStripRef}
+                className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-0.5"
+              >
+                {virtualizeThumbnails && (
+                  <div
+                    aria-hidden="true"
+                    className="shrink-0"
+                    style={{ width: thumbnailWindow.before }}
+                  />
+                )}
+                {pages.slice(thumbnailWindow.start, thumbnailWindow.end).map((page, offset) => {
+                  const index = thumbnailWindow.start + offset;
+                  const isNearSelected = Math.abs(index - selectedPageIndex) <= 6;
+                  return (
+                    <button
+                      key={page.id}
+                      type="button"
+                      onClick={() => selectPage(page.id)}
+                      className={cn(
+                        "group shrink-0 rounded-lg border bg-white p-0.5 text-left shadow-sm transition",
+                        page.id === selectedPageId
+                          ? "border-[#6d4cff] ring-2 ring-[#6d4cff]"
+                          : "border-stone-200 hover:border-ink",
+                      )}
+                    >
+                      <PageThumbnail
+                        page={page}
+                        pageNumber={index + 1}
+                        renderImages={!virtualizeThumbnails || isNearSelected}
+                      />
+                    </button>
+                  );
+                })}
+                {virtualizeThumbnails && (
+                  <div
+                    aria-hidden="true"
+                    className="shrink-0"
+                    style={{ width: thumbnailWindow.after }}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={addPage}
@@ -2541,7 +2651,94 @@ function ProjectDesignBoardsPage() {
   );
 }
 
-function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
+function LightweightPagePlaceholder({
+  page,
+  pageNumber,
+}: {
+  page: BoardPage;
+  pageNumber: number;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 bg-[#fbfaf7] text-center text-stone-300">
+      <div>
+        <div className="font-display text-7xl">{pageNumber}</div>
+        <div className="mt-3 max-w-[520px] truncate font-[var(--font-montserrat)] text-xs uppercase tracking-[0.26em] text-stone-400">
+          {page.title || `Board ${pageNumber}`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LightweightPagePreview({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
+  const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
+
+  return (
+    <>
+      {sortedElements.length === 0 && (
+        <LightweightPagePlaceholder page={page} pageNumber={pageNumber} />
+      )}
+      {sortedElements.map((element) => (
+        <LightweightPageElement key={element.id} element={element} />
+      ))}
+    </>
+  );
+}
+
+function LightweightPageElement({ element }: { element: BoardElement }) {
+  if (element.visible === false) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute overflow-hidden"
+      style={{
+        left: element.x,
+        top: element.y,
+        width: element.width,
+        height: element.height,
+        zIndex: element.zIndex,
+        transform: `rotate(${element.rotation ?? 0}deg)`,
+      }}
+    >
+      {element.type === "image" && element.src && (
+        <OptimizedBoardImage
+          src={element.src}
+          alt=""
+          kind="thumbnail"
+          className="h-full w-full object-contain"
+          draggable={false}
+          loading="lazy"
+        />
+      )}
+      {element.type === "shape" && (
+        <div className="h-full w-full" style={{ background: element.background ?? "#dcd9ce" }} />
+      )}
+      {element.type === "text" && (
+        <div
+          className="flex h-full w-full items-center justify-center overflow-hidden whitespace-pre-wrap text-center uppercase leading-tight"
+          style={{
+            color: element.color ?? DEFAULT_BOARD_TEXT_COLOR,
+            fontSize: element.fontSize ?? 24,
+            letterSpacing: element.letterSpacing ?? 1,
+            fontFamily: element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
+          }}
+        >
+          {element.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PageThumbnail({
+  page,
+  pageNumber,
+  renderImages = true,
+}: {
+  page: BoardPage;
+  pageNumber: number;
+  renderImages?: boolean;
+}) {
   const scale = 0.058;
   const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
 
@@ -2569,7 +2766,7 @@ function PageThumbnail({ page, pageNumber }: { page: BoardPage; pageNumber: numb
                 zIndex: element.zIndex,
               }}
             >
-              {element.type === "image" && element.src && (
+              {element.type === "image" && element.src && renderImages && (
                 <OptimizedBoardImage
                   src={element.src}
                   alt=""
@@ -2650,6 +2847,7 @@ function BoardObject({
 
   return (
     <div
+      data-board-object="editable"
       className={cn(
         "absolute select-none",
         selected && "outline outline-2 outline-offset-2 outline-[#1f4e5f]",
