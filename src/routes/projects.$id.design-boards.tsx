@@ -514,8 +514,16 @@ function ProjectDesignBoardsPage() {
   };
 
   const applySharedBoardSnapshot = useCallback(
-    (remoteBoard: NonNullable<typeof sharedBoard>, message?: string) => {
-      const remoteState = openBoardStateOnFirstPage(normalizeBoardState(remoteBoard.board_state));
+    (
+      remoteBoard: NonNullable<typeof sharedBoard>,
+      message?: string,
+      options?: { preserveSelectedPage?: boolean },
+    ) => {
+      const normalizedRemoteState = normalizeBoardState(remoteBoard.board_state);
+      const currentSelectedPageId = boardStateRef.current.selectedPageId;
+      const remoteState = options?.preserveSelectedPage
+        ? preserveBoardSelectedPage(normalizedRemoteState, currentSelectedPageId)
+        : openBoardStateOnFirstPage(normalizedRemoteState);
       const remoteJson = JSON.stringify(remoteState);
       applyingRemoteRef.current = true;
       boardStateRef.current = remoteState;
@@ -543,6 +551,7 @@ function ProjectDesignBoardsPage() {
           applySharedBoardSnapshot(
             latestBoard,
             "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
+            { preserveSelectedPage: remoteLoadedRef.current },
           );
           throw new Error("Stale design board save blocked");
         }
@@ -557,6 +566,7 @@ function ProjectDesignBoardsPage() {
             applySharedBoardSnapshot(
               newestBoard,
               "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
+              { preserveSelectedPage: remoteLoadedRef.current },
             );
           }
           throw new Error("Stale design board save blocked");
@@ -579,6 +589,7 @@ function ProjectDesignBoardsPage() {
         applySharedBoardSnapshot(
           latestBoard,
           "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
+          { preserveSelectedPage: remoteLoadedRef.current },
         );
       }
       throw new Error("Stale design board save blocked");
@@ -893,7 +904,11 @@ function ProjectDesignBoardsPage() {
       const remoteUpdatedAt = sharedBoard.updated_at ?? "";
       const hasNewerRemoteBoard =
         !remoteLoadedRef.current || remoteUpdatedAt !== lastRemoteUpdatedAtRef.current;
-      if (hasNewerRemoteBoard) applySharedBoardSnapshot(sharedBoard);
+      if (hasNewerRemoteBoard) {
+        applySharedBoardSnapshot(sharedBoard, undefined, {
+          preserveSelectedPage: remoteLoadedRef.current,
+        });
+      }
       else setSaveStatus((current) => (current === "loading" ? "ready" : current));
       return;
     }
@@ -4090,6 +4105,19 @@ function openBoardStateOnFirstPage(state: BoardState): BoardState {
   return {
     ...normalized,
     selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
+  };
+}
+
+function preserveBoardSelectedPage(state: BoardState, selectedPageId?: string | null): BoardState {
+  const normalized = normalizeBoardState(state);
+  const selectedPageStillExists =
+    typeof selectedPageId === "string" &&
+    normalized.pages.some((page) => page.id === selectedPageId);
+  return {
+    ...normalized,
+    selectedPageId: selectedPageStillExists
+      ? selectedPageId
+      : normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
   };
 }
 
