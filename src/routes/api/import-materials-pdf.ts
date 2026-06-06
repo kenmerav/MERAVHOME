@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { extractMaterialPdfItemsFromFile } from "@/lib/materialPdfExtract";
 import { cleanUuid } from "@/lib/ids";
+import { inferMaterialCategory } from "@/lib/roomTemplates";
 
 const MATERIAL_PDF_IMPORT_BUCKET = "material-pdf-imports";
 const MATERIAL_PDF_IMPORT_LIMIT = 25 * 1024 * 1024;
@@ -111,20 +112,6 @@ function titleCase(value: string) {
     .split(/\s+/)
     .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
     .join(" ");
-}
-
-function inferCategory(label: string) {
-  const n = normalize(label);
-  if (/(pendant|sconce|lamp|light|chandelier)/.test(n)) return "Lighting";
-  if (/(faucet|sink|shower|tub|toilet|plumbing)/.test(n)) return "Plumbing";
-  if (/(countertop|countertops|counter top|counter tops|slab|marble|quartz|quartzite|granite|soapstone)/.test(n)) {
-    return "Countertops";
-  }
-  if (/(tile|stone|zellige)/.test(n)) return "Tile & Stone";
-  if (/(cabinet|hardware|knob|pull)/.test(n)) return "Cabinetry & Hardware";
-  if (/(floor|rug|carpet|paint|limewash|wallpaper)/.test(n)) return "Flooring & Paint";
-  if (/(chair|table|sofa|cushion|drapery|basket|mirror|mobile|rack|kitchen|tent)/.test(n)) return "Accessories";
-  return "Other";
 }
 
 type ImportedPdfItem = {
@@ -250,14 +237,23 @@ function fallbackLabelFromUrl(productUrl: string) {
   }
 
   const hostAndPath = `${url.hostname} ${url.pathname}`.toLowerCase();
+  if (/coffee|espresso/.test(hostAndPath)) return "Coffee Maker";
+  if (/dishwasher/.test(hostAndPath)) return "Dishwasher";
+  if (/refrigerator|fridge|freezer/.test(hostAndPath)) return "Refrigerator";
+  if (/microwave|oven|range|cooktop|rangetop/.test(hostAndPath)) return "Range";
+  if (/washer|dryer/.test(hostAndPath)) return "Washer Dryer";
   if (/rangehood|range-hood|stove-hood/.test(hostAndPath)) return "Range Hood";
+  if (/hood-insert|vent-hood|ventilation/.test(hostAndPath)) return "Range Hood";
   if (/sconce/.test(hostAndPath)) return "Sconce";
   if (/pendant/.test(hostAndPath)) return "Pendant";
+  if (/wallpaper|wallcovering|grasscloth/.test(hostAndPath)) return "Wall Covering";
   if (/zellige|tile/.test(hostAndPath)) return "Tile";
   if (/quartzite|counter|slab/.test(hostAndPath)) return "Countertop";
   if (/sink|blanco/.test(hostAndPath)) return "Sink";
   if (/pot-filler/.test(hostAndPath)) return "Pot Filler";
   if (/faucet/.test(hostAndPath)) return "Faucet";
+  if (/mirror/.test(hostAndPath)) return "Accent Mirror";
+  if (/door|baseboard|casing|moulding|molding/.test(hostAndPath)) return "Doors Base Case";
   if (/top-knobs|knob|pull/.test(hostAndPath)) return "Cabinet Hardware";
   if (/cabinet|sollid/.test(hostAndPath)) return "Cabinet Finish";
 
@@ -449,7 +445,7 @@ export const Route = createFileRoute("/api/import-materials-pdf")({
               project_id: projectId,
               item_label: item.item_label,
               client_product_name: buildClientProductName(room.name, item.item_label),
-              category: inferCategory(item.item_label),
+              category: inferMaterialCategory(item.item_label, item.product_url),
               is_required: false,
               sort_order: sortOrder,
               cad_label: null,

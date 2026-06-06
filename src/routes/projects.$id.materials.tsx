@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
-import { ALL_CATEGORIES, PRODUCT_CATEGORIES, toProductCategory } from "@/lib/roomTemplates";
+import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -394,6 +394,7 @@ function RoomMaterialsSection({
                             update(it.id, {
                               item_label: nextName,
                               client_product_name: buildClientProductName(room.name, nextName),
+                              category: inferMaterialCategory(nextName, it.product_url),
                             })
                           }
                         />
@@ -858,7 +859,7 @@ function AddCustomItemButton({ roomId, roomName, projectId, sortStart }: { roomI
       project_id: projectId,
       item_label: label.trim(),
       client_product_name: buildClientProductName(roomName, label.trim()),
-      category,
+      category: category === "Other" ? inferMaterialCategory(label.trim()) : category,
       is_required: false,
       sort_order: sortStart,
       cad_label: null,

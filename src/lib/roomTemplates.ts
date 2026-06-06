@@ -20,10 +20,16 @@ export const PRESET_ROOMS = [
 export const ALL_CATEGORIES = [
   "Lighting",
   "Plumbing",
+  "Appliances",
   "Tile & Stone",
   "Countertops",
   "Cabinetry & Hardware",
+  "Cabinet Finish & Hardware",
+  "Doors Base & Case",
+  "Accent Mirrors",
+  "Wall Coverings",
   "Flooring & Paint",
+  "Furniture",
   "Accessories",
   "Other",
 ] as const;
@@ -54,7 +60,11 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
     Countertop: "Countertops",
     Countertops: "Countertops",
     "Cabinetry & Hardware": "Hardware",
+    "Cabinet Finish & Hardware": "Hardware",
     Cabinetry: "Hardware",
+    "Doors Base & Case": "Hardware",
+    "Accent Mirrors": "Decor",
+    "Wall Coverings": "Decor",
     "Flooring & Paint": "Flooring",
     Accessories: "Decor",
     Other: "Decor",
@@ -62,6 +72,68 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
     Pendant: "Lighting",
   };
   return map[c] ?? "Decor";
+}
+
+function normalizeCategoryText(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function inferMaterialCategory(label: string | null | undefined, productUrl?: string | null): ItemCategory {
+  const text = normalizeCategoryText(`${label ?? ""} ${productUrl ?? ""}`);
+
+  if (
+    /\b(appliance|appliances|range|rangetop|cooktop|oven|double oven|wall oven|microwave|speed oven|refrigerator|fridge|freezer|dishwasher|washer|dryer|coffee maker|coffee machine|espresso|ice maker|wine cooler|beverage center|stove hood|range hood|hood insert|vent hood|ventilation|miele|subzero|sub zero|wolf|thermador|monogram|cafe appliances|kitchenaid|fisher paykel|bosch|ajmadison)\b/.test(text)
+  ) {
+    return "Appliances";
+  }
+
+  if (/\b(wallpaper|wall paper|wallcovering|wall covering|grasscloth|grass cloth)\b/.test(text)) {
+    return "Wall Coverings";
+  }
+
+  if (/\b(door|doors|baseboard|base board|casing|case moulding|case molding|trim|moulding|molding|door stop|door hardware|hinge|hinges)\b/.test(text)) {
+    return "Doors Base & Case";
+  }
+
+  if (/\b(mirror|mirrors|medicine cabinet)\b/.test(text)) {
+    return "Accent Mirrors";
+  }
+
+  if (
+    /\b(cabinet|cabinetry|hardware|knob|knobs|pull|pulls|latch|latches|appliance pull|cabinet finish|cabinet color|cabinet paint)\b/.test(text)
+  ) {
+    return "Cabinet Finish & Hardware";
+  }
+
+  if (/\b(faucet|sink|shower|tub|toilet|plumbing|pot filler|drain|valve|trim kit|hand shower)\b/.test(text)) {
+    return "Plumbing";
+  }
+
+  if (/\b(countertop|countertops|counter top|counter tops|slab|marble|quartz|quartzite|granite|soapstone|stone counter)\b/.test(text)) {
+    return "Countertops";
+  }
+
+  if (/\b(tile|zellige|backsplash|mosaic|stone tile|floor tile|wall tile)\b/.test(text)) {
+    return "Tile & Stone";
+  }
+
+  if (/\b(pendant|sconce|lamp|light|lighting|chandelier|lantern|flush mount|semi flush)\b/.test(text)) {
+    return "Lighting";
+  }
+
+  if (/\b(floor|flooring|wood floor|carpet|rug|paint|limewash|lime wash|stain)\b/.test(text)) {
+    return "Flooring & Paint";
+  }
+
+  if (/\b(chair|table|sofa|sectional|ottoman|stool|bench|bed|nightstand|dresser|desk|console|sideboard|cabinet)\b/.test(text)) {
+    return "Furniture";
+  }
+
+  if (/\b(towel hook|toilet paper holder|robe hook|basket|art|decor|accessory|accessories)\b/.test(text)) {
+    return "Accessories";
+  }
+
+  return "Other";
 }
 
 const KITCHEN: ItemTemplate[] = [

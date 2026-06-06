@@ -35,6 +35,7 @@ import {
   type UserProfile,
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
+import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -1058,7 +1059,10 @@ function ProjectDesignBoardsPage() {
     const linkedProductUrl = linkedProduct?.product_url
       ? normalizeExternalUrl(linkedProduct.product_url)
       : null;
-    let category: ProductCategory = element.materialCategory || linkedProduct?.category || "Decor";
+    const inferredMaterialCategory = inferMaterialCategory(itemLabel, productUrl);
+    const materialCategory = element.materialCategory || inferredMaterialCategory;
+    let category: ProductCategory =
+      element.materialCategory || linkedProduct?.category || toProductCategory(inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
     const quantity =
       quantityOverride && quantityOverride > 0
@@ -1104,7 +1108,7 @@ function ProjectDesignBoardsPage() {
       }
       return (
         item.item_label.trim().toLowerCase() === itemLabel.toLowerCase() &&
-        item.category.toLowerCase() === category.toLowerCase()
+        item.category?.toLowerCase() === materialCategory.toLowerCase()
       );
     });
     const existingMaterialId = element.materialItemId || matchingMaterial?.id || null;
@@ -1123,7 +1127,7 @@ function ProjectDesignBoardsPage() {
       project_id: id,
       item_label: itemLabel,
       client_product_name: buildClientProductName(room.name, itemLabel),
-      category,
+      category: materialCategory,
       is_required: false,
       sort_order: sortOrder,
       cad_label: null,
@@ -1266,8 +1270,11 @@ function ProjectDesignBoardsPage() {
             continue;
           }
           const itemLabel = imageMaterialLabel(element);
-          const category = element.materialCategory || linkedProduct?.category || "Decor";
           const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : "";
+          const category =
+            element.materialCategory ||
+            linkedProduct?.category ||
+            inferMaterialCategory(itemLabel, productUrl);
           const finish = (element.materialFinish || element.finish || "").trim();
           const identity = element.productId || productUrl || element.src || itemLabel;
           const key = [

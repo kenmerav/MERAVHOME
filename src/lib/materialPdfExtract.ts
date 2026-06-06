@@ -217,14 +217,23 @@ function fallbackLabelFromUrl(productUrl: string) {
   }
 
   const hostAndPath = `${url.hostname} ${url.pathname}`.toLowerCase();
+  if (/coffee|espresso/.test(hostAndPath)) return "Coffee Maker";
+  if (/dishwasher/.test(hostAndPath)) return "Dishwasher";
+  if (/refrigerator|fridge|freezer/.test(hostAndPath)) return "Refrigerator";
+  if (/microwave|oven|range|cooktop|rangetop/.test(hostAndPath)) return "Range";
+  if (/washer|dryer/.test(hostAndPath)) return "Washer Dryer";
   if (/rangehood|range-hood|stove-hood/.test(hostAndPath)) return "Range Hood";
+  if (/hood-insert|vent-hood|ventilation/.test(hostAndPath)) return "Range Hood";
   if (/sconce/.test(hostAndPath)) return "Sconce";
   if (/pendant/.test(hostAndPath)) return "Pendant";
+  if (/wallpaper|wallcovering|grasscloth/.test(hostAndPath)) return "Wall Covering";
   if (/zellige|tile/.test(hostAndPath)) return "Tile";
   if (/quartzite|counter|slab/.test(hostAndPath)) return "Countertop";
   if (/sink|blanco/.test(hostAndPath)) return "Sink";
   if (/pot-filler/.test(hostAndPath)) return "Pot Filler";
   if (/faucet/.test(hostAndPath)) return "Faucet";
+  if (/mirror/.test(hostAndPath)) return "Accent Mirror";
+  if (/door|baseboard|casing|moulding|molding/.test(hostAndPath)) return "Doors Base Case";
   if (/top-knobs|knob|pull/.test(hostAndPath)) return "Cabinet Hardware";
   if (/cabinet|sollid/.test(hostAndPath)) return "Cabinet Finish";
 
