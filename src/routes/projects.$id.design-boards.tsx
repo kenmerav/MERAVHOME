@@ -434,6 +434,60 @@ function ProjectDesignBoardsPage() {
     if (updatedAt) lastRemoteUpdatedAtRef.current = updatedAt;
   };
 
+  const applySharedBoardSnapshot = useCallback(
+    (remoteBoard: NonNullable<typeof sharedBoard>, message?: string) => {
+      const remoteState = normalizeBoardState(remoteBoard.board_state);
+      const remoteJson = JSON.stringify(remoteState);
+      applyingRemoteRef.current = true;
+      boardStateRef.current = remoteState;
+      lastGoodBoardStateRef.current = remoteState;
+      setBoardState(remoteState);
+      markRemoteBoardApplied(remoteJson, remoteBoard.updated_at);
+      pendingSaveJsonRef.current = null;
+      localEditsBeforeRemoteLoadRef.current = false;
+      remoteLoadedRef.current = true;
+      queryClient.setQueryData(["designBoard", id], remoteBoard);
+      if (message) toast.warning(message);
+      setSaveStatus("saved");
+    },
+    [id, queryClient],
+  );
+
+  const saveBoardStateSafely = useCallback(
+    async (state: BoardState) => {
+      const stateToSave = prepareBoardStateForSave(state);
+      const expectedUpdatedAt = lastRemoteUpdatedAtRef.current;
+      const saveJson = JSON.stringify(stateToSave);
+
+      if (!expectedUpdatedAt) {
+        const savedBoard = await db.upsertDesignBoard(id, stateToSave, profile?.id);
+        if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+        return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+      }
+
+      const savedBoard = await db.updateDesignBoardIfFresh(
+        id,
+        stateToSave,
+        expectedUpdatedAt,
+        profile?.id,
+      );
+      if (savedBoard?.updated_at) {
+        lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
+        return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+      }
+
+      const latestBoard = await db.getDesignBoard(id);
+      if (latestBoard?.board_state) {
+        applySharedBoardSnapshot(
+          latestBoard,
+          "A newer version was already saved in another tab, so Studio refreshed this board instead of overwriting it.",
+        );
+      }
+      throw new Error("Stale design board save blocked");
+    },
+    [applySharedBoardSnapshot, id, profile?.id],
+  );
+
   const applyLocalBoardUpdate = useCallback(
     (updater: BoardState | ((current: BoardState) => BoardState)) => {
       localEditShieldUntilRef.current = Date.now() + 2500;
@@ -457,18 +511,17 @@ function ProjectDesignBoardsPage() {
       pendingSaveJsonRef.current = saveJson;
       setSaveStatus("saving");
       try {
-        const savedBoard = await db.upsertDesignBoard(id, stateToSave, profile?.id);
+        const { savedState, savedJson } = await saveBoardStateSafely(stateToSave);
         pendingSaveJsonRef.current = null;
-        lastSavedJsonRef.current = saveJson;
-        if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-        lastGoodBoardStateRef.current = stateToSave;
+        lastSavedJsonRef.current = savedJson;
+        lastGoodBoardStateRef.current = savedState;
         setSaveStatus("saved");
       } catch {
         pendingSaveJsonRef.current = null;
         setSaveStatus("error");
       }
     },
-    [canEditDesignBoards, id, profile?.id],
+    [canEditDesignBoards, saveBoardStateSafely],
   );
 
   const undoLastChange = useCallback(() => {
@@ -716,6 +769,13 @@ function ProjectDesignBoardsPage() {
       const currentJson = JSON.stringify(currentState);
       const remoteJson = JSON.stringify(remoteState);
       if (localEditsBeforeRemoteLoadRef.current && currentJson !== remoteJson) {
+        if (hasMeaningfulBoardState(remoteState)) {
+          applySharedBoardSnapshot(
+            sharedBoard,
+            "A newer shared board was already saved, so Studio loaded that version instead of overwriting it.",
+          );
+          return;
+        }
         const stateToSave = prepareBoardStateForSave(currentState);
         const saveJson = JSON.stringify(stateToSave);
         remoteLoadedRef.current = true;
@@ -723,11 +783,11 @@ function ProjectDesignBoardsPage() {
         lastSavedJsonRef.current = saveJson;
         pendingSaveJsonRef.current = saveJson;
         setSaveStatus("saving");
-        void db.upsertDesignBoard(id, stateToSave, profile?.id).then(
-          (savedBoard) => {
+        void saveBoardStateSafely(stateToSave).then(
+          ({ savedState, savedJson }) => {
             pendingSaveJsonRef.current = null;
-            if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-            lastGoodBoardStateRef.current = stateToSave;
+            lastSavedJsonRef.current = savedJson;
+            lastGoodBoardStateRef.current = savedState;
             setSaveStatus("saved");
           },
           () => {
@@ -747,11 +807,11 @@ function ProjectDesignBoardsPage() {
         remoteLoadedRef.current = true;
         pendingSaveJsonRef.current = localJson;
         setSaveStatus("saving");
-        void db.upsertDesignBoard(id, prepareBoardStateForSave(localState), profile?.id).then(
-          (savedBoard) => {
+        void saveBoardStateSafely(localState).then(
+          ({ savedState, savedJson }) => {
             pendingSaveJsonRef.current = null;
-            if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-            lastGoodBoardStateRef.current = localState;
+            lastSavedJsonRef.current = savedJson;
+            lastGoodBoardStateRef.current = savedState;
             setSaveStatus("saved");
           },
           () => {
@@ -763,13 +823,7 @@ function ProjectDesignBoardsPage() {
         );
         return;
       }
-      applyingRemoteRef.current = true;
-      boardStateRef.current = remoteState;
-      lastGoodBoardStateRef.current = remoteState;
-      setBoardState(remoteState);
-      markRemoteBoardApplied(JSON.stringify(remoteState), sharedBoard.updated_at);
-      remoteLoadedRef.current = true;
-      setSaveStatus("saved");
+      applySharedBoardSnapshot(sharedBoard);
       return;
     }
 
@@ -784,11 +838,11 @@ function ProjectDesignBoardsPage() {
     lastSavedJsonRef.current = seedJson;
     pendingSaveJsonRef.current = seedJson;
     setSaveStatus("saving");
-    void db.upsertDesignBoard(id, prepareBoardStateForSave(localState), profile?.id).then(
-      (savedBoard) => {
+    void saveBoardStateSafely(localState).then(
+      ({ savedState, savedJson }) => {
         pendingSaveJsonRef.current = null;
-        if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-        lastGoodBoardStateRef.current = localState;
+        lastSavedJsonRef.current = savedJson;
+        lastGoodBoardStateRef.current = savedState;
         setSaveStatus("saved");
       },
       () => {
@@ -798,7 +852,15 @@ function ProjectDesignBoardsPage() {
         setSaveStatus("error");
       },
     );
-  }, [canEditDesignBoards, id, loadingProfile, loadingSharedBoard, profile?.id, sharedBoard]);
+  }, [
+    applySharedBoardSnapshot,
+    canEditDesignBoards,
+    id,
+    loadingProfile,
+    loadingSharedBoard,
+    saveBoardStateSafely,
+    sharedBoard,
+  ]);
 
   useEffect(() => {
     if (!canEditDesignBoards || !remoteLoadedRef.current) return;
@@ -830,12 +892,11 @@ function ProjectDesignBoardsPage() {
       }
       const latestJson = JSON.stringify(latestState);
       pendingSaveJsonRef.current = latestJson;
-      void db.upsertDesignBoard(id, prepareBoardStateForSave(latestState), profile?.id).then(
-        (savedBoard) => {
+      void saveBoardStateSafely(latestState).then(
+        ({ savedState, savedJson }) => {
           pendingSaveJsonRef.current = null;
-          lastSavedJsonRef.current = latestJson;
-          if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-          lastGoodBoardStateRef.current = latestState;
+          lastSavedJsonRef.current = savedJson;
+          lastGoodBoardStateRef.current = savedState;
           setSaveStatus("saved");
         },
         () => {
@@ -850,7 +911,14 @@ function ProjectDesignBoardsPage() {
     return () => {
       if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
     };
-  }, [boardState, canEditDesignBoards, id, profile?.email, profile?.full_name, profile?.id]);
+  }, [
+    boardState,
+    canEditDesignBoards,
+    profile?.email,
+    profile?.full_name,
+    profile?.id,
+    saveBoardStateSafely,
+  ]);
 
   useEffect(() => {
     const updateScale = () => {

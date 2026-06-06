@@ -564,6 +564,19 @@ export const db = {
       .upsert({ project_id: projectId, board_state: boardState, updated_by: updatedBy ?? null } as any, { onConflict: "project_id" })
       .select()
       .single()).data as DesignBoardRecord | null,
+  updateDesignBoardIfFresh: async (
+    projectId: string,
+    boardState: unknown,
+    expectedUpdatedAt: string,
+    updatedBy?: string | null,
+  ) =>
+    (await supabase
+      .from("design_boards" as any)
+      .update({ board_state: boardState, updated_by: updatedBy ?? null } as any)
+      .eq("project_id", projectId)
+      .eq("updated_at", expectedUpdatedAt)
+      .select()
+      .maybeSingle()).data as DesignBoardRecord | null,
 
   /* HOURS */
   listEmployeeTimeEntries: async () =>
