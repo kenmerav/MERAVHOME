@@ -303,10 +303,18 @@ function ProjectDesignBoardsPage() {
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
   });
-  const { data: sharedBoard, isLoading: loadingSharedBoard } = useQuery({
+  const {
+    data: sharedBoard,
+    isLoading: loadingSharedBoard,
+    refetch: refetchSharedBoard,
+  } = useQuery({
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
     enabled: canEditDesignBoards,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
   });
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", id],
@@ -771,6 +779,34 @@ function ProjectDesignBoardsPage() {
   }, [activeUsers]);
 
   useEffect(() => {
+    if (!canEditDesignBoards || loadingProfile) return;
+
+    const refetchLatestBoard = () => {
+      if (pendingSaveJsonRef.current) return;
+      setSaveStatus("loading");
+      void queryClient.invalidateQueries({ queryKey: ["designBoard", id] });
+      void refetchSharedBoard();
+    };
+
+    refetchLatestBoard();
+
+    const handlePageActive = () => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      refetchLatestBoard();
+    };
+
+    window.addEventListener("focus", handlePageActive);
+    window.addEventListener("pageshow", handlePageActive);
+    document.addEventListener("visibilitychange", handlePageActive);
+
+    return () => {
+      window.removeEventListener("focus", handlePageActive);
+      window.removeEventListener("pageshow", handlePageActive);
+      document.removeEventListener("visibilitychange", handlePageActive);
+    };
+  }, [canEditDesignBoards, id, loadingProfile, queryClient, refetchSharedBoard]);
+
+  useEffect(() => {
     boardStateRef.current = boardState;
   }, [boardState]);
 
@@ -781,12 +817,16 @@ function ProjectDesignBoardsPage() {
       setSaveStatus("local");
       return;
     }
-    if (remoteLoadedRef.current) return;
-
     if (sharedBoard?.board_state) {
-      applySharedBoardSnapshot(sharedBoard);
+      const remoteUpdatedAt = sharedBoard.updated_at ?? "";
+      const hasNewerRemoteBoard =
+        !remoteLoadedRef.current || remoteUpdatedAt !== lastRemoteUpdatedAtRef.current;
+      if (hasNewerRemoteBoard) applySharedBoardSnapshot(sharedBoard);
+      else setSaveStatus((current) => (current === "loading" ? "ready" : current));
       return;
     }
+
+    if (remoteLoadedRef.current) return;
 
     const emptyState = defaultBoardState();
     const emptyJson = JSON.stringify(emptyState);
