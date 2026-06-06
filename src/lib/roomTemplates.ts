@@ -18,19 +18,19 @@ export const PRESET_ROOMS = [
 
 // All categories used across templates. Keep stable — the presentation groups by these.
 export const ALL_CATEGORIES = [
-  "Lighting",
-  "Plumbing",
-  "Appliances",
-  "Tile & Stone",
-  "Countertops",
-  "Cabinetry & Hardware",
-  "Doors Base & Case",
   "Accent Mirrors",
-  "Wall Coverings",
+  "Accessories",
+  "Appliances",
+  "Cabinetry & Hardware",
+  "Countertops",
+  "Doors Base & Case",
   "Flooring & Paint",
   "Furniture",
-  "Accessories",
+  "Lighting",
   "Other",
+  "Plumbing",
+  "Tile & Stone",
+  "Wall Coverings",
 ] as const;
 export type ItemCategory = (typeof ALL_CATEGORIES)[number];
 
