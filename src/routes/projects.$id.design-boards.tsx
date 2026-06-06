@@ -289,9 +289,9 @@ function ProjectDesignBoardsPage() {
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
-  const [saveStatus, setSaveStatus] = useState<"local" | "loading" | "ready" | "saving" | "saved" | "error">(
-    "loading",
-  );
+  const [saveStatus, setSaveStatus] = useState<
+    "local" | "loading" | "ready" | "saving" | "saved" | "error"
+  >("loading");
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -336,12 +336,14 @@ function ProjectDesignBoardsPage() {
   const { data: taggableUsers = [] } = useQuery({
     queryKey: ["designBoardTaggableUsers"],
     queryFn: async () =>
-      ((await supabase
-        .from("user_profiles")
-        .select("*")
-        .in("role", ["Admin", "Employee"])
-        .eq("is_active", true)
-        .order("full_name")).data ?? []) as UserProfile[],
+      ((
+        await supabase
+          .from("user_profiles")
+          .select("*")
+          .in("role", ["Admin", "Employee"])
+          .eq("is_active", true)
+          .order("full_name")
+      ).data ?? []) as UserProfile[],
     enabled: canEditDesignBoards,
   });
 
@@ -359,23 +361,27 @@ function ProjectDesignBoardsPage() {
   );
   const selected =
     elements.find((element) => element.id === selectedId) ?? selectedElements[0] ?? null;
-  const commentTarget =
-    selected
-      ? ({
-          targetType: "element" as const,
-          targetId: selected.id,
-          pageId: selectedPageId,
-          label: selected.type === "text" ? "Selected text box" : selected.label || selected.productName || "Selected item",
-        })
-      : ({
-          targetType: "page" as const,
-          targetId: activePage.id,
-          pageId: activePage.id,
-          label: "Select an item or text box",
-        });
+  const commentTarget = selected
+    ? {
+        targetType: "element" as const,
+        targetId: selected.id,
+        pageId: selectedPageId,
+        label:
+          selected.type === "text"
+            ? "Selected text box"
+            : selected.label || selected.productName || "Selected item",
+      }
+    : {
+        targetType: "page" as const,
+        targetId: activePage.id,
+        pageId: activePage.id,
+        label: "Select an item or text box",
+      };
   const activePageComments = comments.filter((comment) => comment.pageId === activePage.id);
   const selectedTargetComments = selected
-    ? comments.filter((comment) => comment.targetType === "element" && comment.targetId === selected.id)
+    ? comments.filter(
+        (comment) => comment.targetType === "element" && comment.targetId === selected.id,
+      )
     : [];
   const commentCountsByElement = useMemo(() => {
     const counts = new Map<string, number>();
@@ -399,14 +405,38 @@ function ProjectDesignBoardsPage() {
   );
   const linkedProductCount = elements.filter((element) => element.productId).length;
   const imageElements = elements.filter((element) => element.type === "image");
+  const resolveMaterialRoom = useCallback(
+    (element: BoardElement, page: BoardPage) => {
+      const assignedRoomId = element.materialRoomId || page.roomId;
+      if (assignedRoomId) {
+        return rooms.find((candidate) => candidate.id === assignedRoomId) ?? null;
+      }
+      return inferRoomFromPageTitle(page.title, rooms);
+    },
+    [rooms],
+  );
+  const imageMaterialReadinessIssues = useCallback(
+    (element: BoardElement, page: BoardPage) => {
+      const issues = imageMaterialIssues(element);
+      if (
+        element.type === "image" &&
+        !element.materialInfoNotNeeded &&
+        !resolveMaterialRoom(element, page)
+      ) {
+        issues.push("room");
+      }
+      return issues;
+    },
+    [resolveMaterialRoom],
+  );
   const activePageMissingInfoCount = imageElements.filter(
-    (element) => imageMaterialIssues(element).length,
+    (element) => imageMaterialReadinessIssues(element, activePage).length,
   ).length;
   const boardMissingInfoCount = pages.reduce(
     (total, page) =>
       total +
       page.elements.filter(
-        (element) => element.type === "image" && imageMaterialIssues(element).length,
+        (element) => element.type === "image" && imageMaterialReadinessIssues(element, page).length,
       ).length,
     0,
   );
@@ -1010,8 +1040,7 @@ function ProjectDesignBoardsPage() {
   ): Promise<SendMaterialResult> => {
     if (element.type !== "image") return { status: "skipped" };
     if (element.materialInfoNotNeeded) return { status: "skipped" };
-    const roomId = element.materialRoomId || page.roomId;
-    const room = rooms.find((candidate) => candidate.id === roomId);
+    const room = resolveMaterialRoom(element, page);
     if (!room) {
       return { status: "skipped" };
     }
@@ -1166,14 +1195,13 @@ function ProjectDesignBoardsPage() {
       toast.error("This image is marked as not needing material info.");
       return;
     }
-    const roomId = selected.materialRoomId || activePage.roomId;
-    const room = rooms.find((candidate) => candidate.id === roomId);
+    const room = resolveMaterialRoom(selected, activePage);
     if (!room) {
       toast.error("Choose a room before sending this to Materials.");
       return;
     }
 
-    const missingInfo = imageMaterialIssues(selected);
+    const missingInfo = imageMaterialReadinessIssues(selected, activePage);
     if (missingInfo.length) {
       toast.error(`Add ${joinMissingInfo(missingInfo)} before sending this to Materials.`);
       return;
@@ -1197,6 +1225,7 @@ function ProjectDesignBoardsPage() {
     try {
       let sent = 0;
       let skipped = 0;
+      const skippedReasons = { label: 0, link: 0, room: 0 };
       const nextSortOrderByRoom = new Map<string, number>();
       const groups = new Map<
         string,
@@ -1213,12 +1242,17 @@ function ProjectDesignBoardsPage() {
         for (const element of page.elements) {
           if (element.type !== "image") continue;
           if (element.materialInfoNotNeeded) continue;
-          const roomId = element.materialRoomId || page.roomId;
+          const room = resolveMaterialRoom(element, page);
           const linkedProduct = element.productId
             ? products.find((product) => product.id === element.productId)
             : null;
-          const missingInfo = imageMaterialIssues(element);
-          if (!roomId || missingInfo.length) {
+          const missingInfo = imageMaterialReadinessIssues(element, page);
+          if (!room || missingInfo.length) {
+            for (const issue of missingInfo) {
+              if (issue === "label" || issue === "link" || issue === "room") {
+                skippedReasons[issue] += 1;
+              }
+            }
             skipped += 1;
             continue;
           }
@@ -1228,7 +1262,7 @@ function ProjectDesignBoardsPage() {
           const finish = (element.materialFinish || element.finish || "").trim();
           const identity = element.productId || productUrl || element.src || itemLabel;
           const key = [
-            roomId,
+            room.id,
             identity.trim().toLowerCase(),
             itemLabel.toLowerCase(),
             category.toLowerCase(),
@@ -1246,7 +1280,7 @@ function ProjectDesignBoardsPage() {
               primary: element,
               elements: [{ page, element }],
               quantity,
-              roomId,
+              roomId: room.id,
             });
           }
         }
@@ -1259,7 +1293,7 @@ function ProjectDesignBoardsPage() {
           null;
         const primaryElement = primaryMaterialId
           ? { ...group.primary, materialItemId: primaryMaterialId }
-          : group.primary;
+          : { ...group.primary, materialRoomId: group.roomId };
         let sortOrderOverride: number | undefined;
         if (!primaryMaterialId) {
           const nextSortOrder =
@@ -1313,13 +1347,17 @@ function ProjectDesignBoardsPage() {
         }
       }
       if (sent) {
+        const skippedReasonText = formatSkippedMaterialReasons(skippedReasons);
         toast.success(
           `Synced ${sent} ${sent === 1 ? "item" : "items"} to Materials${
-            skipped ? ` and skipped ${skipped} missing label, link, or room.` : "."
+            skipped ? ` and skipped ${skipped}${skippedReasonText}.` : "."
           }`,
         );
       } else {
-        toast.error("No image items were ready. Add labels, links, and assign rooms first.");
+        const skippedReasonText = formatSkippedMaterialReasons(skippedReasons);
+        toast.error(
+          `No image items were ready${skippedReasonText}. Add the missing info and try again.`,
+        );
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not send materials.");
@@ -1395,7 +1433,10 @@ function ProjectDesignBoardsPage() {
   };
 
   const quickEditElementLabel = (element: BoardElement, pageId: string) => {
-    const nextLabel = window.prompt("Label for this item", element.label || element.productName || "");
+    const nextLabel = window.prompt(
+      "Label for this item",
+      element.label || element.productName || "",
+    );
     if (nextLabel === null) return;
     updateElement(element.id, { label: nextLabel.trim() }, pageId);
   };
@@ -1408,16 +1449,22 @@ function ProjectDesignBoardsPage() {
 
   const quickDeleteElement = (element: BoardElement, pageId: string) => {
     pushUndo();
-    setElementsForPage(pageId, (current) => current.filter((candidate) => candidate.id !== element.id));
+    setElementsForPage(pageId, (current) =>
+      current.filter((candidate) => candidate.id !== element.id),
+    );
     const removedCommentIds = comments
       .filter((comment) => comment.targetType === "element" && comment.targetId === element.id)
       .map((comment) => comment.id);
     if (removedCommentIds.length) {
       applyLocalBoardUpdate((current) => ({
         ...current,
-        comments: (current.comments ?? []).filter((comment) => !removedCommentIds.includes(comment.id)),
+        comments: (current.comments ?? []).filter(
+          (comment) => !removedCommentIds.includes(comment.id),
+        ),
       }));
-      removedCommentIds.forEach((commentId) => broadcastPatch({ kind: "delete-comment", commentId }));
+      removedCommentIds.forEach((commentId) =>
+        broadcastPatch({ kind: "delete-comment", commentId }),
+      );
     }
     clearSelection();
   };
@@ -1858,7 +1905,7 @@ function ProjectDesignBoardsPage() {
                 {boardMissingInfoCount > 0 && (
                   <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    {boardMissingInfoCount} need label/link
+                    {boardMissingInfoCount} need material info
                   </div>
                 )}
                 {onlineUsers.slice(0, 8).map((user) => (
@@ -1899,7 +1946,9 @@ function ProjectDesignBoardsPage() {
                   <select
                     aria-label="Text font"
                     value={selected.fontFamily ?? DEFAULT_BOARD_TEXT_FONT}
-                    onChange={(event) => updateElement(selected.id, { fontFamily: event.target.value })}
+                    onChange={(event) =>
+                      updateElement(selected.id, { fontFamily: event.target.value })
+                    }
                     className="w-32 bg-white text-sm outline-none"
                   >
                     {BOARD_FONT_OPTIONS.map((font) => (
@@ -1949,7 +1998,9 @@ function ProjectDesignBoardsPage() {
                           aria-label="Custom text color"
                           type="color"
                           value={selected.color ?? DEFAULT_BOARD_TEXT_COLOR}
-                          onChange={(event) => updateElement(selected.id, { color: event.target.value })}
+                          onChange={(event) =>
+                            updateElement(selected.id, { color: event.target.value })
+                          }
                           className="sr-only"
                         />
                       </label>
@@ -2332,10 +2383,11 @@ function ProjectDesignBoardsPage() {
                     <div className="flex items-center gap-1.5 font-medium">
                       <AlertTriangle className="h-3.5 w-3.5" />
                       {activePageMissingInfoCount} image
-                      {activePageMissingInfoCount === 1 ? " needs" : "s need"} label/link
+                      {activePageMissingInfoCount === 1 ? " needs" : "s need"} material info
                     </div>
                     <p className="mt-1 text-amber-800">
-                      Add both before sending to Materials so specs and presentations stay clean.
+                      Add label, link, and room before sending to Materials so specs and
+                      presentations stay clean.
                     </p>
                   </div>
                 )}
@@ -3121,9 +3173,7 @@ function SelectedPanel({
                 : "border-stone-300 bg-white hover:border-ink",
             )}
           >
-            {selected.materialInfoNotNeeded
-              ? "No Label / Link Needed"
-              : "Requires Label + Link"}
+            {selected.materialInfoNotNeeded ? "No Label / Link Needed" : "Requires Label + Link"}
           </button>
           {selected.materialInfoNotNeeded && (
             <div className="rounded-lg border border-[#c8d9d4] bg-[#f3f7f5] px-3 py-2 text-xs leading-relaxed text-[#1f4e5f]">
@@ -3450,6 +3500,41 @@ function imageMaterialIssues(element: BoardElement) {
   if (!imageMaterialLabel(element)) issues.push("label");
   if (!element.link?.trim()) issues.push("link");
   return issues;
+}
+
+function inferRoomFromPageTitle(pageTitle: string, rooms: Room[]) {
+  const normalizedTitle = normalizeRoomLookupText(pageTitle);
+  if (!normalizedTitle) return null;
+  return (
+    [...rooms]
+      .sort(
+        (a, b) => normalizeRoomLookupText(b.name).length - normalizeRoomLookupText(a.name).length,
+      )
+      .find((room) => {
+        const normalizedRoom = normalizeRoomLookupText(room.name);
+        return (
+          normalizedRoom &&
+          (normalizedTitle === normalizedRoom ||
+            normalizedTitle.includes(normalizedRoom) ||
+            normalizedRoom.includes(normalizedTitle))
+        );
+      }) ?? null
+  );
+}
+
+function normalizeRoomLookupText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\bbathrooms?\b/g, "bath")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function formatSkippedMaterialReasons(reasons: Record<"label" | "link" | "room", number>) {
+  const parts = (["label", "link", "room"] as const)
+    .filter((key) => reasons[key] > 0)
+    .map((key) => `${reasons[key]} missing ${key}`);
+  return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
 function joinMissingInfo(issues: string[]) {
