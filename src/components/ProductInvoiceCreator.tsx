@@ -634,6 +634,10 @@ function lineSubtotal(line: ProductInvoiceLine) {
   return (moneyValue(line.unitPrice) + moneyValue(line.shipping)) * quantityValue(line.quantity);
 }
 
+function lineProductSubtotal(line: ProductInvoiceLine) {
+  return moneyValue(line.unitPrice) * quantityValue(line.quantity);
+}
+
 function quantityValue(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -724,13 +728,21 @@ function buildProductInvoiceHtml(
       (line) => `
     <tr>
       <td>
-        <strong>${escapeHtml(line.name)}</strong>
-        <div class="muted">${escapeHtml([line.room, line.vendor, line.finish].filter(Boolean).join(" - "))}</div>
+        <div class="product-line">
+          ${
+            line.imageUrl
+              ? `<img class="product-image" src="${escapeHtml(line.imageUrl)}" alt="${escapeHtml(line.name)}" />`
+              : `<div class="product-image placeholder"></div>`
+          }
+          <div>
+            <strong>${escapeHtml(line.name)}</strong>
+            <div class="muted">${escapeHtml([line.room, line.vendor, line.finish].filter(Boolean).join(" - "))}</div>
+          </div>
+        </div>
       </td>
       <td class="center">${escapeHtml(line.quantity || "1")}</td>
       <td class="right">${formatMoney(moneyValue(line.unitPrice))}</td>
-      <td class="right">${formatMoney(moneyValue(line.shipping) * quantityValue(line.quantity))}</td>
-      <td class="right">${formatMoney(lineSubtotal(line))}</td>
+      <td class="right">${formatMoney(lineProductSubtotal(line))}</td>
     </tr>
   `,
     )
@@ -754,12 +766,15 @@ function buildProductInvoiceHtml(
     table { border-collapse: collapse; width: 100%; font-size: 13px; }
     th, td { border: 1px solid #000; padding: 0.1in 0.08in; vertical-align: middle; }
     th { background: #e9e7de; text-align: left; }
+    .product-line { display: flex; align-items: center; gap: 0.12in; }
+    .product-image { width: 0.82in; height: 0.82in; object-fit: contain; background: #f7f5ef; flex: 0 0 auto; }
+    .product-image.placeholder { display: none; }
     .center { text-align: center; }
     .right { text-align: right; }
     .muted { margin-top: 5px; color: #666; font-size: 11px; font-family: Arial, sans-serif; }
     .summary { width: 3.1in; margin-left: auto; margin-top: 0.3in; font-size: 14px; }
     .summary-row { display: grid; grid-template-columns: 1fr 1.2in; gap: 0.08in; text-align: right; margin: 0.065in 0; }
-    .total { border: 1px solid #000; background: #e9e7de; padding: 0.08in; font-size: 18px; font-weight: 700; }
+    .total { border: 1px solid #000; background: #e9e7de; padding: 0.08in; font-size: 18px; font-weight: 700; text-align: center; display: block; }
     .pay { display: grid; grid-template-columns: 1fr 1.2in; border: 2px solid #000; margin: 0.22in 0; }
     .pay div { background: #e9e7de; padding: 0.05in 0.08in; font-weight: 700; text-align: center; }
     .pay div + div { border-left: 1px solid #000; text-align: right; }
@@ -792,14 +807,14 @@ function buildProductInvoiceHtml(
     </section>
     <table>
       <thead>
-        <tr><th>Product</th><th style="width:10%">Qty</th><th style="width:16%">Unit Price</th><th style="width:14%">Shipping</th><th style="width:16%">Total</th></tr>
+        <tr><th>Product</th><th style="width:10%">Qty</th><th style="width:16%">Unit Price</th><th style="width:16%">Total</th></tr>
       </thead>
-      <tbody>${rows || `<tr><td colspan="5" class="center">No products selected</td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="4" class="center">No products selected</td></tr>`}</tbody>
     </table>
     <section class="summary">
       <div class="summary-row"><span>Subtotal:</span><span>${formatMoney(totals.subtotal)}</span></div>
       <div class="summary-row"><span>Shipping:</span><span>${formatMoney(totals.shipping)}</span></div>
-      <div class="summary-row"><span>Tax (${escapeHtml(draft.taxRate || "0")}%):</span><span>${formatMoney(totals.tax)}</span></div>
+      <div class="summary-row"><span>Tax:</span><span>${formatMoney(totals.tax)}</span></div>
       <div class="summary-row"><strong>Total:</strong><strong class="total">${formatMoney(totals.total)}</strong></div>
       <div class="summary-row"><span>Paid:</span><span>${totals.paid ? formatMoney(totals.paid) : ""}</span></div>
       <div class="summary-row"><strong>Balance:</strong><strong>${formatMoney(totals.balance)}</strong></div>
