@@ -1,32 +1,23 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  PRODUCT_CATEGORIES,
+  SUBCATEGORIES,
+  type ProductCategory,
+} from "@/lib/productCategories";
+
+export { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory };
 
 export type ProjectStatus = "Design" | "Presentation" | "Approved" | "Procurement" | "Complete";
 export type UserRole = "Admin" | "Employee" | "Contractor" | "Client";
 export type ProjectType = "Kitchen" | "Bathroom" | "Whole Home" | "New Build" | "Furnishings" | "Commercial";
 export type ProjectLabel = "Personal Home" | "Investor Renovation" | "Spec Build" | "D4D";
-export type ProductCategory = "Lighting" | "Plumbing" | "Hardware" | "Appliances" | "Flooring" | "Tile" | "Countertops" | "Paint" | "Furniture" | "Decor";
 export type MaterialCategory = "Cabinet Finish" | "Countertop" | "Flooring" | "Tile" | "Fabric" | "Paint";
 export type ApprovalStatus = "undecided" | "approved" | "declined";
 
-export const PRODUCT_CATEGORIES: ProductCategory[] = ["Lighting","Plumbing","Hardware","Appliances","Flooring","Tile","Countertops","Paint","Furniture","Decor"];
 export const MATERIAL_CATEGORIES: MaterialCategory[] = ["Cabinet Finish","Countertop","Flooring","Tile","Fabric","Paint"];
 export const PROJECT_TYPES: ProjectType[] = ["Kitchen","Bathroom","Whole Home","New Build","Furnishings","Commercial"];
 export const PROJECT_LABELS: ProjectLabel[] = ["Personal Home","Investor Renovation","Spec Build","D4D"];
 export const PROJECT_STATUSES: ProjectStatus[] = ["Design","Presentation","Approved","Procurement","Complete"];
-
-// Subcategories per the product spec
-export const SUBCATEGORIES: Record<ProductCategory, string[]> = {
-  Lighting: ["Pendants", "Sconces", "Recessed Lighting", "Chandeliers", "Flush Mount", "Lamps"],
-  Plumbing: ["Faucets", "Pot Fillers", "Shower Systems", "Tubs", "Sinks", "Toilets"],
-  Hardware: ["Pulls", "Knobs", "Hinges", "Latches"],
-  Appliances: ["Refrigerators", "Ranges", "Dishwashers", "Hoods", "Microwaves", "Ovens"],
-  Flooring: ["Wood", "Stone", "Tile", "Carpet"],
-  Tile: ["Wall", "Floor", "Backsplash", "Shower"],
-  Countertops: ["Slab", "Quartzite", "Marble", "Quartz", "Granite", "Soapstone"],
-  Paint: ["Wall", "Trim", "Ceiling", "Cabinet"],
-  Furniture: ["Seating", "Tables", "Storage", "Beds"],
-  Decor: ["Art", "Textiles", "Accessories", "Mirrors"],
-};
 
 export const WORKFLOW_STAGES = [
   "Create Project",

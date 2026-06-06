@@ -1,6 +1,8 @@
 // Required-items templates for each room type.
 // Each item has a `category` used to group products visually on the presentation page.
 
+import { PRODUCT_CATEGORIES, type ProductCategory } from "@/lib/productCategories";
+
 export type ItemTemplate = { label: string; category: string };
 
 export const PRESET_ROOMS = [
@@ -34,22 +36,6 @@ export const ALL_CATEGORIES = [
   "Wall Coverings",
 ] as const;
 export type ItemCategory = (typeof ALL_CATEGORIES)[number];
-
-// Product-catalog enum values (must match the products.category enum in the DB).
-// Used when saving scraped products into the catalog.
-export const PRODUCT_CATEGORIES = [
-  "Lighting",
-  "Plumbing",
-  "Hardware",
-  "Appliances",
-  "Flooring",
-  "Tile",
-  "Countertops",
-  "Paint",
-  "Furniture",
-  "Decor",
-] as const;
-export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
 
 // Map a loose template/material category to the strict product-catalog enum.
 export function toProductCategory(c: string | null | undefined): ProductCategory {
