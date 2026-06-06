@@ -2622,7 +2622,7 @@ function ProjectDesignBoardsPage() {
                   title="Add page after current page"
                   className="flex h-[64px] w-[112px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-ink transition hover:border-ink"
                 >
-                  <Plus className="h-3.5 w-3.5" /> After Current
+                  <Plus className="h-3.5 w-3.5" /> New Page
                 </button>
               </div>
 
