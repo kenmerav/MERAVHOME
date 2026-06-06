@@ -1838,6 +1838,23 @@ function ProjectDesignBoardsPage() {
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
                   {onlineUsers.length ? `${onlineUsers.length} online` : "Live editing ready"}
                 </div>
+                <label className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-700">
+                  <span className="font-medium uppercase tracking-[0.14em] text-stone-500">
+                    Jump to
+                  </span>
+                  <select
+                    value={selectedPageId}
+                    onChange={(event) => selectPage(event.target.value)}
+                    className="max-w-[220px] bg-transparent font-medium text-ink outline-none"
+                    aria-label="Jump to design board page"
+                  >
+                    {pages.map((page, index) => (
+                      <option key={page.id} value={page.id}>
+                        {index + 1}. {page.title || `Board ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {boardMissingInfoCount > 0 && (
                   <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
                     <AlertTriangle className="h-3.5 w-3.5" />
