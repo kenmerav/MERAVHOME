@@ -564,7 +564,8 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
             "REVISION REQUEST",
             "Create a new version that corrects only the requested issues. Keep unchanged areas as close as possible to the previous rendering and the original SketchUp reference.",
             options.revisionNotes,
-            options.revisionReferenceUrl ? "An additional uploaded reference image is included for the specific material, finish, tile, wallpaper, fabric, or detail described in the notes." : "",
+            options.revisionMaterialContext ? `Selected material reference: ${options.revisionMaterialContext}` : "",
+            options.revisionReferenceUrl ? "An additional material/reference image is included for the specific material, finish, tile, wallpaper, fabric, or detail described in the notes." : "",
           ].join("\n")
         : "";
       const selectionsBlock = buildSelectionsContext();
@@ -687,6 +688,7 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
         generatingId={generatingId}
         generatingAll={generatingAll}
         onRevise={generateOne}
+        materials={materials}
       />
     </div>
   );
@@ -696,16 +698,18 @@ type GenerateRevisionOptions = {
   baseRendering?: RoomImage;
   revisionNotes?: string;
   revisionReferenceUrl?: string;
+  revisionMaterialContext?: string;
   revisionNumber?: number;
 };
 
-function RenderingRevisionGrid({ roomId, renderings, sketchups, generatingId, generatingAll, onRevise }: {
+function RenderingRevisionGrid({ roomId, renderings, sketchups, generatingId, generatingAll, onRevise, materials }: {
   roomId: string;
   renderings: RoomImage[];
   sketchups: RoomImage[];
   generatingId: string | null;
   generatingAll: boolean;
   onRevise: (sk: RoomImage, options: GenerateRevisionOptions) => Promise<void>;
+  materials: MaterialItem[];
 }) {
   const qc = useQueryClient();
   const sketchupById = new Map(sketchups.map(sk => [sk.id, sk]));
@@ -769,6 +773,7 @@ function RenderingRevisionGrid({ roomId, renderings, sketchups, generatingId, ge
                 onUpdate={patch => update(rendering, patch)}
                 onRemove={() => remove(rendering)}
                 onRevise={onRevise}
+                materials={materials}
               />
             );
           })}
@@ -778,7 +783,7 @@ function RenderingRevisionGrid({ roomId, renderings, sketchups, generatingId, ge
   );
 }
 
-function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, onRemove, onRevise }: {
+function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, onRemove, onRevise, materials }: {
   rendering: RoomImage;
   sketchup?: RoomImage;
   siblings: RoomImage[];
@@ -786,14 +791,20 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
   onUpdate: (patch: Partial<RoomImage>) => Promise<void>;
   onRemove: () => Promise<void>;
   onRevise: (sk: RoomImage, options: GenerateRevisionOptions) => Promise<void>;
+  materials: MaterialItem[];
 }) {
   const [open, setOpen] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
   const [revisionReferenceUrl, setRevisionReferenceUrl] = useState("");
   const [revisionReferenceName, setRevisionReferenceName] = useState("");
+  const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [revising, setRevising] = useState(false);
   const version = rendering.revision_number || 1;
   const reviewStatus = rendering.review_status || (rendering.is_approved ? "approved" : "draft");
+  const selectedMaterial = materials.find((material) => material.id === selectedMaterialId);
+  const selectedMaterialImageUrl = selectedMaterial?.product?.image_url || "";
+  const effectiveReferenceUrl = revisionReferenceUrl || selectedMaterialImageUrl;
+  const effectiveReferenceName = revisionReferenceName || materialReferenceName(selectedMaterial);
 
   const download = () => {
     const a = document.createElement("a");
@@ -815,12 +826,14 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
       await onRevise(sketchup, {
         baseRendering: rendering,
         revisionNotes: notes,
-        revisionReferenceUrl,
+        revisionReferenceUrl: effectiveReferenceUrl,
+        revisionMaterialContext: selectedMaterial ? materialReferenceContext(selectedMaterial) : undefined,
         revisionNumber: nextRevisionNumber(siblings),
       });
       setRevisionNotes("");
       setRevisionReferenceUrl("");
       setRevisionReferenceName("");
+      setSelectedMaterialId("");
       setOpen(false);
     } finally {
       setRevising(false);
@@ -898,12 +911,22 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
               placeholder="Example: reduce the pendant size, keep cabinetry and camera angle unchanged, warm up the wall color..."
               rows={4}
             />
+            <MaterialReferenceSelect
+              materials={materials}
+              value={selectedMaterialId}
+              onChange={(materialId) => {
+                setSelectedMaterialId(materialId);
+                setRevisionReferenceUrl("");
+                setRevisionReferenceName("");
+              }}
+            />
             <RevisionReferenceDropzone
-              imageUrl={revisionReferenceUrl}
-              fileName={revisionReferenceName}
+              imageUrl={effectiveReferenceUrl}
+              fileName={effectiveReferenceName}
               onChange={(nextUrl, nextName) => {
                 setRevisionReferenceUrl(nextUrl);
                 setRevisionReferenceName(nextName);
+                setSelectedMaterialId("");
               }}
             />
             <button
@@ -941,6 +964,78 @@ function reviewLabel(status: RenderingReviewStatus) {
     rejected: "Rejected",
   };
   return labels[status];
+}
+
+function MaterialReferenceSelect({
+  materials,
+  value,
+  onChange,
+}: {
+  materials: MaterialItem[];
+  value: string;
+  onChange: (materialId: string) => void;
+}) {
+  const sortedMaterials = [...materials].sort((a, b) =>
+    materialReferenceName(a).localeCompare(materialReferenceName(b), undefined, { sensitivity: "base" }),
+  );
+  const selected = sortedMaterials.find((material) => material.id === value);
+
+  return (
+    <div>
+      <Label className="eyebrow">Material Reference From This Room</Label>
+      <Select value={value || "none"} onValueChange={(next) => onChange(next === "none" ? "" : next)}>
+        <SelectTrigger className="mt-2">
+          <SelectValue placeholder="Choose a material item..." />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">No material selected</SelectItem>
+          {sortedMaterials.map((material) => (
+            <SelectItem key={material.id} value={material.id}>
+              {materialReferenceName(material)}{material.product?.image_url ? "" : " (details only)"}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {selected && (
+        <div className="mt-3 flex items-center gap-3 border border-border bg-bone/30 p-3">
+          {selected.product?.image_url ? (
+            <img src={selected.product.image_url} alt="" className="h-14 w-14 object-cover bg-background border border-border" />
+          ) : (
+            <div className="h-14 w-14 bg-background border border-border flex items-center justify-center text-[10px] uppercase tracking-wider text-muted-foreground">
+              No image
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm truncate">{materialReferenceName(selected)}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {selected.product?.image_url
+                ? "This product image will be sent as the revision reference."
+                : "This material's label, category, color, and notes will be sent as text context."}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function materialReferenceName(material?: MaterialItem) {
+  if (!material) return "";
+  return material.client_product_name?.trim() || material.product?.name || material.item_label;
+}
+
+function materialReferenceContext(material: MaterialItem) {
+  const bits = [
+    materialReferenceName(material),
+    material.category ? `Category: ${material.category}` : "",
+    material.product?.name ? `Product: ${material.product.name}` : "",
+    material.product?.vendor ? `Vendor: ${material.product.vendor}` : "",
+    material.color ? `Color/Finish: ${material.color}` : "",
+    material.quantity ? `Quantity: ${material.quantity}` : "",
+    material.product_url ? `URL: ${material.product_url}` : "",
+    material.notes ? `Notes: ${material.notes}` : "",
+  ].filter(Boolean);
+  return bits.join(" | ");
 }
 
 function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
