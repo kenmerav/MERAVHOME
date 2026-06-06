@@ -1054,8 +1054,11 @@ function ProjectDesignBoardsPage() {
     const linkedProduct = element.productId
       ? products.find((product) => product.id === element.productId)
       : null;
-    const category = element.materialCategory || linkedProduct?.category || "Decor";
     const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : null;
+    const linkedProductUrl = linkedProduct?.product_url
+      ? normalizeExternalUrl(linkedProduct.product_url)
+      : null;
+    let category: ProductCategory = element.materialCategory || linkedProduct?.category || "Decor";
     const finish = element.materialFinish || element.finish || null;
     const quantity =
       quantityOverride && quantityOverride > 0
@@ -1064,8 +1067,13 @@ function ProjectDesignBoardsPage() {
           ? element.materialQuantity
           : 1;
 
-    let product = linkedProduct;
-    if (!product && productUrl) product = await db.findProductByUrl(productUrl);
+    let product =
+      linkedProduct && (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl)
+        ? linkedProduct
+        : null;
+    if (productUrl && (!product || linkedProductUrl !== productUrl)) {
+      product = await db.findProductByUrl(productUrl);
+    }
     if (!product) {
       product = await db.createProduct({
         name: itemLabel,
@@ -1076,6 +1084,7 @@ function ProjectDesignBoardsPage() {
         notes: element.notes || null,
       });
     } else {
+      category = element.materialCategory || product.category || category;
       const productPatch: Partial<Product> = {};
       if (!product.image_url && element.src) productPatch.image_url = element.src;
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
