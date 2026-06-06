@@ -24,10 +24,11 @@ export const ALL_CATEGORIES = [
   "Cabinetry & Hardware",
   "Countertops",
   "Doors Base & Case",
-  "Flooring & Paint",
+  "Flooring",
   "Furniture",
   "Lighting",
   "Other",
+  "Paint",
   "Plumbing",
   "Tile & Stone",
   "Wall Coverings",
@@ -63,7 +64,6 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
     "Doors Base & Case": "Hardware",
     "Accent Mirrors": "Decor",
     "Wall Coverings": "Decor",
-    "Flooring & Paint": "Flooring",
     Accessories: "Decor",
     Other: "Decor",
     Sconce: "Lighting",
@@ -123,8 +123,12 @@ export function inferMaterialCategory(label: string | null | undefined, productU
     return "Lighting";
   }
 
-  if (/\b(floor|flooring|wood floor|carpet|rug|paint|limewash|lime wash|stain)\b/.test(text)) {
-    return "Flooring & Paint";
+  if (/\b(paint|limewash|lime wash|wall paint|ceiling paint|trim paint|cabinet paint|stain)\b/.test(text)) {
+    return "Paint";
+  }
+
+  if (/\b(floor|flooring|wood floor|carpet|rug)\b/.test(text)) {
+    return "Flooring";
   }
 
   if (/\b(chair|table|sofa|sectional|ottoman|stool|bench|bed|nightstand|dresser|desk|console|sideboard|cabinet)\b/.test(text)) {
@@ -149,28 +153,28 @@ const KITCHEN: ItemTemplate[] = [
   { label: "Countertop", category: "Countertops" },
   { label: "Cabinet Finish", category: "Cabinetry & Hardware" },
   { label: "Cabinet Hardware", category: "Cabinetry & Hardware" },
-  { label: "Flooring", category: "Flooring & Paint" },
-  { label: "Paint", category: "Flooring & Paint" },
+  { label: "Flooring", category: "Flooring" },
+  { label: "Paint", category: "Paint" },
 ];
 
 const BEDROOM_OFFICE: ItemTemplate[] = [
   { label: "Lighting", category: "Lighting" },
   { label: "Sconce", category: "Lighting" },
-  { label: "Flooring", category: "Flooring & Paint" },
-  { label: "Paint", category: "Flooring & Paint" },
+  { label: "Flooring", category: "Flooring" },
+  { label: "Paint", category: "Paint" },
 ];
 
 const LIVING_ROOM: ItemTemplate[] = [
   { label: "Lighting", category: "Lighting" },
   { label: "Tile", category: "Tile & Stone" },
-  { label: "Flooring", category: "Flooring & Paint" },
-  { label: "Paint", category: "Flooring & Paint" },
+  { label: "Flooring", category: "Flooring" },
+  { label: "Paint", category: "Paint" },
 ];
 
 const DINING_ROOM: ItemTemplate[] = [
   { label: "Lighting", category: "Lighting" },
-  { label: "Flooring", category: "Flooring & Paint" },
-  { label: "Paint", category: "Flooring & Paint" },
+  { label: "Flooring", category: "Flooring" },
+  { label: "Paint", category: "Paint" },
 ];
 
 const BATHROOM: ItemTemplate[] = [
@@ -188,8 +192,8 @@ const BATHROOM: ItemTemplate[] = [
   { label: "Accent Mirrors", category: "Accessories" },
   { label: "Cabinetry Finish", category: "Cabinetry & Hardware" },
   { label: "Cabinet Hardware", category: "Cabinetry & Hardware" },
-  { label: "Flooring", category: "Flooring & Paint" },
-  { label: "Paint", category: "Flooring & Paint" },
+  { label: "Flooring", category: "Flooring" },
+  { label: "Paint", category: "Paint" },
   { label: "Towel Hook", category: "Accessories" },
   { label: "Toilet Paper Holder", category: "Accessories" },
 ];
