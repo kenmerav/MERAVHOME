@@ -168,6 +168,10 @@ type SendMaterialResult =
     }
   | { status: "skipped" };
 
+type BoardMaterialTrayItem = MaterialItem & {
+  room?: Room | null;
+};
+
 type DragMode =
   | {
       kind: "move";
@@ -285,6 +289,42 @@ function productMatchesBoardCatalogCategory(product: Product, category: ItemCate
     product.product_url,
   );
   return inferredCategory === category;
+}
+
+function materialItemHasBoardTraySignal(item: MaterialItem) {
+  return Boolean(
+    !item.not_needed &&
+      (!item.is_required ||
+        item.product_id ||
+        item.product_url?.trim() ||
+        item.product?.image_url ||
+        item.color?.trim() ||
+        item.notes?.trim()),
+  );
+}
+
+function materialItemMatchesBoardCategory(item: MaterialItem, category: ItemCategory) {
+  const itemCategory = item.category?.trim();
+  if (itemCategory === category) return true;
+  if (item.product && productMatchesBoardCatalogCategory(item.product, category)) return true;
+  return inferMaterialCategory(
+    [
+      item.client_product_name,
+      item.item_label,
+      item.category,
+      item.color,
+      item.notes,
+      item.product_url,
+      item.product?.name,
+      item.product?.subcategory,
+      item.product?.vendor,
+      item.product?.finish,
+      item.product?.product_url,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    item.product_url ?? item.product?.product_url,
+  ) === category;
 }
 
 function ProjectDesignBoardsPage() {
@@ -482,6 +522,37 @@ function ProjectDesignBoardsPage() {
         ? products
         : products.filter((product) => productMatchesBoardCatalogCategory(product, category)),
     [category, products],
+  );
+  const roomById = useMemo(
+    () => new Map(rooms.map((room) => [room.id, room] as const)),
+    [rooms],
+  );
+  const filteredProjectMaterials = useMemo(
+    () =>
+      materialItems
+        .filter((item) => materialItemHasBoardTraySignal(item))
+        .filter((item) => category === "All" || materialItemMatchesBoardCategory(item, category))
+        .filter((item) => {
+          const q = search.trim().toLowerCase();
+          if (!q) return true;
+          const room = roomById.get(item.room_id);
+          return [
+            item.item_label,
+            item.client_product_name,
+            item.category,
+            item.color,
+            item.notes,
+            item.product_url,
+            item.product?.name,
+            item.product?.vendor,
+            item.product?.finish,
+            room?.name,
+          ]
+            .filter(Boolean)
+            .some((value) => value!.toLowerCase().includes(q));
+        })
+        .map((item) => ({ ...item, room: roomById.get(item.room_id) ?? null })),
+    [category, materialItems, roomById, search],
   );
   const linkedProductCount = elements.filter((element) => element.productId).length;
   const imageElements = elements.filter((element) => element.type === "image");
@@ -1928,6 +1999,7 @@ function ProjectDesignBoardsPage() {
   ) => {
     event.preventDefault();
     const productJson = event.dataTransfer.getData("application/x-merav-product");
+    const materialJson = event.dataTransfer.getData("application/x-merav-material-item");
     const imageJson = event.dataTransfer.getData("application/x-merav-room-image");
     const rect = event.currentTarget.getBoundingClientRect();
     const x = rect ? (event.clientX - rect.left) / boardScale : 500;
@@ -1936,6 +2008,12 @@ function ProjectDesignBoardsPage() {
     if (productJson) {
       const product = JSON.parse(productJson) as Product;
       addElement(productToBoardElement(product, x - 130, y - 115), pageId);
+      return;
+    }
+
+    if (materialJson) {
+      const item = JSON.parse(materialJson) as BoardMaterialTrayItem;
+      addElement(materialItemToBoardElement(item, x - 130, y - 115), pageId);
       return;
     }
 
@@ -2693,6 +2771,23 @@ function ProjectDesignBoardsPage() {
                     </option>
                   ))}
                 </select>
+                {filteredProjectMaterials.length > 0 && (
+                  <div className="mb-4 border-b border-stone-200 pb-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-stone-500">
+                        Project Materials
+                      </div>
+                      <div className="text-[10px] text-stone-400">
+                        {filteredProjectMaterials.length}
+                      </div>
+                    </div>
+                    <div className="max-h-[240px] space-y-3 overflow-y-auto pr-1">
+                      {filteredProjectMaterials.slice(0, 60).map((item) => (
+                        <MaterialTrayItem key={item.id} item={item} />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
                   {filteredProducts.slice(0, 80).map((product) => (
                     <ProductTrayItem key={product.id} product={product} />
@@ -3698,6 +3793,45 @@ function ProductTrayItem({ product }: { product: Product }) {
   );
 }
 
+function MaterialTrayItem({ item }: { item: BoardMaterialTrayItem }) {
+  const imageUrl = item.product?.image_url ?? null;
+  const label = materialTrayLabel(item);
+  const category = item.category || inferMaterialCategory(label, item.product_url);
+  return (
+    <div
+      draggable
+      onDragStart={(event) =>
+        event.dataTransfer.setData("application/x-merav-material-item", JSON.stringify(item))
+      }
+      className="group cursor-grab rounded-lg border border-stone-200 bg-white p-3 active:cursor-grabbing"
+    >
+      <div className="flex gap-3">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-[#faf9f5]">
+          {imageUrl ? (
+            <OptimizedBoardImage
+              src={imageUrl}
+              alt={label}
+              kind="thumbnail"
+              className="max-h-full max-w-full object-contain transition group-hover:scale-105"
+              loading="lazy"
+            />
+          ) : (
+            <ImageIcon className="h-5 w-5 text-stone-300" />
+          )}
+        </div>
+        <div className="min-w-0 text-sm">
+          <div className="line-clamp-2 font-medium leading-tight text-ink">{label}</div>
+          <div className="mt-1 text-xs text-stone-500">
+            {[item.room?.name, category].filter(Boolean).join(" · ")}
+          </div>
+          {item.color && <div className="text-xs text-stone-500">{item.color}</div>}
+          {item.product?.vendor && <div className="text-xs text-stone-500">{item.product.vendor}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OptimizedBoardImage({
   src,
   alt,
@@ -3814,6 +3948,43 @@ function productToBoardElement(
     width: 260,
     height: 230,
   };
+}
+
+function materialItemToBoardElement(
+  item: BoardMaterialTrayItem,
+  x: number,
+  y: number,
+): Omit<BoardElement, "id" | "zIndex"> {
+  const label = materialTrayLabel(item);
+  const product = item.product ?? null;
+  const src = product?.image_url || undefined;
+  const link = item.product_url || product?.product_url || "";
+  const materialCategory = item.category || inferMaterialCategory(label, link);
+  return {
+    type: "image",
+    src,
+    label,
+    link,
+    productId: item.product_id ?? product?.id ?? null,
+    productName: product?.name ?? label,
+    vendor: product?.vendor ?? null,
+    price: product?.price ?? null,
+    finish: item.color ?? product?.finish ?? null,
+    notes: item.notes ?? product?.notes ?? "",
+    materialItemId: item.id,
+    materialRoomId: item.room_id,
+    materialCategory,
+    materialQuantity: item.quantity ?? 1,
+    materialFinish: item.color ?? product?.finish ?? null,
+    x,
+    y,
+    width: 260,
+    height: 230,
+  };
+}
+
+function materialTrayLabel(item: MaterialItem) {
+  return (item.client_product_name || item.item_label || item.product?.name || "Material").trim();
 }
 
 function imageMaterialLabel(element: BoardElement) {
