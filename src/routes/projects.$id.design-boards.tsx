@@ -258,14 +258,13 @@ function ProjectDesignBoardsPage() {
   const saveTimeoutRef = useRef<number | null>(null);
   const broadcastThrottleRef = useRef<Record<string, number>>({});
   const remoteLoadedRef = useRef(false);
-  const boardStateRef = useRef<BoardState>(loadBoardState(id));
+  const boardStateRef = useRef<BoardState>(defaultBoardState());
   const lastGoodBoardStateRef = useRef<BoardState>(boardStateRef.current);
   const lastSavedJsonRef = useRef("");
   const lastRemoteUpdatedAtRef = useRef("");
   const lastVersionAtRef = useRef(0);
   const pendingSaveJsonRef = useRef<string | null>(null);
   const localEditShieldUntilRef = useRef(0);
-  const localEditsBeforeRemoteLoadRef = useRef(false);
   const removingBackgroundRef = useRef(false);
   const applyingRemoteRef = useRef(false);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -444,7 +443,6 @@ function ProjectDesignBoardsPage() {
       setBoardState(remoteState);
       markRemoteBoardApplied(remoteJson, remoteBoard.updated_at);
       pendingSaveJsonRef.current = null;
-      localEditsBeforeRemoteLoadRef.current = false;
       remoteLoadedRef.current = true;
       queryClient.setQueryData(["designBoard", id], remoteBoard);
       if (message) toast.warning(message);
@@ -490,8 +488,11 @@ function ProjectDesignBoardsPage() {
 
   const applyLocalBoardUpdate = useCallback(
     (updater: BoardState | ((current: BoardState) => BoardState)) => {
+      if (canEditDesignBoards && !remoteLoadedRef.current) {
+        setSaveStatus("loading");
+        return;
+      }
       localEditShieldUntilRef.current = Date.now() + 2500;
-      if (!remoteLoadedRef.current) localEditsBeforeRemoteLoadRef.current = true;
       setBoardState((current) => {
         const next = typeof updater === "function" ? updater(current) : updater;
         const normalized = normalizeBoardState(next);
@@ -499,7 +500,7 @@ function ProjectDesignBoardsPage() {
         return normalized;
       });
     },
-    [],
+    [canEditDesignBoards],
   );
 
   const saveBoardStateImmediately = useCallback(
@@ -640,9 +641,10 @@ function ProjectDesignBoardsPage() {
   }, []);
 
   useEffect(() => {
-    const localState = loadBoardState(id);
-    boardStateRef.current = localState;
-    setBoardState(localState);
+    const emptyState = defaultBoardState();
+    if (typeof window !== "undefined") window.localStorage.removeItem(storageKey(id));
+    boardStateRef.current = emptyState;
+    setBoardState(emptyState);
     setSelectedId(null);
     setSelectedIds([]);
     setCommentDraft("");
@@ -655,10 +657,9 @@ function ProjectDesignBoardsPage() {
     lastRemoteUpdatedAtRef.current = "";
     pendingSaveJsonRef.current = null;
     localEditShieldUntilRef.current = 0;
-    localEditsBeforeRemoteLoadRef.current = false;
     removingBackgroundRef.current = false;
     applyingRemoteRef.current = false;
-    lastGoodBoardStateRef.current = localState;
+    lastGoodBoardStateRef.current = emptyState;
     lastVersionAtRef.current = 0;
     setActiveUsers([]);
     setSaveStatus("loading");
@@ -751,8 +752,7 @@ function ProjectDesignBoardsPage() {
 
   useEffect(() => {
     boardStateRef.current = boardState;
-    window.localStorage.setItem(storageKey(id), JSON.stringify(boardState));
-  }, [boardState, id]);
+  }, [boardState]);
 
   useEffect(() => {
     if (loadingProfile || loadingSharedBoard) return;
@@ -764,101 +764,25 @@ function ProjectDesignBoardsPage() {
     if (remoteLoadedRef.current) return;
 
     if (sharedBoard?.board_state) {
-      const remoteState = normalizeBoardState(sharedBoard.board_state);
-      const currentState = normalizeBoardState(boardStateRef.current);
-      const currentJson = JSON.stringify(currentState);
-      const remoteJson = JSON.stringify(remoteState);
-      if (localEditsBeforeRemoteLoadRef.current && currentJson !== remoteJson) {
-        if (hasMeaningfulBoardState(remoteState)) {
-          applySharedBoardSnapshot(
-            sharedBoard,
-            "A newer shared board was already saved, so Studio loaded that version instead of overwriting it.",
-          );
-          return;
-        }
-        const stateToSave = prepareBoardStateForSave(currentState);
-        const saveJson = JSON.stringify(stateToSave);
-        remoteLoadedRef.current = true;
-        localEditsBeforeRemoteLoadRef.current = false;
-        lastSavedJsonRef.current = saveJson;
-        pendingSaveJsonRef.current = saveJson;
-        setSaveStatus("saving");
-        void saveBoardStateSafely(stateToSave).then(
-          ({ savedState, savedJson }) => {
-            pendingSaveJsonRef.current = null;
-            lastSavedJsonRef.current = savedJson;
-            lastGoodBoardStateRef.current = savedState;
-            setSaveStatus("saved");
-          },
-          () => {
-            pendingSaveJsonRef.current = null;
-            setSaveStatus("error");
-          },
-        );
-        return;
-      }
-      const localState = loadBoardState(id);
-      if (!hasMeaningfulBoardState(remoteState) && hasMeaningfulBoardState(localState)) {
-        const localJson = JSON.stringify(localState);
-        applyingRemoteRef.current = true;
-        boardStateRef.current = localState;
-        setBoardState(localState);
-        lastSavedJsonRef.current = localJson;
-        remoteLoadedRef.current = true;
-        pendingSaveJsonRef.current = localJson;
-        setSaveStatus("saving");
-        void saveBoardStateSafely(localState).then(
-          ({ savedState, savedJson }) => {
-            pendingSaveJsonRef.current = null;
-            lastSavedJsonRef.current = savedJson;
-            lastGoodBoardStateRef.current = savedState;
-            setSaveStatus("saved");
-          },
-          () => {
-            pendingSaveJsonRef.current = null;
-            boardStateRef.current = lastGoodBoardStateRef.current;
-            setBoardState(lastGoodBoardStateRef.current);
-            setSaveStatus("error");
-          },
-        );
-        return;
-      }
       applySharedBoardSnapshot(sharedBoard);
       return;
     }
 
-    const localState = loadBoardState(id);
+    const emptyState = defaultBoardState();
+    const emptyJson = JSON.stringify(emptyState);
+    applyingRemoteRef.current = true;
+    boardStateRef.current = emptyState;
+    lastGoodBoardStateRef.current = emptyState;
+    setBoardState(emptyState);
     remoteLoadedRef.current = true;
-    if (!hasMeaningfulBoardState(localState)) {
-      setSaveStatus("saved");
-      return;
-    }
-
-    const seedJson = JSON.stringify(localState);
-    lastSavedJsonRef.current = seedJson;
-    pendingSaveJsonRef.current = seedJson;
-    setSaveStatus("saving");
-    void saveBoardStateSafely(localState).then(
-      ({ savedState, savedJson }) => {
-        pendingSaveJsonRef.current = null;
-        lastSavedJsonRef.current = savedJson;
-        lastGoodBoardStateRef.current = savedState;
-        setSaveStatus("saved");
-      },
-      () => {
-        pendingSaveJsonRef.current = null;
-        boardStateRef.current = lastGoodBoardStateRef.current;
-        setBoardState(lastGoodBoardStateRef.current);
-        setSaveStatus("error");
-      },
-    );
+    lastSavedJsonRef.current = emptyJson;
+    pendingSaveJsonRef.current = null;
+    setSaveStatus("saved");
   }, [
     applySharedBoardSnapshot,
     canEditDesignBoards,
-    id,
     loadingProfile,
     loadingSharedBoard,
-    saveBoardStateSafely,
     sharedBoard,
   ]);
 
@@ -3900,20 +3824,6 @@ function normalizeBoardElement(value: unknown): BoardElement | null {
 
 function hasMeaningfulBoardState(state: BoardState) {
   return state.pages.some((page) => page.elements.length > 0);
-}
-
-function loadBoardState(projectId: string): BoardState {
-  if (typeof window === "undefined") return defaultBoardState();
-  const stored = window.localStorage.getItem(storageKey(projectId));
-  if (!stored) return defaultBoardState();
-
-  try {
-    return normalizeBoardState(JSON.parse(stored));
-  } catch {
-    window.localStorage.removeItem(storageKey(projectId));
-  }
-
-  return defaultBoardState();
 }
 
 function defaultBoardState(): BoardState {
