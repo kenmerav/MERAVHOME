@@ -35,7 +35,7 @@ import {
   type UserProfile,
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
-import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
+import { ALL_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -76,7 +76,7 @@ type BoardElement = {
   finish?: string | null;
   materialItemId?: string | null;
   materialRoomId?: string | null;
-  materialCategory?: ProductCategory | null;
+  materialCategory?: string | null;
   materialQuantity?: number | null;
   materialFinish?: string | null;
   materialInfoNotNeeded?: boolean;
@@ -1062,7 +1062,7 @@ function ProjectDesignBoardsPage() {
     const inferredMaterialCategory = inferMaterialCategory(itemLabel, productUrl);
     const materialCategory = element.materialCategory || inferredMaterialCategory;
     let category: ProductCategory =
-      element.materialCategory || linkedProduct?.category || toProductCategory(inferredMaterialCategory);
+      linkedProduct?.category || toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
     const quantity =
       quantityOverride && quantityOverride > 0
@@ -1088,7 +1088,7 @@ function ProjectDesignBoardsPage() {
         notes: element.notes || null,
       });
     } else {
-      category = element.materialCategory || product.category || category;
+      category = product.category || category;
       const productPatch: Partial<Product> = {};
       if (!product.image_url && element.src) productPatch.image_url = element.src;
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
@@ -3298,13 +3298,16 @@ function SelectedPanel({
             <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
               Category
               <select
-                value={selected.materialCategory || linkedProduct?.category || "Decor"}
-                onChange={(event) =>
-                  onUpdate({ materialCategory: event.target.value as ProductCategory })
+                value={
+                  selected.materialCategory ||
+                  inferMaterialCategory(imageMaterialLabel(selected), selected.link) ||
+                  linkedProduct?.category ||
+                  "Other"
                 }
+                onChange={(event) => onUpdate({ materialCategory: event.target.value })}
                 className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
               >
-                {PRODUCT_CATEGORIES.map((category) => (
+                {ALL_CATEGORIES.map((category) => (
                   <option key={category} value={category}>
                     {category}
                   </option>
