@@ -304,9 +304,20 @@ function materialItemHasBoardTraySignal(item: MaterialItem) {
 }
 
 function materialItemMatchesBoardCategory(item: MaterialItem, category: ItemCategory) {
-  const itemCategory = item.category?.trim();
-  if (itemCategory === category) return true;
+  if (normalizedMaterialItemCategory(item) === category) return true;
   if (item.product && productMatchesBoardCatalogCategory(item.product, category)) return true;
+  return inferredMaterialItemCategory(item) === category;
+}
+
+function normalizedMaterialItemCategory(item: MaterialItem): ItemCategory {
+  const itemCategory = item.category?.trim();
+  if (itemCategory && (ALL_CATEGORIES as readonly string[]).includes(itemCategory)) {
+    return itemCategory as ItemCategory;
+  }
+  return inferredMaterialItemCategory(item);
+}
+
+function inferredMaterialItemCategory(item: MaterialItem): ItemCategory {
   return inferMaterialCategory(
     [
       item.client_product_name,
@@ -324,7 +335,7 @@ function materialItemMatchesBoardCategory(item: MaterialItem, category: ItemCate
       .filter(Boolean)
       .join(" "),
     item.product_url ?? item.product?.product_url,
-  ) === category;
+  );
 }
 
 function ProjectDesignBoardsPage() {
@@ -3796,7 +3807,7 @@ function ProductTrayItem({ product }: { product: Product }) {
 function MaterialTrayItem({ item }: { item: BoardMaterialTrayItem }) {
   const imageUrl = item.product?.image_url ?? null;
   const label = materialTrayLabel(item);
-  const category = item.category || inferMaterialCategory(label, item.product_url);
+  const category = normalizedMaterialItemCategory(item);
   return (
     <div
       draggable
@@ -3959,7 +3970,7 @@ function materialItemToBoardElement(
   const product = item.product ?? null;
   const src = product?.image_url || undefined;
   const link = item.product_url || product?.product_url || "";
-  const materialCategory = item.category || inferMaterialCategory(label, link);
+  const materialCategory = normalizedMaterialItemCategory(item);
   return {
     type: "image",
     src,
