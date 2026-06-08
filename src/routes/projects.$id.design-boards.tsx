@@ -2672,6 +2672,7 @@ function ProjectDesignBoardsPage() {
                   <input
                     value={activePage.title}
                     onChange={(event) => updateActivePage({ title: event.target.value })}
+                    placeholder={`Design Board ${selectedPageIndex + 1}`}
                     className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                   />
                 </label>
@@ -3721,10 +3722,14 @@ function SelectedPanel({
                 <input
                   type="number"
                   min={1}
-                  value={selected.materialQuantity ?? 1}
-                  onChange={(event) =>
-                    onUpdate({ materialQuantity: Math.max(1, Number(event.target.value) || 1) })
-                  }
+                  value={selected.materialQuantity ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    onUpdate({
+                      materialQuantity: value === "" ? null : Math.max(1, Number(value) || 1),
+                    });
+                  }}
+                  placeholder="1"
                   className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                 />
               </label>
@@ -4497,10 +4502,7 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
   if (!value || typeof value !== "object") return null;
   const page = value as Partial<BoardPage>;
   const id = typeof page.id === "string" && page.id ? page.id : crypto.randomUUID();
-  const title =
-    typeof page.title === "string" && page.title.trim()
-      ? page.title
-      : `Design Board ${pageIndex + 1}`;
+  const title = typeof page.title === "string" ? page.title : `Design Board ${pageIndex + 1}`;
   const roomId = typeof page.roomId === "string" && page.roomId ? page.roomId : null;
   const elements = Array.isArray(page.elements)
     ? page.elements
