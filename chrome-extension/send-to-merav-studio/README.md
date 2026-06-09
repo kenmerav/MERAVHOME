@@ -1,10 +1,17 @@
 # Send to MERAV Studio Chrome Extension
 
-This unpacked Chrome extension adds a product-image context menu item:
+This unpacked Chrome extension adds two product-sourcing flows:
 
 1. Right-click a product image.
 2. Choose **Send to MERAV Studio**.
 3. Studio creates or updates the catalog product and adds it to the active design-board page.
+
+Or:
+
+1. Open a product page.
+2. Click the **Send to MERAV Studio** extension icon.
+3. Choose a project.
+4. Click **Send Current Product**.
 
 ## Setup
 

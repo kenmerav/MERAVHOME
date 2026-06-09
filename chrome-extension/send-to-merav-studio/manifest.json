@@ -8,6 +8,10 @@
   "background": {
     "service_worker": "background.js"
   },
+  "action": {
+    "default_title": "Send to MERAV Studio",
+    "default_popup": "popup.html"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
