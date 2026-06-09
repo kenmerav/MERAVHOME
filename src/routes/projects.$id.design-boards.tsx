@@ -518,6 +518,20 @@ function ProjectDesignBoardsPage() {
   useEffect(() => {
     setPageTitleDraft(activePage.title ?? "");
   }, [activePage.id, activePage.title]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !canEditDesignBoards || !activePage?.id) return;
+    window.postMessage(
+      {
+        type: "MERAV_STUDIO_BOARD_DESTINATION",
+        projectId: id,
+        boardPageId: activePage.id,
+        boardPageTitle: activePage.title,
+      },
+      window.location.origin,
+    );
+  }, [activePage?.id, activePage?.title, canEditDesignBoards, id]);
+
   const commentCountsByElement = useMemo(() => {
     const counts = new Map<string, number>();
     for (const comment of comments) {
