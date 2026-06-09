@@ -27,6 +27,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not send product.";
+    await updateProgress(0, "", { clearBadge: true });
     notify("MERAV Studio import failed", message);
   }
 });
@@ -51,6 +52,7 @@ async function sendCurrentTabToStudio(projectIdOverride, boardPageIdOverride) {
 }
 
 async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverride) {
+  await updateProgress(8, "Starting MERAV import...");
   const settings = await chrome.storage.sync.get([
     "studioUrl",
     "projectId",
@@ -70,6 +72,7 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
     throw new Error("Add your MERAV extension token in extension settings.");
   }
 
+  await updateProgress(20, "Reading product details...");
   const pageExtraction = await extractFromTab(tab.id, {
     clickedImageUrl: info.srcUrl,
     pageUrl: info.pageUrl || tab.url,
@@ -85,9 +88,11 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
   if (!payload.imageUrl) throw new Error("Could not find the product image.");
   if (!payload.sourcePageUrl) throw new Error("Could not find the product URL.");
 
+  await updateProgress(42, "Preparing product image...");
   const imageDataUrl = await imageDataUrlFromUrl(payload.imageUrl);
   if (imageDataUrl) payload.imageDataUrl = imageDataUrl;
 
+  await updateProgress(68, "Saving to Studio...");
   const response = await fetch(`${studioUrl}/api/extension/import-product`, {
     method: "POST",
     headers: {
@@ -103,7 +108,9 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
 
   const title = body.warning ? "Imported with review needed" : "Sent to MERAV Studio";
   const message = body.warning || "Product added to the active design board page.";
+  await updateProgress(100, message, { done: true });
   notify(title, message);
+  setTimeout(() => updateProgress(0, "", { clearBadge: true }), 1600);
   return body;
 }
 
@@ -175,6 +182,19 @@ function notify(title, message) {
     title,
     message,
   });
+}
+
+async function updateProgress(percent, message, options = {}) {
+  const nextPercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  const badgeText = options.clearBadge || nextPercent <= 0 ? "" : `${nextPercent}%`;
+  await chrome.action.setBadgeBackgroundColor({ color: nextPercent >= 100 ? "#2f7d46" : "#17130f" });
+  await chrome.action.setBadgeText({ text: badgeText });
+  chrome.runtime.sendMessage({
+    type: "MERAV_IMPORT_PROGRESS",
+    percent: nextPercent,
+    message,
+    done: Boolean(options.done),
+  }).catch(() => {});
 }
 
 function pageFallbackExtraction(fallback) {

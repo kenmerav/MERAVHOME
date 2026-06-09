@@ -14,6 +14,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadProjects();
 });
 
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== "MERAV_IMPORT_PROGRESS") return;
+  setProgress(message.percent, message.message);
+  if (message.done) {
+    window.setTimeout(() => setProgress(0, "", false), 1400);
+  }
+});
+
 document.getElementById("projectSelect").addEventListener("change", async (event) => {
   const projectId = event.target.value;
   await chrome.storage.sync.set({ projectId });
@@ -45,7 +53,7 @@ document.getElementById("send").addEventListener("click", async () => {
   }
 
   setSending(true);
-  setStatus("Sending product to Studio...");
+  setProgress(8, "Starting import...");
   try {
     const response = await chrome.runtime.sendMessage({
       type: "MERAV_SEND_CURRENT_TAB",
@@ -54,8 +62,9 @@ document.getElementById("send").addEventListener("click", async () => {
     });
     if (!response?.ok) throw new Error(response?.error || "Could not send product.");
     status.classList.remove("error");
-    status.textContent = response.warning || "Product sent to the design board.";
+    setProgress(100, response.warning || "Product sent to the design board.", true);
   } catch (error) {
+    setProgress(0, "", false);
     setStatus(error instanceof Error ? error.message : "Could not send product.", true);
   } finally {
     setSending(false);
@@ -186,6 +195,16 @@ function setStatus(message, isError = false) {
   const status = document.getElementById("status");
   status.textContent = message;
   status.classList.toggle("error", isError);
+}
+
+function setProgress(percent, message, done = false) {
+  const progress = document.getElementById("progress");
+  const progressBar = document.getElementById("progressBar");
+  const nextPercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  progress.hidden = nextPercent <= 0;
+  progressBar.style.width = `${nextPercent}%`;
+  if (message) setStatus(message, false);
+  if (done) progressBar.style.width = "100%";
 }
 
 function setSending(isSending) {

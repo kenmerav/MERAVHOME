@@ -73,6 +73,20 @@
         font-size: 12px;
         line-height: 1.35;
       }
+      .progress {
+        height: 6px;
+        margin-top: 12px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e4dfd3;
+      }
+      .progress-bar {
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: #17130f;
+        transition: width 180ms ease;
+      }
       .error {
         color: #9d2c21;
       }
@@ -97,6 +111,9 @@
       <div class="row">
         <button id="send">Send Current Product</button>
         <button id="options" class="secondary">Settings</button>
+      </div>
+      <div id="progress" class="progress" hidden>
+        <div id="progressBar" class="progress-bar"></div>
       </div>
       <div id="status" class="status"></div>
     </main>
