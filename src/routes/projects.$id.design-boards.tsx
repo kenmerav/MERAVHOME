@@ -86,6 +86,7 @@ type BoardElement = {
   materialCategory?: string | null;
   materialQuantity?: number | null;
   materialFinish?: string | null;
+  materialDimensions?: string | null;
   materialInfoNotNeeded?: boolean;
 };
 
@@ -1283,6 +1284,7 @@ function ProjectDesignBoardsPage() {
     let category: ProductCategory =
       linkedProduct?.category || toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
+    const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
     const quantity =
       quantityOverride && quantityOverride > 0
         ? quantityOverride
@@ -1304,6 +1306,7 @@ function ProjectDesignBoardsPage() {
         product_url: productUrl,
         image_url: element.src || null,
         finish,
+        dimensions,
         notes: element.notes || null,
       });
     } else {
@@ -1312,6 +1315,7 @@ function ProjectDesignBoardsPage() {
       if (!product.image_url && element.src) productPatch.image_url = element.src;
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
       if (!product.finish && finish) productPatch.finish = finish;
+      if (dimensions && product.dimensions !== dimensions) productPatch.dimensions = dimensions;
       if (Object.keys(productPatch).length) {
         product = await db.updateProduct(product.id, productPatch);
       }
@@ -1403,6 +1407,7 @@ function ProjectDesignBoardsPage() {
               materialCategory: category,
               materialQuantity: quantity,
               materialFinish: finish,
+              materialDimensions: dimensions,
             }
           : candidate,
       ),
@@ -1495,6 +1500,7 @@ function ProjectDesignBoardsPage() {
             linkedProduct?.category ||
             inferMaterialCategory(itemLabel, productUrl);
           const finish = (element.materialFinish || element.finish || "").trim();
+          const dimensions = (element.materialDimensions || linkedProduct?.dimensions || "").trim();
           const identity = element.productId || productUrl || element.src || itemLabel;
           const key = [
             room.id,
@@ -1502,6 +1508,7 @@ function ProjectDesignBoardsPage() {
             itemLabel.toLowerCase(),
             category.toLowerCase(),
             finish.toLowerCase(),
+            dimensions.toLowerCase(),
           ].join("::");
           const quantity =
             element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
@@ -1572,6 +1579,7 @@ function ProjectDesignBoardsPage() {
                       materialItemId: result.materialItemId,
                       materialRoomId: result.roomId,
                       materialQuantity: group.quantity,
+                      materialDimensions: element.materialDimensions,
                     }
                   : candidate,
               ),
@@ -3891,6 +3899,15 @@ function SelectedPanel({
                 />
               </label>
             </div>
+            <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
+              Dimensions
+              <input
+                value={selected.materialDimensions ?? linkedProduct?.dimensions ?? ""}
+                onChange={(event) => onUpdate({ materialDimensions: event.target.value })}
+                placeholder='33"W x 34"D x 30"H'
+                className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+              />
+            </label>
             <button
               type="button"
               onClick={onSendToMaterials}
@@ -4114,6 +4131,7 @@ function productToBoardElement(
     finish: product.finish,
     materialCategory: product.category,
     materialFinish: product.finish,
+    materialDimensions: product.dimensions,
     x,
     y,
     width: 260,
@@ -4147,6 +4165,7 @@ function materialItemToBoardElement(
     materialCategory,
     materialQuantity: item.quantity ?? 1,
     materialFinish: item.color ?? product?.finish ?? null,
+    materialDimensions: product?.dimensions ?? null,
     x,
     y,
     width: 260,
@@ -4481,6 +4500,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "materialCategory",
     "materialQuantity",
     "materialFinish",
+    "materialDimensions",
     "materialInfoNotNeeded",
   ];
   for (const key of keys) {

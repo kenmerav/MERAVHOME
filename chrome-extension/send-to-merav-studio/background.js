@@ -142,12 +142,25 @@ async function extractFromTab(tabId, fallback) {
     });
     return response || fallback;
   } catch {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: pageFallbackExtraction,
-      args: [fallback],
-    });
-    return result || fallback;
+    try {
+      // Inject the extractor only when the user explicitly invokes the extension on a vendor page.
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["contentScript.js"],
+      });
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: "MERAV_EXTRACT_PRODUCT",
+        ...fallback,
+      });
+      return response || fallback;
+    } catch {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: pageFallbackExtraction,
+        args: [fallback],
+      });
+      return result || fallback;
+    }
   }
 }
 
@@ -158,7 +171,7 @@ function normalizeStudioUrl(value) {
 function notify(title, message) {
   chrome.notifications.create({
     type: "basic",
-    iconUrl: "icons/icon-128.svg",
+    iconUrl: "icons/icon-128.png",
     title,
     message,
   });

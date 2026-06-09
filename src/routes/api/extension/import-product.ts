@@ -33,6 +33,7 @@ type BoardElement = {
   materialCategory?: string | null;
   materialQuantity?: number | null;
   materialFinish?: string | null;
+  materialDimensions?: string | null;
   visible?: boolean;
 };
 
@@ -523,6 +524,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
                   materialCategory,
                   materialQuantity: 1,
                   materialFinish: finish || null,
+                  materialDimensions: dimensions || null,
                   x: placement.x,
                   y: placement.y,
                   width: imageSize.width,

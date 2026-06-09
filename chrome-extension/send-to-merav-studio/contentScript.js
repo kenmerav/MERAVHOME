@@ -182,6 +182,7 @@ function productColorFinish(jsonLd) {
   const properties = jsonLdProperties(jsonLd);
   return firstValid(
     [
+      queryVariantValue(),
       clean(jsonLd.color),
       propertyValue(properties, /color|colour|finish|fabric|material|upholstery|variant/i),
       selectedOptionValue(/color|colour|finish|fabric|material|upholstery|variant/i, isPlausibleColorFinish),
@@ -190,6 +191,36 @@ function productColorFinish(jsonLd) {
     ],
     isPlausibleColorFinish,
   );
+}
+
+function queryVariantValue() {
+  const params = new URLSearchParams(location.search);
+  const candidateKeys = [
+    "color",
+    "colour",
+    "finish",
+    "fabric",
+    "material",
+    "upholstery",
+    "AttrValue1",
+    "variant",
+  ];
+  for (const key of candidateKeys) {
+    const value = cleanProductAttribute(params.get(key), /color|colour|finish|fabric|material|upholstery|variant/i);
+    if (isPlausibleColorFinish(value)) return value;
+  }
+  const attrValues = [];
+  for (const [key, value] of params.entries()) {
+    const normalizedValue = cleanProductAttribute(value, /color|colour|finish|fabric|material|upholstery|variant/i);
+    if (!normalizedValue || !isPlausibleColorFinish(normalizedValue)) continue;
+    if (/color|colour|finish|fabric|material|upholstery|variant/i.test(key)) {
+      return normalizedValue;
+    }
+    if (/^attrvalue\d*$/i.test(key) || /option|attribute/i.test(key)) attrValues.push(normalizedValue);
+  }
+  const colorLike = attrValues.find((value) => !isLikelySizeOnly(value));
+  if (colorLike) return colorLike;
+  return "";
 }
 
 function productDimensions(jsonLd) {
@@ -413,6 +444,7 @@ function visibleDimensions() {
 function cleanProductAttribute(value, labelPattern) {
   let text = clean(value);
   if (!text) return "";
+  text = text.replace(/([a-z])([A-Z])/g, "$1 $2");
   text = text
     .replace(/^(color|finish|fabric|material|variant|dimensions|overall|size|width|height|depth)\s*:?\s*/i, "")
     .replace(/\b(selected|selection|choose|view all|more options|details|shop now)\b/gi, "")
@@ -425,7 +457,13 @@ function cleanProductAttribute(value, labelPattern) {
 function isPlausibleProductAttribute(value) {
   const text = clean(value);
   if (!text || text.length > 120) return false;
-  if (/add to cart|quantity|wishlist|shipping|delivery|pickup|zip|sale|clearance|review|star|view all|shop now|image|photo|carousel|room view/i.test(text)) {
+  if (/clear\s*variant\s*filters|variant\s*filters|clear filters|reset filters/i.test(text)) return false;
+  if (/^[a-z]+(?:[A-Z][a-z0-9]*){1,}$/.test(text)) return false;
+  if (
+    /add to cart|quantity|wishlist|shipping|delivery|pickup|zip|sale|clearance|review|star|view all|shop now|image|photo|carousel|room view|button|submit|drawer|modal|toggle|filter/i.test(
+      text,
+    )
+  ) {
     return false;
   }
   return /[a-z0-9]/i.test(text);
@@ -435,6 +473,7 @@ function isPlausibleColorFinish(value) {
   const text = clean(value);
   if (!isPlausibleProductAttribute(text)) return false;
   if (text.length > 80) return false;
+  if (isLikelySizeOnly(text)) return false;
   if (/\$|sku|item #|model|mpn|qty|quantity|dimensions|overall|width|height|depth|length|\d+\s*(?:"|in\.?|inch|cm|mm|ft)/i.test(text)) {
     return false;
   }
@@ -442,6 +481,11 @@ function isPlausibleColorFinish(value) {
     return false;
   }
   return /[a-z]/i.test(text);
+}
+
+function isLikelySizeOnly(value) {
+  const text = clean(value).toLowerCase();
+  return /^(xs|s|m|l|xl|xxl|small|medium|large|extra small|extra large|twin|full|queen|king|cal king|standard|short|tall)$/i.test(text);
 }
 
 function isPlausibleDimension(value) {
