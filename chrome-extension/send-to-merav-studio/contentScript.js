@@ -229,6 +229,7 @@ function productDimensions(jsonLd) {
     [
       dimensionsFromProperties(properties),
       jsonLdDimensions(jsonLd),
+      visibleDimensionSet(),
       visibleLabeledSpec(/dimensions|overall|size|width|height|depth|length/i, isPlausibleDimension),
       visibleDimensions(),
       visibleDefinition(/dimensions|overall|size|width|height|depth|length/i, isPlausibleDimension),
@@ -296,6 +297,28 @@ function dimensionsFromProperties(properties) {
   const height = propertyValue(properties, /^height$/i);
   if (width && depth && height) return `${width} W x ${depth} D x ${height} H`;
   return "";
+}
+
+function visibleDimensionSet() {
+  const rawText = document.body?.innerText || "";
+  const width = visibleDimensionValue(rawText, /(?:^|\n|\s)Width\s*:\s*([^\n]+)/i);
+  const depth = visibleDimensionValue(rawText, /(?:^|\n|\s)(?:Depth|Extension)\s*:\s*([^\n]+)/i);
+  const height = visibleDimensionValue(rawText, /(?:^|\n|\s)Height\s*:\s*([^\n]+)/i);
+  const parts = [];
+  if (width) parts.push(`${width} W`);
+  if (depth) parts.push(`${depth} D`);
+  if (height) parts.push(`${height} H`);
+  return parts.length >= 2 ? parts.join(" x ") : "";
+}
+
+function visibleDimensionValue(rawText, pattern) {
+  const match = rawText.match(pattern);
+  if (!match?.[1]) return "";
+  const value = cleanProductAttribute(match[1], /dimensions|overall|size|width|height|depth|length|extension/i)
+    .replace(/\b(Bulb|Rating|See More|Recommended|Key Specifications).*$/i, "")
+    .trim();
+  const dimension = value.match(/\d+(?:\.\d+)?\s*(?:"|in\.?|inch(?:es)?|cm|mm|ft|feet)\b/i)?.[0];
+  return dimension ? clean(dimension) : "";
 }
 
 function selectedOptionValue(labelPattern, validator) {
@@ -447,6 +470,9 @@ function cleanProductAttribute(value, labelPattern) {
   text = text.replace(/([a-z])([A-Z])/g, "$1 $2");
   text = text
     .replace(/^(color|finish|fabric|material|variant|dimensions|overall|size|width|height|depth)\s*:?\s*/i, "")
+    .replace(/\s*-\s*\d+\s+(?:In Stock|Out of Stock|Backordered|Discontinued).*$/i, "")
+    .replace(/\s+\d+\s+(?:In Stock|Out of Stock|Backordered|Discontinued).*$/i, "")
+    .replace(/\s*(?:In Stock|Out of Stock|Backordered|Discontinued|Free Shipping|Leaves the Warehouse|Shipping to|Add to Cart|Key Specifications).*$/i, "")
     .replace(/\b(selected|selection|choose|view all|more options|details|shop now)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
