@@ -24,9 +24,17 @@ import {
   Upload,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import {
   db,
+  type DesignBoardVersionRecord,
   type MaterialItem,
   type Product,
   type ProductCategory,
@@ -242,7 +250,6 @@ const PAGE_THUMBNAIL_OVERSCAN = 4;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 1.25;
 const AUTOSAVE_DELAY_MS = 700;
-const VERSION_SNAPSHOT_INTERVAL_MS = 45_000;
 const REMOTE_SELECTION_STALE_MS = 1500;
 const BOARD_FONT_OPTIONS = [
   { label: "Montserrat", value: "var(--font-montserrat)" },
@@ -298,12 +305,12 @@ function productMatchesBoardCatalogCategory(product: Product, category: ItemCate
 function materialItemHasBoardTraySignal(item: MaterialItem) {
   return Boolean(
     !item.not_needed &&
-      (!item.is_required ||
-        item.product_id ||
-        item.product_url?.trim() ||
-        item.product?.image_url ||
-        item.color?.trim() ||
-        item.notes?.trim()),
+    (!item.is_required ||
+      item.product_id ||
+      item.product_url?.trim() ||
+      item.product?.image_url ||
+      item.color?.trim() ||
+      item.notes?.trim()),
   );
 }
 
@@ -360,7 +367,6 @@ function ProjectDesignBoardsPage() {
   const lastGoodBoardStateRef = useRef<BoardState>(boardStateRef.current);
   const lastSavedJsonRef = useRef("");
   const lastRemoteUpdatedAtRef = useRef("");
-  const lastVersionAtRef = useRef(0);
   const pendingSaveJsonRef = useRef<string | null>(null);
   const localEditShieldUntilRef = useRef(0);
   const removingBackgroundRef = useRef(false);
@@ -393,6 +399,8 @@ function ProjectDesignBoardsPage() {
     "local" | "loading" | "ready" | "saving" | "saved" | "error"
   >("loading");
   const [thumbnailViewport, setThumbnailViewport] = useState({ scrollLeft: 0, width: 0 });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -400,6 +408,7 @@ function ProjectDesignBoardsPage() {
   });
   const canEditDesignBoards =
     profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
+  const canRestoreDesignBoards = profile?.is_active === true && profile.role === "Admin";
   const { data: project } = useQuery({
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
@@ -447,6 +456,15 @@ function ProjectDesignBoardsPage() {
       ).data ?? []) as UserProfile[],
     enabled: canEditDesignBoards,
   });
+  const { data: designBoardVersions = [] } = useQuery({
+    queryKey: ["designBoardVersions", id],
+    queryFn: async () => (await db.listDesignBoardVersions(id)) ?? [],
+    enabled: canRestoreDesignBoards,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
+  });
 
   const pages = boardState.pages.length ? boardState.pages : defaultPages();
   const comments = boardState.comments ?? [];
@@ -459,6 +477,23 @@ function ProjectDesignBoardsPage() {
   );
   const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
   const [pageTitleDraft, setPageTitleDraft] = useState(activePage.title ?? "");
+  const selectedVersionRecord = useMemo(
+    () =>
+      previewVersionId
+        ? (designBoardVersions.find((version) => version.version_id === previewVersionId) ?? null)
+        : (designBoardVersions[0] ?? null),
+    [designBoardVersions, previewVersionId],
+  );
+  const selectedVersionPreview = useMemo(() => {
+    if (!selectedVersionRecord) return null;
+    return normalizeBoardState(selectedVersionRecord.board_state_snapshot);
+  }, [selectedVersionRecord]);
+  const selectedVersionPreviewPage =
+    selectedVersionPreview?.pages.find(
+      (page) => page.id === selectedVersionPreview.selectedPageId,
+    ) ??
+    selectedVersionPreview?.pages[0] ??
+    null;
   const editablePageIds = useMemo(() => {
     const ids = new Set<string>();
     for (
@@ -559,10 +594,7 @@ function ProjectDesignBoardsPage() {
         : products.filter((product) => productMatchesBoardCatalogCategory(product, category)),
     [category, products],
   );
-  const roomById = useMemo(
-    () => new Map(rooms.map((room) => [room.id, room] as const)),
-    [rooms],
-  );
+  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
   const filteredProjectMaterials = useMemo(
     () =>
       materialItems
@@ -690,39 +722,23 @@ function ProjectDesignBoardsPage() {
       const saveJson = JSON.stringify(stateToSave);
 
       if (!expectedUpdatedAt) {
-        const latestBoard = await db.getDesignBoard(id);
-        if (latestBoard?.updated_at) {
-          const savedBoard = await db.updateDesignBoardIfFresh(
-            id,
-            stateToSave,
-            latestBoard.updated_at,
-            profile?.id,
-          );
-          if (savedBoard?.updated_at) {
-            lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-            return { savedBoard, savedJson: saveJson, savedState: stateToSave };
-          }
-        }
-
         try {
           const savedBoard = await db.insertDesignBoard(id, stateToSave, profile?.id);
           if (savedBoard?.updated_at) lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
           return { savedBoard, savedJson: saveJson, savedState: stateToSave };
         } catch {
           const newestBoard = await db.getDesignBoard(id);
-          if (newestBoard?.updated_at) {
-            const savedBoard = await db.updateDesignBoardIfFresh(
-              id,
-              stateToSave,
-              newestBoard.updated_at,
-              profile?.id,
+          if (newestBoard?.board_state) {
+            const newestJson = JSON.stringify(
+              prepareBoardStateForSave(normalizeBoardState(newestBoard.board_state)),
             );
-            if (savedBoard?.updated_at) {
-              lastRemoteUpdatedAtRef.current = savedBoard.updated_at;
-              return { savedBoard, savedJson: saveJson, savedState: stateToSave };
+            if (newestJson === saveJson) {
+              markRemoteBoardApplied(saveJson, newestBoard.updated_at);
+              return { savedBoard: newestBoard, savedJson: saveJson, savedState: stateToSave };
             }
+            applySharedBoardSnapshot(newestBoard, undefined, { preserveSelectedPage: true });
           }
-          throw new Error("Design board save failed");
+          throw new Error("Design board changed in another tab before this save finished.");
         }
       }
 
@@ -739,26 +755,16 @@ function ProjectDesignBoardsPage() {
 
       const latestBoard = await db.getDesignBoard(id);
       if (latestBoard?.board_state) {
-        const latestJson = JSON.stringify(prepareBoardStateForSave(latestBoard.board_state));
+        const latestJson = JSON.stringify(
+          prepareBoardStateForSave(normalizeBoardState(latestBoard.board_state)),
+        );
         if (latestJson === saveJson) {
           markRemoteBoardApplied(saveJson, latestBoard.updated_at);
           return { savedBoard: latestBoard, savedJson: saveJson, savedState: stateToSave };
         }
+        applySharedBoardSnapshot(latestBoard, undefined, { preserveSelectedPage: true });
       }
-
-      if (latestBoard?.updated_at) {
-        const retrySavedBoard = await db.updateDesignBoardIfFresh(
-          id,
-          stateToSave,
-          latestBoard.updated_at,
-          profile?.id,
-        );
-        if (retrySavedBoard?.updated_at) {
-          lastRemoteUpdatedAtRef.current = retrySavedBoard.updated_at;
-          return { savedBoard: retrySavedBoard, savedJson: saveJson, savedState: stateToSave };
-        }
-      }
-      throw new Error("Design board save failed");
+      throw new Error("Design board changed in another tab before this save finished.");
     },
     [applySharedBoardSnapshot, id, profile?.id],
   );
@@ -937,10 +943,25 @@ function ProjectDesignBoardsPage() {
     removingBackgroundRef.current = false;
     applyingRemoteRef.current = false;
     lastGoodBoardStateRef.current = emptyState;
-    lastVersionAtRef.current = 0;
     setActiveUsers([]);
     setSaveStatus("loading");
+    setHistoryOpen(false);
+    setPreviewVersionId(null);
   }, [id]);
+
+  useEffect(() => {
+    if (!designBoardVersions.length) {
+      setPreviewVersionId(null);
+      return;
+    }
+    if (
+      previewVersionId &&
+      designBoardVersions.some((version) => version.version_id === previewVersionId)
+    ) {
+      return;
+    }
+    setPreviewVersionId(designBoardVersions[0].version_id);
+  }, [designBoardVersions, previewVersionId]);
 
   useEffect(() => {
     if (!canEditDesignBoards || loadingProfile || !profile?.id) return;
@@ -1074,8 +1095,7 @@ function ProjectDesignBoardsPage() {
         applySharedBoardSnapshot(sharedBoard, undefined, {
           preserveSelectedPage: remoteLoadedRef.current,
         });
-      }
-      else setSaveStatus((current) => (current === "loading" ? "ready" : current));
+      } else setSaveStatus((current) => (current === "loading" ? "ready" : current));
       return;
     }
 
@@ -1112,21 +1132,7 @@ function ProjectDesignBoardsPage() {
     pendingSaveJsonRef.current = nextJson;
     setSaveStatus("saving");
     saveTimeoutRef.current = window.setTimeout(() => {
-      let latestState = boardStateRef.current;
-      const now = Date.now();
-      if (
-        hasMeaningfulBoardState(latestState) &&
-        now - lastVersionAtRef.current > VERSION_SNAPSHOT_INTERVAL_MS
-      ) {
-        latestState = addBoardVersion(
-          latestState,
-          profile?.full_name || profile?.email || "MERAV teammate",
-          profile?.id,
-        );
-        lastVersionAtRef.current = now;
-        boardStateRef.current = latestState;
-        setBoardState(latestState);
-      }
+      const latestState = boardStateRef.current;
       const latestJson = JSON.stringify(prepareBoardStateForSave(latestState));
       pendingSaveJsonRef.current = latestJson;
       void saveBoardStateSafely(latestState).then(
@@ -1146,14 +1152,7 @@ function ProjectDesignBoardsPage() {
     return () => {
       if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
     };
-  }, [
-    boardState,
-    canEditDesignBoards,
-    profile?.email,
-    profile?.full_name,
-    profile?.id,
-    saveBoardStateSafely,
-  ]);
+  }, [boardState, canEditDesignBoards, saveBoardStateSafely]);
 
   useEffect(() => {
     const updateScale = () => {
@@ -1282,7 +1281,8 @@ function ProjectDesignBoardsPage() {
     const inferredMaterialCategory = inferMaterialCategory(itemLabel, productUrl);
     const materialCategory = element.materialCategory || inferredMaterialCategory;
     let category: ProductCategory =
-      linkedProduct?.category || toProductCategory(element.materialCategory || inferredMaterialCategory);
+      linkedProduct?.category ||
+      toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
     const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
     const quantity =
@@ -1759,11 +1759,7 @@ function ProjectDesignBoardsPage() {
     const nextState = normalizeBoardState({
       ...current,
       selectedPageId: nextPage.id,
-      pages: [
-        ...safePages.slice(0, insertAt),
-        nextPage,
-        ...safePages.slice(insertAt),
-      ],
+      pages: [...safePages.slice(0, insertAt), nextPage, ...safePages.slice(insertAt)],
     });
     pushUndo();
     applyLocalBoardUpdate(nextState);
@@ -1786,7 +1782,9 @@ function ProjectDesignBoardsPage() {
     strip.scrollTo({
       left: Math.max(
         0,
-        pageIndex * PAGE_THUMBNAIL_SLOT_WIDTH - strip.clientWidth / 2 + PAGE_THUMBNAIL_SLOT_WIDTH / 2,
+        pageIndex * PAGE_THUMBNAIL_SLOT_WIDTH -
+          strip.clientWidth / 2 +
+          PAGE_THUMBNAIL_SLOT_WIDTH / 2,
       ),
       behavior: "smooth",
     });
@@ -1835,13 +1833,38 @@ function ProjectDesignBoardsPage() {
     broadcastPatch({ kind: "patch-page", pageId: selectedPageId, patch });
   };
 
-  const restoreVersion = (version: BoardVersion) => {
-    const restored = normalizeBoardState(version.state);
-    pushUndo();
-    applyLocalBoardUpdate(restored);
-    broadcastPatch({ kind: "restore-state", state: restored });
-    clearSelection();
-  };
+  const restoreVersion = useCallback(
+    async (version: DesignBoardVersionRecord) => {
+      if (!canRestoreDesignBoards) return;
+      const restored = normalizeBoardState(version.board_state_snapshot);
+      const savedBoard = await db.restoreDesignBoardVersion(version, profile?.id);
+      if (!savedBoard) throw new Error("Could not restore that version.");
+      pushUndo();
+      applyLocalBoardUpdate(restored);
+      boardStateRef.current = restored;
+      lastGoodBoardStateRef.current = restored;
+      const restoredJson = JSON.stringify(prepareBoardStateForSave(restored));
+      markRemoteBoardApplied(restoredJson, savedBoard.updated_at);
+      queryClient.setQueryData(["designBoard", id], savedBoard);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["designBoard", id] }),
+        queryClient.invalidateQueries({ queryKey: ["designBoardVersions", id] }),
+      ]);
+      broadcastPatch({ kind: "restore-state", state: restored });
+      clearSelection();
+      setSaveStatus("saved");
+      toast.success("Design board restored from version history.");
+    },
+    [
+      applyLocalBoardUpdate,
+      broadcastPatch,
+      canRestoreDesignBoards,
+      id,
+      profile?.id,
+      pushUndo,
+      queryClient,
+    ],
+  );
 
   const addFile = useCallback(
     async (file: File) => {
@@ -2032,12 +2055,10 @@ function ProjectDesignBoardsPage() {
   useEffect(() => {
     if (!canEditDesignBoards || loadingSharedBoard || removingBackgroundRef.current) return;
 
-    let pending:
-      | {
-          pageId: string;
-          element: BoardElement;
-        }
-      | null = null;
+    let pending: {
+      pageId: string;
+      element: BoardElement;
+    } | null = null;
 
     for (const page of pages) {
       const element = page.elements.find(
@@ -2491,6 +2512,9 @@ function ProjectDesignBoardsPage() {
                 <Plus className="h-4 w-4" />
                 {bulkMaterialScope === "page" ? "Sending Page..." : "Send Page to Materials"}
               </ToolbarButton>
+              {canRestoreDesignBoards && (
+                <ToolbarButton onClick={() => setHistoryOpen(true)}>History</ToolbarButton>
+              )}
               <ToolbarButton onClick={removeSelected} disabled={!selectedCount} destructive>
                 <Trash2 className="h-4 w-4" /> Delete
               </ToolbarButton>
@@ -2785,6 +2809,100 @@ function ProjectDesignBoardsPage() {
             </div>
           </div>
 
+          <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+            <DialogContent className="max-w-5xl">
+              <DialogHeader>
+                <DialogTitle className="font-display text-3xl font-normal">
+                  Design Board History
+                </DialogTitle>
+                <DialogDescription>
+                  Admin restore view. Every live board change now archives an immutable snapshot in
+                  Supabase before the current board is changed.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
+                  {designBoardVersions.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                      No archived versions yet.
+                    </div>
+                  ) : (
+                    designBoardVersions.map((version, index) => (
+                      <button
+                        key={version.version_id}
+                        type="button"
+                        onClick={() => setPreviewVersionId(version.version_id)}
+                        className={cn(
+                          "w-full rounded-lg border px-4 py-3 text-left transition",
+                          selectedVersionRecord?.version_id === version.version_id
+                            ? "border-ink bg-stone-50"
+                            : "border-stone-200 bg-white hover:border-stone-400",
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-ink">
+                              Version {designBoardVersions.length - index}
+                            </div>
+                            <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                              {version.save_type}
+                            </div>
+                          </div>
+                          <div className="text-right text-xs text-stone-500">
+                            {new Date(version.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        {version.save_reason && (
+                          <div className="mt-2 text-xs text-stone-600">{version.save_reason}</div>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="space-y-4">
+                  {selectedVersionRecord && selectedVersionPreviewPage ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                            Preview
+                          </div>
+                          <div className="mt-1 text-sm text-stone-700">
+                            {new Date(selectedVersionRecord.created_at).toLocaleString()} ·{" "}
+                            {selectedVersionRecord.save_type}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void restoreVersion(selectedVersionRecord)}
+                          className="inline-flex items-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800"
+                        >
+                          Restore This Version
+                        </button>
+                      </div>
+                      <div className="rounded-xl border border-stone-200 bg-[#f4f1ec] p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-stone-500">
+                          <span>{selectedVersionPreview.pages.length} pages archived</span>
+                          <span>{selectedVersionPreviewPage.title}</span>
+                        </div>
+                        <div className="relative h-[420px] overflow-hidden rounded-lg bg-[#fbfaf7] shadow-[0_16px_40px_rgba(40,34,25,0.12)]">
+                          <LightweightPagePreview
+                            page={selectedVersionPreviewPage}
+                            pageNumber={1}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-sm text-stone-500">
+                      Choose a version to preview and restore.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <aside
             className={cn(
               "group fixed right-0 top-0 z-50 flex h-screen transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden",
@@ -2995,13 +3113,7 @@ function ProjectDesignBoardsPage() {
   );
 }
 
-function LightweightPagePlaceholder({
-  page,
-  pageNumber,
-}: {
-  page: BoardPage;
-  pageNumber: number;
-}) {
+function LightweightPagePlaceholder({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
   return (
     <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 bg-[#fbfaf7] text-center text-stone-300">
       <div>
@@ -4013,7 +4125,9 @@ function MaterialTrayItem({ item }: { item: BoardMaterialTrayItem }) {
             {[item.room?.name, category].filter(Boolean).join(" · ")}
           </div>
           {item.color && <div className="text-xs text-stone-500">{item.color}</div>}
-          {item.product?.vendor && <div className="text-xs text-stone-500">{item.product.vendor}</div>}
+          {item.product?.vendor && (
+            <div className="text-xs text-stone-500">{item.product.vendor}</div>
+          )}
         </div>
       </div>
     </div>
@@ -4353,11 +4467,7 @@ function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardStat
               ? (normalizeBoardPage({ ...page, ...patch.page }, 0) ?? page)
               : page,
           )
-        : [
-            ...current.pages.slice(0, insertAt),
-            patch.page,
-            ...current.pages.slice(insertAt),
-          ],
+        : [...current.pages.slice(0, insertAt), patch.page, ...current.pages.slice(insertAt)],
     });
   }
   if (patch.kind === "patch-page") {
@@ -4522,10 +4632,7 @@ function prepareBoardStateForSave(state: BoardState): BoardState {
       elements: page.elements.map((element) => stripLargeInlineImageData(element)),
     })),
     comments: normalized.comments ?? [],
-    versions: (normalized.versions ?? []).slice(0, 12).map((version) => ({
-      ...version,
-      state: stripVersionsFromState(version.state),
-    })),
+    versions: [],
   };
 }
 
@@ -4564,22 +4671,7 @@ function preserveBoardSelectedPage(state: BoardState, selectedPageId?: string | 
     ...normalized,
     selectedPageId: selectedPageStillExists
       ? selectedPageId
-      : normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
-  };
-}
-
-function addBoardVersion(state: BoardState, createdBy: string, userId?: string | null): BoardState {
-  const normalized = normalizeBoardState(state);
-  const version: BoardVersion = {
-    id: crypto.randomUUID(),
-    label: `Autosave by ${createdBy}`,
-    createdAt: new Date().toISOString(),
-    createdBy: userId ?? null,
-    state: stripVersionsFromState(normalized),
-  };
-  return {
-    ...normalized,
-    versions: [version, ...(normalized.versions ?? [])].slice(0, 12),
+      : (normalized.pages[0]?.id ?? defaultBoardState().selectedPageId),
   };
 }
 
@@ -4699,10 +4791,6 @@ function normalizeBoardElement(value: unknown): BoardElement | null {
     zIndex: typeof element.zIndex === "number" ? element.zIndex : 10,
     visible: element.visible === false ? false : true,
   };
-}
-
-function hasMeaningfulBoardState(state: BoardState) {
-  return state.pages.some((page) => page.elements.length > 0);
 }
 
 function defaultBoardState(): BoardState {

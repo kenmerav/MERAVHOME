@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "validate:design-board-collab": "node scripts/validate-design-board-collab.mjs",
+    "validate:design-board-recovery": "node scripts/validate-design-board-recovery.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {
