@@ -1,0 +1,26 @@
+# Send to MERAV Studio Chrome Extension
+
+This unpacked Chrome extension adds a product-image context menu item:
+
+1. Right-click a product image.
+2. Choose **Send to MERAV Studio**.
+3. Studio creates or updates the catalog product and adds it to the active design-board page.
+
+## Setup
+
+1. Add `MERAV_EXTENSION_TOKEN` to Vercel and local `.env`.
+2. Open `chrome://extensions`.
+3. Turn on **Developer mode**.
+4. Click **Load unpacked**.
+5. Select `chrome-extension/send-to-merav-studio`.
+6. Open extension options and save:
+   - Studio URL: `https://studio.meravinteriors.com`
+   - Project ID, or open a Studio design-board page once so the extension remembers it
+   - Extension token matching `MERAV_EXTENSION_TOKEN`
+
+## Notes
+
+- The extension never stores Supabase service-role keys.
+- Studio stores the original image and tries free background removal.
+- If background removal fails, Studio imports the original image and returns a review warning.
+- Product extraction priority is JSON-LD, Open Graph metadata, page HTML, then visible text.

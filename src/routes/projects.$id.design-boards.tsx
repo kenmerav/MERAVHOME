@@ -61,6 +61,7 @@ type BoardElement = {
   zIndex: number;
   src?: string;
   originalSrc?: string;
+  backgroundRemovedUrl?: string | null;
   label?: string;
   notes?: string;
   text?: string;
