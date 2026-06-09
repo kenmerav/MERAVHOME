@@ -209,6 +209,9 @@ export type Database = {
           scrape_error: string | null
           scrape_status: string
           sort_order: number
+          source_board_element_id: string | null
+          source_board_id: string | null
+          source_board_page_id: string | null
           updated_at: string
         }
         Insert: {
@@ -230,6 +233,9 @@ export type Database = {
           scrape_error?: string | null
           scrape_status?: string
           sort_order?: number
+          source_board_element_id?: string | null
+          source_board_id?: string | null
+          source_board_page_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -251,6 +257,9 @@ export type Database = {
           scrape_error?: string | null
           scrape_status?: string
           sort_order?: number
+          source_board_element_id?: string | null
+          source_board_id?: string | null
+          source_board_page_id?: string | null
           updated_at?: string
         }
         Relationships: [

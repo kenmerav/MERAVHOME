@@ -204,6 +204,9 @@ export interface MaterialItem {
   notes: string | null;
   not_needed: boolean;
   product_id: string | null;
+  source_board_id: string | null;
+  source_board_page_id: string | null;
+  source_board_element_id: string | null;
   scrape_status: string;
   scrape_error: string | null;
   created_at: string;

@@ -1360,6 +1360,9 @@ function ProjectDesignBoardsPage() {
       notes: element.notes || null,
       not_needed: false,
       product_id: product.id,
+      source_board_id: sharedBoard?.project_id ?? null,
+      source_board_page_id: page.id,
+      source_board_element_id: element.id,
       scrape_status: "scraped",
       scrape_error: null,
     };
@@ -1461,9 +1464,12 @@ function ProjectDesignBoardsPage() {
     setBulkMaterialScope(scope);
     try {
       let sent = 0;
+      let removed = 0;
       let skipped = 0;
       const skippedReasons = { label: 0, link: 0, room: 0 };
       const nextSortOrderByRoom = new Map<string, number>();
+      const syncedMaterialIds = new Set<string>();
+      const protectedMaterialIds = new Set<string>();
       const groups = new Map<
         string,
         {
@@ -1477,6 +1483,7 @@ function ProjectDesignBoardsPage() {
 
       for (const page of targetPages) {
         for (const element of page.elements) {
+          if (element.materialItemId) protectedMaterialIds.add(element.materialItemId);
           if (element.type !== "image") continue;
           if (element.materialInfoNotNeeded) continue;
           const room = resolveMaterialRoom(element, page);
@@ -1557,6 +1564,7 @@ function ProjectDesignBoardsPage() {
         );
         if (result.status === "sent") {
           sent += 1;
+          if (result.materialItemId) syncedMaterialIds.add(result.materialItemId);
           const duplicateMaterialIds = Array.from(
             new Set(
               group.elements
@@ -1589,12 +1597,27 @@ function ProjectDesignBoardsPage() {
           skipped += group.elements.length;
         }
       }
-      if (sent) {
+      const targetPageIds = new Set(targetPages.map((page) => page.id));
+      const staleMaterialItems = materialItems.filter(
+        (item) =>
+          item.source_board_page_id &&
+          targetPageIds.has(item.source_board_page_id) &&
+          !syncedMaterialIds.has(item.id) &&
+          !protectedMaterialIds.has(item.id),
+      );
+      for (const item of staleMaterialItems) {
+        await db.deleteMaterialItem(item.id);
+        removed += 1;
+      }
+      if (removed) {
+        await queryClient.invalidateQueries({ queryKey: ["materialItems", id] });
+      }
+      if (sent || removed) {
         const skippedReasonText = formatSkippedMaterialReasons(skippedReasons);
         toast.success(
-          `Synced ${sent} ${sent === 1 ? "item" : "items"} to Materials${
-            skipped ? ` and skipped ${skipped}${skippedReasonText}.` : "."
-          }`,
+          `${sent ? `Synced ${sent} ${sent === 1 ? "item" : "items"}` : "Updated Materials"}${
+            removed ? ` and removed ${removed} stale ${removed === 1 ? "item" : "items"}` : ""
+          }${skipped ? `, skipped ${skipped}${skippedReasonText}.` : "."}`,
         );
       } else {
         const skippedReasonText = formatSkippedMaterialReasons(skippedReasons);
