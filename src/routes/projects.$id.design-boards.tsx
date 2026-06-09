@@ -62,6 +62,8 @@ type BoardElement = {
   src?: string;
   originalSrc?: string;
   backgroundRemovedUrl?: string | null;
+  autoRemoveBackground?: boolean;
+  backgroundRemovalStatus?: "pending" | "processing" | "complete" | "failed";
   label?: string;
   notes?: string;
   text?: string;
@@ -361,6 +363,7 @@ function ProjectDesignBoardsPage() {
   const pendingSaveJsonRef = useRef<string | null>(null);
   const localEditShieldUntilRef = useRef(0);
   const removingBackgroundRef = useRef(false);
+  const autoBackgroundRemovalIdsRef = useRef<Set<string>>(new Set());
   const applyingRemoteRef = useRef(false);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const clientIdRef = useRef(
@@ -380,6 +383,7 @@ function ProjectDesignBoardsPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<ItemCategory | "All">("All");
   const [removingBackground, setRemovingBackground] = useState(false);
+  const [autoBackgroundRemovalPulse, setAutoBackgroundRemovalPulse] = useState(0);
   const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
@@ -2016,6 +2020,110 @@ function ProjectDesignBoardsPage() {
       setRemovingBackground(false);
     }
   };
+
+  useEffect(() => {
+    if (!canEditDesignBoards || loadingSharedBoard || removingBackgroundRef.current) return;
+
+    let pending:
+      | {
+          pageId: string;
+          element: BoardElement;
+        }
+      | null = null;
+
+    for (const page of pages) {
+      const element = page.elements.find(
+        (candidate) =>
+          candidate.type === "image" &&
+          candidate.autoRemoveBackground &&
+          !candidate.backgroundRemovedUrl &&
+          Boolean(candidate.originalSrc || candidate.src) &&
+          !autoBackgroundRemovalIdsRef.current.has(candidate.id),
+      );
+      if (element) {
+        pending = { pageId: page.id, element };
+        break;
+      }
+    }
+
+    if (!pending) return;
+
+    const { pageId, element } = pending;
+    const originalSrc = element.originalSrc || element.src;
+    if (!originalSrc) return;
+
+    autoBackgroundRemovalIdsRef.current.add(element.id);
+    removingBackgroundRef.current = true;
+    localEditShieldUntilRef.current = Date.now() + 6000;
+    setElementsForPage(pageId, (current) =>
+      current.map((candidate) =>
+        candidate.id === element.id
+          ? { ...candidate, backgroundRemovalStatus: "processing" }
+          : candidate,
+      ),
+    );
+
+    void (async () => {
+      try {
+        const source = await imageSourceForCanvas(originalSrc);
+        const cutout = await removeFlatImageBackground(source);
+        const uploadedCutout = await uploadDesignBoardImage(
+          cutout,
+          id,
+          `${element.label || element.productName || "cutout"}.png`,
+        );
+        localEditShieldUntilRef.current = Date.now() + 6000;
+        setElementsForPage(pageId, (current) =>
+          current.map((candidate) =>
+            candidate.id === element.id
+              ? {
+                  ...candidate,
+                  originalSrc,
+                  src: uploadedCutout,
+                  backgroundRemovedUrl: uploadedCutout,
+                  autoRemoveBackground: false,
+                  backgroundRemovalStatus: "complete",
+                }
+              : candidate,
+          ),
+        );
+        if (element.productId) {
+          await supabase
+            .from("products")
+            .update({ image_url: uploadedCutout } as any)
+            .eq("id", element.productId);
+          await queryClient.invalidateQueries({ queryKey: ["catalog"] });
+        }
+      } catch (error) {
+        console.error("[Design Board] Automatic background removal failed", error);
+        setElementsForPage(pageId, (current) =>
+          current.map((candidate) =>
+            candidate.id === element.id
+              ? {
+                  ...candidate,
+                  autoRemoveBackground: false,
+                  backgroundRemovalStatus: "failed",
+                }
+              : candidate,
+          ),
+        );
+      } finally {
+        window.setTimeout(() => {
+          removingBackgroundRef.current = false;
+          autoBackgroundRemovalIdsRef.current.delete(element.id);
+          setAutoBackgroundRemovalPulse((value) => value + 1);
+        }, 1500);
+      }
+    })();
+  }, [
+    autoBackgroundRemovalPulse,
+    canEditDesignBoards,
+    id,
+    loadingSharedBoard,
+    pages,
+    queryClient,
+    setElementsForPage,
+  ]);
 
   const restoreSelectedOriginal = () => {
     if (!selected || selected.type !== "image" || !selected.originalSrc) return;
@@ -4348,6 +4456,9 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "zIndex",
     "src",
     "originalSrc",
+    "backgroundRemovedUrl",
+    "autoRemoveBackground",
+    "backgroundRemovalStatus",
     "label",
     "notes",
     "text",

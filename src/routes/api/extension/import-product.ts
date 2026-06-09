@@ -20,6 +20,8 @@ type BoardElement = {
   src?: string;
   originalSrc?: string;
   backgroundRemovedUrl?: string | null;
+  autoRemoveBackground?: boolean;
+  backgroundRemovalStatus?: "pending" | "processing" | "complete" | "failed";
   label?: string;
   notes?: string;
   link?: string;
@@ -446,7 +448,9 @@ export const Route = createFileRoute("/api/extension/import-product")({
             `Original product page: ${sourcePageUrl}`,
             imageUrl ? `Original image URL: ${imageUrl}` : "",
             `Original image file: ${originalUpload.publicUrl}`,
-            backgroundRemovedUrl ? `Background removed image: ${backgroundRemovedUrl}` : "Background removal failed: review image manually.",
+            backgroundRemovedUrl
+              ? `Background removed image: ${backgroundRemovedUrl}`
+              : "Background removal queued for Studio design board.",
           ]
             .filter(Boolean)
             .join("\n");
@@ -504,6 +508,8 @@ export const Route = createFileRoute("/api/extension/import-product")({
                   src: imageForProduct,
                   originalSrc: originalUpload.publicUrl,
                   backgroundRemovedUrl,
+                  autoRemoveBackground: !backgroundRemovedUrl,
+                  backgroundRemovalStatus: backgroundRemovedUrl ? "complete" : "pending",
                   label: productName,
                   notes: [description, dimensions ? `Dimensions: ${dimensions}` : ""]
                     .filter(Boolean)
@@ -541,9 +547,8 @@ export const Route = createFileRoute("/api/extension/import-product")({
             backgroundRemovedUrl,
             thumbnailUrl,
             previewUrl,
-            warning: backgroundRemovedUrl
-              ? null
-              : "Imported with the original image because background removal failed.",
+            autoRemoveBackground: !backgroundRemovedUrl,
+            warning: null,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Could not import product.";
