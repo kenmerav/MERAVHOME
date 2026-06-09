@@ -1,10 +1,16 @@
 # Send to MERAV Studio Chrome Extension
 
-This unpacked Chrome extension adds two product-sourcing flows:
+This unpacked Chrome extension adds three product-sourcing flows:
 
 1. Right-click a product image.
 2. Choose **Send to MERAV Studio**.
 3. Studio creates or updates the catalog product and adds it to the active design-board page.
+
+Or:
+
+1. Open a product page.
+2. Right-click anywhere on the page.
+3. Choose **Send current product page to MERAV Studio**.
 
 Or:
 

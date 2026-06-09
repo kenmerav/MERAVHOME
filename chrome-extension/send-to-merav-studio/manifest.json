@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Send to MERAV Studio",
-  "description": "Right-click a product image and send it directly to MERAV Studio.",
-  "version": "0.1.0",
+  "description": "Send product pages and product images directly to MERAV Studio.",
+  "version": "0.1.1",
   "permissions": ["contextMenus", "storage", "activeTab", "scripting", "notifications"],
   "host_permissions": ["<all_urls>"],
   "background": {

@@ -1,18 +1,28 @@
-const MENU_ID = "send-to-merav-studio";
+const IMAGE_MENU_ID = "send-image-to-merav-studio";
+const PAGE_MENU_ID = "send-page-to-merav-studio";
 const DEFAULT_STUDIO_URL = "https://studio.meravinteriors.com";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: MENU_ID,
+    id: IMAGE_MENU_ID,
     title: "Send to MERAV Studio",
     contexts: ["image"],
+  });
+  chrome.contextMenus.create({
+    id: PAGE_MENU_ID,
+    title: "Send current product page to MERAV Studio",
+    contexts: ["page"],
   });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== MENU_ID || !tab?.id) return;
+  if (!tab?.id) return;
   try {
-    await sendImageToStudio(info, tab);
+    if (info.menuItemId === IMAGE_MENU_ID) {
+      await sendImageToStudio(info, tab);
+    } else if (info.menuItemId === PAGE_MENU_ID) {
+      await sendCurrentTabToStudio();
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not send product.";
     notify("MERAV Studio import failed", message);
