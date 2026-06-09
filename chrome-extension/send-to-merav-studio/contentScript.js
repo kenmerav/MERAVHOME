@@ -60,14 +60,8 @@ function extractProduct(clickedImageUrl, pageUrl) {
   const manufacturer = brandName(jsonLd.manufacturer) || vendor;
   const price = priceText(offers?.price, offers?.priceCurrency) || visiblePrice();
   const sku = clean(jsonLd.sku) || clean(jsonLd.mpn) || visibleSku();
-  const colorFinish =
-    clean(jsonLd.color) ||
-    visibleOption(/color|finish|fabric|material|variant/i) ||
-    visibleDefinition(/color|finish|fabric|material/i);
-  const dimensions =
-    jsonLdDimensions(jsonLd) ||
-    visibleDimensions() ||
-    visibleDefinition(/dimensions|overall|size|width|height|depth/i);
+  const colorFinish = productColorFinish(jsonLd);
+  const dimensions = productDimensions(jsonLd);
   const description =
     clean(jsonLd.description) ||
     meta("og:description") ||
@@ -181,40 +175,205 @@ function visiblePrice() {
 }
 
 function visibleSku() {
-  return visibleDefinition(/sku|item #|item number|model|mpn/i);
+  return visibleDefinition(/sku|item #|item number|model|mpn/i, isPlausibleProductAttribute);
 }
 
-function visibleOption(labelPattern) {
+function productColorFinish(jsonLd) {
+  const properties = jsonLdProperties(jsonLd);
+  return firstValid(
+    [
+      clean(jsonLd.color),
+      propertyValue(properties, /color|colour|finish|fabric|material|upholstery|variant/i),
+      selectedOptionValue(/color|colour|finish|fabric|material|upholstery|variant/i, isPlausibleColorFinish),
+      visibleLabeledSpec(/color|colour|finish|fabric|material|upholstery|variant/i, isPlausibleColorFinish),
+      visibleDefinition(/color|colour|finish|fabric|material|upholstery|variant/i, isPlausibleColorFinish),
+    ],
+    isPlausibleColorFinish,
+  );
+}
+
+function productDimensions(jsonLd) {
+  const properties = jsonLdProperties(jsonLd);
+  return firstValid(
+    [
+      dimensionsFromProperties(properties),
+      jsonLdDimensions(jsonLd),
+      visibleLabeledSpec(/dimensions|overall|size|width|height|depth|length/i, isPlausibleDimension),
+      visibleDimensions(),
+      visibleDefinition(/dimensions|overall|size|width|height|depth|length/i, isPlausibleDimension),
+    ],
+    isPlausibleDimension,
+  );
+}
+
+function firstValid(values, validator) {
+  for (const value of values) {
+    const text = clean(value);
+    if (validator(text)) return text;
+  }
+  return "";
+}
+
+function jsonLdProperties(jsonLd) {
+  const properties = [];
+  const queue = [jsonLd];
+  const seen = new Set();
+  while (queue.length) {
+    const value = queue.shift();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+
+    const additionalProperty = value.additionalProperty || value.additionalProperties;
+    const items = Array.isArray(additionalProperty) ? additionalProperty : [additionalProperty].filter(Boolean);
+    items.forEach((property) => {
+      if (!property || typeof property !== "object") return;
+      const name = clean(property.name || property.propertyID || property["@type"]);
+      const propertyValueText = clean(
+        property.value ||
+          property.valueReference?.name ||
+          property.valueReference?.value ||
+          property.description ||
+          property.name,
+      );
+      if (name && propertyValueText) properties.push({ name, value: propertyValueText });
+    });
+
+    ["hasVariant", "isVariantOf", "model", "offers"].forEach((key) => {
+      const next = value[key];
+      if (Array.isArray(next)) queue.push(...next);
+      else if (next && typeof next === "object") queue.push(next);
+    });
+  }
+  return properties;
+}
+
+function propertyValue(properties, labelPattern) {
+  for (const property of properties) {
+    if (!labelPattern.test(property.name)) continue;
+    const value = cleanProductAttribute(property.value, labelPattern);
+    if (value) return value;
+  }
+  return "";
+}
+
+function dimensionsFromProperties(properties) {
+  const direct = propertyValue(properties, /dimensions|overall|size/i);
+  if (isPlausibleDimension(direct)) return direct;
+
+  const width = propertyValue(properties, /^width$/i);
+  const depth = propertyValue(properties, /^(depth|diameter)$/i);
+  const height = propertyValue(properties, /^height$/i);
+  if (width && depth && height) return `${width} W x ${depth} D x ${height} H`;
+  return "";
+}
+
+function selectedOptionValue(labelPattern, validator) {
   const optionSelectors = [
     "[aria-checked=true]",
     "[aria-selected=true]",
+    "input:checked",
     "select option:checked",
     "[class*=selected]",
+    "[class*=active]",
     "[data-selected=true]",
   ];
   for (const selector of optionSelectors) {
     for (const element of document.querySelectorAll(selector)) {
-      const rawText = clean(
-        element.textContent ||
-          element.getAttribute("aria-label") ||
-          element.getAttribute("title") ||
-          element.getAttribute("value"),
-      );
-      const text = cleanProductAttribute(rawText, labelPattern);
-      const context = clean(
-        element.closest("fieldset,section,form,li,div")?.textContent ||
-          element.parentElement?.textContent ||
-          "",
-      );
+      const context = selectedOptionContext(element);
       const contextMatches = labelPattern.test(context);
-      const attributeMatches = labelPattern.test(rawText);
-      if ((contextMatches || attributeMatches) && isPlausibleProductAttribute(text)) return text;
+      for (const rawText of elementTextCandidates(element)) {
+        const attributeMatches = labelPattern.test(rawText);
+        const text = cleanProductAttribute(rawText, labelPattern);
+        if ((contextMatches || attributeMatches) && validator(text)) return text;
+      }
     }
   }
-  return visibleDefinition(labelPattern);
+  return "";
 }
 
-function visibleDefinition(labelPattern) {
+function selectedOptionContext(element) {
+  const contextElement = element.closest(
+    "fieldset,[role=radiogroup],[aria-label],[data-testid],section,form,li,div",
+  );
+  const legend = clean(contextElement?.querySelector("legend")?.textContent);
+  return clean(
+    [
+      legend,
+      contextElement?.getAttribute("aria-label"),
+      contextElement?.getAttribute("data-testid"),
+      contextElement?.getAttribute("class"),
+      contextElement?.textContent,
+      element.parentElement?.textContent,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function elementTextCandidates(element) {
+  const candidates = [
+    element.textContent,
+    element.getAttribute("aria-label"),
+    element.getAttribute("title"),
+    element.getAttribute("alt"),
+    element.getAttribute("value"),
+    element.getAttribute("data-value"),
+    element.getAttribute("data-color"),
+    element.getAttribute("data-colour"),
+    element.getAttribute("data-finish"),
+    element.getAttribute("data-fabric"),
+    element.getAttribute("data-material"),
+    element.getAttribute("data-option"),
+    element.getAttribute("data-option-value"),
+    associatedLabelText(element),
+    element.closest("label")?.textContent,
+  ];
+  return candidates.map(clean).filter(Boolean);
+}
+
+function associatedLabelText(element) {
+  const id = element.getAttribute("id");
+  if (!id) return "";
+  try {
+    return clean(document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent);
+  } catch {
+    return "";
+  }
+}
+
+function visibleLabeledSpec(labelPattern, validator) {
+  const selectors = [
+    "tr",
+    "dl",
+    "[role=row]",
+    "[class*=spec]",
+    "[class*=detail]",
+    "[class*=attribute]",
+    "[data-testid*=spec]",
+    "[data-testid*=detail]",
+  ];
+  for (const selector of selectors) {
+    for (const element of document.querySelectorAll(selector)) {
+      const text = clean(element.textContent);
+      if (!labelPattern.test(text)) continue;
+      const cells = Array.from(element.querySelectorAll("th,td,dt,dd,[role=cell]")).map((cell) =>
+        clean(cell.textContent),
+      );
+      if (cells.length >= 2) {
+        const label = cells[0];
+        const value = cells.slice(1).join(" ");
+        const candidate = cleanProductAttribute(value, labelPattern);
+        if (labelPattern.test(label) && validator(candidate)) return candidate;
+      }
+      const inline = text.match(/^[^:]{2,60}:\s*(.+)$/);
+      const candidate = cleanProductAttribute(inline?.[1], labelPattern);
+      if (validator(candidate)) return candidate;
+    }
+  }
+  return "";
+}
+
+function visibleDefinition(labelPattern, validator = isPlausibleProductAttribute) {
   const rawText = document.body?.innerText || "";
   const lines = rawText.split(/\n| {2,}/).map(clean).filter(Boolean);
   for (let index = 0; index < lines.length; index += 1) {
@@ -222,9 +381,9 @@ function visibleDefinition(labelPattern) {
     if (!labelPattern.test(line)) continue;
     const inline = line.match(/^[^:]{2,45}:\s*(.+)$/);
     const inlineValue = cleanProductAttribute(inline?.[1], labelPattern);
-    if (isPlausibleProductAttribute(inlineValue)) return inlineValue;
+    if (validator(inlineValue)) return inlineValue;
     const nextLine = cleanProductAttribute(lines[index + 1], labelPattern);
-    if (isPlausibleProductAttribute(nextLine)) return nextLine;
+    if (validator(nextLine)) return nextLine;
   }
   return "";
 }
@@ -270,6 +429,30 @@ function isPlausibleProductAttribute(value) {
     return false;
   }
   return /[a-z0-9]/i.test(text);
+}
+
+function isPlausibleColorFinish(value) {
+  const text = clean(value);
+  if (!isPlausibleProductAttribute(text)) return false;
+  if (text.length > 80) return false;
+  if (/\$|sku|item #|model|mpn|qty|quantity|dimensions|overall|width|height|depth|length|\d+\s*(?:"|in\.?|inch|cm|mm|ft)/i.test(text)) {
+    return false;
+  }
+  if (/select|selected option|available|swatch|fabric type|color family|see more|learn more/i.test(text)) {
+    return false;
+  }
+  return /[a-z]/i.test(text);
+}
+
+function isPlausibleDimension(value) {
+  const text = clean(value);
+  if (!text || text.length > 140) return false;
+  if (/add to cart|wishlist|shipping|delivery|review|shop now|image|photo/i.test(text)) return false;
+  return (
+    /\d+(?:\.\d+)?\s*(?:"|in\.?|inch(?:es)?|cm|mm|ft|feet)\b/i.test(text) ||
+    /\d+(?:\.\d+)?\s*[wdhl]\b/i.test(text) ||
+    /\b(width|height|depth|diameter|length|overall)\b/i.test(text)
+  );
 }
 
 function visibleDescription() {
