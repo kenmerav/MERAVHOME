@@ -87,6 +87,11 @@ function MaterialsPage() {
     return map;
   }, [items]);
 
+  const sortedRooms = useMemo(
+    () => [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [rooms],
+  );
+
   const overall = useMemo(() => {
     const total = items.length;
     const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
@@ -221,7 +226,7 @@ function MaterialsPage() {
         </div>
 
         <div className="space-y-12">
-          {rooms.map((room) => (
+          {sortedRooms.map((room) => (
             <RoomMaterialsSection
               key={room.id}
               room={room}
