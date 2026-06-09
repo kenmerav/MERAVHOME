@@ -15,8 +15,9 @@ This unpacked Chrome extension adds a product-image context menu item:
 5. Select `chrome-extension/send-to-merav-studio`.
 6. Open extension options and save:
    - Studio URL: `https://studio.meravinteriors.com`
-   - Project ID, or open a Studio design-board page once so the extension remembers it
    - Extension token matching `MERAV_EXTENSION_TOKEN`
+   - Click **Load Projects**
+   - Choose the project you are sourcing into
 
 ## Notes
 

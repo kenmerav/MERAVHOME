@@ -43,6 +43,7 @@ import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$i
 import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
+import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
 import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
@@ -219,6 +220,11 @@ const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
   path: '/api/stripe/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiExtensionProjectsRoute = ApiExtensionProjectsRouteImport.update({
+  id: '/api/extension/projects',
+  path: '/api/extension/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiExtensionImportProductRoute =
   ApiExtensionImportProductRouteImport.update({
     id: '/api/extension/import-product',
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
+  '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/specbooks': typeof SpecbooksIndexRoute
   '/users': typeof UsersIndexRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
+  '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
@@ -335,6 +343,7 @@ export interface FileRoutesById {
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
+  '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
@@ -375,6 +384,7 @@ export interface FileRouteTypes {
     | '/specbooks/'
     | '/users/'
     | '/api/extension/import-product'
+    | '/api/extension/projects'
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
@@ -413,6 +423,7 @@ export interface FileRouteTypes {
     | '/specbooks'
     | '/users'
     | '/api/extension/import-product'
+    | '/api/extension/projects'
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
@@ -451,6 +462,7 @@ export interface FileRouteTypes {
     | '/specbooks/'
     | '/users/'
     | '/api/extension/import-product'
+    | '/api/extension/projects'
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
@@ -490,6 +502,7 @@ export interface RootRouteChildren {
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   ApiExtensionImportProductRoute: typeof ApiExtensionImportProductRoute
+  ApiExtensionProjectsRoute: typeof ApiExtensionProjectsRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
   ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
@@ -742,6 +755,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStripeWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/extension/projects': {
+      id: '/api/extension/projects'
+      path: '/api/extension/projects'
+      fullPath: '/api/extension/projects'
+      preLoaderRoute: typeof ApiExtensionProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/extension/import-product': {
       id: '/api/extension/import-product'
       path: '/api/extension/import-product'
@@ -786,6 +806,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpecbooksIndexRoute: SpecbooksIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   ApiExtensionImportProductRoute: ApiExtensionImportProductRoute,
+  ApiExtensionProjectsRoute: ApiExtensionProjectsRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
   ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,
