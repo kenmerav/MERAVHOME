@@ -50,8 +50,10 @@ type BoardState = {
 
 type ExtensionProductPayload = {
   projectId?: string;
+  boardPageId?: string;
   sourcePageUrl?: string;
   imageUrl?: string;
+  imageDataUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
   product?: {
@@ -110,6 +112,16 @@ function normalizeUrl(value: unknown) {
   } catch {
     return "";
   }
+}
+
+function parseImageDataUrl(value: unknown) {
+  const text = cleanText(value);
+  if (!text) return null;
+  const match = text.match(/^data:(image\/(?:png|jpe?g|webp));base64,([a-z0-9+/=\s]+)$/i);
+  if (!match) return null;
+  const buffer = Buffer.from(match[2].replace(/\s+/g, ""), "base64");
+  if (!buffer.byteLength || buffer.byteLength > MAX_REMOTE_IMAGE_BYTES) return null;
+  return { buffer, contentType: match[1].toLowerCase() };
 }
 
 function hostName(url: string) {
@@ -372,11 +384,13 @@ export const Route = createFileRoute("/api/extension/import-product")({
 
           const payload = (await request.json()) as ExtensionProductPayload;
           const projectId = cleanText(payload.projectId);
+          const boardPageId = cleanText(payload.boardPageId);
           const sourcePageUrl = normalizeUrl(payload.sourcePageUrl);
           const imageUrl = normalizeUrl(payload.imageUrl);
+          const imageData = parseImageDataUrl(payload.imageDataUrl);
           if (!projectId) return json({ error: "Choose a Studio project in the extension settings." }, 400);
           if (!sourcePageUrl) return json({ error: "Product URL is required." }, 400);
-          if (!imageUrl) return json({ error: "Product image is required." }, 400);
+          if (!imageUrl && !imageData) return json({ error: "Product image is required." }, 400);
 
           const { data: project } = await supabaseAdmin
             .from("projects")
@@ -401,7 +415,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
           );
           const category = toProductCategory(materialCategory);
 
-          const downloadedImage = await downloadImage(imageUrl);
+          const downloadedImage = imageData ?? (await downloadImage(imageUrl));
           const originalUpload = await uploadPublicImage({
             bucket: PRODUCT_IMAGE_BUCKET,
             projectId,
@@ -430,6 +444,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const reviewNotes = [
             manufacturer ? `Manufacturer: ${manufacturer}` : "",
             `Original product page: ${sourcePageUrl}`,
+            imageUrl ? `Original image URL: ${imageUrl}` : "",
             `Original image file: ${originalUpload.publicUrl}`,
             backgroundRemovedUrl ? `Background removed image: ${backgroundRemovedUrl}` : "Background removal failed: review image manually.",
           ]
@@ -473,7 +488,9 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const layerId = crypto.randomUUID();
           let addedPageId = "";
           await saveBoardWithRetry(projectId, (state) => {
-            const selectedPageId = state.selectedPageId;
+            const selectedPageId = state.pages.some((page) => page.id === boardPageId)
+              ? boardPageId
+              : state.selectedPageId;
             return {
               ...state,
               pages: state.pages.map((page) => {

@@ -16,8 +16,11 @@ Or:
 
 1. Open a product page.
 2. Click the **Send to MERAV Studio** extension icon.
-3. Choose a project.
+3. Choose a project and board page.
 4. Click **Send Current Product**.
+
+The extension remembers the last project and board page you selected, so right-click sends can run
+without opening Studio or asking again.
 
 ## Setup
 

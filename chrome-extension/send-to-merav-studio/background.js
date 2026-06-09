@@ -3,15 +3,17 @@ const PAGE_MENU_ID = "send-page-to-merav-studio";
 const DEFAULT_STUDIO_URL = "https://studio.meravinteriors.com";
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: IMAGE_MENU_ID,
-    title: "Send to MERAV Studio",
-    contexts: ["image"],
-  });
-  chrome.contextMenus.create({
-    id: PAGE_MENU_ID,
-    title: "Send current product page to MERAV Studio",
-    contexts: ["page"],
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: IMAGE_MENU_ID,
+      title: "Send to MERAV Studio",
+      contexts: ["image"],
+    });
+    chrome.contextMenus.create({
+      id: PAGE_MENU_ID,
+      title: "Send current product page to MERAV Studio",
+      contexts: ["page"],
+    });
   });
 });
 
@@ -26,13 +28,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not send product.";
     notify("MERAV Studio import failed", message);
-    chrome.runtime.openOptionsPage();
   }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "MERAV_SEND_CURRENT_TAB") return false;
-  sendCurrentTabToStudio(message.projectId)
+  sendCurrentTabToStudio(message.projectId, message.boardPageId)
     .then((result) => sendResponse({ ok: true, ...result }))
     .catch((error) => {
       const message = error instanceof Error ? error.message : "Could not send product.";
@@ -41,23 +42,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-async function sendCurrentTabToStudio(projectIdOverride) {
+async function sendCurrentTabToStudio(projectIdOverride, boardPageIdOverride) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url) {
     throw new Error("Open a product page first.");
   }
-  return sendImageToStudio({ pageUrl: tab.url, srcUrl: "" }, tab, projectIdOverride);
+  return sendImageToStudio({ pageUrl: tab.url, srcUrl: "" }, tab, projectIdOverride, boardPageIdOverride);
 }
 
-async function sendImageToStudio(info, tab, projectIdOverride) {
+async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverride) {
   const settings = await chrome.storage.sync.get([
     "studioUrl",
     "projectId",
+    "boardPageId",
     "extensionToken",
     "lastStudioProjectId",
   ]);
   const studioUrl = normalizeStudioUrl(settings.studioUrl || DEFAULT_STUDIO_URL);
   const projectId = projectIdOverride || settings.projectId || settings.lastStudioProjectId;
+  const boardPageId = boardPageIdOverride || settings.boardPageId || "";
   const extensionToken = settings.extensionToken;
 
   if (!projectId) {
@@ -74,12 +77,16 @@ async function sendImageToStudio(info, tab, projectIdOverride) {
   const payload = {
     ...pageExtraction,
     projectId,
+    boardPageId,
     imageUrl: pageExtraction.imageUrl || info.srcUrl,
     sourcePageUrl: pageExtraction.sourcePageUrl || info.pageUrl || tab.url,
   };
 
   if (!payload.imageUrl) throw new Error("Could not find the product image.");
   if (!payload.sourcePageUrl) throw new Error("Could not find the product URL.");
+
+  const imageDataUrl = await imageDataUrlFromUrl(payload.imageUrl);
+  if (imageDataUrl) payload.imageDataUrl = imageDataUrl;
 
   const response = await fetch(`${studioUrl}/api/extension/import-product`, {
     method: "POST",
@@ -98,6 +105,33 @@ async function sendImageToStudio(info, tab, projectIdOverride) {
   const message = body.warning || "Product added to the active design board page.";
   notify(title, message);
   return body;
+}
+
+async function imageDataUrlFromUrl(imageUrl) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const response = await fetch(imageUrl, { signal: controller.signal, credentials: "include" });
+    clearTimeout(timeout);
+    if (!response.ok) return "";
+    const contentType = response.headers.get("content-type")?.split(";")[0]?.toLowerCase() || "";
+    if (!/^image\/(png|jpe?g|webp)$/.test(contentType)) return "";
+    const buffer = await response.arrayBuffer();
+    if (!buffer.byteLength || buffer.byteLength > 10 * 1024 * 1024) return "";
+    return `data:${contentType};base64,${arrayBufferToBase64(buffer)}`;
+  } catch {
+    return "";
+  }
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 async function extractFromTab(tabId, fallback) {

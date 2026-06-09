@@ -81,11 +81,17 @@
   <body>
     <main>
       <h1>Send to Studio</h1>
-      <p>Choose the project, then send the current product page into the active design board.</p>
+      <p>Choose the destination once, then send products straight onto that design board page.</p>
       <label>
         Project
         <select id="projectSelect">
           <option value="">Loading projects...</option>
+        </select>
+      </label>
+      <label>
+        Board Page
+        <select id="boardPageSelect">
+          <option value="">Choose a project first</option>
         </select>
       </label>
       <div class="row">

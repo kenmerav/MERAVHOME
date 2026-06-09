@@ -6,6 +6,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   settings = await chrome.storage.sync.get([
     "studioUrl",
     "projectId",
+    "boardPageId",
+    "boardPageByProject",
     "extensionToken",
     "lastStudioProjectId",
   ]);
@@ -16,13 +18,29 @@ document.getElementById("projectSelect").addEventListener("change", async (event
   const projectId = event.target.value;
   await chrome.storage.sync.set({ projectId });
   settings.projectId = projectId;
+  await loadBoardPages(projectId);
+});
+
+document.getElementById("boardPageSelect").addEventListener("change", async (event) => {
+  const boardPageId = event.target.value;
+  const projectId = document.getElementById("projectSelect").value;
+  const boardPageByProject = { ...(settings.boardPageByProject || {}) };
+  if (projectId) boardPageByProject[projectId] = boardPageId;
+  await chrome.storage.sync.set({ boardPageId, boardPageByProject });
+  settings.boardPageId = boardPageId;
+  settings.boardPageByProject = boardPageByProject;
 });
 
 document.getElementById("send").addEventListener("click", async () => {
   const projectId = document.getElementById("projectSelect").value;
+  const boardPageId = document.getElementById("boardPageSelect").value;
   const status = document.getElementById("status");
   if (!projectId) {
     setStatus("Choose a project first.", true);
+    return;
+  }
+  if (!boardPageId) {
+    setStatus("Choose a board page first.", true);
     return;
   }
 
@@ -32,6 +50,7 @@ document.getElementById("send").addEventListener("click", async () => {
     const response = await chrome.runtime.sendMessage({
       type: "MERAV_SEND_CURRENT_TAB",
       projectId,
+      boardPageId,
     });
     if (!response?.ok) throw new Error(response?.error || "Could not send product.");
     status.classList.remove("error");
@@ -67,9 +86,11 @@ async function loadProjects() {
 
     const selectedProjectId = settings.projectId || settings.lastStudioProjectId || "";
     renderSelect(body.projects || [], selectedProjectId);
-    setStatus("");
+    const loadedPages = await loadBoardPages(selectedProjectId);
+    if (loadedPages !== false) setStatus("");
   } catch (error) {
     renderSelect([], "");
+    renderBoardPageSelect([], "");
     setStatus(error instanceof Error ? error.message : "Could not load projects.", true);
   }
 }
@@ -93,6 +114,71 @@ function renderSelect(projects, selectedProjectId) {
 
   if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) {
     select.value = selectedProjectId;
+  }
+}
+
+async function loadBoardPages(projectId) {
+  if (!projectId) {
+    renderBoardPageSelect([], "");
+    return true;
+  }
+
+  const token = settings.extensionToken;
+  if (!token) {
+    renderBoardPageSelect([], "");
+    return true;
+  }
+
+  try {
+    const studioUrl = normalizeStudioUrl(settings.studioUrl);
+    const response = await fetch(
+      `${studioUrl}/api/extension/board-pages?projectId=${encodeURIComponent(projectId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.error) {
+      throw new Error(body.error || `Could not load board pages (${response.status}).`);
+    }
+
+    const rememberedPageId = settings.boardPageByProject?.[projectId] || settings.boardPageId || "";
+    const selectedPageId =
+      rememberedPageId && (body.pages || []).some((page) => page.id === rememberedPageId)
+        ? rememberedPageId
+        : body.selectedPageId || "";
+    renderBoardPageSelect(body.pages || [], selectedPageId);
+
+    if (selectedPageId) {
+      const boardPageByProject = { ...(settings.boardPageByProject || {}), [projectId]: selectedPageId };
+      await chrome.storage.sync.set({ boardPageId: selectedPageId, boardPageByProject });
+      settings.boardPageId = selectedPageId;
+      settings.boardPageByProject = boardPageByProject;
+    }
+    return true;
+  } catch (error) {
+    renderBoardPageSelect([], "");
+    setStatus(error instanceof Error ? error.message : "Could not load board pages.", true);
+    return false;
+  }
+}
+
+function renderBoardPageSelect(pages, selectedPageId) {
+  const select = document.getElementById("boardPageSelect");
+  select.textContent = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = pages.length ? "Choose a board page" : "No board pages yet";
+  select.appendChild(empty);
+
+  pages.forEach((page, index) => {
+    const option = document.createElement("option");
+    option.value = page.id;
+    const count = typeof page.itemCount === "number" ? ` · ${page.itemCount} items` : "";
+    option.textContent = `${index + 1}. ${page.title}${count}`;
+    select.appendChild(option);
+  });
+
+  if (selectedPageId && pages.some((page) => page.id === selectedPageId)) {
+    select.value = selectedPageId;
   }
 }
 
