@@ -61,6 +61,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials, canViewProcurement } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
+import { templateForRoomName } from "@/lib/roomTemplates";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
 
 export const Route = createFileRoute("/projects/$id/")({
@@ -753,18 +754,53 @@ function AddRoomDialog({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
 
+  const createRoomWithMaterials = async (roomName: string) => {
+    const trimmedName = roomName.trim();
+    if (!trimmedName) throw new Error("Room name required");
+    const room = await db.createRoom({ project_id: projectId, name: trimmedName });
+    if (!room) throw new Error("Could not create room");
+
+    const template = templateForRoomName(trimmedName);
+    if (template.length > 0) {
+      await db.bulkInsertMaterialItems(
+        template.map((item, index) => ({
+          room_id: room.id,
+          project_id: projectId,
+          item_label: item.label,
+          client_product_name: buildClientProductName(trimmedName, item.label),
+          category: item.category,
+          is_required: true,
+          sort_order: index,
+          cad_label: null,
+          product_url: null,
+          quantity: null,
+          color: null,
+          notes: null,
+          not_needed: false,
+          product_id: null,
+          scrape_status: "pending",
+          scrape_error: null,
+        })),
+      );
+    }
+
+    return room;
+  };
+
   const submit = async () => {
     if (!name.trim()) return toast.error("Room name required");
-    await db.createRoom({ project_id: projectId, name });
+    await createRoomWithMaterials(name);
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+    qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
     setOpen(false);
     setName("");
     toast.success("Room added");
   };
 
   const quickAdd = async (n: string) => {
-    await db.createRoom({ project_id: projectId, name: n });
+    await createRoomWithMaterials(n);
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+    qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
     toast.success(`${n} added`);
   };
 
