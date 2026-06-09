@@ -452,6 +452,7 @@ function ProjectDesignBoardsPage() {
     pages.findIndex((page) => page.id === selectedPageId),
   );
   const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
+  const [pageTitleDraft, setPageTitleDraft] = useState(activePage.title ?? "");
   const editablePageIds = useMemo(() => {
     const ids = new Set<string>();
     for (
@@ -512,6 +513,10 @@ function ProjectDesignBoardsPage() {
         (comment) => comment.targetType === "element" && comment.targetId === selected.id,
       )
     : [];
+
+  useEffect(() => {
+    setPageTitleDraft(activePage.title ?? "");
+  }, [activePage.id, activePage.title]);
   const commentCountsByElement = useMemo(() => {
     const counts = new Map<string, number>();
     for (const comment of comments) {
@@ -2670,8 +2675,12 @@ function ProjectDesignBoardsPage() {
                 <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
                   Page Title
                   <input
-                    value={activePage.title}
-                    onChange={(event) => updateActivePage({ title: event.target.value })}
+                    value={pageTitleDraft}
+                    onChange={(event) => setPageTitleDraft(event.target.value)}
+                    onBlur={() => updateActivePage({ title: pageTitleDraft })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
                     placeholder={`Design Board ${selectedPageIndex + 1}`}
                     className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                   />
@@ -3466,6 +3475,22 @@ function SelectedPanel({
     ? products.find((product) => product.id === selected.productId)
     : null;
   const selectedMaterialIssues = selected.type === "image" ? imageMaterialIssues(selected) : [];
+  const [quantityDraft, setQuantityDraft] = useState(
+    selected.materialQuantity == null ? "" : String(selected.materialQuantity),
+  );
+
+  useEffect(() => {
+    setQuantityDraft(selected.materialQuantity == null ? "" : String(selected.materialQuantity));
+  }, [selected.id, selected.materialQuantity]);
+
+  const commitQuantityDraft = () => {
+    const value = quantityDraft.trim();
+    if (!value) {
+      onUpdate({ materialQuantity: null });
+      return;
+    }
+    onUpdate({ materialQuantity: Math.max(1, Number(value) || 1) });
+  };
 
   return (
     <div className="border-t border-stone-200 pt-4">
@@ -3720,14 +3745,14 @@ function SelectedPanel({
               <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
                 Qty
                 <input
-                  type="number"
-                  min={1}
-                  value={selected.materialQuantity ?? ""}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    onUpdate({
-                      materialQuantity: value === "" ? null : Math.max(1, Number(value) || 1),
-                    });
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={quantityDraft}
+                  onChange={(event) => setQuantityDraft(event.target.value)}
+                  onBlur={commitQuantityDraft}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
                   }}
                   placeholder="1"
                   className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
