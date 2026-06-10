@@ -217,6 +217,7 @@ function UserRow({
   onSave: (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[] }) => void;
 }) {
   const [fullName, setFullName] = useState(user.full_name);
+  const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<UserRole>(user.role);
   const [hourlyRate, setHourlyRate] = useState(String(user.hourly_rate ?? 0));
   const [isActive, setIsActive] = useState(user.is_active);
@@ -226,6 +227,7 @@ function UserRow({
 
   useEffect(() => {
     setFullName(user.full_name);
+    setEmail(user.email);
     setRole(user.role);
     setHourlyRate(String(user.hourly_rate ?? 0));
     setIsActive(user.is_active);
@@ -236,6 +238,7 @@ function UserRow({
   const saveUser = () => {
     onSave(user, {
       full_name: fullName,
+      email,
       role,
       hourly_rate: role === "Employee" ? moneyNumber(hourlyRate) : 0,
       is_active: isActive,
@@ -257,10 +260,20 @@ function UserRow({
         </div>
       </div>
 
-      <div className={role === "Employee" ? "grid md:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] gap-3" : "grid md:grid-cols-[1.2fr_0.8fr_0.8fr] gap-3"}>
+      <div
+        className={
+          role === "Employee"
+            ? "grid md:grid-cols-[1.2fr_1.2fr_0.8fr_0.8fr_0.8fr] gap-3"
+            : "grid md:grid-cols-[1.2fr_1.2fr_0.8fr_0.8fr] gap-3"
+        }
+      >
         <div>
           <Label className="eyebrow">Name</Label>
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </div>
+        <div>
+          <Label className="eyebrow">Email</Label>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
           <Label className="eyebrow">Role</Label>

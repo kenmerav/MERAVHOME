@@ -160,6 +160,7 @@ export const Route = createFileRoute("/api/users")({
 
           const body = (await request.json()) as {
             id?: string;
+            email?: string;
             full_name?: string;
             role?: UserRole;
             is_active?: boolean;
@@ -177,7 +178,9 @@ export const Route = createFileRoute("/api/users")({
           if (!existing) return json({ error: "User not found." }, 404);
 
           const isKen = existing.email.toLowerCase() === "ken@meravinteriors.com";
+          const email = body.email?.trim().toLowerCase() || existing.email;
           const role = body.role ?? existing.role;
+          if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400);
           if (!ROLES.includes(role)) return json({ error: "Choose a valid role." }, 400);
           if (isKen && (role !== "Admin" || body.is_active === false)) {
             return json({ error: "Ken must stay active and Admin." }, 400);
@@ -191,6 +194,8 @@ export const Route = createFileRoute("/api/users")({
           const fullName = body.full_name?.trim() || existing.full_name;
           const isActive = isKen ? true : body.is_active ?? existing.is_active;
           const userUpdate: Parameters<typeof supabaseAdmin.auth.admin.updateUserById>[1] = {
+            email,
+            email_confirm: true,
             user_metadata: { full_name: fullName, role },
           };
           if (body.password?.trim()) userUpdate.password = body.password.trim();
@@ -201,6 +206,7 @@ export const Route = createFileRoute("/api/users")({
           const { data: profile, error: profileError } = await supabaseAdmin
             .from("user_profiles")
             .update({
+              email,
               full_name: fullName,
               role,
               hourly_rate: hourlyRate,
