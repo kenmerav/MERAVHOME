@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Check,
   ExternalLink,
-  LayoutTemplate,
   Printer,
   Maximize2,
   X,
@@ -595,7 +594,6 @@ function PresentationPage() {
   const [slide, setSlide] = useState(0);
   const [editingPicks, setEditingPicks] = useState(false);
   const [editingText, setEditingText] = useState(false);
-  const [editingBoardPages, setEditingBoardPages] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || presenting) return;
@@ -721,13 +719,6 @@ function PresentationPage() {
           </Link>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setEditingBoardPages((value) => !value)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
-            >
-              <LayoutTemplate className="w-4 h-4" />{" "}
-              {editingBoardPages ? "Done Extra Pages" : "Extra Pages"}
-            </button>
-            <button
               onClick={() => setEditingPicks((value) => !value)}
               className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
             >
@@ -828,16 +819,14 @@ function PresentationPage() {
                 />
               )}
 
-              {editingBoardPages ? (
-                <PresentationExtraPageManager
-                  afterSlideKey={current.slideKey}
-                  slots={slotsByAfterKey.get(current.slideKey) ?? []}
-                  pages={designBoardPages}
-                  onAdd={() => void addPresentationExtraPage(current.slideKey)}
-                  onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
-                  onRemove={(slotId) => void removePresentationExtraPage(slotId)}
-                />
-              ) : null}
+              <PresentationExtraPageManager
+                afterSlideKey={current.slideKey}
+                slots={slotsByAfterKey.get(current.slideKey) ?? []}
+                pages={designBoardPages}
+                onAdd={() => void addPresentationExtraPage(current.slideKey)}
+                onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
+                onRemove={(slotId) => void removePresentationExtraPage(slotId)}
+              />
             </div>
           ))}
         </div>
@@ -1055,14 +1044,12 @@ function DesignBoardSpread({
 }
 
 function PresentationExtraPageManager({
-  afterSlideKey,
   slots,
   pages,
   onAdd,
   onChange,
   onRemove,
 }: {
-  afterSlideKey: string;
   slots: PresentationExtraPageSlot[];
   pages: PresentationBoardPage[];
   onAdd: () => void;
@@ -1070,44 +1057,35 @@ function PresentationExtraPageManager({
   onRemove: (slotId: string) => void;
 }) {
   return (
-    <section className="print:hidden rounded border border-dashed border-border bg-bone/35 px-4 py-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="eyebrow text-[11px]">Presentation Flow</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Add a Design Board page right after this slide.
-          </div>
-        </div>
+    <section className="print:hidden">
+      <div className="flex items-center gap-3 py-2">
+        <div className="h-px flex-1 bg-border" />
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-2 self-start border border-border bg-white px-4 py-2 text-sm text-ink transition-colors hover:border-ink"
+          className="inline-flex items-center gap-2 bg-transparent px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-ink"
         >
           <Plus className="h-4 w-4" /> Add Extra Page
         </button>
+        <div className="h-px flex-1 bg-border" />
       </div>
 
       {slots.length ? (
-        <div className="mt-4 space-y-3">
+        <div className="space-y-2 pb-2">
           {slots.map((slot, index) => (
             <div
               key={slot.id}
-              className="flex flex-col gap-3 rounded border border-border bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
+              className="flex flex-col gap-2 rounded border border-border bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
             >
-              <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Extra Page {index + 1}
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Pick which Design Board page should appear here.
-                </div>
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                Extra Page {index + 1}
               </div>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <select
                   value={slot.boardPageId ?? ""}
                   onChange={(event) => onChange(slot.id, event.target.value)}
                   className="min-w-[16rem] border border-border bg-background px-3 py-2 text-sm text-ink"
-                  aria-label={`Design Board page for extra page ${index + 1} after ${afterSlideKey}`}
+                  aria-label={`Design Board page for extra page ${index + 1}`}
                 >
                   {pages.map((page) => (
                     <option key={page.id} value={page.id}>
