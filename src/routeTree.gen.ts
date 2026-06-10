@@ -28,6 +28,7 @@ import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room
 import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
+import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
@@ -145,6 +146,12 @@ const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
   path: '/api/scrape-materials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRemoveDesignBoardBackgroundRoute =
+  ApiRemoveDesignBoardBackgroundRouteImport.update({
+    id: '/api/remove-design-board-background',
+    path: '/api/remove-design-board-background',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiProjectsRoute = ApiProjectsRouteImport.update({
   id: '/api/projects',
   path: '/api/projects',
@@ -261,6 +268,7 @@ export interface FileRoutesByFullPath {
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
+  '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
@@ -302,6 +310,7 @@ export interface FileRoutesByTo {
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
+  '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
@@ -344,6 +353,7 @@ export interface FileRoutesById {
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
+  '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
@@ -387,6 +397,7 @@ export interface FileRouteTypes {
     | '/api/import-materials-pdf'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
+    | '/api/remove-design-board-background'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/upload-design-board-image'
@@ -428,6 +439,7 @@ export interface FileRouteTypes {
     | '/api/import-materials-pdf'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
+    | '/api/remove-design-board-background'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/upload-design-board-image'
@@ -469,6 +481,7 @@ export interface FileRouteTypes {
     | '/api/import-materials-pdf'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
+    | '/api/remove-design-board-background'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/upload-design-board-image'
@@ -511,6 +524,7 @@ export interface RootRouteChildren {
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
+  ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiUploadDesignBoardImageRoute: typeof ApiUploadDesignBoardImageRoute
@@ -676,6 +690,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiScrapeMaterialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/remove-design-board-background': {
+      id: '/api/remove-design-board-background'
+      path: '/api/remove-design-board-background'
+      fullPath: '/api/remove-design-board-background'
+      preLoaderRoute: typeof ApiRemoveDesignBoardBackgroundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/projects': {
       id: '/api/projects'
       path: '/api/projects'
@@ -831,6 +852,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiProjectsRoute: ApiProjectsRoute,
+  ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiUploadDesignBoardImageRoute: ApiUploadDesignBoardImageRoute,

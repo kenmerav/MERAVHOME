@@ -23,6 +23,7 @@ import {
   Trash2,
   Type,
   Upload,
+  WandSparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -2110,6 +2111,49 @@ function ProjectDesignBoardsPage() {
     }
   };
 
+  const removeSelectedBackgroundWithOpenAI = async () => {
+    if (!selected || selected.type !== "image" || !selected.src) return;
+    const targetId = selected.id;
+    const targetPageId = selectedPageId;
+    const originalSrc = selected.originalSrc || selected.src;
+    pushUndo();
+    removingBackgroundRef.current = true;
+    localEditShieldUntilRef.current = Date.now() + 6000;
+    setRemovingBackground(true);
+    try {
+      const uploadedCutout = await removeDesignBoardBackgroundWithOpenAI(
+        originalSrc,
+        id,
+        `${selected.label || selected.productName || "ai-cutout"}.png`,
+      );
+      localEditShieldUntilRef.current = Date.now() + 6000;
+      setElementsForPage(targetPageId, (current) =>
+        current.map((element) =>
+          element.id === targetId
+            ? {
+                ...element,
+                originalSrc,
+                src: uploadedCutout,
+                backgroundRemovedUrl: uploadedCutout,
+                backgroundRemovalStatus: "complete",
+              }
+            : element,
+        ),
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "AI background removal failed. Try the fast remover instead.",
+      );
+    } finally {
+      window.setTimeout(() => {
+        removingBackgroundRef.current = false;
+      }, 1500);
+      setRemovingBackground(false);
+    }
+  };
+
   useEffect(() => {
     if (!canEditDesignBoards || loadingSharedBoard || removingBackgroundRef.current) return;
 
@@ -2552,6 +2596,18 @@ function ProjectDesignBoardsPage() {
                 }
               >
                 <Scissors className="h-4 w-4" /> {removingBackground ? "Cutting..." : "Remove BG"}
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={removeSelectedBackgroundWithOpenAI}
+                disabled={
+                  !selected ||
+                  selectedCount !== 1 ||
+                  selected.type !== "image" ||
+                  removingBackground
+                }
+              >
+                <WandSparkles className="h-4 w-4" />{" "}
+                {removingBackground ? "Cutting..." : "AI Remove BG"}
               </ToolbarButton>
               <ToolbarButton
                 onClick={restoreSelectedOriginal}
@@ -3119,6 +3175,7 @@ function ProjectDesignBoardsPage() {
                   allBoardDetailsHidden={allBoardDetailsHidden}
                   onToggleBoardDetails={toggleBoardDetails}
                   onRemoveBackground={removeSelectedBackground}
+                  onRemoveBackgroundWithOpenAI={removeSelectedBackgroundWithOpenAI}
                   removingBackground={removingBackground}
                 />
               )}
@@ -3798,6 +3855,7 @@ function SelectedPanel({
   allBoardDetailsHidden,
   onToggleBoardDetails,
   onRemoveBackground,
+  onRemoveBackgroundWithOpenAI,
   removingBackground,
 }: {
   selected: BoardElement;
@@ -3810,6 +3868,7 @@ function SelectedPanel({
   allBoardDetailsHidden: boolean;
   onToggleBoardDetails: () => void;
   onRemoveBackground: () => void;
+  onRemoveBackgroundWithOpenAI: () => void;
   removingBackground: boolean;
 }) {
   const linkedProduct = selected.productId
@@ -4001,9 +4060,18 @@ function SelectedPanel({
             <Scissors className="h-4 w-4" />{" "}
             {removingBackground ? "Removing background..." : "Remove Background"}
           </button>
+          <button
+            type="button"
+            onClick={onRemoveBackgroundWithOpenAI}
+            disabled={removingBackground}
+            className="inline-flex w-full items-center justify-center gap-2 border border-[#1f4e5f] bg-[#f3f7f5] px-4 py-2 text-sm text-[#1f4e5f] transition hover:bg-[#e9f1ef] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <WandSparkles className="h-4 w-4" />{" "}
+            {removingBackground ? "Removing background..." : "AI Remove Background"}
+          </button>
           <p className="text-xs leading-relaxed text-stone-500">
-            Best for product images on white or solid backgrounds. Messy lifestyle photos may still
-            need manual cleanup later.
+            Use the regular remover first for a free, fast cutout. Try AI Remove Background when
+            the first pass misses product edges or leaves haze.
           </p>
           <button
             type="button"
@@ -4544,6 +4612,23 @@ async function uploadDesignBoardImage(dataUrl: string, projectId: string, fileNa
   });
   const body = await res.json();
   if (!res.ok || !body?.url) throw new Error(body?.error || "Could not upload image.");
+  return body.url as string;
+}
+
+async function removeDesignBoardBackgroundWithOpenAI(
+  imageUrl: string,
+  projectId: string,
+  fileName: string,
+) {
+  const res = await fetch("/api/remove-design-board-background", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageUrl, projectId, fileName }),
+  });
+  const body = await res.json();
+  if (!res.ok || !body?.url) {
+    throw new Error(body?.error || "AI background removal failed. Try the fast remover instead.");
+  }
   return body.url as string;
 }
 
