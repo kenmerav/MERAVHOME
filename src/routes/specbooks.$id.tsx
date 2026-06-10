@@ -82,10 +82,23 @@ function slug(s: string) {
 }
 
 function SpecBookPage() {
+  const { id } = Route.useParams();
+  return (
+    <AppShell>
+      <SpecBookDocument projectId={id} />
+    </AppShell>
+  );
+}
+
+export function SpecBookDocument({
+  projectId: id,
+  publicView = false,
+}: {
+  projectId: string;
+  publicView?: boolean;
+}) {
   const [view, setView] = useState<"room" | "category">("room");
   const [overviewOpen, setOverviewOpen] = useState(false);
-
-  const { id } = Route.useParams();
   const { data: project } = useQuery({
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
@@ -93,6 +106,7 @@ function SpecBookPage() {
   const { data: profile } = useQuery({
     queryKey: ["currentUserProfile"],
     queryFn: () => db.getCurrentUserProfile(),
+    enabled: !publicView,
   });
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", id],
@@ -115,12 +129,7 @@ function SpecBookPage() {
     return map;
   }, [items]);
 
-  if (!project)
-    return (
-      <AppShell>
-        <div className="p-16 text-muted-foreground">Loading…</div>
-      </AppShell>
-    );
+  if (!project) return <div className="p-16 text-muted-foreground">Loading…</div>;
 
   const today = new Date().toLocaleDateString(undefined, {
     year: "numeric",
@@ -129,23 +138,28 @@ function SpecBookPage() {
   });
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
   const canEditProducts =
-    profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
-  const specBookUrl = `https://studio.meravinteriors.com/specbooks/${id}`;
+    !publicView &&
+    profile?.is_active === true &&
+    (profile.role === "Admin" || profile.role === "Employee");
+  const specBookUrl = `https://studio.meravinteriors.com/specbooks/public/${id}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=svg&data=${encodeURIComponent(
     specBookUrl,
   )}`;
 
   return (
-    <AppShell>
-      <div className="page-pad print:p-0 bg-white text-ink">
+      <div className={`page-pad print:p-0 bg-white text-ink ${publicView ? "max-w-[1500px] mx-auto" : ""}`}>
         <div className="flex items-center justify-between mb-8 print:hidden">
-          <Link
-            to="/projects/$id/materials"
-            params={{ id }}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Materials
-          </Link>
+          {publicView ? (
+            <div className="eyebrow">MERAV Studio · Public Spec Book</div>
+          ) : (
+            <Link
+              to="/projects/$id/materials"
+              params={{ id }}
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Materials
+            </Link>
+          )}
           <div className="flex items-center gap-4">
             <div className="inline-flex border border-border text-xs tracking-[0.18em] uppercase">
               <button
@@ -161,13 +175,15 @@ function SpecBookPage() {
                 By Category
               </button>
             </div>
-            <Link
-              to="/projects/$id/presentation"
-              params={{ id }}
-              className="text-sm text-muted-foreground hover:text-ink underline-offset-4 hover:underline"
-            >
-              View Presentation
-            </Link>
+            {!publicView && (
+              <Link
+                to="/projects/$id/presentation"
+                params={{ id }}
+                className="text-sm text-muted-foreground hover:text-ink underline-offset-4 hover:underline"
+              >
+                View Presentation
+              </Link>
+            )}
             <button
               onClick={() => window.print()}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
@@ -337,7 +353,6 @@ function SpecBookPage() {
               });
             })()}
       </div>
-    </AppShell>
   );
 }
 

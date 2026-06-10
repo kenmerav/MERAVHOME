@@ -35,6 +35,7 @@ import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
+import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
@@ -180,6 +181,11 @@ const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
   path: '/projects/$id/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SpecbooksPublicIdRoute = SpecbooksPublicIdRouteImport.update({
+  id: '/specbooks/public/$id',
+  path: '/specbooks/public/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsIdRenderingsRoute = ProjectsIdRenderingsRouteImport.update({
   id: '/projects/$id/renderings',
   path: '/projects/$id/renderings',
@@ -280,6 +286,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
+  '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id/': typeof ProjectsIdIndexRoute
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
@@ -320,6 +327,7 @@ export interface FileRoutesByTo {
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
+  '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id': typeof ProjectsIdIndexRoute
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
@@ -361,6 +369,7 @@ export interface FileRoutesById {
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
+  '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id/': typeof ProjectsIdIndexRoute
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
@@ -403,6 +412,7 @@ export interface FileRouteTypes {
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
+    | '/specbooks/public/$id'
     | '/projects/$id/'
     | '/projects/$id/rooms/$roomId'
   fileRoutesByTo: FileRoutesByTo
@@ -443,6 +453,7 @@ export interface FileRouteTypes {
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
+    | '/specbooks/public/$id'
     | '/projects/$id'
     | '/projects/$id/rooms/$roomId'
   id:
@@ -483,6 +494,7 @@ export interface FileRouteTypes {
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
     | '/projects/$id/renderings'
+    | '/specbooks/public/$id'
     | '/projects/$id/'
     | '/projects/$id/rooms/$roomId'
   fileRoutesById: FileRoutesById
@@ -524,6 +536,7 @@ export interface RootRouteChildren {
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
   ProjectsIdRenderingsRoute: typeof ProjectsIdRenderingsRoute
+  SpecbooksPublicIdRoute: typeof SpecbooksPublicIdRoute
   ProjectsIdIndexRoute: typeof ProjectsIdIndexRoute
   ProjectsIdRoomsRoomIdRoute: typeof ProjectsIdRoomsRoomIdRoute
 }
@@ -712,6 +725,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/specbooks/public/$id': {
+      id: '/specbooks/public/$id'
+      path: '/specbooks/public/$id'
+      fullPath: '/specbooks/public/$id'
+      preLoaderRoute: typeof SpecbooksPublicIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/renderings': {
       id: '/projects/$id/renderings'
       path: '/projects/$id/renderings'
@@ -836,6 +856,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
   ProjectsIdRenderingsRoute: ProjectsIdRenderingsRoute,
+  SpecbooksPublicIdRoute: SpecbooksPublicIdRoute,
   ProjectsIdIndexRoute: ProjectsIdIndexRoute,
   ProjectsIdRoomsRoomIdRoute: ProjectsIdRoomsRoomIdRoute,
 }
