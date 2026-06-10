@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
+  CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
@@ -98,6 +99,10 @@ type BoardElement = {
   materialFinish?: string | null;
   materialDimensions?: string | null;
   materialInfoNotNeeded?: boolean;
+  imageBrightness?: number | null;
+  imageContrast?: number | null;
+  imageSaturation?: number | null;
+  imageWarmth?: number | null;
 };
 
 type BoardPage = {
@@ -249,6 +254,7 @@ type OptimizedBoardImageProps = {
   className?: string;
   draggable?: boolean;
   loading?: "eager" | "lazy";
+  style?: CSSProperties;
 };
 
 const BOARD_WIDTH = 1400;
@@ -3319,6 +3325,7 @@ function LightweightPageElement({ element }: { element: BoardElement }) {
           className="h-full w-full object-contain"
           draggable={false}
           loading="lazy"
+          style={imageAdjustmentStyle(element)}
         />
       )}
       {element.type === "shape" && (
@@ -3385,6 +3392,7 @@ function PageThumbnail({
                   className="h-full w-full object-contain"
                   draggable={false}
                   loading="lazy"
+                  style={imageAdjustmentStyle(element)}
                 />
               )}
               {element.type === "shape" && (
@@ -3554,6 +3562,7 @@ function BoardObject({
               kind="preview"
               className="h-full w-full object-contain"
               draggable={false}
+              style={imageAdjustmentStyle(element)}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center border border-dashed border-stone-300 bg-[#faf9f5] p-4 text-center font-display text-2xl text-stone-400">
@@ -3666,6 +3675,65 @@ function QuickActionButton({
       {children}
     </button>
   );
+}
+
+function ImageAdjustmentSlider({
+  label,
+  value,
+  min,
+  max,
+  suffix = "",
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  suffix?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="mb-3 block text-xs uppercase tracking-[0.18em] text-stone-500 last:mb-0">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <span>{label}</span>
+        <span className="font-[var(--font-montserrat)] text-[11px] normal-case tracking-normal text-stone-600">
+          {value}
+          {suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-[#1f4e5f]"
+      />
+    </label>
+  );
+}
+
+function imageAdjustmentStyle(element: BoardElement): CSSProperties | undefined {
+  const brightness = clampNumber(element.imageBrightness ?? 100, 50, 150);
+  const contrast = clampNumber(element.imageContrast ?? 100, 50, 150);
+  const saturation = clampNumber(element.imageSaturation ?? 100, 0, 200);
+  const warmth = clampNumber(element.imageWarmth ?? 0, -50, 50);
+
+  if (brightness === 100 && contrast === 100 && saturation === 100 && warmth === 0) {
+    return undefined;
+  }
+
+  const warmSepia = Math.max(0, warmth) / 250;
+  const hueRotate = warmth < 0 ? Math.abs(warmth) * 0.45 : warmth * -0.15;
+  return {
+    filter: [
+      `brightness(${brightness}%)`,
+      `contrast(${contrast}%)`,
+      `saturate(${saturation}%)`,
+      `sepia(${warmSepia})`,
+      `hue-rotate(${hueRotate}deg)`,
+    ].join(" "),
+  };
 }
 
 function CommentsPanel({
@@ -4073,6 +4141,56 @@ function SelectedPanel({
             Use the regular remover first for a free, fast cutout. Try AI Remove Background when
             the first pass misses product edges or leaves haze.
           </p>
+          <div className="border border-stone-200 bg-[#faf9f5] p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="eyebrow">Image edits</div>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdate({
+                    imageBrightness: null,
+                    imageContrast: null,
+                    imageSaturation: null,
+                    imageWarmth: null,
+                  })
+                }
+                className="text-xs text-stone-500 underline-offset-4 hover:text-ink hover:underline"
+              >
+                Reset
+              </button>
+            </div>
+            <ImageAdjustmentSlider
+              label="Brightness"
+              value={selected.imageBrightness ?? 100}
+              min={50}
+              max={150}
+              suffix="%"
+              onChange={(value) => onUpdate({ imageBrightness: value })}
+            />
+            <ImageAdjustmentSlider
+              label="Contrast"
+              value={selected.imageContrast ?? 100}
+              min={50}
+              max={150}
+              suffix="%"
+              onChange={(value) => onUpdate({ imageContrast: value })}
+            />
+            <ImageAdjustmentSlider
+              label="Saturation"
+              value={selected.imageSaturation ?? 100}
+              min={0}
+              max={200}
+              suffix="%"
+              onChange={(value) => onUpdate({ imageSaturation: value })}
+            />
+            <ImageAdjustmentSlider
+              label="Warmth"
+              value={selected.imageWarmth ?? 0}
+              min={-50}
+              max={50}
+              onChange={(value) => onUpdate({ imageWarmth: value })}
+            />
+          </div>
           <button
             type="button"
             onClick={onToggleBoardDetails}
@@ -4307,6 +4425,7 @@ function OptimizedBoardImage({
   className,
   draggable,
   loading,
+  style,
 }: OptimizedBoardImageProps) {
   const [failedVariant, setFailedVariant] = useState<string | null>(null);
   const displaySrc = imageVariantUrl(src, kind);
@@ -4325,6 +4444,7 @@ function OptimizedBoardImage({
       loading={loading}
       decoding="async"
       data-original-src={src}
+      style={style}
       onError={() => {
         if (finalSrc !== src) setFailedVariant(finalSrc);
       }}
@@ -4809,6 +4929,10 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "materialFinish",
     "materialDimensions",
     "materialInfoNotNeeded",
+    "imageBrightness",
+    "imageContrast",
+    "imageSaturation",
+    "imageWarmth",
   ];
   for (const key of keys) {
     if (before[key] !== after[key]) {
