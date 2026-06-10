@@ -130,6 +130,10 @@ function SpecBookPage() {
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
   const canEditProducts =
     profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
+  const specBookUrl = `https://studio.meravinteriors.com/specbooks/${id}`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=svg&data=${encodeURIComponent(
+    specBookUrl,
+  )}`;
 
   return (
     <AppShell>
@@ -174,13 +178,36 @@ function SpecBookPage() {
         </div>
 
         {/* COVER */}
-        <section className="border border-border bg-white p-16 lg:p-24 mb-10 print:border-0 print:break-after-page min-h-[85vh] flex flex-col justify-between">
+        <section className="border border-border bg-white p-16 lg:p-24 mb-10 print:border-0 print:break-after-page min-h-[85vh] flex flex-col justify-between print:min-h-[95vh] print:px-16 print:py-18">
           <div className="eyebrow">MERAV Studio · Specification Book</div>
-          <div>
-            <h1 className="font-display text-5xl lg:text-7xl leading-[1.05]">{project.name}</h1>
-            <p className="font-display text-2xl text-muted-foreground mt-6">
-              {project.client_name}
-            </p>
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end print:grid-cols-[minmax(0,1fr)_180px] print:gap-10">
+            <div>
+              <h1 className="font-display text-5xl lg:text-7xl leading-[1.05] print:text-6xl">
+                {project.name}
+              </h1>
+              <p className="font-display text-2xl text-muted-foreground mt-6 print:text-xl">
+                {project.client_name}
+              </p>
+            </div>
+            <div className="border border-border px-5 py-5 bg-bone/35 print:px-4 print:py-4">
+              <img
+                src={qrCodeUrl}
+                alt="QR code linking to the online spec book"
+                className="w-full h-auto"
+                loading="eager"
+              />
+              <div className="mt-4 text-[10px] tracking-[0.22em] uppercase text-muted-foreground">
+                View Online
+              </div>
+              <a
+                href={specBookUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 block text-[11px] break-all text-ink underline print:no-underline"
+              >
+                {specBookUrl}
+              </a>
+            </div>
           </div>
           <div className="flex items-end justify-between text-xs tracking-[0.2em] uppercase text-muted-foreground">
             <div>{today}</div>
@@ -356,23 +383,23 @@ function CategorySpec({
   return (
     <section
       id={`cat-${slug(category)}`}
-      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page"
+      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page print:px-10 print:py-12"
     >
-      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border">
+      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border print:mb-8 print:pb-4">
         <div>
           <div className="eyebrow">{projectName} · Category</div>
-          <h2 className="font-display text-5xl mt-2">{category}</h2>
+          <h2 className="font-display text-5xl mt-2 print:text-4xl">{category}</h2>
         </div>
         <div className="text-xs tracking-wide text-muted-foreground">
           {items.length} selection{items.length === 1 ? "" : "s"}
         </div>
       </div>
 
-      <div className="space-y-14">
+      <div className="space-y-14 print:space-y-10">
         {byRoom.map(({ room, list }) => (
           <div key={room!.id}>
-            <div className="eyebrow mb-6">{room!.name}</div>
-            <div className="space-y-10">
+            <div className="eyebrow mb-6 print:mb-4">{room!.name}</div>
+            <div className="space-y-10 print:space-y-6">
               {list.map((it) => (
                 <SpecCard
                   key={it.id}
@@ -423,25 +450,25 @@ function RoomSpec({
   return (
     <section
       id={`room-${slug(room.name)}-${room.id.slice(0, 6)}`}
-      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page"
+      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page print:px-10 print:py-12"
     >
-      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border">
+      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border print:mb-8 print:pb-4">
         <div>
           <div className="eyebrow">
             {num} · {projectName}
           </div>
-          <h2 className="font-display text-5xl mt-2">{room.name}</h2>
+          <h2 className="font-display text-5xl mt-2 print:text-4xl">{room.name}</h2>
         </div>
         <div className="text-xs tracking-wide text-muted-foreground">
           {items.length} selection{items.length === 1 ? "" : "s"}
         </div>
       </div>
 
-      <div className="space-y-14">
+      <div className="space-y-14 print:space-y-10">
         {grouped.map((g) => (
           <div key={g.label}>
-            <div className="eyebrow mb-6">{g.label}</div>
-            <div className="space-y-10">
+            <div className="eyebrow mb-6 print:mb-4">{g.label}</div>
+            <div className="space-y-10 print:space-y-6">
               {g.list.map((it) => (
                 <SpecCard
                   key={it.id}
@@ -494,19 +521,19 @@ function SpecCard({
   return (
     <>
     <article
-      className={`grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:break-inside-avoid ${
+      className={`grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:grid-cols-[170px_minmax(0,1fr)] print:gap-5 print:pb-6 print:break-inside-avoid ${
         canEditProducts && p ? "cursor-pointer transition-colors hover:bg-bone/30" : ""
       }`}
       onClick={() => {
         if (canEditProducts && p) setOpen(true);
       }}
     >
-      <div className="aspect-square bg-bone overflow-hidden">
+      <div className="aspect-square bg-bone overflow-hidden print:self-start print:max-w-[170px]">
         {p?.image_url ? (
           <img
             src={p.image_url}
             alt={p?.name ?? displayName}
-            className="w-full h-full object-contain p-4"
+            className="w-full h-full object-contain p-4 print:p-2"
             loading="lazy"
           />
         ) : (
@@ -516,7 +543,7 @@ function SpecCard({
         )}
       </div>
       <div>
-        <div className="flex items-baseline justify-between gap-4 mb-1">
+        <div className="flex items-baseline justify-between gap-4 mb-1 print:mb-0.5">
           <div className="eyebrow">{item.item_label}</div>
           {item.cad_label && (
             <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-0.5 border border-border">
@@ -524,13 +551,13 @@ function SpecCard({
             </span>
           )}
         </div>
-        <h3 className="font-display text-3xl leading-tight">{displayName}</h3>
-        {p?.name && <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.name}</p>}
+        <h3 className="font-display text-3xl leading-tight print:text-[28px]">{displayName}</h3>
+        {p?.name && <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">{p.name}</p>}
         {p?.vendor && (
-          <p className="text-sm text-muted-foreground mt-1 tracking-wide">{p.vendor}</p>
+          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">{p.vendor}</p>
         )}
 
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-4 print:gap-x-6 print:gap-y-2 print:text-[12px]">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
           <Detail label="SKU" value={p?.sku} />
@@ -540,13 +567,13 @@ function SpecCard({
         </dl>
 
         {p?.product_url && (
-          <div className="mt-5">
+          <div className="mt-5 print:mt-3">
             <dt className="eyebrow mb-1">Product URL</dt>
             <a
               href={p.product_url}
               target="_blank"
               rel="noreferrer"
-              className="text-xs break-all underline inline-flex items-start gap-1"
+              className="text-xs break-all underline inline-flex items-start gap-1 print:text-[10px] print:leading-tight"
             >
               {p.product_url} <ExternalLink className="w-3 h-3 mt-0.5 shrink-0" />
             </a>
@@ -554,9 +581,11 @@ function SpecCard({
         )}
 
         {item.notes && (
-          <div className="mt-5">
+          <div className="mt-5 print:mt-3">
             <dt className="eyebrow mb-1">Notes</dt>
-            <p className="text-sm text-muted-foreground italic leading-relaxed">{item.notes}</p>
+            <p className="text-sm text-muted-foreground italic leading-relaxed print:text-[12px] print:leading-relaxed">
+              {item.notes}
+            </p>
           </div>
         )}
         {canEditProducts && p && (
