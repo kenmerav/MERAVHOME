@@ -1,11 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Printer, ExternalLink } from "lucide-react";
+import { ArrowLeft, Printer, ExternalLink, ChevronDown } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem, type Room } from "@/lib/db";
+import {
+  db,
+  PRODUCT_CATEGORIES,
+  SUBCATEGORIES,
+  type MaterialItem,
+  type Product,
+  type ProductCategory,
+  type Room,
+} from "@/lib/db";
 import { ALL_CATEGORIES } from "@/lib/roomTemplates";
 import { clientProductName } from "@/lib/clientProductName";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { normalizeMoneyInput } from "@/lib/money";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -68,11 +83,16 @@ function slug(s: string) {
 
 function SpecBookPage() {
   const [view, setView] = useState<"room" | "category">("room");
+  const [overviewOpen, setOverviewOpen] = useState(false);
 
   const { id } = Route.useParams();
   const { data: project } = useQuery({
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
+  });
+  const { data: profile } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
   });
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", id],
@@ -108,6 +128,8 @@ function SpecBookPage() {
     day: "numeric",
   });
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
+  const canEditProducts =
+    profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
 
   return (
     <AppShell>
@@ -201,39 +223,55 @@ function SpecBookPage() {
           id="materials-overview"
           className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page"
         >
-          <div className="eyebrow mb-3">01 · Overview</div>
-          <h2 className="font-display text-4xl mb-10">Materials Overview</h2>
-          {populatedRooms.length === 0 ? (
-            <p className="text-muted-foreground italic">No products selected yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="eyebrow font-normal py-3 pr-4">Room</th>
-                  <th className="eyebrow font-normal py-3 pr-4">Category</th>
-                  <th className="eyebrow font-normal py-3 pr-4">Client Product Name</th>
-                  <th className="eyebrow font-normal py-3 pr-4">Vendor</th>
-                  <th className="eyebrow font-normal py-3 pr-4">Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {populatedRooms.flatMap((room) => {
-                  const list = byRoom.get(room.id) ?? [];
-                  return list.map((it) => (
-                    <tr key={it.id} className="border-b border-border/60 align-top">
-                      <td className="py-3 pr-4 font-display">{room.name}</td>
-                      <td className="py-3 pr-4 text-muted-foreground">{it.category || "—"}</td>
-                      <td className="py-3 pr-4">{clientProductName(it, room)}</td>
-                      <td className="py-3 pr-4 text-muted-foreground">
-                        {it.product?.vendor || "—"}
-                      </td>
-                      <td className="py-3 pr-4">{it.quantity ?? "—"}</td>
-                    </tr>
-                  ));
-                })}
-              </tbody>
-            </table>
-          )}
+          <div className="flex items-start justify-between gap-6 mb-6">
+            <div>
+              <div className="eyebrow mb-3">01 · Overview</div>
+              <h2 className="font-display text-4xl">Materials Overview</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOverviewOpen((current) => !current)}
+              className="print:hidden inline-flex items-center gap-2 px-4 py-2 border border-border text-xs tracking-[0.18em] uppercase text-muted-foreground hover:text-ink"
+            >
+              {overviewOpen ? "Collapse" : "Expand"}
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${overviewOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+          </div>
+          <div className={`${overviewOpen ? "block" : "hidden"} print:block`}>
+            {populatedRooms.length === 0 ? (
+              <p className="text-muted-foreground italic">No products selected yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="eyebrow font-normal py-3 pr-4">Room</th>
+                    <th className="eyebrow font-normal py-3 pr-4">Category</th>
+                    <th className="eyebrow font-normal py-3 pr-4">Client Product Name</th>
+                    <th className="eyebrow font-normal py-3 pr-4">Vendor</th>
+                    <th className="eyebrow font-normal py-3 pr-4">Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {populatedRooms.flatMap((room) => {
+                    const list = byRoom.get(room.id) ?? [];
+                    return list.map((it) => (
+                      <tr key={it.id} className="border-b border-border/60 align-top">
+                        <td className="py-3 pr-4 font-display">{room.name}</td>
+                        <td className="py-3 pr-4 text-muted-foreground">{it.category || "—"}</td>
+                        <td className="py-3 pr-4">{clientProductName(it, room)}</td>
+                        <td className="py-3 pr-4 text-muted-foreground">
+                          {it.product?.vendor || "—"}
+                        </td>
+                        <td className="py-3 pr-4">{it.quantity ?? "—"}</td>
+                      </tr>
+                    ));
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </section>
 
         {/* BODY */}
@@ -245,6 +283,8 @@ function SpecBookPage() {
                 room={room}
                 items={byRoom.get(room.id) ?? []}
                 projectName={project.name}
+                projectId={id}
+                canEditProducts={canEditProducts}
               />
             ))
           : (() => {
@@ -263,6 +303,8 @@ function SpecBookPage() {
                     items={list}
                     roomById={roomById}
                     projectName={project.name}
+                    projectId={id}
+                    canEditProducts={canEditProducts}
                   />
                 );
               });
@@ -289,11 +331,15 @@ function CategorySpec({
   items,
   roomById,
   projectName,
+  projectId,
+  canEditProducts,
 }: {
   category: string;
   items: MaterialItem[];
   roomById: Map<string, Room>;
   projectName: string;
+  projectId: string;
+  canEditProducts: boolean;
 }) {
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -328,7 +374,13 @@ function CategorySpec({
             <div className="eyebrow mb-6">{room!.name}</div>
             <div className="space-y-10">
               {list.map((it) => (
-                <SpecCard key={it.id} item={it} room={room!} />
+                <SpecCard
+                  key={it.id}
+                  item={it}
+                  room={room!}
+                  projectId={projectId}
+                  canEditProducts={canEditProducts}
+                />
               ))}
             </div>
           </div>
@@ -343,11 +395,15 @@ function RoomSpec({
   room,
   items,
   projectName,
+  projectId,
+  canEditProducts,
 }: {
   num: string;
   room: Room;
   items: MaterialItem[];
   projectName: string;
+  projectId: string;
+  canEditProducts: boolean;
 }) {
   const sections = sectionsForRoom(room.name);
   const grouped = useMemo(() => {
@@ -387,7 +443,13 @@ function RoomSpec({
             <div className="eyebrow mb-6">{g.label}</div>
             <div className="space-y-10">
               {g.list.map((it) => (
-                <SpecCard key={it.id} item={it} room={room} />
+                <SpecCard
+                  key={it.id}
+                  item={it}
+                  room={room}
+                  projectId={projectId}
+                  canEditProducts={canEditProducts}
+                />
               ))}
             </div>
           </div>
@@ -397,11 +459,48 @@ function RoomSpec({
   );
 }
 
-function SpecCard({ item, room }: { item: MaterialItem; room: Room }) {
+type ProductForm = Pick<
+  Product,
+  | "name"
+  | "category"
+  | "subcategory"
+  | "vendor"
+  | "product_url"
+  | "image_url"
+  | "finish"
+  | "sku"
+  | "dimensions"
+  | "price"
+  | "unit_cost"
+  | "shipping"
+  | "notes"
+  | "description"
+>;
+
+function SpecCard({
+  item,
+  room,
+  projectId,
+  canEditProducts,
+}: {
+  item: MaterialItem;
+  room: Room;
+  projectId: string;
+  canEditProducts: boolean;
+}) {
   const p = item.product;
   const displayName = clientProductName(item, room);
+  const [open, setOpen] = useState(false);
   return (
-    <article className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:break-inside-avoid">
+    <>
+    <article
+      className={`grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:break-inside-avoid ${
+        canEditProducts && p ? "cursor-pointer transition-colors hover:bg-bone/30" : ""
+      }`}
+      onClick={() => {
+        if (canEditProducts && p) setOpen(true);
+      }}
+    >
       <div className="aspect-square bg-bone overflow-hidden">
         {p?.image_url ? (
           <img
@@ -460,8 +559,158 @@ function SpecCard({ item, room }: { item: MaterialItem; room: Room }) {
             <p className="text-sm text-muted-foreground italic leading-relaxed">{item.notes}</p>
           </div>
         )}
+        {canEditProducts && p && (
+          <p className="mt-5 text-[11px] tracking-[0.18em] uppercase text-muted-foreground print:hidden">
+            Click to edit product info
+          </p>
+        )}
       </div>
     </article>
+    {canEditProducts && p && (
+      <SpecProductEditDialog
+        open={open}
+        onOpenChange={setOpen}
+        product={p}
+        projectId={projectId}
+      />
+    )}
+    </>
+  );
+}
+
+function SpecProductEditDialog({
+  open,
+  onOpenChange,
+  product,
+  projectId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  product: Product;
+  projectId: string;
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<ProductForm>({
+    name: product.name,
+    category: product.category,
+    subcategory: product.subcategory,
+    vendor: product.vendor,
+    product_url: product.product_url,
+    image_url: product.image_url,
+    finish: product.finish,
+    sku: product.sku,
+    dimensions: product.dimensions,
+    price: product.price,
+    unit_cost: product.unit_cost,
+    shipping: product.shipping,
+    notes: product.notes,
+    description: product.description,
+  });
+  const [saving, setSaving] = useState(false);
+  const category = form.category as ProductCategory;
+
+  const update = (patch: Partial<ProductForm>) => {
+    setForm((current) => ({ ...current, ...patch }));
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) return toast.error("Product name required");
+    setSaving(true);
+    try {
+      await db.updateProduct(product.id, {
+        ...form,
+        name: form.name.trim(),
+        vendor: clean(form.vendor),
+        subcategory: clean(form.subcategory),
+        product_url: clean(form.product_url),
+        image_url: clean(form.image_url),
+        finish: clean(form.finish),
+        sku: clean(form.sku),
+        dimensions: clean(form.dimensions),
+        price: normalizeMoneyInput(form.price),
+        unit_cost: normalizeMoneyInput(form.unit_cost),
+        shipping: normalizeMoneyInput(form.shipping),
+        notes: clean(form.notes),
+        description: clean(form.description),
+      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["product", product.id] }),
+        qc.invalidateQueries({ queryKey: ["catalog"] }),
+        qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
+        qc.invalidateQueries({ queryKey: ["procurement"] }),
+      ]);
+      toast.success("Product updated");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update product.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto print:hidden">
+        <DialogHeader>
+          <DialogTitle className="font-display text-3xl font-normal">Edit Product Info</DialogTitle>
+        </DialogHeader>
+        <div className="grid md:grid-cols-2 gap-4">
+          <Field label="Product Name" value={form.name} onChange={(value) => update({ name: value })} />
+          <Field label="Vendor" value={form.vendor ?? ""} onChange={(value) => update({ vendor: value })} />
+          <div>
+            <Label className="eyebrow">Category</Label>
+            <Select
+              value={form.category}
+              onValueChange={(value) =>
+                update({
+                  category: value as ProductCategory,
+                  subcategory: SUBCATEGORIES[value as ProductCategory][0],
+                })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PRODUCT_CATEGORIES.map((item) => (
+                  <SelectItem key={item} value={item}>{item}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="eyebrow">Subcategory</Label>
+            <Select
+              value={form.subcategory ?? SUBCATEGORIES[category][0]}
+              onValueChange={(value) => update({ subcategory: value })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SUBCATEGORIES[category].map((item) => (
+                  <SelectItem key={item} value={item}>{item}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Field label="Client Price" value={form.price ?? ""} onChange={(value) => update({ price: value })} />
+          <Field label="Unit Cost" value={form.unit_cost ?? ""} onChange={(value) => update({ unit_cost: value })} />
+          <Field label="Shipping" value={form.shipping ?? ""} onChange={(value) => update({ shipping: value })} />
+          <Field label="Dimensions" value={form.dimensions ?? ""} onChange={(value) => update({ dimensions: value })} />
+          <Field label="Finish" value={form.finish ?? ""} onChange={(value) => update({ finish: value })} />
+          <Field label="SKU" value={form.sku ?? ""} onChange={(value) => update({ sku: value })} />
+          <Field label="Product URL" value={form.product_url ?? ""} onChange={(value) => update({ product_url: value })} className="md:col-span-2" />
+          <Field label="Image URL" value={form.image_url ?? ""} onChange={(value) => update({ image_url: value })} className="md:col-span-2" />
+          <LongField label="Notes" value={form.notes ?? ""} onChange={(value) => update({ notes: value })} />
+          <LongField label="Description" value={form.description ?? ""} onChange={(value) => update({ description: value })} />
+        </div>
+        <div className="flex justify-end pt-4">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-60"
+          >
+            {saving ? "Saving..." : "Save Product"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -473,4 +722,26 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
       <dd>{value}</dd>
     </div>
   );
+}
+
+function Field({ label, value, onChange, className = "" }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {
+  return (
+    <div className={className}>
+      <Label className="eyebrow">{label}</Label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function LongField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="md:col-span-2">
+      <Label className="eyebrow">{label}</Label>
+      <Textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function clean(value?: string | null) {
+  return value?.trim() || null;
 }
