@@ -28,6 +28,7 @@ export const ALL_CATEGORIES = [
   "Doors Base & Case",
   "Flooring",
   "Furniture",
+  "Hardware",
   "Lighting",
   "Other",
   "Paint",
@@ -77,6 +78,12 @@ export function inferMaterialCategory(label: string | null | undefined, productU
 
   if (/\b(wallpaper|wall paper|wallcovering|wall covering|grasscloth|grass cloth)\b/.test(text)) {
     return "Wall Coverings";
+  }
+
+  if (
+    /\b(robe hook|coat hook|towel hook|hook|hooks|toilet paper holder|paper holder|tp holder|hand towel holder|towel ring|towel bar)\b/.test(text)
+  ) {
+    return "Hardware";
   }
 
   if (/\b(door|doors|baseboard|base board|casing|case moulding|case molding|trim|moulding|molding|door stop|door hardware|hinge|hinges)\b/.test(text)) {
@@ -180,8 +187,8 @@ const BATHROOM: ItemTemplate[] = [
   { label: "Cabinet Hardware", category: "Cabinetry & Hardware" },
   { label: "Flooring", category: "Flooring" },
   { label: "Paint", category: "Paint" },
-  { label: "Towel Hook", category: "Accessories" },
-  { label: "Toilet Paper Holder", category: "Accessories" },
+  { label: "Towel Hook", category: "Hardware" },
+  { label: "Toilet Paper Holder", category: "Hardware" },
 ];
 
 export function templateForRoomName(name: string): ItemTemplate[] {

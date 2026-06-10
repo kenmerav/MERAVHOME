@@ -36,14 +36,14 @@ const KITCHEN_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Countertops + Tile", sources: ["Countertops", "Tile & Stone"] },
-  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware"] },
+  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware", "Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
 ];
 const BATHROOM_SECTIONS: Section[] = [
   { label: "Tile + Stone", sources: ["Tile & Stone", "Countertops"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Lighting", sources: ["Lighting"] },
-  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware"] },
+  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware", "Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
   { label: "Accessories", sources: ["Accessories"] },
 ];
@@ -60,7 +60,7 @@ const DEFAULT_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Tile + Stone", sources: ["Tile & Stone", "Countertops"] },
-  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware"] },
+  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware", "Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
   { label: "Accessories", sources: ["Accessories"] },
 ];
