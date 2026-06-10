@@ -2,6 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Check,
+  ExternalLink,
+  LayoutTemplate,
   Printer,
   Maximize2,
   X,
@@ -15,6 +18,7 @@ import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/presentations/$id")({
   head: () => ({ meta: [{ title: "Presentation — MERAV Studio" }] }),
@@ -32,6 +36,37 @@ type RoomData = {
   counter: MaterialItem | null;
   faucet: MaterialItem | any;
 };
+
+type PresentationBoardElement = {
+  id: string;
+  type: "image" | "text" | "shape";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  zIndex: number;
+  src?: string;
+  backgroundRemovedUrl?: string | null;
+  text?: string;
+  background?: string;
+  color?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  letterSpacing?: number;
+  visible?: boolean;
+};
+
+type PresentationBoardPage = {
+  id: string;
+  title: string;
+  roomId: string | null;
+  presentationVisible: boolean;
+  elements: PresentationBoardElement[];
+};
+
+const DESIGN_BOARD_PRESENTATION_WIDTH = 1400;
+const DESIGN_BOARD_PRESENTATION_HEIGHT = 900;
 
 const DEFAULT_OVERLAY_LABEL = "Photoreal Visualization";
 const DEFAULT_OVERLAY_BODY =
@@ -114,6 +149,63 @@ function buildRoomData(
   };
 }
 
+function normalizePresentationBoardElement(value: unknown): PresentationBoardElement | null {
+  if (!value || typeof value !== "object") return null;
+  const element = value as Partial<PresentationBoardElement>;
+  if (element.type !== "image" && element.type !== "text" && element.type !== "shape") return null;
+  return {
+    ...element,
+    id: typeof element.id === "string" && element.id ? element.id : crypto.randomUUID(),
+    type: element.type,
+    x: typeof element.x === "number" ? element.x : 0,
+    y: typeof element.y === "number" ? element.y : 0,
+    width: typeof element.width === "number" ? element.width : 240,
+    height: typeof element.height === "number" ? element.height : 180,
+    zIndex: typeof element.zIndex === "number" ? element.zIndex : 0,
+    rotation: typeof element.rotation === "number" ? element.rotation : 0,
+    visible: element.visible === false ? false : true,
+  };
+}
+
+function normalizePresentationBoardPages(boardState: unknown): PresentationBoardPage[] {
+  if (!boardState || typeof boardState !== "object") return [];
+  const candidate = boardState as { pages?: unknown[] };
+  if (!Array.isArray(candidate.pages)) return [];
+  return candidate.pages
+    .map((page, pageIndex) => {
+      if (!page || typeof page !== "object") return null;
+      const current = page as Partial<PresentationBoardPage>;
+      const elements = Array.isArray(current.elements)
+        ? current.elements
+            .map(normalizePresentationBoardElement)
+            .filter((element): element is PresentationBoardElement => Boolean(element))
+        : [];
+      return {
+        id: typeof current.id === "string" && current.id ? current.id : crypto.randomUUID(),
+        title:
+          typeof current.title === "string" && current.title.trim()
+            ? current.title
+            : `Board ${pageIndex + 1}`,
+        roomId: typeof current.roomId === "string" && current.roomId ? current.roomId : null,
+        presentationVisible: current.presentationVisible === true,
+        elements,
+      } satisfies PresentationBoardPage;
+    })
+    .filter((page): page is PresentationBoardPage => Boolean(page));
+}
+
+function boardElementIsMeaningful(element: PresentationBoardElement) {
+  if (element.visible === false) return false;
+  if (element.type === "image") return Boolean(element.backgroundRemovedUrl || element.src);
+  if (element.type === "text") return Boolean(element.text?.trim());
+  if (element.type === "shape") return true;
+  return false;
+}
+
+function boardPageHasRenderableContent(page: PresentationBoardPage) {
+  return page.elements.some(boardElementIsMeaningful);
+}
+
 function PresentationPage() {
   const { id: projectId } = Route.useParams();
   const qc = useQueryClient();
@@ -128,6 +220,10 @@ function PresentationPage() {
   const { data: materialItems = [] } = useQuery({
     queryKey: ["materialItems", projectId],
     queryFn: async () => (await db.listMaterialItemsByProject(projectId)) ?? [],
+  });
+  const { data: sharedBoard } = useQuery({
+    queryKey: ["designBoard", projectId],
+    queryFn: () => db.getDesignBoard(projectId),
   });
 
   // Fetch data for all rooms in parallel
@@ -153,6 +249,16 @@ function PresentationPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rooms, materialItems, roomQueries.map((q) => q.dataUpdatedAt).join(",")]);
+
+  const designBoardPages = useMemo(
+    () =>
+      normalizePresentationBoardPages(sharedBoard?.board_state).filter(boardPageHasRenderableContent),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
+  const includedBoardPages = useMemo(
+    () => designBoardPages.filter((page) => page.presentationVisible),
+    [designBoardPages],
+  );
 
   const updatePresentationPicks = async (
     roomId: string,
@@ -186,6 +292,45 @@ function PresentationPage() {
     qc.invalidateQueries({ queryKey: ["project", projectId] });
   };
 
+  const updateBoardPageVisibility = async (pageId: string, visible: boolean) => {
+    const latestBoard = await db.getDesignBoard(projectId);
+    if (!latestBoard?.board_state) {
+      toast.error("No design board found for this project yet.");
+      return;
+    }
+
+    const currentPages = normalizePresentationBoardPages(latestBoard.board_state);
+    const pageExists = currentPages.some((page) => page.id === pageId);
+    if (!pageExists) {
+      toast.error("That design board page could not be found.");
+      return;
+    }
+
+    const baseState =
+      latestBoard.board_state && typeof latestBoard.board_state === "object"
+        ? (latestBoard.board_state as Record<string, unknown>)
+        : {};
+    const nextState = {
+      ...baseState,
+      pages: currentPages.map((page) =>
+        page.id === pageId ? { ...page, presentationVisible: visible } : page,
+      ),
+    };
+
+    const saved = latestBoard.updated_at
+      ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+      : await db.upsertDesignBoard(projectId, nextState);
+
+    if (!saved) {
+      toast.error("That board changed while saving. Please try again.");
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      return;
+    }
+
+    qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+    toast.success(visible ? "Added to presentation" : "Removed from presentation");
+  };
+
   // Flat list of slides: cover + every view in every room
   const slides = useMemo(() => {
     const list: { kind: "cover" } | any = [{ kind: "cover" }];
@@ -202,6 +347,14 @@ function PresentationPage() {
         });
       });
     });
+    includedBoardPages.forEach((page, pageIndex) => {
+      list.push({
+        kind: "board-page",
+        page,
+        pageIndex,
+        pageCount: includedBoardPages.length,
+      });
+    });
     return list as (
       | { kind: "cover" }
       | {
@@ -212,13 +365,20 @@ function PresentationPage() {
           viewIndex: number;
           viewCount: number;
         }
+      | {
+          kind: "board-page";
+          page: PresentationBoardPage;
+          pageIndex: number;
+          pageCount: number;
+        }
     )[];
-  }, [roomData]);
+  }, [includedBoardPages, roomData]);
 
   const [presenting, setPresenting] = useState(false);
   const [slide, setSlide] = useState(0);
   const [editingPicks, setEditingPicks] = useState(false);
   const [editingText, setEditingText] = useState(false);
+  const [editingBoardPages, setEditingBoardPages] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || presenting) return;
@@ -285,6 +445,13 @@ function PresentationPage() {
         <div className="flex-1 overflow-hidden flex items-center justify-center">
           {current.kind === "cover" ? (
             <CoverSlide project={project} />
+          ) : current.kind === "board-page" ? (
+            <DesignBoardSlide
+              project={project}
+              page={current.page}
+              pageIndex={current.pageIndex}
+              pageCount={current.pageCount}
+            />
           ) : (
             <RoomSlide
               project={project}
@@ -336,6 +503,13 @@ function PresentationPage() {
             <ArrowLeft className="w-3.5 h-3.5" /> Back to project
           </Link>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setEditingBoardPages((value) => !value)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
+            >
+              <LayoutTemplate className="w-4 h-4" />{" "}
+              {editingBoardPages ? "Done Extra Pages" : "Extra Pages"}
+            </button>
             <button
               onClick={() => setEditingPicks((value) => !value)}
               className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
@@ -392,6 +566,14 @@ function PresentationPage() {
               onTextChange={editingText ? updateCoverText : undefined}
             />
           </section>
+          {(editingBoardPages || includedBoardPages.length > 0) && (
+            <PresentationBoardPagesPanel
+              projectId={projectId}
+              pages={designBoardPages}
+              onTogglePage={updateBoardPageVisibility}
+              editing={editingBoardPages}
+            />
+          )}
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
           {roomData.map(({ room, data }) => {
             const views = editingPicks ? data.views : data.views.filter((view) => view.visible);
@@ -425,6 +607,15 @@ function PresentationPage() {
               />
             ));
           })}
+          {includedBoardPages.map((page, index) => (
+            <DesignBoardSpread
+              key={page.id}
+              project={project}
+              page={page}
+              pageIndex={index}
+              pageCount={includedBoardPages.length}
+            />
+          ))}
         </div>
       </div>
     </AppShell>
@@ -567,6 +758,247 @@ function RoomSlide({
       </div>
       <SpreadSidebar data={data} view={view} />
       <PresentationFooter />
+    </div>
+  );
+}
+
+function DesignBoardSlide({
+  project,
+  page,
+  pageIndex,
+  pageCount,
+}: {
+  project: any;
+  page: PresentationBoardPage;
+  pageIndex: number;
+  pageCount: number;
+}) {
+  return (
+    <div className="relative w-full h-full bg-bone px-8 py-10 lg:px-12 lg:py-12">
+      <div className="mb-5">
+        <div className="eyebrow text-[11px]">
+          {project.name} · {project.client_name}
+          {pageCount > 1 && (
+            <span className="ml-2 opacity-60">
+              · Extra Page {pageIndex + 1} of {pageCount}
+            </span>
+          )}
+        </div>
+        <h2 className="mt-2 font-display text-4xl leading-tight text-ink lg:text-6xl">
+          {page.title}
+        </h2>
+      </div>
+      <div className="mx-auto max-w-[1400px]">
+        <DesignBoardCanvasPreview page={page} />
+      </div>
+      <PresentationFooter />
+    </div>
+  );
+}
+
+function DesignBoardSpread({
+  project,
+  page,
+  pageIndex,
+  pageCount,
+}: {
+  project: any;
+  page: PresentationBoardPage;
+  pageIndex: number;
+  pageCount: number;
+}) {
+  return (
+    <section className="relative border border-border bg-bone print:border-0 print-page">
+      <div className="px-10 pb-20 pt-10 print:px-10 print:pb-16 print:pt-8">
+        <div className="mb-6">
+          <div className="eyebrow text-[11px]">
+            {project.name} · {project.client_name}
+            {pageCount > 1 && (
+              <span className="ml-2 opacity-60">
+                · Extra Page {pageIndex + 1} of {pageCount}
+              </span>
+            )}
+          </div>
+          <h2 className="mt-2 font-display text-4xl leading-tight text-ink lg:text-5xl">
+            {page.title}
+          </h2>
+        </div>
+        <DesignBoardCanvasPreview page={page} />
+      </div>
+      <PresentationFooter />
+    </section>
+  );
+}
+
+function PresentationBoardPagesPanel({
+  projectId,
+  pages,
+  onTogglePage,
+  editing,
+}: {
+  projectId: string;
+  pages: PresentationBoardPage[];
+  onTogglePage: (pageId: string, visible: boolean) => Promise<void>;
+  editing: boolean;
+}) {
+  return (
+    <section className="print:hidden border border-border bg-white p-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="eyebrow">Extra Presentation Pages</div>
+          <h2 className="mt-2 font-display text-3xl text-ink">Design Board Pages</h2>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Upload screenshots or build a custom layout on the Design Board, then turn that board
+            page into a presentation slide here.
+          </p>
+        </div>
+        <Link
+          to="/projects/$id/design-boards"
+          params={{ id: projectId }}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-ink hover:underline"
+        >
+          Open Design Board <ExternalLink className="h-4 w-4" />
+        </Link>
+      </div>
+      {!pages.length ? (
+        <div className="mt-6 rounded border border-dashed border-border bg-bone/40 px-4 py-6 text-sm text-muted-foreground">
+          No design board pages yet. Create a board page first, then you can add it here.
+        </div>
+      ) : (
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {pages.map((page) => (
+            <div key={page.id} className="border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="font-display text-2xl text-ink">{page.title}</div>
+                  <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    {page.elements.filter(boardElementIsMeaningful).length} board items
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void onTogglePage(page.id, !page.presentationVisible)}
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs uppercase tracking-[0.18em] transition-colors ${
+                    page.presentationVisible
+                      ? "bg-ink text-primary-foreground"
+                      : "border border-border bg-white text-ink hover:border-ink"
+                  }`}
+                >
+                  {page.presentationVisible ? <Check className="h-3.5 w-3.5" /> : null}
+                  {page.presentationVisible ? "In Presentation" : "Add to Presentation"}
+                </button>
+              </div>
+              <div className="mt-4">
+                <DesignBoardCanvasPreview page={page} compact />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!editing && pages.some((page) => page.presentationVisible) && (
+        <div className="mt-4 text-xs text-muted-foreground">
+          Included board pages will print, present, and show up in the online presentation.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DesignBoardCanvasPreview({
+  page,
+  compact = false,
+}: {
+  page: PresentationBoardPage;
+  compact?: boolean;
+}) {
+  const sortedElements = [...page.elements]
+    .filter(boardElementIsMeaningful)
+    .sort((a, b) => a.zIndex - b.zIndex);
+
+  return (
+    <div
+      className={`relative overflow-hidden border border-border bg-white ${
+        compact ? "aspect-[14/9]" : "aspect-[14/9] lg:min-h-[640px] print:min-h-0"
+      }`}
+    >
+      {sortedElements.length ? (
+        sortedElements.map((element) => (
+          <DesignBoardCanvasElement key={element.id} element={element} compact={compact} />
+        ))
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+          Empty board page
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesignBoardCanvasElement({
+  element,
+  compact,
+}: {
+  element: PresentationBoardElement;
+  compact: boolean;
+}) {
+  const left = `${(element.x / DESIGN_BOARD_PRESENTATION_WIDTH) * 100}%`;
+  const top = `${(element.y / DESIGN_BOARD_PRESENTATION_HEIGHT) * 100}%`;
+  const width = `${(element.width / DESIGN_BOARD_PRESENTATION_WIDTH) * 100}%`;
+  const height = `${(element.height / DESIGN_BOARD_PRESENTATION_HEIGHT) * 100}%`;
+  const transform = element.rotation ? `rotate(${element.rotation}deg)` : undefined;
+
+  if (element.type === "image") {
+    const src = element.backgroundRemovedUrl || element.src;
+    if (!src) return null;
+    return (
+      <div
+        className="absolute"
+        style={{ left, top, width, height, transform, transformOrigin: "center center" }}
+      >
+        <img
+          src={src}
+          alt={element.text || element.id}
+          className="h-full w-full object-contain"
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
+  if (element.type === "shape") {
+    return (
+      <div
+        className="absolute"
+        style={{
+          left,
+          top,
+          width,
+          height,
+          transform,
+          transformOrigin: "center center",
+          background: element.background || "#e7e0d5",
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="absolute whitespace-pre-wrap break-words leading-tight"
+      style={{
+        left,
+        top,
+        width,
+        minHeight: height,
+        transform,
+        transformOrigin: "center center",
+        color: element.color || "#1c1814",
+        fontFamily: element.fontFamily || "var(--font-montserrat)",
+        fontSize: `clamp(${compact ? 7 : 10}px, ${(element.fontSize ?? 24) / 14}px, ${compact ? 22 : 40}px)`,
+        letterSpacing: `${Math.max(0, element.letterSpacing ?? 0) / 10}em`,
+      }}
+    >
+      {element.text}
     </div>
   );
 }

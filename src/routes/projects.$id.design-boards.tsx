@@ -103,6 +103,7 @@ type BoardPage = {
   id: string;
   title: string;
   roomId: string | null;
+  presentationVisible?: boolean;
   elements: BoardElement[];
 };
 
@@ -4871,12 +4872,13 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
   const id = typeof page.id === "string" && page.id ? page.id : crypto.randomUUID();
   const title = typeof page.title === "string" ? page.title : `Design Board ${pageIndex + 1}`;
   const roomId = typeof page.roomId === "string" && page.roomId ? page.roomId : null;
+  const presentationVisible = page.presentationVisible === true;
   const elements = Array.isArray(page.elements)
     ? page.elements
         .map(normalizeBoardElement)
         .filter((element): element is BoardElement => Boolean(element))
     : [];
-  return { id, title, roomId, elements };
+  return { id, title, roomId, presentationVisible, elements };
 }
 
 function normalizeBoardElement(value: unknown): BoardElement | null {
