@@ -78,6 +78,52 @@ async function uploadCutout(projectId: string, fileName: string, buffer: Buffer)
   return data.publicUrl;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function openAIImageEditWithRetry(form: FormData, apiKey: string) {
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (response.ok) return response;
+
+    lastResponse = response;
+    if (![502, 503, 504].includes(response.status)) return response;
+    await wait(750 * (attempt + 1));
+  }
+
+  return lastResponse;
+}
+
+async function openAIErrorMessage(response: Response | null) {
+  if (!response) {
+    return "AI background removal failed because OpenAI did not respond. Please try again.";
+  }
+
+  if ([502, 503, 504].includes(response.status)) {
+    return "OpenAI is temporarily unavailable for AI background removal. Please try again in a minute, or use the fast remover.";
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      const body = (await response.json()) as { error?: { message?: string } };
+      const message = body?.error?.message;
+      if (message) return `AI background removal failed: ${message}`;
+    } catch {
+      // Fall through to a generic message so raw provider responses never hit the UI.
+    }
+  }
+
+  return `AI background removal failed with OpenAI status ${response.status}. You can still use the fast remover.`;
+}
+
 export const Route = createFileRoute("/api/remove-design-board-background")({
   server: {
     handlers: {
@@ -111,22 +157,10 @@ export const Route = createFileRoute("/api/remove-design-board-background")({
           form.append("quality", "high");
           form.append("size", "auto");
 
-          const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}` },
-            body: form,
-          });
+          const imageRes = await openAIImageEditWithRetry(form, apiKey);
 
-          if (!imageRes.ok) {
-            const errorText = await imageRes.text();
-            return Response.json(
-              {
-                error:
-                  "AI background removal failed. You can still use the fast remover. " +
-                  errorText,
-              },
-              { status: 502 },
-            );
+          if (!imageRes || !imageRes.ok) {
+            return Response.json({ error: await openAIErrorMessage(imageRes) }, { status: 502 });
           }
 
           const json = (await imageRes.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
