@@ -13,6 +13,8 @@ import {
   Eye,
   EyeOff,
   Type,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
@@ -64,6 +66,36 @@ type PresentationBoardPage = {
   presentationVisible: boolean;
   elements: PresentationBoardElement[];
 };
+
+type PresentationExtraPageSlot = {
+  id: string;
+  afterSlideKey: string;
+  boardPageId: string | null;
+};
+
+type PresentationBaseSlide =
+  | { kind: "cover"; slideKey: string }
+  | {
+      kind: "view";
+      slideKey: string;
+      room: any;
+      data: RoomData;
+      view: RoomData["views"][number];
+      viewIndex: number;
+      viewCount: number;
+      anchor?: string;
+    };
+
+type PresentationSlide =
+  | PresentationBaseSlide
+  | {
+      kind: "board-page";
+      slideKey: string;
+      slotId?: string;
+      page: PresentationBoardPage;
+      pageIndex: number;
+      pageCount: number;
+    };
 
 const DESIGN_BOARD_PRESENTATION_WIDTH = 1400;
 const DESIGN_BOARD_PRESENTATION_HEIGHT = 900;
@@ -194,6 +226,34 @@ function normalizePresentationBoardPages(boardState: unknown): PresentationBoard
     .filter((page): page is PresentationBoardPage => Boolean(page));
 }
 
+function normalizePresentationExtraPageSlots(boardState: unknown): PresentationExtraPageSlot[] {
+  if (!boardState || typeof boardState !== "object") return [];
+  const candidate = boardState as { presentationExtraPages?: unknown[] };
+  if (!Array.isArray(candidate.presentationExtraPages)) return [];
+  return candidate.presentationExtraPages
+    .map((slot) => {
+      if (!slot || typeof slot !== "object") return null;
+      const current = slot as Partial<PresentationExtraPageSlot>;
+      const afterSlideKey =
+        typeof current.afterSlideKey === "string" && current.afterSlideKey.trim()
+          ? current.afterSlideKey.trim()
+          : null;
+      if (!afterSlideKey) return null;
+      return {
+        id: typeof current.id === "string" && current.id ? current.id : crypto.randomUUID(),
+        afterSlideKey,
+        boardPageId:
+          typeof current.boardPageId === "string" && current.boardPageId ? current.boardPageId : null,
+      } satisfies PresentationExtraPageSlot;
+    })
+    .filter((slot): slot is PresentationExtraPageSlot => Boolean(slot));
+}
+
+function buildViewSlideKey(roomId: string, view: RoomData["views"][number], viewIndex: number) {
+  const imageId = view.hero?.id ?? view.sketch?.id ?? `view-${viewIndex + 1}`;
+  return `room:${roomId}:view:${imageId}`;
+}
+
 function boardElementIsMeaningful(element: PresentationBoardElement) {
   if (element.visible === false) return false;
   if (element.type === "image") return Boolean(element.backgroundRemovedUrl || element.src);
@@ -253,6 +313,10 @@ function PresentationPage() {
   const designBoardPages = useMemo(
     () =>
       normalizePresentationBoardPages(sharedBoard?.board_state).filter(boardPageHasRenderableContent),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
+  const presentationExtraPages = useMemo(
+    () => normalizePresentationExtraPageSlots(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
   const includedBoardPages = useMemo(
@@ -331,48 +395,201 @@ function PresentationPage() {
     toast.success(visible ? "Added to presentation" : "Removed from presentation");
   };
 
-  // Flat list of slides: cover + every view in every room
-  const slides = useMemo(() => {
-    const list: { kind: "cover" } | any = [{ kind: "cover" }];
+  const savePresentationExtraPages = useCallback(
+    async (
+      updater: (context: {
+        baseState: Record<string, unknown>;
+        pages: PresentationBoardPage[];
+        slots: PresentationExtraPageSlot[];
+      }) => Record<string, unknown>,
+      successMessage?: string,
+    ) => {
+      const latestBoard = await db.getDesignBoard(projectId);
+      if (!latestBoard?.board_state) {
+        toast.error("No design board found for this project yet.");
+        return false;
+      }
+
+      const pages = normalizePresentationBoardPages(latestBoard.board_state);
+      const slots = normalizePresentationExtraPageSlots(latestBoard.board_state);
+      const baseState =
+        latestBoard.board_state && typeof latestBoard.board_state === "object"
+          ? (latestBoard.board_state as Record<string, unknown>)
+          : {};
+      const nextState = updater({ baseState, pages, slots });
+
+      const saved = latestBoard.updated_at
+        ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+        : await db.upsertDesignBoard(projectId, nextState);
+
+      if (!saved) {
+        toast.error("That board changed while saving. Please try again.");
+        qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+        return false;
+      }
+
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      if (successMessage) toast.success(successMessage);
+      return true;
+    },
+    [projectId, qc],
+  );
+
+  const addPresentationExtraPage = useCallback(
+    async (afterSlideKey: string) => {
+      if (!designBoardPages.length) {
+        toast.error("Create a Design Board page first, then add it here.");
+        return;
+      }
+
+      await savePresentationExtraPages(
+        ({ baseState, pages, slots }) => ({
+          ...baseState,
+          pages,
+          presentationExtraPages: [
+            ...slots,
+            {
+              id: crypto.randomUUID(),
+              afterSlideKey,
+              boardPageId: pages[0]?.id ?? null,
+            },
+          ],
+        }),
+        "Extra page added",
+      );
+    },
+    [designBoardPages.length, savePresentationExtraPages],
+  );
+
+  const updatePresentationExtraPage = useCallback(
+    async (slotId: string, boardPageId: string) => {
+      await savePresentationExtraPages(
+        ({ baseState, pages, slots }) => ({
+          ...baseState,
+          pages: pages.map((page) =>
+            page.id === boardPageId ? { ...page, presentationVisible: true } : page,
+          ),
+          presentationExtraPages: slots.map((slot) =>
+            slot.id === slotId ? { ...slot, boardPageId } : slot,
+          ),
+        }),
+        "Extra page updated",
+      );
+    },
+    [savePresentationExtraPages],
+  );
+
+  const removePresentationExtraPage = useCallback(
+    async (slotId: string) => {
+      await savePresentationExtraPages(
+        ({ baseState, pages, slots }) => {
+          const removed = slots.find((slot) => slot.id === slotId);
+          if (!removed) return { ...baseState, pages, presentationExtraPages: slots };
+          return {
+            ...baseState,
+            pages,
+            presentationExtraPages: slots
+              .filter((slot) => slot.id !== slotId)
+              .map((slot) =>
+                slot.afterSlideKey === `slot:${slotId}`
+                  ? { ...slot, afterSlideKey: removed.afterSlideKey }
+                  : slot,
+              ),
+          };
+        },
+        "Extra page removed",
+      );
+    },
+    [savePresentationExtraPages],
+  );
+
+  const baseSlides = useMemo<PresentationBaseSlide[]>(() => {
+    const list: PresentationBaseSlide[] = [{ kind: "cover", slideKey: "cover" }];
     roomData.forEach(({ room, data }) => {
       const visibleViews = data.views.filter((view) => view.visible);
       visibleViews.forEach((view, vi) => {
         list.push({
           kind: "view",
+          slideKey: buildViewSlideKey(room.id, view, vi),
           room,
           data,
           view,
           viewIndex: vi,
           viewCount: visibleViews.length,
+          anchor: vi === 0 ? `room-${room.id}` : undefined,
         });
       });
     });
-    includedBoardPages.forEach((page, pageIndex) => {
+    return list;
+  }, [roomData]);
+
+  const slotsByAfterKey = useMemo(() => {
+    const next = new Map<string, PresentationExtraPageSlot[]>();
+    presentationExtraPages.forEach((slot) => {
+      const current = next.get(slot.afterSlideKey) ?? [];
+      current.push(slot);
+      next.set(slot.afterSlideKey, current);
+    });
+    return next;
+  }, [presentationExtraPages]);
+
+  const slides = useMemo(() => {
+    const pageMap = new Map(designBoardPages.map((page) => [page.id, page] as const));
+    const slottedBoardPageIds = new Set(
+      presentationExtraPages
+        .map((slot) => slot.boardPageId)
+        .filter((boardPageId): boardPageId is string => Boolean(boardPageId)),
+    );
+    const legacyIncludedPages = includedBoardPages.filter((page) => !slottedBoardPageIds.has(page.id));
+    const list: Array<
+      | PresentationBaseSlide
+      | { kind: "board-page"; slideKey: string; slotId?: string; page: PresentationBoardPage }
+    > = [];
+    const visitedSlotIds = new Set<string>();
+
+    const appendExtraSlides = (afterSlideKey: string) => {
+      const slots = slotsByAfterKey.get(afterSlideKey) ?? [];
+      slots.forEach((slot) => {
+        if (visitedSlotIds.has(slot.id)) return;
+        visitedSlotIds.add(slot.id);
+        const selectedPage = slot.boardPageId ? pageMap.get(slot.boardPageId) : null;
+        if (selectedPage && boardPageHasRenderableContent(selectedPage)) {
+          list.push({
+            kind: "board-page",
+            slideKey: `slot:${slot.id}`,
+            slotId: slot.id,
+            page: selectedPage,
+          });
+        }
+        appendExtraSlides(`slot:${slot.id}`);
+      });
+    };
+
+    baseSlides.forEach((baseSlide) => {
+      list.push(baseSlide);
+      appendExtraSlides(baseSlide.slideKey);
+    });
+
+    legacyIncludedPages.forEach((page) => {
       list.push({
         kind: "board-page",
+        slideKey: `legacy:${page.id}`,
         page,
-        pageIndex,
-        pageCount: includedBoardPages.length,
       });
     });
-    return list as (
-      | { kind: "cover" }
-      | {
-          kind: "view";
-          room: any;
-          data: RoomData;
-          view: RoomData["views"][number];
-          viewIndex: number;
-          viewCount: number;
-        }
-      | {
-          kind: "board-page";
-          page: PresentationBoardPage;
-          pageIndex: number;
-          pageCount: number;
-        }
-    )[];
-  }, [includedBoardPages, roomData]);
+
+    const boardSlideCount = list.filter((item) => item.kind === "board-page").length;
+    let boardSlideIndex = 0;
+    return list.map((item) =>
+      item.kind === "board-page"
+        ? {
+            ...item,
+            pageIndex: boardSlideIndex++,
+            pageCount: boardSlideCount,
+          }
+        : item,
+    ) as PresentationSlide[];
+  }, [baseSlides, designBoardPages, includedBoardPages, presentationExtraPages, slotsByAfterKey]);
 
   const [presenting, setPresenting] = useState(false);
   const [slide, setSlide] = useState(0);
@@ -566,55 +783,62 @@ function PresentationPage() {
               onTextChange={editingText ? updateCoverText : undefined}
             />
           </section>
-          {(editingBoardPages || includedBoardPages.length > 0) && (
-            <PresentationBoardPagesPanel
-              projectId={projectId}
-              pages={designBoardPages}
-              onTogglePage={updateBoardPageVisibility}
-              editing={editingBoardPages}
-            />
-          )}
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
-          {roomData.map(({ room, data }) => {
-            const views = editingPicks ? data.views : data.views.filter((view) => view.visible);
-            return views.map((view, vi) => (
-              <RoomSpread
-                key={`${room.id}-${vi}`}
-                project={project}
-                room={room}
-                data={data}
-                view={view}
-                viewIndex={vi}
-                viewCount={views.length}
-                anchor={vi === 0 ? `room-${room.id}` : undefined}
-                onPick={
-                  editingPicks ? (patch) => updatePresentationPicks(room.id, patch) : undefined
-                }
-                onUpdateViewSketch={
-                  editingPicks && view.hero
-                    ? (sketchupId) => updateRenderingSketchLink(room.id, view.hero.id, sketchupId)
-                    : undefined
-                }
-                onToggleViewVisibility={
-                  editingPicks
-                    ? () => {
-                        const image = view.hero || view.sketch;
-                        if (image) updateViewVisibility(room.id, image.id, !view.visible);
-                      }
-                    : undefined
-                }
-                onTextChange={editingText ? (patch) => updateSlideText(room.id, patch) : undefined}
-              />
-            ));
-          })}
-          {includedBoardPages.map((page, index) => (
-            <DesignBoardSpread
-              key={page.id}
-              project={project}
-              page={page}
-              pageIndex={index}
-              pageCount={includedBoardPages.length}
-            />
+          {slides.map((current) => (
+            <div key={current.slideKey} className="space-y-4">
+              {current.kind === "cover" ? null : current.kind === "view" ? (
+                <RoomSpread
+                  project={project}
+                  room={current.room}
+                  data={current.data}
+                  view={current.view}
+                  viewIndex={current.viewIndex}
+                  viewCount={current.viewCount}
+                  anchor={current.anchor}
+                  onPick={
+                    editingPicks
+                      ? (patch) => updatePresentationPicks(current.room.id, patch)
+                      : undefined
+                  }
+                  onUpdateViewSketch={
+                    editingPicks && current.view.hero
+                      ? (sketchupId) =>
+                          updateRenderingSketchLink(current.room.id, current.view.hero!.id, sketchupId)
+                      : undefined
+                  }
+                  onToggleViewVisibility={
+                    editingPicks
+                      ? () => {
+                          const image = current.view.hero || current.view.sketch;
+                          if (image)
+                            updateViewVisibility(current.room.id, image.id, !current.view.visible);
+                        }
+                      : undefined
+                  }
+                  onTextChange={
+                    editingText ? (patch) => updateSlideText(current.room.id, patch) : undefined
+                  }
+                />
+              ) : (
+                <DesignBoardSpread
+                  project={project}
+                  page={current.page}
+                  pageIndex={current.pageIndex}
+                  pageCount={current.pageCount}
+                />
+              )}
+
+              {editingBoardPages ? (
+                <PresentationExtraPageManager
+                  afterSlideKey={current.slideKey}
+                  slots={slotsByAfterKey.get(current.slideKey) ?? []}
+                  pages={designBoardPages}
+                  onAdd={() => void addPresentationExtraPage(current.slideKey)}
+                  onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
+                  onRemove={(slotId) => void removePresentationExtraPage(slotId)}
+                />
+              ) : null}
+            </div>
           ))}
         </div>
       </div>
@@ -826,6 +1050,83 @@ function DesignBoardSpread({
         <DesignBoardCanvasPreview page={page} />
       </div>
       <PresentationFooter />
+    </section>
+  );
+}
+
+function PresentationExtraPageManager({
+  afterSlideKey,
+  slots,
+  pages,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  afterSlideKey: string;
+  slots: PresentationExtraPageSlot[];
+  pages: PresentationBoardPage[];
+  onAdd: () => void;
+  onChange: (slotId: string, pageId: string) => void;
+  onRemove: (slotId: string) => void;
+}) {
+  return (
+    <section className="print:hidden rounded border border-dashed border-border bg-bone/35 px-4 py-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="eyebrow text-[11px]">Presentation Flow</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            Add a Design Board page right after this slide.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center gap-2 self-start border border-border bg-white px-4 py-2 text-sm text-ink transition-colors hover:border-ink"
+        >
+          <Plus className="h-4 w-4" /> Add Extra Page
+        </button>
+      </div>
+
+      {slots.length ? (
+        <div className="mt-4 space-y-3">
+          {slots.map((slot, index) => (
+            <div
+              key={slot.id}
+              className="flex flex-col gap-3 rounded border border-border bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Extra Page {index + 1}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  Pick which Design Board page should appear here.
+                </div>
+              </div>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                <select
+                  value={slot.boardPageId ?? ""}
+                  onChange={(event) => onChange(slot.id, event.target.value)}
+                  className="min-w-[16rem] border border-border bg-background px-3 py-2 text-sm text-ink"
+                  aria-label={`Design Board page for extra page ${index + 1} after ${afterSlideKey}`}
+                >
+                  {pages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      {page.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => onRemove(slot.id)}
+                  className="inline-flex items-center gap-2 border border-red-200 bg-white px-3 py-2 text-sm text-red-600 transition-colors hover:border-red-300 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" /> Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

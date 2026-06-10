@@ -107,6 +107,12 @@ type BoardPage = {
   elements: BoardElement[];
 };
 
+type PresentationExtraPageSlot = {
+  id: string;
+  afterSlideKey: string;
+  boardPageId: string | null;
+};
+
 type BoardCommentTargetType = "page" | "element";
 
 type BoardComment = {
@@ -125,6 +131,7 @@ type BoardComment = {
 type BoardState = {
   pages: BoardPage[];
   selectedPageId: string;
+  presentationExtraPages?: PresentationExtraPageSlot[];
   comments?: BoardComment[];
   versions?: BoardVersion[];
 };
@@ -4736,6 +4743,7 @@ function prepareBoardStateForSave(state: BoardState): BoardState {
       ...page,
       elements: page.elements.map((element) => stripLargeInlineImageData(element)),
     })),
+    presentationExtraPages: normalized.presentationExtraPages ?? [],
     comments: normalized.comments ?? [],
     versions: [],
   };
@@ -4755,6 +4763,7 @@ function stripVersionsFromState(state: BoardState): BoardState {
   return {
     pages: normalized.pages,
     selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
+    presentationExtraPages: normalized.presentationExtraPages ?? [],
     comments: normalized.comments ?? [],
   };
 }
@@ -4817,7 +4826,29 @@ function normalizeBoardState(value: unknown): BoardState {
         .filter((comment): comment is BoardComment => Boolean(comment))
     : [];
 
-  return { pages, selectedPageId, comments, versions };
+  const presentationExtraPages = Array.isArray(candidate.presentationExtraPages)
+    ? candidate.presentationExtraPages
+        .map(normalizePresentationExtraPageSlot)
+        .filter((slot): slot is PresentationExtraPageSlot => Boolean(slot))
+    : [];
+
+  return { pages, selectedPageId, presentationExtraPages, comments, versions };
+}
+
+function normalizePresentationExtraPageSlot(value: unknown): PresentationExtraPageSlot | null {
+  if (!value || typeof value !== "object") return null;
+  const slot = value as Partial<PresentationExtraPageSlot>;
+  const afterSlideKey =
+    typeof slot.afterSlideKey === "string" && slot.afterSlideKey.trim()
+      ? slot.afterSlideKey.trim()
+      : null;
+  if (!afterSlideKey) return null;
+  return {
+    id: typeof slot.id === "string" && slot.id ? slot.id : crypto.randomUUID(),
+    afterSlideKey,
+    boardPageId:
+      typeof slot.boardPageId === "string" && slot.boardPageId ? slot.boardPageId : null,
+  };
 }
 
 function normalizeBoardComment(value: unknown): BoardComment | null {
@@ -4901,7 +4932,7 @@ function normalizeBoardElement(value: unknown): BoardElement | null {
 
 function defaultBoardState(): BoardState {
   const pages = defaultPages();
-  return { pages, selectedPageId: pages[0].id, comments: [] };
+  return { pages, selectedPageId: pages[0].id, presentationExtraPages: [], comments: [] };
 }
 
 function defaultPages(): BoardPage[] {
