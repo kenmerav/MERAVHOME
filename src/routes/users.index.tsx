@@ -48,6 +48,7 @@ function UsersPage() {
   const [password, setPassword] = useState("merav");
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<"All" | UserRole>("All");
 
   const authedFetch = async (url: string, init: RequestInit = {}) => {
     const { data } = await supabase.auth.getSession();
@@ -134,6 +135,8 @@ function UsersPage() {
     await loadUsers();
   };
 
+  const filteredUsers = users.filter((user) => roleFilter === "All" || user.role === roleFilter);
+
   return (
     <AppShell>
       <div className="page-pad max-w-[1200px]">
@@ -191,11 +194,36 @@ function UsersPage() {
           </form>
 
           <div className="border-t border-border">
+            <div className="flex items-end justify-between gap-4 py-5 border-b border-border">
+              <div>
+                <div className="eyebrow">Filter</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Showing {filteredUsers.length} of {users.length} users
+                </p>
+              </div>
+              <div className="w-full max-w-[220px]">
+                <Label className="eyebrow">Role</Label>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value as "All" | UserRole)}
+                  className="mt-2 flex h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="All">All</option>
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {roleLabel(r)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             {loading ? (
               <div className="py-12 text-sm text-muted-foreground">Loading users...</div>
             ) : users.length === 0 ? (
               <div className="py-12 text-sm text-muted-foreground">No users yet.</div>
-            ) : users.map((user) => (
+            ) : filteredUsers.length === 0 ? (
+              <div className="py-12 text-sm text-muted-foreground">No users match that role.</div>
+            ) : filteredUsers.map((user) => (
               <UserRow key={user.id} user={user} projects={projects} busy={busy} onSave={updateUser} />
             ))}
           </div>
