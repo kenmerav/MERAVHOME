@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Copy,
   ExternalLink,
@@ -138,6 +139,7 @@ type BoardVersion = {
 type BoardPatch =
   | { kind: "select-page"; pageId: string }
   | { kind: "upsert-page"; page: BoardPage; afterPageId?: string | null }
+  | { kind: "move-page"; pageId: string; direction: "left" | "right" }
   | { kind: "patch-page"; pageId: string; patch: Partial<Omit<BoardPage, "id" | "elements">> }
   | { kind: "upsert-layer"; pageId: string; layer: BoardElement }
   | { kind: "patch-layer"; pageId: string; layerId: string; patch: Partial<BoardElement> }
@@ -1792,6 +1794,31 @@ function ProjectDesignBoardsPage() {
     void saveBoardStateImmediately(nextState);
   };
 
+  const movePage = (pageId: string, direction: "left" | "right") => {
+    const current = normalizeBoardState(boardStateRef.current);
+    const safePages = current.pages.length ? current.pages : defaultPages();
+    const pageIndex = safePages.findIndex((page) => page.id === pageId);
+    if (pageIndex < 0) return;
+    const targetIndex = direction === "left" ? pageIndex - 1 : pageIndex + 1;
+    if (targetIndex < 0 || targetIndex >= safePages.length) return;
+
+    const reorderedPages = [...safePages];
+    const [movedPage] = reorderedPages.splice(pageIndex, 1);
+    reorderedPages.splice(targetIndex, 0, movedPage);
+
+    const nextState = normalizeBoardState({
+      ...current,
+      pages: reorderedPages,
+      selectedPageId: pageId,
+    });
+
+    pushUndo();
+    applyLocalBoardUpdate(nextState);
+    broadcastPatch({ kind: "move-page", pageId, direction });
+    pendingPageFocusRef.current = pageId;
+    void saveBoardStateImmediately(nextState);
+  };
+
   const updateZoom = (zoomPercent: number) => {
     hasCustomZoomRef.current = true;
     setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
@@ -2486,6 +2513,18 @@ function ProjectDesignBoardsPage() {
               <ToolbarButton onClick={() => addPage(selectedPageId)}>
                 <Plus className="h-4 w-4" /> New Page
               </ToolbarButton>
+              <ToolbarButton
+                onClick={() => movePage(selectedPageId, "left")}
+                disabled={selectedPageIndex <= 0}
+              >
+                Move Page Left
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => movePage(selectedPageId, "right")}
+                disabled={selectedPageIndex < 0 || selectedPageIndex >= pages.length - 1}
+              >
+                Move Page Right
+              </ToolbarButton>
               <ToolbarButton onClick={duplicateSelected} disabled={!selectedCount}>
                 <Copy className="h-4 w-4" /> Duplicate
               </ToolbarButton>
@@ -2772,24 +2811,52 @@ function ProjectDesignBoardsPage() {
                 {pages.slice(thumbnailWindow.start, thumbnailWindow.end).map((page, offset) => {
                   const index = thumbnailWindow.start + offset;
                   const isNearSelected = Math.abs(index - selectedPageIndex) <= 6;
+                  const pageCanMoveLeft = index > 0;
+                  const pageCanMoveRight = index < pages.length - 1;
                   return (
-                    <button
+                    <div
                       key={page.id}
-                      type="button"
-                      onClick={() => selectPage(page.id)}
                       className={cn(
-                        "group shrink-0 rounded-lg border bg-white p-0.5 text-left shadow-sm transition",
+                        "group relative shrink-0 rounded-lg border bg-white p-0.5 text-left shadow-sm transition",
                         page.id === selectedPageId
                           ? "border-[#6d4cff] ring-2 ring-[#6d4cff]"
                           : "border-stone-200 hover:border-ink",
                       )}
                     >
-                      <PageThumbnail
-                        page={page}
-                        pageNumber={index + 1}
-                        renderImages={!virtualizeThumbnails || isNearSelected}
-                      />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => selectPage(page.id)}
+                        className="block"
+                      >
+                        <PageThumbnail
+                          page={page}
+                          pageNumber={index + 1}
+                          renderImages={!virtualizeThumbnails || isNearSelected}
+                        />
+                      </button>
+                      <div className="pointer-events-none absolute right-1 top-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => movePage(page.id, "left")}
+                          disabled={!pageCanMoveLeft}
+                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+                          aria-label={`Move ${page.title || `Board ${index + 1}`} left`}
+                          title="Move page left"
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => movePage(page.id, "right")}
+                          disabled={!pageCanMoveRight}
+                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+                          aria-label={`Move ${page.title || `Board ${index + 1}`} right`}
+                          title="Move page right"
+                        >
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
                 {virtualizeThumbnails && (
@@ -4491,6 +4558,20 @@ function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardStat
               : page,
           )
         : [...current.pages.slice(0, insertAt), patch.page, ...current.pages.slice(insertAt)],
+    });
+  }
+  if (patch.kind === "move-page") {
+    const pageIndex = current.pages.findIndex((page) => page.id === patch.pageId);
+    if (pageIndex < 0) return current;
+    const targetIndex = patch.direction === "left" ? pageIndex - 1 : pageIndex + 1;
+    if (targetIndex < 0 || targetIndex >= current.pages.length) return current;
+    const reorderedPages = [...current.pages];
+    const [movedPage] = reorderedPages.splice(pageIndex, 1);
+    reorderedPages.splice(targetIndex, 0, movedPage);
+    return normalizeBoardState({
+      ...current,
+      pages: reorderedPages,
+      selectedPageId: patch.pageId,
     });
   }
   if (patch.kind === "patch-page") {
