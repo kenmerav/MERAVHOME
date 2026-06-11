@@ -183,6 +183,7 @@ function productColorFinish(jsonLd) {
   return firstValid(
     [
       queryVariantValue(),
+      selectedSkuVariantValue(),
       clean(jsonLd.color),
       propertyValue(properties, /color|colour|finish|fabric|material|upholstery|variant/i),
       selectedOptionValue(/color|colour|finish|fabric|material|upholstery|variant/i, isPlausibleColorFinish),
@@ -221,6 +222,132 @@ function queryVariantValue() {
   const colorLike = attrValues.find((value) => !isLikelySizeOnly(value));
   if (colorLike) return colorLike;
   return "";
+}
+
+function selectedSkuVariantValue() {
+  const skuCandidates = selectedSkuCandidates();
+  for (const sku of skuCandidates) {
+    const product = embeddedSkuProduct(sku);
+    if (!product) continue;
+    const values = [
+      finishFromProductName(product.name),
+      product.properties?.finish,
+      product.finish,
+      product.color,
+      product.properties?.color,
+    ].map((value) => humanizeProductAttribute(value));
+    const value = firstValid(values, isPlausibleColorFinish);
+    if (value) return value;
+  }
+  return "";
+}
+
+function selectedSkuCandidates() {
+  const params = new URLSearchParams(location.search);
+  const candidates = [
+    params.get("sku"),
+    params.get("pid"),
+    params.get("uid"),
+    params.get("productId"),
+  ];
+  const cmIte = params.get("cm_ite");
+  if (cmIte) candidates.push(cmIte.split(/[_:\s-]/).find((part) => /^\d{5,}$/.test(part)));
+  return Array.from(new Set(candidates.map(clean).filter((value) => /^\d{4,}$/.test(value))));
+}
+
+function embeddedSkuProduct(sku) {
+  const html = document.documentElement?.innerHTML || "";
+  const token = `"${sku}"`;
+  let searchFrom = 0;
+  while (searchFrom < html.length) {
+    const index = html.indexOf(token, searchFrom);
+    if (index === -1) return null;
+    const objectStart = html.indexOf("{", index + token.length);
+    if (objectStart === -1 || objectStart - index > 40) {
+      searchFrom = index + token.length;
+      continue;
+    }
+    const objectText = balancedJsonObject(html, objectStart);
+    if (!objectText) {
+      searchFrom = objectStart + 1;
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(objectText);
+      if (parsed && typeof parsed === "object" && String(parsed.id || "") === sku) return parsed;
+    } catch {
+      // Keep searching; large commerce pages often contain multiple non-JSON references to the SKU.
+    }
+    searchFrom = objectStart + objectText.length;
+  }
+  return null;
+}
+
+function balancedJsonObject(text, start) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') inString = true;
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return text.slice(start, index + 1);
+  }
+  return "";
+}
+
+function finishFromProductName(value) {
+  const text = decodeHtmlEntities(clean(value));
+  const parts = text.split(/\s+-\s+/).map(clean).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+
+function humanizeProductAttribute(value) {
+  let text = decodeHtmlEntities(clean(value));
+  if (!text) return "";
+  const known = {
+    agedbrass: "Aged Brass",
+    antiquebrass: "Antique Brass",
+    brushedbrass: "Brushed Brass",
+    unlacqueredbrass: "Unlacquered Brass",
+    oilrubbedbronze: "Oil-Rubbed Bronze",
+    oilrubbedbronzefinish: "Oil-Rubbed Bronze",
+    polishednickel: "Polished Nickel",
+    brushednickel: "Brushed Nickel",
+    satinynickel: "Satin Nickel",
+    polishedchrome: "Polished Chrome",
+    matteblack: "Matte Black",
+    flatblack: "Flat Black",
+  };
+  const compact = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (known[compact]) return known[compact];
+  text = text
+    .replace(/\u002F/g, "/")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b(oil)\s+(rubbed)\s+(bronze)\b/i, "Oil-Rubbed Bronze")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .trim();
+  return text;
+}
+
+function decodeHtmlEntities(value) {
+  const text = clean(value);
+  if (!text) return "";
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = text;
+  return clean(textarea.value);
 }
 
 function productDimensions(jsonLd) {
@@ -467,6 +594,7 @@ function visibleDimensions() {
 function cleanProductAttribute(value, labelPattern) {
   let text = clean(value);
   if (!text) return "";
+  if (/clearVariantFilters|variantFilters|resetFilters/i.test(text)) return "";
   text = text.replace(/([a-z])([A-Z])/g, "$1 $2");
   text = text
     .replace(/^(color|finish|fabric|material|variant|dimensions|overall|size|width|height|depth)\s*:?\s*/i, "")
@@ -483,7 +611,7 @@ function cleanProductAttribute(value, labelPattern) {
 function isPlausibleProductAttribute(value) {
   const text = clean(value);
   if (!text || text.length > 120) return false;
-  if (/clear\s*variant\s*filters|variant\s*filters|clear filters|reset filters/i.test(text)) return false;
+  if (/clear\s*variant\s*filters|clearVariantFilters|variant\s*filters|variantFilters|clear filters|reset filters/i.test(text)) return false;
   if (/^[a-z]+(?:[A-Z][a-z0-9]*){1,}$/.test(text)) return false;
   if (
     /add to cart|quantity|wishlist|shipping|delivery|pickup|zip|sale|clearance|review|star|view all|shop now|image|photo|carousel|room view|button|submit|drawer|modal|toggle|filter/i.test(
