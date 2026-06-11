@@ -67,7 +67,6 @@ type ExtensionProductPayload = {
     price?: string;
     colorFinish?: string;
     dimensions?: string;
-    description?: string;
     category?: string;
   };
 };
@@ -105,6 +104,47 @@ function cleanText(value: unknown) {
 
 function firstText(...values: unknown[]) {
   return values.map(cleanText).find(Boolean) ?? "";
+}
+
+function isSafeColorFinish(value: unknown) {
+  const text = cleanText(value);
+  if (!text || text.length > 80) return false;
+  const normalized = text.toLowerCase().replace(/[.\s_-]+/g, " ").trim();
+  const exactNonColors = new Set([
+    "united states",
+    "united states of america",
+    "usa",
+    "us",
+    "canada",
+    "mexico",
+    "australia",
+    "new zealand",
+    "united kingdom",
+    "privacy policy",
+    "terms and conditions",
+    "customer service",
+    "sign in",
+    "create account",
+    "add to cart",
+    "in stock",
+    "out of stock",
+  ]);
+  if (exactNonColors.has(normalized)) return false;
+  if (/variant\s*filters?|clearvariantfilters|selectedvariant/i.test(normalized.replace(/\s+/g, ""))) {
+    return false;
+  }
+  if (
+    /\b(country|currency|language|region|shipping|delivery|pickup|store|zip code|postal code)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  if (/\$|sku|item #|model|mpn|qty|quantity|dimensions|overall|width|height|depth|length/i.test(text)) {
+    return false;
+  }
+  if (/\d+\s*(?:"|in\.?|inch|cm|mm|ft)\b/i.test(text)) return false;
+  return /[a-z]/i.test(text);
 }
 
 function normalizeUrl(value: unknown) {
@@ -406,12 +446,11 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const productName =
             firstText(productData.name) || firstText(hostName(sourcePageUrl), "Imported product");
           const vendor = firstText(productData.vendor, productData.manufacturer, hostName(sourcePageUrl));
-          const finish = firstText(productData.colorFinish);
+          const rawFinish = firstText(productData.colorFinish);
+          const finish = isSafeColorFinish(rawFinish) ? rawFinish : "";
           const dimensions = firstText(productData.dimensions);
-          const manufacturer = firstText(productData.manufacturer);
           const sku = firstText(productData.sku);
           const price = firstText(productData.price);
-          const description = firstText(productData.description);
           const materialCategory = inferMaterialCategory(
             `${productName} ${productData.category ?? ""}`,
             sourcePageUrl,
@@ -444,17 +483,6 @@ export const Route = createFileRoute("/api/extension/import-product")({
           }
 
           const imageForProduct = backgroundRemovedUrl || originalUpload.publicUrl;
-          const reviewNotes = [
-            manufacturer ? `Manufacturer: ${manufacturer}` : "",
-            `Original product page: ${sourcePageUrl}`,
-            imageUrl ? `Original image URL: ${imageUrl}` : "",
-            `Original image file: ${originalUpload.publicUrl}`,
-            backgroundRemovedUrl
-              ? `Background removed image: ${backgroundRemovedUrl}`
-              : "Background removal queued for Studio design board.",
-          ]
-            .filter(Boolean)
-            .join("\n");
 
           const { data: existingProduct } = await supabaseAdmin
             .from("products")
@@ -473,8 +501,8 @@ export const Route = createFileRoute("/api/extension/import-product")({
             sku: sku || null,
             dimensions: dimensions || null,
             price: price || null,
-            description: description || null,
-            notes: reviewNotes,
+            description: null,
+            notes: null,
           };
 
           const { data: product, error: productError } = existingProduct
@@ -512,9 +540,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
                   autoRemoveBackground: !backgroundRemovedUrl,
                   backgroundRemovalStatus: backgroundRemovedUrl ? "complete" : "pending",
                   label: productName,
-                  notes: [description, dimensions ? `Dimensions: ${dimensions}` : ""]
-                    .filter(Boolean)
-                    .join("\n"),
+                  notes: "",
                   link: sourcePageUrl,
                   productId: (product as any).id,
                   productName,
@@ -539,6 +565,11 @@ export const Route = createFileRoute("/api/extension/import-product")({
 
           const thumbnailUrl = transformUrl(imageForProduct, 240, 240, 72);
           const previewUrl = transformUrl(imageForProduct, BOARD_WIDTH, BOARD_HEIGHT, 82);
+          const colorWarning = rawFinish && !finish
+            ? `Product imported, but Studio skipped "${rawFinish}" because it did not look like a real color/finish.`
+            : !finish
+              ? "Product imported. Color/finish was not detected, so add it in Board Tools if needed."
+              : null;
           return json({
             ok: true,
             productId: (product as any).id,
@@ -550,7 +581,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
             thumbnailUrl,
             previewUrl,
             autoRemoveBackground: !backgroundRemovedUrl,
-            warning: null,
+            warning: colorWarning,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Could not import product.";

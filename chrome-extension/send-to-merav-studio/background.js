@@ -238,7 +238,6 @@ function pageFallbackExtraction(fallback) {
     product: {
       name: meta("og:title") || document.title,
       vendor: meta("og:site_name") || location.hostname.replace(/^www\./, ""),
-      description: meta("og:description") || meta("description"),
     },
   };
 }

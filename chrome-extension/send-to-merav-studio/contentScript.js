@@ -62,11 +62,6 @@ function extractProduct(clickedImageUrl, pageUrl) {
   const sku = clean(jsonLd.sku) || clean(jsonLd.mpn) || visibleSku();
   const colorFinish = productColorFinish(jsonLd);
   const dimensions = productDimensions(jsonLd);
-  const description =
-    clean(jsonLd.description) ||
-    meta("og:description") ||
-    meta("description") ||
-    visibleDescription();
 
   return {
     sourcePageUrl,
@@ -81,7 +76,6 @@ function extractProduct(clickedImageUrl, pageUrl) {
       price,
       colorFinish,
       dimensions,
-      description,
     },
   };
 }
@@ -626,6 +620,7 @@ function isPlausibleProductAttribute(value) {
 function isPlausibleColorFinish(value) {
   const text = clean(value);
   if (!isPlausibleProductAttribute(text)) return false;
+  if (isKnownNonColorFinish(text)) return false;
   if (text.length > 80) return false;
   if (isLikelySizeOnly(text)) return false;
   if (/\$|sku|item #|model|mpn|qty|quantity|dimensions|overall|width|height|depth|length|\d+\s*(?:"|in\.?|inch|cm|mm|ft)/i.test(text)) {
@@ -635,6 +630,37 @@ function isPlausibleColorFinish(value) {
     return false;
   }
   return /[a-z]/i.test(text);
+}
+
+function isKnownNonColorFinish(value) {
+  const text = clean(value).toLowerCase().replace(/[.\s_-]+/g, " ").trim();
+  const exactNonColors = new Set([
+    "united states",
+    "united states of america",
+    "usa",
+    "us",
+    "canada",
+    "mexico",
+    "australia",
+    "new zealand",
+    "united kingdom",
+    "privacy policy",
+    "terms and conditions",
+    "customer service",
+    "sign in",
+    "create account",
+    "add to cart",
+    "in stock",
+    "out of stock",
+  ]);
+  if (exactNonColors.has(text)) return true;
+  if (/\bvariant\s*filters?\b|clearvariantfilters|selectedvariant/i.test(text.replace(/\s+/g, ""))) {
+    return true;
+  }
+  if (/\b(country|currency|language|region|shipping|delivery|pickup|store|zip code|postal code)\b/i.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 function isLikelySizeOnly(value) {
@@ -651,20 +677,6 @@ function isPlausibleDimension(value) {
     /\d+(?:\.\d+)?\s*[wdhl]\b/i.test(text) ||
     /\b(width|height|depth|diameter|length|overall)\b/i.test(text)
   );
-}
-
-function visibleDescription() {
-  const selectors = [
-    "[itemprop=description]",
-    "[class*=description]",
-    "[data-testid*=description]",
-    "section",
-  ];
-  for (const selector of selectors) {
-    const text = clean(document.querySelector(selector)?.textContent);
-    if (text && text.length > 40 && text.length < 1200) return text;
-  }
-  return "";
 }
 
 function largestVisibleImage() {
