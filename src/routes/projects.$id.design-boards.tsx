@@ -4276,6 +4276,8 @@ function SelectedPanel({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={quantityDraft}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onMouseUp={(event) => event.preventDefault()}
                   onChange={(event) => setQuantityDraft(event.target.value)}
                   onBlur={commitQuantityDraft}
                   onKeyDown={(event) => {
