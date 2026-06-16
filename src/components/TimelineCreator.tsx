@@ -235,41 +235,18 @@ function ReviewField({ label, value, onChange, type = "text" }: { label: string;
 }
 
 export function TimelinePreview({ draft }: { draft: TimelineDraft }) {
+  const html = buildTimelineHtml(draft);
   return (
     <div className="self-start">
       <div className="eyebrow mb-3">Live Preview</div>
-      <div className="bg-white border border-border p-8 text-black shadow-sm overflow-hidden">
-        <TimelineDocument draft={draft} />
+      <div className="overflow-hidden border border-border bg-white text-black shadow-sm">
+        <iframe
+          title="Timeline live preview"
+          srcDoc={html}
+          className="h-[1100px] w-full bg-white"
+          sandbox=""
+        />
       </div>
-    </div>
-  );
-}
-
-function TimelineDocument({ draft }: { draft: TimelineDraft }) {
-  return (
-    <div className="font-serif">
-      <div className="text-center mb-10">
-        <div className="font-display text-[40px] sm:text-[54px] leading-none tracking-[-0.06em]">MERAV INTERIORS</div>
-        <div className="mt-3 text-[12px] tracking-[0.42em] text-neutral-500 font-sans">BY KATIE ROBERTS</div>
-      </div>
-      <div className="text-center mb-8">
-        <div className="text-[11px] tracking-[0.28em] uppercase text-neutral-500 font-sans">{draft.projectName || draft.clientName || "Project"}</div>
-        <h3 className="mt-3 text-3xl font-bold uppercase">{draft.title || "Tentative Service Timeline"}</h3>
-        {draft.timelineDate && <p className="mt-2 text-sm text-neutral-500 font-sans">{formatDisplayDate(draft.timelineDate)}</p>}
-      </div>
-      <div className="space-y-5">
-        {draft.milestones.map((milestone, index) => (
-          <div key={index} className="border-t border-black pt-4">
-            <div className="text-lg font-bold uppercase">{milestone.weekLabel || `Week ${index + 1}`}:</div>
-            <p className="mt-1 text-[15px] leading-relaxed">
-              {milestone.description || "Timeline milestone"}
-              {milestone.estimatedDate ? <><span> Estimated Date: </span><strong>{formatDisplayDate(milestone.estimatedDate)}.</strong></> : null}
-              {milestone.note ? <><span> </span><strong>{milestone.note}</strong></> : null}
-            </p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-10 border-t border-black pt-4 text-[12px] leading-relaxed">{draft.footerNote}</p>
     </div>
   );
 }
