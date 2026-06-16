@@ -15,6 +15,7 @@ import {
   ArrowRight,
   ArrowUp,
   Copy,
+  Download,
   ExternalLink,
   Image as ImageIcon,
   MessageSquare,
@@ -410,6 +411,7 @@ function ProjectDesignBoardsPage() {
   const [autoBackgroundRemovalPulse, setAutoBackgroundRemovalPulse] = useState(0);
   const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [saveStatus, setSaveStatus] = useState<
@@ -678,6 +680,36 @@ function ProjectDesignBoardsPage() {
   );
   const allBoardDetailsHidden =
     imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
+
+  const exportBoardPdf = useCallback(async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "px",
+        format: [BOARD_WIDTH, BOARD_HEIGHT],
+        compress: true,
+      });
+      const exportPages = pages.length ? pages : defaultPages();
+
+      for (let index = 0; index < exportPages.length; index += 1) {
+        if (index > 0) pdf.addPage([BOARD_WIDTH, BOARD_HEIGHT], "landscape");
+        const pageDataUrl = await renderDesignBoardPageToDataUrl(exportPages[index]);
+        pdf.addImage(pageDataUrl, "JPEG", 0, 0, BOARD_WIDTH, BOARD_HEIGHT, undefined, "FAST");
+      }
+
+      pdf.save(`${sanitizeFileName(project?.name || "design-board")}-design-boards.pdf`);
+      toast.success(`Exported ${exportPages.length} design board page${exportPages.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      console.error("[Design Board] PDF export failed", error);
+      toast.error(error instanceof Error ? error.message : "Could not export design board PDF.");
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [exportingPdf, pages, project?.name]);
+
   const onlineUsers = useMemo(() => {
     const usersByIdentity = new Map<string, ActiveBoardUser>();
     for (const user of activeUsers) {
@@ -2643,6 +2675,10 @@ function ProjectDesignBoardsPage() {
               >
                 <Plus className="h-4 w-4" />
                 {bulkMaterialScope === "page" ? "Sending Page..." : "Send Page to Materials"}
+              </ToolbarButton>
+              <ToolbarButton onClick={exportBoardPdf} disabled={exportingPdf || !pages.length}>
+                <Download className="h-4 w-4" />
+                {exportingPdf ? "Exporting PDF..." : "Export PDF"}
               </ToolbarButton>
               {canRestoreDesignBoards && (
                 <ToolbarButton onClick={() => setHistoryOpen(true)}>History</ToolbarButton>
@@ -4641,6 +4677,290 @@ async function imageSourceForCanvas(src: string) {
   const body = await res.json();
   if (!res.ok || !body?.image) throw new Error(body?.error || "Could not prepare image.");
   return body.image as string;
+}
+
+async function renderDesignBoardPageToDataUrl(page: BoardPage) {
+  const canvas = document.createElement("canvas");
+  canvas.width = BOARD_WIDTH;
+  canvas.height = BOARD_HEIGHT;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not prepare PDF canvas.");
+
+  ctx.fillStyle = "#fbfaf7";
+  ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+
+  const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
+  for (const element of sortedElements) {
+    await drawBoardElementForExport(ctx, element);
+  }
+
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+async function drawBoardElementForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
+  ctx.save();
+  ctx.globalAlpha = element.visible === false ? 0.22 : 1;
+  const centerX = element.x + element.width / 2;
+  const centerY = element.y + element.height / 2;
+  ctx.translate(centerX, centerY);
+  ctx.rotate(((element.rotation ?? 0) * Math.PI) / 180);
+  ctx.translate(-element.width / 2, -element.height / 2);
+
+  if (element.type === "shape") {
+    ctx.fillStyle = element.background ?? "#dcd9ce";
+    ctx.fillRect(0, 0, element.width, element.height);
+  }
+
+  if (element.type === "text") {
+    drawBoardTextForExport(ctx, element);
+  }
+
+  if (element.type === "image") {
+    await drawBoardImageForExport(ctx, element);
+  }
+
+  ctx.restore();
+}
+
+async function drawBoardImageForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
+  if (element.src) {
+    try {
+      const image = await loadImageElement(await imageSourceForCanvas(element.src));
+      drawImageContain(ctx, image, 0, 0, element.width, element.height, element);
+    } catch (error) {
+      console.warn("[Design Board] Could not draw image into PDF", error);
+      drawImageFallback(ctx, element);
+    }
+  } else {
+    drawImageFallback(ctx, element);
+  }
+
+  if (!element.hideDetails && (element.label || element.productName)) {
+    drawBoardImageLabelForExport(ctx, element);
+  }
+
+  if (!element.hideDetails && element.productId) {
+    ctx.fillStyle = "#1f4e5f";
+    drawRoundedRect(ctx, 4, 4, 74, 24, 12);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "10px Montserrat, Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("PRODUCT", 41, 16);
+  }
+}
+
+function drawImageContain(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  element: BoardElement,
+) {
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  if (!naturalWidth || !naturalHeight) return;
+
+  const scale = Math.min(width / naturalWidth, height / naturalHeight);
+  const drawWidth = naturalWidth * scale;
+  const drawHeight = naturalHeight * scale;
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
+
+  const previousFilter = ctx.filter;
+  ctx.filter = boardElementCanvasFilter(element);
+  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+  ctx.filter = previousFilter;
+}
+
+function drawImageFallback(ctx: CanvasRenderingContext2D, element: BoardElement) {
+  ctx.strokeStyle = "#d6d3cb";
+  ctx.setLineDash([8, 8]);
+  ctx.strokeRect(0, 0, element.width, element.height);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#faf9f5";
+  ctx.fillRect(0, 0, element.width, element.height);
+  drawWrappedCanvasText(
+    ctx,
+    element.label || element.productName || "Image",
+    element.width / 2,
+    element.height / 2,
+    element.width - 32,
+    26,
+    "var(--font-display)",
+    "#a8a29a",
+    "center",
+    "middle",
+  );
+}
+
+function drawBoardImageLabelForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
+  const label = (element.label || element.productName || "").trim();
+  if (!label) return;
+  const fontSize = 12;
+  ctx.font = `${fontSize}px Montserrat, Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const labelWidth = Math.min(element.width + 24, Math.max(52, ctx.measureText(label).width + 18));
+  const labelHeight = 24;
+  const labelX = element.width / 2 - labelWidth / 2;
+  const labelY = element.height + 6;
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.shadowColor = "rgba(40,34,25,0.12)";
+  ctx.shadowBlur = 6;
+  ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#57534e";
+  ctx.fillText(label.toUpperCase(), element.width / 2, labelY + labelHeight / 2 + 0.5);
+}
+
+function drawBoardTextForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
+  drawWrappedCanvasText(
+    ctx,
+    element.text ?? "",
+    element.width / 2,
+    element.height / 2,
+    element.width,
+    element.fontSize ?? 24,
+    element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
+    element.color ?? DEFAULT_BOARD_TEXT_COLOR,
+    "center",
+    "middle",
+    element.letterSpacing ?? 1,
+  );
+}
+
+function drawWrappedCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  fontSize: number,
+  fontFamily: string,
+  color: string,
+  textAlign: CanvasTextAlign,
+  textBaseline: CanvasTextBaseline,
+  letterSpacing = 0,
+) {
+  const resolvedFont = resolveCanvasFontFamily(fontFamily);
+  const lines = wrapCanvasText(ctx, text.toUpperCase(), maxWidth, fontSize, resolvedFont);
+  const lineHeight = fontSize * 1.12;
+  const totalHeight = Math.max(lineHeight, lines.length * lineHeight);
+  const startY = textBaseline === "middle" ? y - totalHeight / 2 + lineHeight / 2 : y;
+
+  ctx.fillStyle = color;
+  ctx.font = `${fontSize}px ${resolvedFont}`;
+  ctx.textAlign = textAlign;
+  ctx.textBaseline = "middle";
+
+  lines.forEach((line, index) => {
+    drawCanvasTextWithLetterSpacing(ctx, line, x, startY + index * lineHeight, letterSpacing);
+  });
+}
+
+function wrapCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  fontFamily: string,
+) {
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  const explicitLines = text.split(/\n/);
+  const lines: string[] = [];
+  for (const explicitLine of explicitLines) {
+    const words = explicitLine.split(/\s+/).filter(Boolean);
+    let line = "";
+    for (const word of words) {
+      const nextLine = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(nextLine).width > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = nextLine;
+      }
+    }
+    lines.push(line || "");
+  }
+  return lines;
+}
+
+function drawCanvasTextWithLetterSpacing(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  letterSpacing: number,
+) {
+  if (!letterSpacing || text.length <= 1 || ctx.textAlign !== "center") {
+    ctx.fillText(text, x, y);
+    return;
+  }
+
+  const letters = Array.from(text);
+  const widths = letters.map((letter) => ctx.measureText(letter).width);
+  const totalWidth =
+    widths.reduce((total, width) => total + width, 0) + letterSpacing * (letters.length - 1);
+  let cursor = x - totalWidth / 2;
+  letters.forEach((letter, index) => {
+    ctx.fillText(letter, cursor + widths[index] / 2, y);
+    cursor += widths[index] + letterSpacing;
+  });
+}
+
+function resolveCanvasFontFamily(fontFamily: string) {
+  if (fontFamily.includes("--font-montserrat")) return "Montserrat, Arial, sans-serif";
+  if (fontFamily.includes("--font-display")) return "Cormorant Garamond, Georgia, serif";
+  if (fontFamily.includes("--font-sans")) return "Inter, Arial, sans-serif";
+  return fontFamily;
+}
+
+function boardElementCanvasFilter(element: BoardElement) {
+  const brightness = clampNumber(element.imageBrightness ?? 100, 50, 150);
+  const contrast = clampNumber(element.imageContrast ?? 100, 50, 150);
+  const saturation = clampNumber(element.imageSaturation ?? 100, 0, 200);
+  const warmth = clampNumber(element.imageWarmth ?? 0, -50, 50);
+  const warmSepia = Math.max(0, warmth) / 250;
+  const hueRotate = warmth < 0 ? Math.abs(warmth) * 0.45 : warmth * -0.15;
+  return [
+    `brightness(${brightness}%)`,
+    `contrast(${contrast}%)`,
+    `saturate(${saturation}%)`,
+    `sepia(${warmSepia})`,
+    `hue-rotate(${hueRotate}deg)`,
+  ].join(" ");
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function sanitizeFileName(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "design-board"
+  );
 }
 
 async function removeFlatImageBackground(src: string) {
