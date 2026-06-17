@@ -1154,8 +1154,8 @@ function DesignBoardSlide({
   pageCount: number;
 }) {
   return (
-    <div className="relative w-full h-full bg-bone px-8 py-10 lg:px-12 lg:py-12">
-      <div className="mb-5">
+    <div className="relative flex h-full w-full flex-col bg-bone px-8 py-8 lg:px-12 lg:py-10">
+      <div className="mb-4 shrink-0">
         <div className="eyebrow text-[11px]">
           {project.name} · {project.client_name}
           {pageCount > 1 && (
@@ -1168,10 +1168,9 @@ function DesignBoardSlide({
           {page.title}
         </h2>
       </div>
-      <div className="mx-auto max-w-[1400px]">
-        <DesignBoardCanvasPreview page={page} />
+      <div className="mx-auto min-h-0 flex-1 aspect-[14/9] max-w-full">
+        <DesignBoardCanvasPreview page={page} fill />
       </div>
-      <PresentationFooter />
     </div>
   );
 }
@@ -1189,7 +1188,7 @@ function DesignBoardSpread({
 }) {
   return (
     <section className="relative border border-border bg-bone print:border-0 print-page">
-      <div className="px-10 pb-20 pt-10 print:px-10 print:pb-16 print:pt-8">
+      <div className="px-10 pb-10 pt-10 print:px-10 print:pb-8 print:pt-8">
         <div className="mb-6">
           <div className="eyebrow text-[11px]">
             {project.name} · {project.client_name}
@@ -1205,7 +1204,6 @@ function DesignBoardSpread({
         </div>
         <DesignBoardCanvasPreview page={page} />
       </div>
-      <PresentationFooter />
     </section>
   );
 }
@@ -1469,9 +1467,11 @@ function PresentationBoardPagesPanel({
 function DesignBoardCanvasPreview({
   page,
   compact = false,
+  fill = false,
 }: {
   page: PresentationBoardPage;
   compact?: boolean;
+  fill?: boolean;
 }) {
   const sortedElements = [...page.elements]
     .filter(boardElementIsMeaningful)
@@ -1480,7 +1480,11 @@ function DesignBoardCanvasPreview({
   return (
     <div
       className={`relative overflow-hidden border border-border bg-white ${
-        compact ? "aspect-[14/9]" : "aspect-[14/9] lg:min-h-[640px] print:min-h-0"
+        fill
+          ? "h-full w-full"
+          : compact
+            ? "aspect-[14/9]"
+            : "aspect-[14/9] lg:min-h-[640px] print:min-h-0"
       }`}
     >
       {sortedElements.length ? (
