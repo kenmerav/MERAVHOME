@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  Download,
   Type,
   Plus,
   Trash2,
@@ -18,7 +19,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/presentations/$id")({
@@ -263,6 +264,42 @@ function boardElementIsMeaningful(element: PresentationBoardElement) {
 
 function boardPageHasRenderableContent(page: PresentationBoardPage) {
   return page.elements.some(boardElementIsMeaningful);
+}
+
+function presentationSlideLabel(slide: PresentationSlide) {
+  if (slide.kind === "cover") return "Cover";
+  if (slide.kind === "board-page") return `Extra Page · ${slide.page.title}`;
+  const viewLabel = slide.viewCount > 1 ? ` · View ${slide.viewIndex + 1}` : "";
+  return `${slide.room.name}${viewLabel}`;
+}
+
+function sanitizePresentationFileName(value: string) {
+  return (
+    value
+      .trim()
+      .replace(/[^\w\s.-]/g, "")
+      .replace(/\s+/g, "-")
+      .slice(0, 80) || "presentation"
+  );
+}
+
+async function waitForPresentationImages(nodes: HTMLElement[]) {
+  const images = nodes.flatMap((node) => Array.from(node.querySelectorAll("img")));
+  await Promise.all(
+    images.map(async (image) => {
+      image.loading = "eager";
+      if (image.complete && image.naturalWidth > 0) return;
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        image.addEventListener("load", done, { once: true });
+        image.addEventListener("error", done, { once: true });
+        setTimeout(done, 8000);
+      });
+      try {
+        await image.decode?.();
+      } catch {}
+    }),
+  );
 }
 
 function PresentationPage() {
@@ -594,6 +631,10 @@ function PresentationPage() {
   const [slide, setSlide] = useState(0);
   const [editingPicks, setEditingPicks] = useState(false);
   const [editingText, setEditingText] = useState(false);
+  const [pdfPickerOpen, setPdfPickerOpen] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [selectedPdfSlideKeys, setSelectedPdfSlideKeys] = useState<string[]>([]);
+  const exportSlideRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
     if (typeof window === "undefined" || presenting) return;
@@ -603,6 +644,15 @@ function PresentationPage() {
       if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [rooms.length, presenting]);
+
+  useEffect(() => {
+    setSelectedPdfSlideKeys((current) => {
+      const currentSet = new Set(current);
+      const availableKeys = slides.map((item) => item.slideKey);
+      const existingSelection = availableKeys.filter((key) => currentSet.has(key));
+      return existingSelection.length ? existingSelection : availableKeys;
+    });
+  }, [slides]);
 
   const enterPresent = useCallback(async () => {
     setSlide(0);
@@ -620,6 +670,60 @@ function PresentationPage() {
       } catch {}
     }
   }, []);
+
+  const downloadSelectedPdf = useCallback(async () => {
+    const selectedSlides = slides.filter((item) => selectedPdfSlideKeys.includes(item.slideKey));
+    if (!selectedSlides.length) {
+      toast.error("Choose at least one page to download.");
+      return;
+    }
+
+    setExportingPdf(true);
+    try {
+      await waitForPresentationImages(
+        selectedSlides
+          .map((item) => exportSlideRefs.current.get(item.slideKey))
+          .filter((node): node is HTMLDivElement => Boolean(node)),
+      );
+      const [{ toPng }, { jsPDF }] = await Promise.all([
+        import("html-to-image"),
+        import("jspdf"),
+      ]);
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "px",
+        format: [1400, 900],
+        compress: true,
+      });
+
+      for (const [index, item] of selectedSlides.entries()) {
+        const node = exportSlideRefs.current.get(item.slideKey);
+        if (!node) continue;
+        const dataUrl = await toPng(node, {
+          width: 1400,
+          height: 900,
+          pixelRatio: 2,
+          cacheBust: true,
+          backgroundColor: "#f6f2eb",
+          style: {
+            width: "1400px",
+            height: "900px",
+          },
+        });
+        if (index > 0) pdf.addPage([1400, 900], "landscape");
+        pdf.addImage(dataUrl, "PNG", 0, 0, 1400, 900, undefined, "FAST");
+      }
+
+      pdf.save(`${sanitizePresentationFileName(project?.name || "presentation")}.pdf`);
+      toast.success("Presentation PDF downloaded.");
+      setPdfPickerOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not download the presentation PDF.");
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [project?.name, selectedPdfSlideKeys, slides]);
 
   useEffect(() => {
     if (!presenting) return;
@@ -737,12 +841,75 @@ function PresentationPage() {
               <Maximize2 className="w-4 h-4" /> Present
             </button>
             <button
+              onClick={() => setPdfPickerOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+            >
+              <Download className="w-4 h-4" /> Download PDF
+            </button>
+            <button
               onClick={() => window.print()}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
             >
               <Printer className="w-4 h-4" /> Print / PDF
             </button>
           </div>
+        </div>
+
+        {pdfPickerOpen && (
+          <PresentationPdfPicker
+            slides={slides}
+            selectedSlideKeys={selectedPdfSlideKeys}
+            exporting={exportingPdf}
+            onToggle={(slideKey) =>
+              setSelectedPdfSlideKeys((current) =>
+                current.includes(slideKey)
+                  ? current.filter((key) => key !== slideKey)
+                  : [...current, slideKey],
+              )
+            }
+            onSelectAll={() => setSelectedPdfSlideKeys(slides.map((item) => item.slideKey))}
+            onSelectNone={() => setSelectedPdfSlideKeys([])}
+            onClose={() => {
+              if (!exportingPdf) setPdfPickerOpen(false);
+            }}
+            onDownload={() => void downloadSelectedPdf()}
+          />
+        )}
+
+        <div
+          className="pointer-events-none fixed left-[-10000px] top-0 z-[-1]"
+          aria-hidden="true"
+        >
+          {slides.map((current) => (
+            <div
+              key={`export-${current.slideKey}`}
+              ref={(node) => {
+                if (node) exportSlideRefs.current.set(current.slideKey, node);
+                else exportSlideRefs.current.delete(current.slideKey);
+              }}
+              className="h-[900px] w-[1400px] overflow-hidden bg-bone"
+            >
+              {current.kind === "cover" ? (
+                <CoverSlide project={project} />
+              ) : current.kind === "board-page" ? (
+                <DesignBoardSlide
+                  project={project}
+                  page={current.page}
+                  pageIndex={current.pageIndex}
+                  pageCount={current.pageCount}
+                />
+              ) : (
+                <RoomSlide
+                  project={project}
+                  room={current.room}
+                  data={current.data}
+                  view={current.view}
+                  viewIndex={current.viewIndex}
+                  viewCount={current.viewCount}
+                />
+              )}
+            </div>
+          ))}
         </div>
 
         <div className="hidden print:flex print-page min-h-[9.5in] flex-col justify-between p-12">
@@ -1106,6 +1273,122 @@ function PresentationExtraPageManager({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function PresentationPdfPicker({
+  slides,
+  selectedSlideKeys,
+  exporting,
+  onToggle,
+  onSelectAll,
+  onSelectNone,
+  onClose,
+  onDownload,
+}: {
+  slides: PresentationSlide[];
+  selectedSlideKeys: string[];
+  exporting: boolean;
+  onToggle: (slideKey: string) => void;
+  onSelectAll: () => void;
+  onSelectNone: () => void;
+  onClose: () => void;
+  onDownload: () => void;
+}) {
+  const selectedCount = selectedSlideKeys.length;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 print:hidden">
+      <div className="w-full max-w-2xl border border-border bg-background shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+          <div>
+            <div className="eyebrow">Presentation PDF</div>
+            <h2 className="mt-1 font-display text-3xl text-ink">Choose pages to download</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Each selected presentation page will export as its own high-quality PDF page.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={exporting}
+            className="p-2 text-muted-foreground hover:text-ink disabled:opacity-50"
+            aria-label="Close PDF picker"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="text-sm text-muted-foreground">
+            {selectedCount} of {slides.length} pages selected
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onSelectAll}
+              disabled={exporting}
+              className="border border-border px-3 py-1.5 text-xs uppercase tracking-[0.14em] text-ink hover:border-ink disabled:opacity-50"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={onSelectNone}
+              disabled={exporting}
+              className="border border-border px-3 py-1.5 text-xs uppercase tracking-[0.14em] text-ink hover:border-ink disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        <div className="max-h-[55vh] overflow-y-auto p-5">
+          <div className="space-y-2">
+            {slides.map((item, index) => {
+              const checked = selectedSlideKeys.includes(item.slideKey);
+              return (
+                <label
+                  key={item.slideKey}
+                  className={`flex cursor-pointer items-center gap-3 border px-4 py-3 transition-colors ${
+                    checked
+                      ? "border-ink bg-bone"
+                      : "border-border bg-white hover:border-ink/50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={exporting}
+                    onChange={() => onToggle(item.slideKey)}
+                    className="h-4 w-4 accent-ink"
+                  />
+                  <span className="w-8 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <span className="flex-1 text-sm text-ink">{presentationSlideLabel(item)}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-border p-5">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={exporting}
+            className="border border-border px-5 py-2.5 text-sm text-ink hover:border-ink disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={exporting || selectedCount === 0}
+            className="bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50"
+          >
+            {exporting ? "Building PDF..." : "Download Selected PDF"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
