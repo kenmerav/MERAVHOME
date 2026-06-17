@@ -36,21 +36,33 @@ export function AppShell({ children }: { children: ReactNode }) {
     let active = true;
 
     const loadSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-      if (!data.session) {
-        navigate({ to: "/login" });
-        return;
-      }
+      try {
+        const { data } = await withTimeout(supabase.auth.getSession(), 12000);
+        if (!active) return;
+        if (!data.session) {
+          setLoadingAuth(false);
+          navigate({ to: "/login" });
+          return;
+        }
 
-      const { data: userProfile } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", data.session.user.id)
-        .maybeSingle();
-      if (!active) return;
-      setProfile((userProfile as UserProfile | null) ?? null);
-      setLoadingAuth(false);
+        const { data: userProfile } = await withTimeout(
+          supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", data.session.user.id)
+            .maybeSingle(),
+          12000,
+        );
+        if (!active) return;
+        setProfile((userProfile as UserProfile | null) ?? null);
+        setLoadingAuth(false);
+      } catch (error) {
+        console.warn("[AppShell] Unable to load auth session.", error);
+        if (!active) return;
+        setProfile(null);
+        setLoadingAuth(false);
+        navigate({ to: "/login" });
+      }
     };
 
     loadSession();
@@ -229,4 +241,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="flex-1 min-w-0 pt-14 lg:pt-0">{children}</main>
     </div>
   );
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timeout));
+  });
 }
