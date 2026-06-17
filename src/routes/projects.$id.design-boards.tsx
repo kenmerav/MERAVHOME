@@ -38,7 +38,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import {
   db,
-  type DesignBoardVersionRecord,
+  type DesignBoardVersionMeta,
   type MaterialItem,
   type Product,
   type ProductCategory,
@@ -478,11 +478,11 @@ function ProjectDesignBoardsPage() {
   const { data: designBoardVersions = [] } = useQuery({
     queryKey: ["designBoardVersions", id],
     queryFn: async () => (await db.listDesignBoardVersions(id)) ?? [],
-    enabled: canRestoreDesignBoards,
+    enabled: canRestoreDesignBoards && historyOpen,
     staleTime: 0,
     refetchOnMount: "always",
-    refetchOnWindowFocus: "always",
-    refetchOnReconnect: "always",
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
   });
 
   const pages = boardState.pages.length ? boardState.pages : defaultPages();
@@ -503,10 +503,17 @@ function ProjectDesignBoardsPage() {
         : (designBoardVersions[0] ?? null),
     [designBoardVersions, previewVersionId],
   );
+  const { data: selectedVersionFull = null, isFetching: loadingVersionPreview } = useQuery({
+    queryKey: ["designBoardVersion", selectedVersionRecord?.version_id],
+    queryFn: async () =>
+      selectedVersionRecord ? await db.getDesignBoardVersion(selectedVersionRecord.version_id) : null,
+    enabled: canRestoreDesignBoards && historyOpen && Boolean(selectedVersionRecord?.version_id),
+    staleTime: 30_000,
+  });
   const selectedVersionPreview = useMemo(() => {
-    if (!selectedVersionRecord) return null;
-    return normalizeBoardState(selectedVersionRecord.board_state_snapshot);
-  }, [selectedVersionRecord]);
+    if (!selectedVersionFull) return null;
+    return normalizeBoardState(selectedVersionFull.board_state_snapshot);
+  }, [selectedVersionFull]);
   const selectedVersionPreviewPage =
     selectedVersionPreview?.pages.find(
       (page) => page.id === selectedVersionPreview.selectedPageId,
@@ -1931,10 +1938,12 @@ function ProjectDesignBoardsPage() {
   };
 
   const restoreVersion = useCallback(
-    async (version: DesignBoardVersionRecord) => {
+    async (version: DesignBoardVersionMeta) => {
       if (!canRestoreDesignBoards) return;
-      const restored = normalizeBoardState(version.board_state_snapshot);
-      const savedBoard = await db.restoreDesignBoardVersion(version, profile?.id);
+      const fullVersion = await db.getDesignBoardVersion(version.version_id);
+      if (!fullVersion) throw new Error("Could not load that version.");
+      const restored = normalizeBoardState(fullVersion.board_state_snapshot);
+      const savedBoard = await db.restoreDesignBoardVersion(fullVersion, profile?.id);
       if (!savedBoard) throw new Error("Could not restore that version.");
       pushUndo();
       applyLocalBoardUpdate(restored);
@@ -3056,7 +3065,11 @@ function ProjectDesignBoardsPage() {
                   )}
                 </div>
                 <div className="space-y-4">
-                  {selectedVersionRecord && selectedVersionPreviewPage ? (
+                  {selectedVersionRecord && loadingVersionPreview ? (
+                    <div className="rounded-lg border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-sm text-stone-500">
+                      Loading version preview...
+                    </div>
+                  ) : selectedVersionRecord && selectedVersionPreview && selectedVersionPreviewPage ? (
                     <>
                       <div className="flex items-center justify-between gap-3">
                         <div>

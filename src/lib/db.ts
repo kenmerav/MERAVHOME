@@ -311,6 +311,8 @@ export interface DesignBoardVersionRecord {
   save_reason: string | null;
 }
 
+export type DesignBoardVersionMeta = Omit<DesignBoardVersionRecord, "board_state_snapshot">;
+
 async function getCurrentProjectAccess() {
   const { data: sessionData } = await supabase.auth.getSession();
   const userId = sessionData.session?.user.id;
@@ -762,15 +764,24 @@ export const db = {
     if (error) throw error;
     return data as DesignBoardRecord | null;
   },
-  listDesignBoardVersions: async (projectId: string, limit = 120) =>
+  listDesignBoardVersions: async (projectId: string, limit = 60) =>
+    (
+      await supabase
+        .from("design_board_versions" as any)
+        .select("version_id, design_board_id, project_id, created_at, created_by, save_type, save_reason")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .order("version_id", { ascending: false })
+        .limit(limit)
+    ).data as DesignBoardVersionMeta[] | null,
+  getDesignBoardVersion: async (versionId: string) =>
     (
       await supabase
         .from("design_board_versions" as any)
         .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false })
-        .limit(limit)
-    ).data as DesignBoardVersionRecord[] | null,
+        .eq("version_id", versionId)
+        .maybeSingle()
+    ).data as DesignBoardVersionRecord | null,
   restoreDesignBoardVersion: async (
     version: Pick<DesignBoardVersionRecord, "project_id" | "board_state_snapshot">,
     updatedBy?: string | null,
