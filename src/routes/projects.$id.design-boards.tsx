@@ -75,6 +75,7 @@ type BoardElement = {
   originalSrc?: string;
   backgroundRemovedUrl?: string | null;
   autoRemoveBackground?: boolean;
+  fastBackgroundRemovalTried?: boolean;
   backgroundRemovalStatus?: "pending" | "processing" | "complete" | "failed";
   label?: string;
   notes?: string;
@@ -2145,7 +2146,9 @@ function ProjectDesignBoardsPage() {
       localEditShieldUntilRef.current = Date.now() + 6000;
       setElementsForPage(targetPageId, (current) =>
         current.map((element) =>
-          element.id === targetId ? { ...element, originalSrc, src: uploadedCutout } : element,
+          element.id === targetId
+            ? { ...element, originalSrc, src: uploadedCutout, fastBackgroundRemovalTried: true }
+            : element,
         ),
       );
     } catch (error) {
@@ -2160,6 +2163,10 @@ function ProjectDesignBoardsPage() {
 
   const removeSelectedBackgroundWithOpenAI = async () => {
     if (!selected || selected.type !== "image" || !selected.src) return;
+    if (!selected.fastBackgroundRemovalTried) {
+      window.alert("Try the free Remove BG first. AI Remove BG unlocks after that if the cutout needs help.");
+      return;
+    }
     const targetId = selected.id;
     const targetPageId = selectedPageId;
     const originalSrc = selected.originalSrc || selected.src;
@@ -2182,6 +2189,7 @@ function ProjectDesignBoardsPage() {
                 originalSrc,
                 src: uploadedCutout,
                 backgroundRemovedUrl: uploadedCutout,
+                fastBackgroundRemovalTried: true,
                 backgroundRemovalStatus: "complete",
               }
             : element,
@@ -2260,6 +2268,7 @@ function ProjectDesignBoardsPage() {
                   src: uploadedCutout,
                   backgroundRemovedUrl: uploadedCutout,
                   autoRemoveBackground: false,
+                  fastBackgroundRemovalTried: true,
                   backgroundRemovalStatus: "complete",
                 }
               : candidate,
@@ -2280,6 +2289,7 @@ function ProjectDesignBoardsPage() {
               ? {
                   ...candidate,
                   autoRemoveBackground: false,
+                  fastBackgroundRemovalTried: true,
                   backgroundRemovalStatus: "failed",
                 }
               : candidate,
@@ -2310,7 +2320,7 @@ function ProjectDesignBoardsPage() {
     setElements((current) =>
       current.map((element) =>
         element.id === targetId
-          ? { ...element, src: element.originalSrc, originalSrc: undefined }
+          ? { ...element, src: element.originalSrc, backgroundRemovedUrl: null }
           : element,
       ),
     );
@@ -2650,11 +2660,21 @@ function ProjectDesignBoardsPage() {
                   !selected ||
                   selectedCount !== 1 ||
                   selected.type !== "image" ||
-                  removingBackground
+                  removingBackground ||
+                  !selected.fastBackgroundRemovalTried
+                }
+                title={
+                  selected?.type === "image" && !selected.fastBackgroundRemovalTried
+                    ? "Try the free Remove BG first. AI unlocks after that."
+                    : undefined
                 }
               >
                 <WandSparkles className="h-4 w-4" />{" "}
-                {removingBackground ? "Cutting..." : "AI Remove BG"}
+                {removingBackground
+                  ? "Cutting..."
+                  : selected?.type === "image" && !selected.fastBackgroundRemovalTried
+                    ? "AI Locked"
+                    : "AI Remove BG"}
               </ToolbarButton>
               <ToolbarButton
                 onClick={restoreSelectedOriginal}
@@ -4180,15 +4200,24 @@ function SelectedPanel({
           <button
             type="button"
             onClick={onRemoveBackgroundWithOpenAI}
-            disabled={removingBackground}
+            disabled={removingBackground || !selected.fastBackgroundRemovalTried}
+            title={
+              !selected.fastBackgroundRemovalTried
+                ? "Try the free Remove Background first. AI unlocks after that."
+                : undefined
+            }
             className="inline-flex w-full items-center justify-center gap-2 border border-[#1f4e5f] bg-[#f3f7f5] px-4 py-2 text-sm text-[#1f4e5f] transition hover:bg-[#e9f1ef] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <WandSparkles className="h-4 w-4" />{" "}
-            {removingBackground ? "Removing background..." : "AI Remove Background"}
+            {removingBackground
+              ? "Removing background..."
+              : selected.fastBackgroundRemovalTried
+                ? "AI Remove Background"
+                : "AI Locked Until Fast BG Is Tried"}
           </button>
           <p className="text-xs leading-relaxed text-stone-500">
-            Use the regular remover first for a free, fast cutout. Try AI Remove Background when
-            the first pass misses product edges or leaves haze.
+            Use the regular remover first for a free, fast cutout. AI unlocks after that and runs
+            from the original image if the first pass misses product edges or leaves haze.
           </p>
           <div className="border border-stone-200 bg-[#faf9f5] p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -5239,6 +5268,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "originalSrc",
     "backgroundRemovedUrl",
     "autoRemoveBackground",
+    "fastBackgroundRemovalTried",
     "backgroundRemovalStatus",
     "label",
     "notes",
