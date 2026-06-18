@@ -1093,6 +1093,19 @@ function PresentationFooter() {
   );
 }
 
+function PresentationBrandMark({ className = "" }: { className?: string }) {
+  return (
+    <div className={`text-center pointer-events-none ${className}`}>
+      <div className="font-display text-ink uppercase leading-none tracking-[-0.07em] text-[clamp(2rem,3.4vw,4rem)] whitespace-nowrap">
+        MERAV INTERIORS
+      </div>
+      <div className="mt-2 text-[#9b9793] uppercase tracking-[0.38em] text-[clamp(0.45rem,0.72vw,0.75rem)] font-light">
+        By Katie Roberts
+      </div>
+    </div>
+  );
+}
+
 function RoomSlide({
   project,
   room,
@@ -1189,18 +1202,21 @@ function DesignBoardSpread({
   return (
     <section className="relative border border-border bg-bone print:border-0 print-page">
       <div className="px-10 pb-10 pt-10 print:px-10 print:pb-8 print:pt-8">
-        <div className="mb-6">
-          <div className="eyebrow text-[11px]">
-            {project.name} · {project.client_name}
-            {pageCount > 1 && (
-              <span className="ml-2 opacity-60">
-                · Extra Page {pageIndex + 1} of {pageCount}
-              </span>
-            )}
+        <div className="mb-6 flex items-start justify-between gap-8">
+          <div className="min-w-0">
+            <div className="eyebrow text-[11px]">
+              {project.name} · {project.client_name}
+              {pageCount > 1 && (
+                <span className="ml-2 opacity-60">
+                  · Extra Page {pageIndex + 1} of {pageCount}
+                </span>
+              )}
+            </div>
+            <h2 className="mt-2 font-display text-4xl leading-tight text-ink lg:text-5xl">
+              {page.title}
+            </h2>
           </div>
-          <h2 className="mt-2 font-display text-4xl leading-tight text-ink lg:text-5xl">
-            {page.title}
-          </h2>
+          <PresentationBrandMark className="hidden shrink-0 pt-1 md:block" />
         </div>
         <DesignBoardCanvasPreview page={page} />
       </div>
