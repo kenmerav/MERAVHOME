@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { canManageStudio } from "@/lib/permissions";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -18,12 +19,12 @@ async function requireOwner(request: Request) {
 
   const { data: profile } = await supabaseAdmin
     .from("user_profiles")
-    .select("role,is_active,is_owner")
+    .select("email,role,is_active,is_owner")
     .eq("id", userData.user.id)
     .maybeSingle();
 
-  if (!profile?.is_active || profile.role !== "Admin" || !profile.is_owner) {
-    return { error: json({ error: "Only Ken, the overall admin, can delete projects." }, 403) };
+  if (!canManageStudio(profile)) {
+    return { error: json({ error: "Only Ken and Katie can delete projects." }, 403) };
   }
 
   return { user: userData.user };

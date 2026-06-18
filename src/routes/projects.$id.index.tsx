@@ -62,7 +62,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canViewFinancials, canViewProcurement } from "@/lib/permissions";
+import { canManageStudio, canViewFinancials, canViewProcurement } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { templateForRoomName } from "@/lib/roomTemplates";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
@@ -258,7 +258,7 @@ function ProjectDetailPage() {
               >
                 <LayoutTemplate className="w-4 h-4" /> Presentation
               </Link>
-              {profile?.is_owner && profile.role === "Admin" && (
+              {canManageStudio(profile) && (
                 <DeleteProjectDialog
                   projectId={id}
                   projectName={project.name}

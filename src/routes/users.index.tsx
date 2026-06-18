@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile, UserRole } from "@/lib/db";
+import { OVERALL_ADMIN_EMAILS, canManageStudio } from "@/lib/permissions";
 
 const ROLES: UserRole[] = ["Admin", "Employee", "Contractor", "Client"];
 const ASSIGNABLE_ROLES: UserRole[] = ["Client", "Contractor"];
@@ -251,7 +252,7 @@ function UserRow({
   const [isActive, setIsActive] = useState(user.is_active);
   const [password, setPassword] = useState("");
   const [projectIds, setProjectIds] = useState<string[]>(user.assigned_project_ids ?? []);
-  const isKen = user.email.toLowerCase() === "ken@meravinteriors.com";
+  const isProtectedAdmin = OVERALL_ADMIN_EMAILS.has(user.email.toLowerCase());
 
   useEffect(() => {
     setFullName(user.full_name);
@@ -283,7 +284,7 @@ function UserRow({
           <div className="text-sm text-muted-foreground">{user.email}</div>
         </div>
         <div className="text-right">
-          <div className="eyebrow">{user.is_owner ? "Overall Admin" : roleLabel(user.role)}</div>
+          <div className="eyebrow">{canManageStudio(user) ? "Overall Admin" : roleLabel(user.role)}</div>
           <div className="text-xs text-muted-foreground mt-1">{user.is_active ? "Active" : "Inactive"}</div>
         </div>
       </div>
@@ -307,7 +308,7 @@ function UserRow({
           <Label className="eyebrow">Role</Label>
           <select
             value={role}
-            disabled={isKen}
+            disabled={isProtectedAdmin}
             onChange={(e) => setRole(e.target.value as UserRole)}
             className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm disabled:opacity-60"
           >
@@ -324,7 +325,7 @@ function UserRow({
           <Label className="eyebrow">Status</Label>
           <select
             value={isActive ? "active" : "inactive"}
-            disabled={isKen}
+            disabled={isProtectedAdmin}
             onChange={(e) => setIsActive(e.target.value === "active")}
             className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm disabled:opacity-60"
           >

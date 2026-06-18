@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
-import { canLogHours, canViewFinancials, canViewProcurement } from "@/lib/permissions";
+import { canLogHours, canManageStudio, canViewFinancials, canViewProcurement } from "@/lib/permissions";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
@@ -136,7 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
-            if (to === "/users" && !profile?.is_owner) return null;
+            if (to === "/users" && !canManageStudio(profile)) return null;
             if (to === "/catalog" && profile?.role === "Client") return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -165,7 +165,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {!desktopCollapsed && (
                 <>
                   <div className="text-sm text-ink truncate">{profile.full_name}</div>
-                  <div className="eyebrow mt-1">{profile.is_owner ? "Overall Admin" : profile.role}</div>
+                  <div className="eyebrow mt-1">{canManageStudio(profile) ? "Overall Admin" : profile.role}</div>
                 </>
               )}
               <button
@@ -201,7 +201,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="lg:hidden fixed inset-x-0 top-14 z-40 max-h-[calc(100vh-3.5rem)] overflow-y-auto border-b border-border bg-background/98 px-5 py-5 shadow-sm print:hidden">
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
-              if (to === "/users" && !profile?.is_owner) return null;
+              if (to === "/users" && !canManageStudio(profile)) return null;
               if (to === "/catalog" && profile?.role === "Client") return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -225,7 +225,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {profile && (
             <div className="mt-5 border-t border-border pt-4">
               <div className="text-sm text-ink">{profile.full_name}</div>
-              <div className="eyebrow mt-1">{profile.is_owner ? "Overall Admin" : profile.role}</div>
+              <div className="eyebrow mt-1">{canManageStudio(profile) ? "Overall Admin" : profile.role}</div>
               <button
                 type="button"
                 onClick={signOut}

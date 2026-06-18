@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { UserRole } from "@/lib/db";
+import { OVERALL_ADMIN_EMAILS, canManageStudio } from "@/lib/permissions";
 
 const ROLES: UserRole[] = ["Admin", "Employee", "Contractor", "Client"];
 
@@ -21,12 +22,12 @@ async function requireOwner(request: Request) {
 
   const { data: profile } = await supabaseAdmin
     .from("user_profiles")
-    .select("role,is_active,is_owner")
+    .select("email,role,is_active,is_owner")
     .eq("id", userData.user.id)
     .maybeSingle();
 
-  if (!profile?.is_active || profile.role !== "Admin" || !profile.is_owner) {
-    return { error: json({ error: "Only Ken, the overall admin, can manage users." }, 403) };
+  if (!canManageStudio(profile)) {
+    return { error: json({ error: "Only Ken and Katie can manage users." }, 403) };
   }
 
   return { user: userData.user };
@@ -141,7 +142,7 @@ export const Route = createFileRoute("/api/users")({
 
           const { data: profile, error: profileError } = await supabaseAdmin
             .from("user_profiles")
-            .upsert({ id: userId, email, full_name: fullName, role, hourly_rate: hourlyRate, is_active: true, is_owner: email === "ken@meravinteriors.com" } as any, { onConflict: "id" })
+            .upsert({ id: userId, email, full_name: fullName, role, hourly_rate: hourlyRate, is_active: true, is_owner: OVERALL_ADMIN_EMAILS.has(email) } as any, { onConflict: "id" })
             .select()
             .single();
 
@@ -177,13 +178,15 @@ export const Route = createFileRoute("/api/users")({
             .maybeSingle();
           if (!existing) return json({ error: "User not found." }, 404);
 
-          const isKen = existing.email.toLowerCase() === "ken@meravinteriors.com";
+          const existingEmail = existing.email.toLowerCase();
+          const isProtectedAdmin = OVERALL_ADMIN_EMAILS.has(existingEmail);
           const email = body.email?.trim().toLowerCase() || existing.email;
+          const willBeProtectedAdmin = OVERALL_ADMIN_EMAILS.has(email);
           const role = body.role ?? existing.role;
           if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400);
           if (!ROLES.includes(role)) return json({ error: "Choose a valid role." }, 400);
-          if (isKen && (role !== "Admin" || body.is_active === false)) {
-            return json({ error: "Ken must stay active and Admin." }, 400);
+          if ((isProtectedAdmin || willBeProtectedAdmin) && (role !== "Admin" || body.is_active === false)) {
+            return json({ error: "Ken and Katie must stay active and Admin." }, 400);
           }
           if (body.password && body.password.trim().length < 4) {
             return json({ error: "Password must be at least 4 characters." }, 400);
@@ -192,7 +195,7 @@ export const Route = createFileRoute("/api/users")({
           if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const fullName = body.full_name?.trim() || existing.full_name;
-          const isActive = isKen ? true : body.is_active ?? existing.is_active;
+          const isActive = isProtectedAdmin || willBeProtectedAdmin ? true : body.is_active ?? existing.is_active;
           const userUpdate: Parameters<typeof supabaseAdmin.auth.admin.updateUserById>[1] = {
             email,
             email_confirm: true,
@@ -211,7 +214,7 @@ export const Route = createFileRoute("/api/users")({
               role,
               hourly_rate: hourlyRate,
               is_active: isActive,
-              is_owner: isKen,
+              is_owner: isProtectedAdmin || willBeProtectedAdmin,
             } as any)
             .eq("id", body.id)
             .select()
