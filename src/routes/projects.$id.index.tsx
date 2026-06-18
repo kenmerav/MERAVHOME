@@ -27,8 +27,11 @@ import {
   db,
   PROJECT_LABELS,
   PROJECT_STATUSES,
+  PROJECT_TYPES,
   type ProjectLabel,
+  type Project,
   type ProjectStatus,
+  type ProjectType,
   type ProjectTimeline,
 } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -177,6 +180,13 @@ function ProjectDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <ProjectInfoDialog
+                project={project}
+                onSaved={() => {
+                  qc.invalidateQueries({ queryKey: ["project", id] });
+                  qc.invalidateQueries({ queryKey: ["projects"] });
+                }}
+              />
               <CoverImageDialog
                 projectId={id}
                 currentUrl={project.cover_image_url}
@@ -488,6 +498,185 @@ function formatTimelineDate(value: string) {
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function ProjectInfoDialog({
+  project,
+  onSaved,
+}: {
+  project: Project;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    client_name: project.client_name,
+    project_type: project.project_type,
+    status: project.status,
+    project_label: project.project_label ?? "none",
+    design_notes: project.design_notes ?? "",
+  });
+
+  const resetForm = () => {
+    setForm({
+      client_name: project.client_name,
+      project_type: project.project_type,
+      status: project.status,
+      project_label: project.project_label ?? "none",
+      design_notes: project.design_notes ?? "",
+    });
+  };
+
+  const save = async () => {
+    const clientName = form.client_name.trim();
+    if (!clientName) {
+      toast.error("Client name cannot be blank.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await db.updateProject(project.id, {
+        client_name: clientName,
+        project_type: form.project_type as ProjectType,
+        status: form.status as ProjectStatus,
+        project_label: form.project_label === "none" ? null : (form.project_label as ProjectLabel),
+        design_notes: form.design_notes.trim() || null,
+      });
+      toast.success("Project info updated");
+      setOpen(false);
+      onSaved();
+    } catch (error) {
+      toast.error(errorMessage(error, "Unable to update project info."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) resetForm();
+      }}
+    >
+      <DialogTrigger asChild>
+        <button className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+          <Pencil className="w-4 h-4" /> Project Info
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-3xl font-normal">Edit Project Info</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-5">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="eyebrow">Client Name</Label>
+              <Input
+                value={form.client_name}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, client_name: event.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="eyebrow">Project Type</Label>
+              <Select
+                value={form.project_type}
+                onValueChange={(value) =>
+                  setForm((current) => ({ ...current, project_type: value as ProjectType }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="eyebrow">Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(value) =>
+                  setForm((current) => ({ ...current, status: value as ProjectStatus }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="eyebrow">Project Label</Label>
+              <Select
+                value={form.project_label}
+                onValueChange={(value) =>
+                  setForm((current) => ({ ...current, project_label: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No label</SelectItem>
+                  {PROJECT_LABELS.map((label) => (
+                    <SelectItem key={label} value={label}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="eyebrow">Design Notes</Label>
+            <Textarea
+              value={form.design_notes}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, design_notes: event.target.value }))
+              }
+              rows={5}
+              placeholder="Project notes, client preferences, scope notes..."
+            />
+          </div>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="px-5 py-2.5 border border-border text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="px-5 py-2.5 bg-ink text-primary-foreground text-sm disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save Project Info"}
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function DeleteProjectDialog({
