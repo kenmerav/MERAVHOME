@@ -90,6 +90,7 @@ export interface Room {
   id: string;
   project_id: string;
   name: string;
+  cover_image_url: string | null;
   sort_order: number;
   design_concept: string | null;
   design_notes: string | null;

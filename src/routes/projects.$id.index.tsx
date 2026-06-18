@@ -32,6 +32,8 @@ import {
   type Project,
   type ProjectStatus,
   type ProjectType,
+  type Room,
+  type RoomImage,
   type ProjectTimeline,
 } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -72,6 +74,37 @@ export const Route = createFileRoute("/projects/$id/")({
   component: ProjectDetailPage,
 });
 
+const DESIGN_BOARD_ROOM_COVER_PREFIX = "design-board-page:";
+const DESIGN_BOARD_PREVIEW_WIDTH = 1400;
+const DESIGN_BOARD_PREVIEW_HEIGHT = 900;
+
+type RoomCoverBoardElement = {
+  id: string;
+  type: "image" | "text" | "shape";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  rotation?: number;
+  visible?: boolean;
+  src?: string;
+  backgroundRemovedUrl?: string;
+  text?: string;
+  background?: string;
+  color?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  letterSpacing?: number;
+};
+
+type RoomCoverBoardPage = {
+  id: string;
+  title: string;
+  roomId: string | null;
+  elements: RoomCoverBoardElement[];
+};
+
 function ProjectDetailPage() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
@@ -93,6 +126,10 @@ function ProjectDetailPage() {
     queryKey: ["projectTimelines", id],
     queryFn: async () => (await db.listProjectTimelines(id)) ?? [],
   });
+  const { data: designBoard } = useQuery({
+    queryKey: ["designBoard", id],
+    queryFn: () => db.getDesignBoard(id),
+  });
   const { data: profile } = useQuery({
     queryKey: ["currentProfile"],
     queryFn: async () => {
@@ -112,6 +149,7 @@ function ProjectDetailPage() {
   }
 
   const isClientUser = profile?.role === "Client";
+  const designBoardPages = normalizeRoomCoverBoardPages(designBoard?.board_state);
 
   const setStatus = async (s: ProjectStatus) => {
     await db.updateProject(id, { status: s });
@@ -310,7 +348,13 @@ function ProjectDetailPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {rooms.map((r) => (
-              <RoomCard key={r.id} room={r} projectId={id} canDelete={!isClientUser} />
+              <RoomCard
+                key={r.id}
+                room={r}
+                projectId={id}
+                canDelete={!isClientUser}
+                boardPages={designBoardPages}
+              />
             ))}
           </div>
         )}
@@ -772,14 +816,144 @@ function DeleteProjectDialog({
   );
 }
 
+function normalizeRoomCoverBoardElement(value: unknown): RoomCoverBoardElement | null {
+  if (!value || typeof value !== "object") return null;
+  const element = value as Partial<RoomCoverBoardElement>;
+  if (element.type !== "image" && element.type !== "text" && element.type !== "shape") return null;
+  return {
+    ...element,
+    id: typeof element.id === "string" && element.id ? element.id : crypto.randomUUID(),
+    type: element.type,
+    x: typeof element.x === "number" ? element.x : 0,
+    y: typeof element.y === "number" ? element.y : 0,
+    width: typeof element.width === "number" ? element.width : 240,
+    height: typeof element.height === "number" ? element.height : 180,
+    zIndex: typeof element.zIndex === "number" ? element.zIndex : 0,
+    rotation: typeof element.rotation === "number" ? element.rotation : 0,
+    visible: element.visible === false ? false : true,
+  };
+}
+
+function normalizeRoomCoverBoardPages(boardState: unknown): RoomCoverBoardPage[] {
+  if (!boardState || typeof boardState !== "object") return [];
+  const candidate = boardState as { pages?: unknown[] };
+  if (!Array.isArray(candidate.pages)) return [];
+  return candidate.pages
+    .map((page, pageIndex) => {
+      if (!page || typeof page !== "object") return null;
+      const current = page as Partial<RoomCoverBoardPage>;
+      const elements = Array.isArray(current.elements)
+        ? current.elements
+            .map(normalizeRoomCoverBoardElement)
+            .filter((element): element is RoomCoverBoardElement => Boolean(element))
+        : [];
+      return {
+        id: typeof current.id === "string" && current.id ? current.id : crypto.randomUUID(),
+        title:
+          typeof current.title === "string" && current.title.trim()
+            ? current.title
+            : `Board ${pageIndex + 1}`,
+        roomId: typeof current.roomId === "string" && current.roomId ? current.roomId : null,
+        elements,
+      } satisfies RoomCoverBoardPage;
+    })
+    .filter((page): page is RoomCoverBoardPage => Boolean(page));
+}
+
+function getRoomCoverBoardPage(value: string | null | undefined, pages: RoomCoverBoardPage[]) {
+  if (!value?.startsWith(DESIGN_BOARD_ROOM_COVER_PREFIX)) return null;
+  const pageId = value.slice(DESIGN_BOARD_ROOM_COVER_PREFIX.length);
+  return pages.find((page) => page.id === pageId) ?? null;
+}
+
+function RoomCoverBoardPreview({ page }: { page: RoomCoverBoardPage }) {
+  const elements = [...page.elements]
+    .filter((element) => element.visible !== false)
+    .sort((a, b) => a.zIndex - b.zIndex);
+
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-white">
+      {elements.length ? (
+        elements.map((element) => (
+          <RoomCoverBoardPreviewElement key={element.id} element={element} />
+        ))
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+          Empty board
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoomCoverBoardPreviewElement({ element }: { element: RoomCoverBoardElement }) {
+  const left = `${(element.x / DESIGN_BOARD_PREVIEW_WIDTH) * 100}%`;
+  const top = `${(element.y / DESIGN_BOARD_PREVIEW_HEIGHT) * 100}%`;
+  const width = `${(element.width / DESIGN_BOARD_PREVIEW_WIDTH) * 100}%`;
+  const height = `${(element.height / DESIGN_BOARD_PREVIEW_HEIGHT) * 100}%`;
+  const transform = element.rotation ? `rotate(${element.rotation}deg)` : undefined;
+
+  if (element.type === "image") {
+    const src = element.backgroundRemovedUrl || element.src;
+    if (!src) return null;
+    return (
+      <div
+        className="absolute"
+        style={{ left, top, width, height, transform, transformOrigin: "center center" }}
+      >
+        <img src={src} alt={element.text || ""} className="h-full w-full object-contain" loading="lazy" />
+      </div>
+    );
+  }
+
+  if (element.type === "shape") {
+    return (
+      <div
+        className="absolute"
+        style={{
+          left,
+          top,
+          width,
+          height,
+          transform,
+          transformOrigin: "center center",
+          background: element.background || "#e7e0d5",
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="absolute whitespace-pre-wrap break-words leading-tight"
+      style={{
+        left,
+        top,
+        width,
+        minHeight: height,
+        transform,
+        transformOrigin: "center center",
+        color: element.color || "#1c1814",
+        fontFamily: element.fontFamily || "var(--font-montserrat)",
+        fontSize: `clamp(6px, ${(element.fontSize ?? 24) / 14}px, 22px)`,
+        letterSpacing: `${Math.max(0, element.letterSpacing ?? 0) / 10}em`,
+      }}
+    >
+      {element.text}
+    </div>
+  );
+}
+
 function RoomCard({
   room,
   projectId,
   canDelete,
+  boardPages,
 }: {
-  room: { id: string; name: string };
+  room: Room;
   projectId: string;
   canDelete: boolean;
+  boardPages: RoomCoverBoardPage[];
 }) {
   const qc = useQueryClient();
   const { data: images = [] } = useQuery({
@@ -793,8 +967,10 @@ function RoomCard({
 
   const sketchups = images.filter((i) => i.kind === "sketchup").length;
   const renderings = images.filter((i) => i.kind === "rendering").length;
-  const hero =
+  const fallbackHero =
     images.find((i) => i.kind === "rendering") || images.find((i) => i.kind === "sketchup");
+  const selectedBoardPage = getRoomCoverBoardPage(room.cover_image_url, boardPages);
+  const heroUrl = selectedBoardPage ? null : room.cover_image_url || fallbackHero?.url || null;
 
   const remove = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -834,9 +1010,11 @@ function RoomCard({
       className="group block border border-border hover:border-ink transition-colors"
     >
       <div className="aspect-[4/3] bg-bone overflow-hidden">
-        {hero ? (
+        {selectedBoardPage ? (
+          <RoomCoverBoardPreview page={selectedBoardPage} />
+        ) : heroUrl ? (
           <img
-            src={hero.url}
+            src={heroUrl}
             alt={room.name}
             className="w-full h-full object-cover"
             loading="lazy"
@@ -857,6 +1035,15 @@ function RoomCard({
         {canDelete && (
           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <EditRoomNameDialog currentName={room.name} onSave={rename} />
+            <RoomCoverImageDialog
+              room={room}
+              images={images}
+              boardPages={boardPages}
+              onSaved={() => {
+                qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+                qc.invalidateQueries({ queryKey: ["room", room.id] });
+              }}
+            />
             <button onClick={remove} className="text-muted-foreground hover:text-ink">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -864,6 +1051,172 @@ function RoomCard({
         )}
       </div>
     </Link>
+  );
+}
+
+function RoomCoverImageDialog({
+  room,
+  images,
+  boardPages,
+  onSaved,
+}: {
+  room: Room;
+  images: RoomImage[];
+  boardPages: RoomCoverBoardPage[];
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const presentationImageIds = new Set(
+    [
+      room.presentation_rendering_image_id,
+      room.presentation_sketchup_image_id,
+      ...images.filter((image) => image.presentation_visible).map((image) => image.id),
+    ].filter(Boolean) as string[],
+  );
+  const presentationImages = images.filter((image) => presentationImageIds.has(image.id));
+  const nonPresentationImages = images.filter((image) => !presentationImageIds.has(image.id));
+  const matchingBoardPages = boardPages.filter((page) => !page.roomId || page.roomId === room.id);
+
+  const save = async (coverImageUrl: string | null) => {
+    await db.updateRoom(room.id, { cover_image_url: coverImageUrl });
+    onSaved();
+    setOpen(false);
+    toast.success(coverImageUrl ? "Room image updated" : "Room image reset");
+  };
+
+  const chooseImage = (event: React.MouseEvent, url: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void save(url);
+  };
+
+  const chooseBoardPage = (event: React.MouseEvent, pageId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void save(`${DESIGN_BOARD_ROOM_COVER_PREFIX}${pageId}`);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          className="text-muted-foreground hover:text-ink"
+          title="Choose room image"
+          aria-label={`Choose image for ${room.name}`}
+        >
+          <ImageIcon className="h-3.5 w-3.5" />
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl" onClick={(event) => event.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">
+            Choose Image for {room.name}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-6">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void save(null);
+            }}
+            className="inline-flex items-center gap-2 border border-border px-3 py-2 text-xs uppercase tracking-[0.16em] text-muted-foreground transition hover:border-ink hover:text-ink"
+          >
+            <X className="h-3.5 w-3.5" /> Reset to automatic image
+          </button>
+
+          <RoomCoverImageSection
+            title="Presentation Picks"
+            emptyText="No presentation images picked for this room yet."
+            images={presentationImages}
+            onChoose={chooseImage}
+          />
+
+          <RoomCoverImageSection
+            title="Room Images"
+            emptyText="No other room images yet."
+            images={nonPresentationImages}
+            onChoose={chooseImage}
+          />
+
+          <div>
+            <div className="eyebrow mb-2">Design Board Pages</div>
+            {matchingBoardPages.length ? (
+              <div className="grid max-h-80 grid-cols-2 gap-3 overflow-auto sm:grid-cols-3">
+                {matchingBoardPages.map((page) => (
+                  <button
+                    key={page.id}
+                    type="button"
+                    onClick={(event) => chooseBoardPage(event, page.id)}
+                    className="group overflow-hidden border border-border bg-white text-left transition hover:border-ink"
+                  >
+                    <div className="aspect-[4/3] overflow-hidden bg-bone">
+                      <RoomCoverBoardPreview page={page} />
+                    </div>
+                    <div className="truncate px-3 py-2 text-xs text-muted-foreground group-hover:text-ink">
+                      {page.title}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="border border-dashed border-border bg-bone/30 px-4 py-5 text-sm text-muted-foreground">
+                No design board pages available yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RoomCoverImageSection({
+  title,
+  emptyText,
+  images,
+  onChoose,
+}: {
+  title: string;
+  emptyText: string;
+  images: RoomImage[];
+  onChoose: (event: React.MouseEvent, url: string) => void;
+}) {
+  return (
+    <div>
+      <div className="eyebrow mb-2">{title}</div>
+      {images.length ? (
+        <div className="grid max-h-80 grid-cols-2 gap-3 overflow-auto sm:grid-cols-4">
+          {images.map((image) => (
+            <button
+              key={image.id}
+              type="button"
+              onClick={(event) => onChoose(event, image.url)}
+              className="group relative aspect-[4/3] overflow-hidden border border-border bg-bone transition hover:border-ink"
+            >
+              <img
+                src={image.url}
+                alt={image.caption ?? title}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+              <span className="absolute bottom-1 left-1 right-1 truncate bg-ink/75 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary-foreground">
+                {image.caption || image.kind}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="border border-dashed border-border bg-bone/30 px-4 py-5 text-sm text-muted-foreground">
+          {emptyText}
+        </div>
+      )}
+    </div>
   );
 }
 
