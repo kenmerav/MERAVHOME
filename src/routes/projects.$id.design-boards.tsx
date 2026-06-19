@@ -1533,7 +1533,6 @@ function ProjectDesignBoardsPage() {
           page: BoardPage;
           primary: BoardElement;
           elements: Array<{ page: BoardPage; element: BoardElement }>;
-          quantityByPage: Map<string, number>;
           quantity: number;
           roomId: string;
         }
@@ -1580,16 +1579,11 @@ function ProjectDesignBoardsPage() {
           const existing = groups.get(key);
           if (existing) {
             existing.elements.push({ page, element });
-            existing.quantityByPage.set(
-              page.id,
-              (existing.quantityByPage.get(page.id) ?? 0) + quantity,
-            );
           } else {
             groups.set(key, {
               page,
               primary: element,
               elements: [{ page, element }],
-              quantityByPage: new Map([[page.id, quantity]]),
               quantity,
               roomId: room.id,
             });
@@ -1599,8 +1593,17 @@ function ProjectDesignBoardsPage() {
 
       for (const group of groups.values()) {
         // Repeated products across multiple pages for the same room are references, not extra qty.
-        // Duplicates on the same page still count, so use the largest per-page quantity.
-        group.quantity = Math.max(1, ...Array.from(group.quantityByPage.values()));
+        // Duplicates on the same page still count, but don't multiply by a prior synced total.
+        const elementsByPage = new Map<string, BoardElement[]>();
+        for (const { page, element } of group.elements) {
+          elementsByPage.set(page.id, [...(elementsByPage.get(page.id) ?? []), element]);
+        }
+        const pageQuantities = Array.from(elementsByPage.values()).map((pageElements) => {
+          if (pageElements.length > 1) return pageElements.length;
+          const quantity = pageElements[0]?.materialQuantity;
+          return quantity && quantity > 0 ? quantity : 1;
+        });
+        group.quantity = Math.max(1, ...pageQuantities);
         const primaryMaterialId =
           group.primary.materialItemId ||
           group.elements.find(({ element }) => element.materialItemId)?.element.materialItemId ||
@@ -1651,7 +1654,6 @@ function ProjectDesignBoardsPage() {
                       productId: result.productId,
                       materialItemId: result.materialItemId,
                       materialRoomId: result.roomId,
-                      materialQuantity: group.quantity,
                       materialDimensions: element.materialDimensions,
                     }
                   : candidate,
