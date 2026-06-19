@@ -1101,7 +1101,6 @@ function RoomCoverImageDialog({
         <button
           type="button"
           onClick={(event) => {
-            event.preventDefault();
             event.stopPropagation();
           }}
           className="inline-flex items-center gap-1 border border-border px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition hover:border-ink hover:text-ink"
