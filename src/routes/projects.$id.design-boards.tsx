@@ -76,6 +76,7 @@ type BoardElement = {
   backgroundRemovedUrl?: string | null;
   autoRemoveBackground?: boolean;
   fastBackgroundRemovalTried?: boolean;
+  bestFreeBackgroundRemovalTried?: boolean;
   backgroundRemovalStatus?: "pending" | "processing" | "complete" | "failed";
   label?: string;
   notes?: string;
@@ -2180,6 +2181,19 @@ function ProjectDesignBoardsPage() {
       window.alert("Try the free Remove BG first. AI Remove BG unlocks after that if the cutout needs help.");
       return;
     }
+    if (!selected.bestFreeBackgroundRemovalTried) {
+      window.alert(
+        "Try Better Free BG before using paid AI credits. It uses a higher-quality free model from the original image.",
+      );
+      return;
+    }
+    if (
+      !window.confirm(
+        "AI Remove BG uses paid OpenAI credits. Use it only if both free background removers did not work well enough.",
+      )
+    ) {
+      return;
+    }
     const targetId = selected.id;
     const targetPageId = selectedPageId;
     const originalSrc = selected.originalSrc || selected.src;
@@ -2203,6 +2217,7 @@ function ProjectDesignBoardsPage() {
                 src: uploadedCutout,
                 backgroundRemovedUrl: uploadedCutout,
                 fastBackgroundRemovalTried: true,
+                bestFreeBackgroundRemovalTried: true,
                 backgroundRemovalStatus: "complete",
               }
             : element,
@@ -2213,6 +2228,57 @@ function ProjectDesignBoardsPage() {
         error instanceof Error
           ? error.message
           : "AI background removal failed. Try the fast remover instead.",
+      );
+    } finally {
+      window.setTimeout(() => {
+        removingBackgroundRef.current = false;
+      }, 1500);
+      setRemovingBackground(false);
+    }
+  };
+
+  const removeSelectedBackgroundBestFree = async () => {
+    if (!selected || selected.type !== "image" || !selected.src) return;
+    if (!selected.fastBackgroundRemovalTried) {
+      window.alert("Try the fast free Remove BG first. Better Free BG unlocks after that.");
+      return;
+    }
+    const targetId = selected.id;
+    const targetPageId = selectedPageId;
+    const originalSrc = selected.originalSrc || selected.src;
+    pushUndo();
+    removingBackgroundRef.current = true;
+    localEditShieldUntilRef.current = Date.now() + 6000;
+    setRemovingBackground(true);
+    try {
+      const source = await imageSourceForCanvas(originalSrc);
+      const cutout = await removeHighQualityFreeImageBackground(source);
+      const uploadedCutout = await uploadDesignBoardImage(
+        cutout,
+        id,
+        `${selected.label || selected.productName || "better-free-cutout"}.png`,
+      );
+      localEditShieldUntilRef.current = Date.now() + 6000;
+      setElementsForPage(targetPageId, (current) =>
+        current.map((element) =>
+          element.id === targetId
+            ? {
+                ...element,
+                originalSrc,
+                src: uploadedCutout,
+                backgroundRemovedUrl: uploadedCutout,
+                fastBackgroundRemovalTried: true,
+                bestFreeBackgroundRemovalTried: true,
+                backgroundRemovalStatus: "complete",
+              }
+            : element,
+        ),
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Better Free BG failed. You can still restore original or use the paid AI option.",
       );
     } finally {
       window.setTimeout(() => {
@@ -2668,7 +2734,7 @@ function ProjectDesignBoardsPage() {
                 <Scissors className="h-4 w-4" /> {removingBackground ? "Cutting..." : "Remove BG"}
               </ToolbarButton>
               <ToolbarButton
-                onClick={removeSelectedBackgroundWithOpenAI}
+                onClick={removeSelectedBackgroundBestFree}
                 disabled={
                   !selected ||
                   selectedCount !== 1 ||
@@ -2678,14 +2744,36 @@ function ProjectDesignBoardsPage() {
                 }
                 title={
                   selected?.type === "image" && !selected.fastBackgroundRemovalTried
-                    ? "Try the free Remove BG first. AI unlocks after that."
+                    ? "Try Remove BG first. Better Free BG runs a larger free model after that."
+                    : undefined
+                }
+              >
+                <Scissors className="h-4 w-4" />{" "}
+                {removingBackground
+                  ? "Cutting..."
+                  : selected?.type === "image" && !selected.fastBackgroundRemovalTried
+                    ? "Better Free Locked"
+                    : "Better Free BG"}
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={removeSelectedBackgroundWithOpenAI}
+                disabled={
+                  !selected ||
+                  selectedCount !== 1 ||
+                  selected.type !== "image" ||
+                  removingBackground ||
+                  !selected.bestFreeBackgroundRemovalTried
+                }
+                title={
+                  selected?.type === "image" && !selected.bestFreeBackgroundRemovalTried
+                    ? "Try Better Free BG before using paid AI credits."
                     : undefined
                 }
               >
                 <WandSparkles className="h-4 w-4" />{" "}
                 {removingBackground
                   ? "Cutting..."
-                  : selected?.type === "image" && !selected.fastBackgroundRemovalTried
+                  : selected?.type === "image" && !selected.bestFreeBackgroundRemovalTried
                     ? "AI Locked"
                     : "AI Remove BG"}
               </ToolbarButton>
@@ -3263,6 +3351,7 @@ function ProjectDesignBoardsPage() {
                   allBoardDetailsHidden={allBoardDetailsHidden}
                   onToggleBoardDetails={toggleBoardDetails}
                   onRemoveBackground={removeSelectedBackground}
+                  onRemoveBackgroundBestFree={removeSelectedBackgroundBestFree}
                   onRemoveBackgroundWithOpenAI={removeSelectedBackgroundWithOpenAI}
                   removingBackground={removingBackground}
                 />
@@ -4005,6 +4094,7 @@ function SelectedPanel({
   allBoardDetailsHidden,
   onToggleBoardDetails,
   onRemoveBackground,
+  onRemoveBackgroundBestFree,
   onRemoveBackgroundWithOpenAI,
   removingBackground,
 }: {
@@ -4018,6 +4108,7 @@ function SelectedPanel({
   allBoardDetailsHidden: boolean;
   onToggleBoardDetails: () => void;
   onRemoveBackground: () => void;
+  onRemoveBackgroundBestFree: () => void;
   onRemoveBackgroundWithOpenAI: () => void;
   removingBackground: boolean;
 }) {
@@ -4212,11 +4303,29 @@ function SelectedPanel({
           </button>
           <button
             type="button"
-            onClick={onRemoveBackgroundWithOpenAI}
+            onClick={onRemoveBackgroundBestFree}
             disabled={removingBackground || !selected.fastBackgroundRemovalTried}
             title={
               !selected.fastBackgroundRemovalTried
-                ? "Try the free Remove Background first. AI unlocks after that."
+                ? "Try the fast free Remove Background first. Better Free unlocks after that."
+                : undefined
+            }
+            className="inline-flex w-full items-center justify-center gap-2 border border-[#1f4e5f] bg-white px-4 py-2 text-sm text-[#1f4e5f] transition hover:bg-[#f3f7f5] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Scissors className="h-4 w-4" />{" "}
+            {removingBackground
+              ? "Removing background..."
+              : selected.fastBackgroundRemovalTried
+                ? "Better Free Background"
+                : "Better Free Locked"}
+          </button>
+          <button
+            type="button"
+            onClick={onRemoveBackgroundWithOpenAI}
+            disabled={removingBackground || !selected.bestFreeBackgroundRemovalTried}
+            title={
+              !selected.bestFreeBackgroundRemovalTried
+                ? "Try Better Free Background before using paid AI credits."
                 : undefined
             }
             className="inline-flex w-full items-center justify-center gap-2 border border-[#1f4e5f] bg-[#f3f7f5] px-4 py-2 text-sm text-[#1f4e5f] transition hover:bg-[#e9f1ef] disabled:cursor-not-allowed disabled:opacity-50"
@@ -4224,13 +4333,13 @@ function SelectedPanel({
             <WandSparkles className="h-4 w-4" />{" "}
             {removingBackground
               ? "Removing background..."
-              : selected.fastBackgroundRemovalTried
+              : selected.bestFreeBackgroundRemovalTried
                 ? "AI Remove Background"
-                : "AI Locked Until Fast BG Is Tried"}
+                : "AI Locked Until Better Free Is Tried"}
           </button>
           <p className="text-xs leading-relaxed text-stone-500">
-            Use the regular remover first for a free, fast cutout. AI unlocks after that and runs
-            from the original image if the first pass misses product edges or leaves haze.
+            Use the regular remover first for a free, fast cutout. Better Free uses a larger local
+            model before paid AI credits unlock.
           </p>
           <div className="border border-stone-200 bg-[#faf9f5] p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -5032,6 +5141,21 @@ async function removeFlatImageBackground(src: string) {
   return rescueForegroundDetails(src, await blobToDataUrl(cutout));
 }
 
+async function removeHighQualityFreeImageBackground(src: string) {
+  const { removeBackground } = await import("@imgly/background-removal");
+  const cutout = await removeBackground(src, {
+    device: "cpu",
+    // Larger local IMG.LY model. Free like the fast remover, but better for delicate product edges.
+    model: "isnet",
+    output: {
+      format: "image/png",
+      quality: 1,
+      type: "foreground",
+    },
+  });
+  return rescueForegroundDetails(src, await blobToDataUrl(cutout));
+}
+
 async function rescueForegroundDetails(originalSrc: string, cutoutSrc: string) {
   const [original, cutout] = await Promise.all([
     loadImageElement(originalSrc),
@@ -5319,6 +5443,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "backgroundRemovedUrl",
     "autoRemoveBackground",
     "fastBackgroundRemovalTried",
+    "bestFreeBackgroundRemovalTried",
     "backgroundRemovalStatus",
     "label",
     "notes",
