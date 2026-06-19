@@ -1004,34 +1004,40 @@ function RoomCard({
   };
 
   return (
-    <Link
-      to="/projects/$id/rooms/$roomId"
-      params={{ id: projectId, roomId: room.id }}
-      className="group block border border-border hover:border-ink transition-colors"
-    >
-      <div className="aspect-[4/3] bg-bone overflow-hidden">
-        {selectedBoardPage ? (
-          <RoomCoverBoardPreview page={selectedBoardPage} />
-        ) : heroUrl ? (
-          <img
-            src={heroUrl}
-            alt={room.name}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground font-display text-3xl">
-            {room.name.charAt(0)}
-          </div>
-        )}
-      </div>
+    <div className="group border border-border transition-colors hover:border-ink">
+      <Link
+        to="/projects/$id/rooms/$roomId"
+        params={{ id: projectId, roomId: room.id }}
+        className="block"
+      >
+        <div className="aspect-[4/3] bg-bone overflow-hidden">
+          {selectedBoardPage ? (
+            <RoomCoverBoardPreview page={selectedBoardPage} />
+          ) : heroUrl ? (
+            <img
+              src={heroUrl}
+              alt={room.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground font-display text-3xl">
+              {room.name.charAt(0)}
+            </div>
+          )}
+        </div>
+      </Link>
       <div className="p-5 flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <Link
+          to="/projects/$id/rooms/$roomId"
+          params={{ id: projectId, roomId: room.id }}
+          className="min-w-0 hover:text-ink"
+        >
           <h3 className="font-display text-2xl leading-tight truncate">{room.name}</h3>
           <p className="text-xs text-muted-foreground mt-2">
             {sketchups} SketchUp · {renderings} Renderings · {selections.length} Selections
           </p>
-        </div>
+        </Link>
         {canDelete && (
           <div className="flex items-center gap-2">
             <EditRoomNameDialog currentName={room.name} onSave={rename} />
@@ -1050,7 +1056,7 @@ function RoomCard({
           </div>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
 
