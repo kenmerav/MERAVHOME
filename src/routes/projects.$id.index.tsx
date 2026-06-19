@@ -1033,7 +1033,7 @@ function RoomCard({
           </p>
         </div>
         {canDelete && (
-          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-2">
             <EditRoomNameDialog currentName={room.name} onSave={rename} />
             <RoomCoverImageDialog
               room={room}
@@ -1075,7 +1075,6 @@ function RoomCoverImageDialog({
   );
   const presentationImages = images.filter((image) => presentationImageIds.has(image.id));
   const nonPresentationImages = images.filter((image) => !presentationImageIds.has(image.id));
-  const matchingBoardPages = boardPages.filter((page) => !page.roomId || page.roomId === room.id);
 
   const save = async (coverImageUrl: string | null) => {
     await db.updateRoom(room.id, { cover_image_url: coverImageUrl });
@@ -1102,13 +1101,15 @@ function RoomCoverImageDialog({
         <button
           type="button"
           onClick={(event) => {
+            event.preventDefault();
             event.stopPropagation();
           }}
-          className="text-muted-foreground hover:text-ink"
+          className="inline-flex items-center gap-1 border border-border px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition hover:border-ink hover:text-ink"
           title="Choose room image"
           aria-label={`Choose image for ${room.name}`}
         >
           <ImageIcon className="h-3.5 w-3.5" />
+          Cover
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl" onClick={(event) => event.stopPropagation()}>
@@ -1146,9 +1147,9 @@ function RoomCoverImageDialog({
 
           <div>
             <div className="eyebrow mb-2">Design Board Pages</div>
-            {matchingBoardPages.length ? (
+            {boardPages.length ? (
               <div className="grid max-h-80 grid-cols-2 gap-3 overflow-auto sm:grid-cols-3">
-                {matchingBoardPages.map((page) => (
+                {boardPages.map((page) => (
                   <button
                     key={page.id}
                     type="button"
