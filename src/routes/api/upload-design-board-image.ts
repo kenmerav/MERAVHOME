@@ -36,19 +36,20 @@ export const Route = createFileRoute("/api/upload-design-board-image")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const { dataUrl, projectId, fileName } = (await request.json()) as {
+          const { dataUrl, projectId, fileName, contentType } = (await request.json()) as {
             dataUrl?: string;
             projectId?: string;
             fileName?: string;
+            contentType?: string;
           };
 
-          if (!dataUrl || !projectId) {
-            return Response.json({ error: "dataUrl and projectId are required." }, { status: 400 });
+          if (!projectId) {
+            return Response.json({ error: "projectId is required." }, { status: 400 });
           }
 
           await ensureDesignBoardImageBucket();
-          const { buffer, contentType } = dataUrlToBuffer(dataUrl);
-          const extension = extensionForContentType(contentType);
+          const uploadContentType = contentType || (dataUrl ? dataUrlToBuffer(dataUrl).contentType : "image/png");
+          const extension = extensionForContentType(uploadContentType);
           const safeName =
             (fileName || "board-image")
               .replace(/\.[^/.]+$/, "")
@@ -57,10 +58,26 @@ export const Route = createFileRoute("/api/upload-design-board-image")({
               .toLowerCase() || "board-image";
           const path = `${projectId}/${Date.now()}-${crypto.randomUUID()}-${safeName}.${extension}`;
 
+          if (!dataUrl) {
+            const { data: signed, error: signedError } = await supabaseAdmin.storage
+              .from(DESIGN_BOARD_IMAGE_BUCKET)
+              .createSignedUploadUrl(path);
+            if (signedError) throw signedError;
+            const { data } = supabaseAdmin.storage.from(DESIGN_BOARD_IMAGE_BUCKET).getPublicUrl(path);
+            return Response.json({
+              path,
+              token: signed.token,
+              signedUrl: signed.signedUrl,
+              url: data.publicUrl,
+            });
+          }
+
+          const { buffer, contentType: decodedContentType } = dataUrlToBuffer(dataUrl);
+
           const { error } = await supabaseAdmin.storage
             .from(DESIGN_BOARD_IMAGE_BUCKET)
             .upload(path, buffer, {
-              contentType,
+              contentType: decodedContentType,
               cacheControl: "31536000",
               upsert: false,
             });

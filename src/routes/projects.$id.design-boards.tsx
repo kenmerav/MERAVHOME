@@ -5102,14 +5102,29 @@ function blobToDataUrl(blob: Blob) {
 }
 
 async function uploadDesignBoardImage(dataUrl: string, projectId: string, fileName: string) {
-  const res = await fetch("/api/upload-design-board-image", {
+  const blob = dataUrlToBlob(dataUrl);
+  const signedRes = await fetch("/api/upload-design-board-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataUrl, projectId, fileName }),
+    body: JSON.stringify({ projectId, fileName, contentType: blob.type || "image/png" }),
   });
-  const body = await res.json();
-  if (!res.ok || !body?.url) throw new Error(body?.error || "Could not upload image.");
-  return body.url as string;
+  const signedBody = await safeJsonResponse<{
+    error?: string;
+    path?: string;
+    token?: string;
+    url?: string;
+  }>(signedRes);
+  if (!signedRes.ok || !signedBody?.path || !signedBody?.token || !signedBody?.url) {
+    throw new Error(signedBody?.error || "Could not prepare image upload.");
+  }
+
+  const { error } = await supabase.storage
+    .from("design-board-images")
+    .uploadToSignedUrl(signedBody.path, signedBody.token, blob, {
+      contentType: blob.type || "image/png",
+    });
+  if (error) throw new Error(error.message || "Could not upload image.");
+  return signedBody.url;
 }
 
 async function removeDesignBoardBackgroundWithOpenAI(
@@ -5127,6 +5142,28 @@ async function removeDesignBoardBackgroundWithOpenAI(
     throw new Error(body?.error || "AI background removal failed. Try the fast remover instead.");
   }
   return body.url as string;
+}
+
+async function safeJsonResponse<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(text.replace(/\s+/g, " ").trim().slice(0, 240) || "Server returned an invalid response.");
+  }
+}
+
+function dataUrlToBlob(dataUrl: string) {
+  const match = dataUrl.match(/^data:([^;,]+)(;base64)?,(.*)$/);
+  if (!match) throw new Error("Could not prepare image upload.");
+  const contentType = match[1] || "image/png";
+  const isBase64 = Boolean(match[2]);
+  const data = match[3] || "";
+  const binary = isBase64 ? atob(data) : decodeURIComponent(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: contentType });
 }
 
 function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardState {
