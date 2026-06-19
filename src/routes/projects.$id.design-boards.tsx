@@ -1533,6 +1533,7 @@ function ProjectDesignBoardsPage() {
           page: BoardPage;
           primary: BoardElement;
           elements: Array<{ page: BoardPage; element: BoardElement }>;
+          quantityByPage: Map<string, number>;
           quantity: number;
           roomId: string;
         }
@@ -1579,12 +1580,16 @@ function ProjectDesignBoardsPage() {
           const existing = groups.get(key);
           if (existing) {
             existing.elements.push({ page, element });
-            existing.quantity += quantity;
+            existing.quantityByPage.set(
+              page.id,
+              (existing.quantityByPage.get(page.id) ?? 0) + quantity,
+            );
           } else {
             groups.set(key, {
               page,
               primary: element,
               elements: [{ page, element }],
+              quantityByPage: new Map([[page.id, quantity]]),
               quantity,
               roomId: room.id,
             });
@@ -1593,6 +1598,9 @@ function ProjectDesignBoardsPage() {
       }
 
       for (const group of groups.values()) {
+        // Repeated products across multiple pages for the same room are references, not extra qty.
+        // Duplicates on the same page still count, so use the largest per-page quantity.
+        group.quantity = Math.max(1, ...Array.from(group.quantityByPage.values()));
         const primaryMaterialId =
           group.primary.materialItemId ||
           group.elements.find(({ element }) => element.materialItemId)?.element.materialItemId ||
