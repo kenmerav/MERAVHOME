@@ -1342,7 +1342,7 @@ function ProjectDesignBoardsPage() {
       toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
     const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
-    const productImageUrl = element.backgroundRemovedUrl || element.src || null;
+    const productImageUrl = element.src || null;
     const quantity =
       quantityOverride && quantityOverride > 0
         ? quantityOverride
@@ -1370,9 +1370,7 @@ function ProjectDesignBoardsPage() {
     } else {
       category = product.category || category;
       const productPatch: Partial<Product> = {};
-      if (element.backgroundRemovedUrl && product.image_url !== element.backgroundRemovedUrl) {
-        productPatch.image_url = element.backgroundRemovedUrl;
-      } else if (!product.image_url && productImageUrl) {
+      if (productImageUrl && product.image_url !== productImageUrl) {
         productPatch.image_url = productImageUrl;
       }
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
