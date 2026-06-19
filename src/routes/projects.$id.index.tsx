@@ -866,6 +866,17 @@ function getRoomCoverBoardPage(value: string | null | undefined, pages: RoomCove
   return pages.find((page) => page.id === pageId) ?? null;
 }
 
+function getAutomaticRoomCoverBoardPage(room: Room, pages: RoomCoverBoardPage[]) {
+  const normalize = (value: string) => value.trim().toLowerCase();
+  const visibleElementCount = (page: RoomCoverBoardPage) =>
+    page.elements.filter((element) => element.visible !== false).length;
+  return (
+    pages.find((page) => page.roomId === room.id && visibleElementCount(page) > 0) ??
+    pages.find((page) => normalize(page.title) === normalize(room.name) && visibleElementCount(page) > 0) ??
+    null
+  );
+}
+
 function RoomCoverBoardPreview({ page }: { page: RoomCoverBoardPage }) {
   const elements = [...page.elements]
     .filter((element) => element.visible !== false)
@@ -967,10 +978,16 @@ function RoomCard({
 
   const sketchups = images.filter((i) => i.kind === "sketchup").length;
   const renderings = images.filter((i) => i.kind === "rendering").length;
-  const fallbackHero =
-    images.find((i) => i.kind === "rendering") || images.find((i) => i.kind === "sketchup");
-  const selectedBoardPage = getRoomCoverBoardPage(room.cover_image_url, boardPages);
-  const heroUrl = selectedBoardPage ? null : room.cover_image_url || fallbackHero?.url || null;
+  const renderingHero = images.find((image) => image.kind === "rendering");
+  const sketchupHero = images.find((image) => image.kind === "sketchup");
+  const manualBoardPage = getRoomCoverBoardPage(room.cover_image_url, boardPages);
+  const automaticBoardPage =
+    !room.cover_image_url && !renderingHero && !sketchupHero
+      ? getAutomaticRoomCoverBoardPage(room, boardPages)
+      : null;
+  const selectedBoardPage = manualBoardPage ?? automaticBoardPage;
+  const heroUrl =
+    selectedBoardPage ? null : room.cover_image_url || renderingHero?.url || sketchupHero?.url || null;
 
   const remove = async (e: React.MouseEvent) => {
     e.preventDefault();
