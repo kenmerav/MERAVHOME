@@ -159,6 +159,7 @@ type BoardPatch =
   | { kind: "select-page"; pageId: string }
   | { kind: "upsert-page"; page: BoardPage; afterPageId?: string | null }
   | { kind: "move-page"; pageId: string; direction: "left" | "right" }
+  | { kind: "delete-page"; pageId: string }
   | { kind: "patch-page"; pageId: string; patch: Partial<Omit<BoardPage, "id" | "elements">> }
   | { kind: "upsert-layer"; pageId: string; layer: BoardElement }
   | { kind: "patch-layer"; pageId: string; layerId: string; patch: Partial<BoardElement> }
@@ -1890,6 +1891,43 @@ function ProjectDesignBoardsPage() {
     void saveBoardStateImmediately(nextState);
   };
 
+  const deletePage = (pageId: string) => {
+    const current = normalizeBoardState(boardStateRef.current);
+    const safePages = current.pages.length ? current.pages : defaultPages();
+    const pageIndex = safePages.findIndex((page) => page.id === pageId);
+    if (pageIndex < 0) return;
+    if (safePages.length <= 1) {
+      toast.error("A design board needs at least one page.");
+      return;
+    }
+
+    const pageTitle = safePages[pageIndex]?.title || `Board ${pageIndex + 1}`;
+    const confirmed = window.confirm(
+      `Delete "${pageTitle}"? This removes the page and everything on it.`,
+    );
+    if (!confirmed) return;
+
+    const nextPages = safePages.filter((page) => page.id !== pageId);
+    const nextSelectedPageId =
+      safePages[pageIndex - 1]?.id ?? safePages[pageIndex + 1]?.id ?? nextPages[0]?.id;
+    const nextState = normalizeBoardState({
+      ...current,
+      pages: nextPages,
+      selectedPageId: nextSelectedPageId ?? nextPages[0].id,
+      comments: (current.comments ?? []).filter((comment) => comment.pageId !== pageId),
+      presentationExtraPages: (current.presentationExtraPages ?? []).filter(
+        (slot) => slot.boardPageId !== pageId,
+      ),
+    });
+
+    pushUndo();
+    clearSelection();
+    applyLocalBoardUpdate(nextState);
+    broadcastPatch({ kind: "delete-page", pageId });
+    pendingPageFocusRef.current = nextState.selectedPageId;
+    void saveBoardStateImmediately(nextState);
+  };
+
   const updateZoom = (zoomPercent: number) => {
     hasCustomZoomRef.current = true;
     setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
@@ -2717,6 +2755,13 @@ function ProjectDesignBoardsPage() {
               >
                 Move Page Right
               </ToolbarButton>
+              <ToolbarButton
+                onClick={() => deletePage(selectedPageId)}
+                disabled={pages.length <= 1}
+                destructive
+              >
+                <Trash2 className="h-4 w-4" /> Delete Page
+              </ToolbarButton>
               <ToolbarButton onClick={duplicateSelected} disabled={!selectedCount}>
                 <Copy className="h-4 w-4" /> Duplicate
               </ToolbarButton>
@@ -3053,6 +3098,7 @@ function ProjectDesignBoardsPage() {
                   const isNearSelected = Math.abs(index - selectedPageIndex) <= 6;
                   const pageCanMoveLeft = index > 0;
                   const pageCanMoveRight = index < pages.length - 1;
+                  const pageCanDelete = pages.length > 1;
                   return (
                     <div
                       key={page.id}
@@ -3094,6 +3140,16 @@ function ProjectDesignBoardsPage() {
                           title="Move page right"
                         >
                           <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deletePage(page.id)}
+                          disabled={!pageCanDelete}
+                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-red-200 bg-white/95 text-red-600 shadow-sm transition hover:border-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-35"
+                          aria-label={`Delete ${page.title || `Board ${index + 1}`}`}
+                          title="Delete page"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
@@ -5655,6 +5711,28 @@ function applyBoardPatchToState(state: BoardState, patch: BoardPatch): BoardStat
       ...current,
       pages: reorderedPages,
       selectedPageId: patch.pageId,
+    });
+  }
+  if (patch.kind === "delete-page") {
+    if (current.pages.length <= 1) return current;
+    const pageIndex = current.pages.findIndex((page) => page.id === patch.pageId);
+    if (pageIndex < 0) return current;
+
+    const nextPages = current.pages.filter((page) => page.id !== patch.pageId);
+    const fallbackSelectedPageId =
+      current.pages[pageIndex - 1]?.id ?? current.pages[pageIndex + 1]?.id ?? nextPages[0]?.id;
+
+    return normalizeBoardState({
+      ...current,
+      pages: nextPages,
+      selectedPageId:
+        current.selectedPageId === patch.pageId
+          ? (fallbackSelectedPageId ?? nextPages[0]?.id ?? current.selectedPageId)
+          : current.selectedPageId,
+      comments: (current.comments ?? []).filter((comment) => comment.pageId !== patch.pageId),
+      presentationExtraPages: (current.presentationExtraPages ?? []).filter(
+        (slot) => slot.boardPageId !== patch.pageId,
+      ),
     });
   }
   if (patch.kind === "patch-page") {
