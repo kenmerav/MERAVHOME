@@ -55,6 +55,8 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+type ImglyBackgroundModel = "isnet_fp16" | "isnet";
+
 export const Route = createFileRoute("/projects/$id/design-boards")({
   head: () => ({ meta: [{ title: "Design Boards — MERAV Studio" }] }),
   component: ProjectDesignBoardsPage,
@@ -2151,7 +2153,9 @@ function ProjectDesignBoardsPage() {
     setRemovingBackground(true);
     try {
       const source = await imageSourceForCanvas(originalSrc);
-      const cutout = await removeFlatImageBackground(source);
+      const cutout = shouldUseLocalSmartBackgroundRemoval()
+        ? await removeSmartProductBackground(source)
+        : await removeFlatImageBackground(source);
       const uploadedCutout = await uploadDesignBoardImage(
         cutout,
         id,
@@ -5128,32 +5132,360 @@ function sanitizeFileName(value: string) {
 }
 
 async function removeFlatImageBackground(src: string) {
-  const { removeBackground } = await import("@imgly/background-removal");
-  const cutout = await removeBackground(src, {
-    device: "cpu",
-    model: "isnet_fp16",
-    output: {
-      format: "image/png",
-      quality: 1,
-      type: "foreground",
-    },
-  });
+  const cutout = await runImglyBackgroundRemoval(src, "isnet_fp16");
   return rescueForegroundDetails(src, await blobToDataUrl(cutout));
 }
 
 async function removeHighQualityFreeImageBackground(src: string) {
+  const cutout = await runImglyBackgroundRemoval(src, "isnet");
+  return rescueForegroundDetails(src, await blobToDataUrl(cutout));
+}
+
+async function runImglyBackgroundRemoval(src: string, model: ImglyBackgroundModel) {
   const { removeBackground } = await import("@imgly/background-removal");
-  const cutout = await removeBackground(src, {
+  return removeBackground(src, {
     device: "cpu",
-    // Larger local IMG.LY model. Free like the fast remover, but better for delicate product edges.
-    model: "isnet",
+    model,
     output: {
       format: "image/png",
       quality: 1,
       type: "foreground",
     },
   });
-  return rescueForegroundDetails(src, await blobToDataUrl(cutout));
+}
+
+function shouldUseLocalSmartBackgroundRemoval() {
+  if (typeof window === "undefined") return false;
+  return !window.location.search.includes("legacyBg=1");
+}
+
+async function removeSmartProductBackground(originalSrc: string) {
+  const original = await loadImageElement(originalSrc);
+  const analysis = analyzeProductImage(original);
+  const workingSrc = analysis.isLikelyProduct
+    ? createProductIsolationWorkingImage(original, analysis)
+    : originalSrc;
+
+  const fastCutout = await blobToDataUrl(await runImglyBackgroundRemoval(workingSrc, "isnet_fp16"));
+  const fastResult = await applyCutoutMaskToOriginal(originalSrc, fastCutout);
+  const fastScore = await scoreCutoutMask(fastResult, analysis);
+  if (fastScore.acceptable) return fastResult;
+
+  const qualityCutout = await blobToDataUrl(await runImglyBackgroundRemoval(workingSrc, "isnet"));
+  const qualityResult = await applyCutoutMaskToOriginal(originalSrc, qualityCutout);
+  const qualityScore = await scoreCutoutMask(qualityResult, analysis);
+  return qualityScore.score >= fastScore.score ? qualityResult : fastResult;
+}
+
+type ProductImageAnalysis = {
+  isLikelyProduct: boolean;
+  foregroundBox: BoardRect;
+  areaRatio: number;
+  borderTouchRatio: number;
+  centerScore: number;
+};
+
+function analyzeProductImage(image: HTMLImageElement): ProductImageAnalysis {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const sampleWidth = 160;
+  const sampleHeight = Math.max(1, Math.round((sourceHeight / Math.max(1, sourceWidth)) * sampleWidth));
+  const canvas = document.createElement("canvas");
+  canvas.width = sampleWidth;
+  canvas.height = sampleHeight;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const fallbackBox = { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
+  if (!ctx || !sourceWidth || !sourceHeight) {
+    return {
+      isLikelyProduct: false,
+      foregroundBox: fallbackBox,
+      areaRatio: 1,
+      borderTouchRatio: 1,
+      centerScore: 0,
+    };
+  }
+
+  ctx.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+  const pixels = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
+  const border = sampleBorderColor(pixels.data, sampleWidth, sampleHeight);
+  const threshold = Math.max(30, border.deviation * 0.7);
+  let minX = sampleWidth;
+  let minY = sampleHeight;
+  let maxX = -1;
+  let maxY = -1;
+  let candidateCount = 0;
+  let borderCandidateCount = 0;
+  const centerX = sampleWidth / 2;
+  const centerY = sampleHeight / 2;
+  const maxCenterDistance = Math.hypot(centerX, centerY) || 1;
+
+  for (let y = 0; y < sampleHeight; y += 1) {
+    for (let x = 0; x < sampleWidth; x += 1) {
+      const index = (y * sampleWidth + x) * 4;
+      const alpha = pixels.data[index + 3];
+      if (alpha < 20) continue;
+      const distance = colorDistance(
+        pixels.data[index],
+        pixels.data[index + 1],
+        pixels.data[index + 2],
+        border.red,
+        border.green,
+        border.blue,
+      );
+      const centerBias = 1.18 - Math.hypot(x - centerX, y - centerY) / maxCenterDistance;
+      if (distance * centerBias < threshold) continue;
+      candidateCount += 1;
+      if (x <= 1 || y <= 1 || x >= sampleWidth - 2 || y >= sampleHeight - 2) {
+        borderCandidateCount += 1;
+      }
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return {
+      isLikelyProduct: false,
+      foregroundBox: fallbackBox,
+      areaRatio: 1,
+      borderTouchRatio: 1,
+      centerScore: 0,
+    };
+  }
+
+  const boxWidth = maxX - minX + 1;
+  const boxHeight = maxY - minY + 1;
+  const areaRatio = (boxWidth * boxHeight) / (sampleWidth * sampleHeight);
+  const borderTouchRatio = borderCandidateCount / Math.max(1, candidateCount);
+  const boxCenterX = minX + boxWidth / 2;
+  const boxCenterY = minY + boxHeight / 2;
+  const centerScore = 1 - Math.hypot(boxCenterX - centerX, boxCenterY - centerY) / maxCenterDistance;
+  const scaleX = sourceWidth / sampleWidth;
+  const scaleY = sourceHeight / sampleHeight;
+  const padX = boxWidth * scaleX * 0.14;
+  const padY = boxHeight * scaleY * 0.14;
+  const foregroundBox = {
+    x: Math.max(0, minX * scaleX - padX),
+    y: Math.max(0, minY * scaleY - padY),
+    width: Math.min(sourceWidth, (maxX + 1) * scaleX + padX) - Math.max(0, minX * scaleX - padX),
+    height:
+      Math.min(sourceHeight, (maxY + 1) * scaleY + padY) - Math.max(0, minY * scaleY - padY),
+  };
+
+  return {
+    isLikelyProduct:
+      areaRatio >= 0.08 &&
+      areaRatio <= 0.88 &&
+      borderTouchRatio <= 0.22 &&
+      centerScore >= 0.58 &&
+      candidateCount / (sampleWidth * sampleHeight) >= 0.025,
+    foregroundBox,
+    areaRatio,
+    borderTouchRatio,
+    centerScore,
+  };
+}
+
+function sampleBorderColor(data: Uint8ClampedArray, width: number, height: number) {
+  const samples: Array<[number, number, number]> = [];
+  for (let x = 0; x < width; x += 1) {
+    samples.push(readRgb(data, x, 0, width), readRgb(data, x, height - 1, width));
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    samples.push(readRgb(data, 0, y, width), readRgb(data, width - 1, y, width));
+  }
+  const average = samples.reduce(
+    (acc, sample) => {
+      acc.red += sample[0];
+      acc.green += sample[1];
+      acc.blue += sample[2];
+      return acc;
+    },
+    { red: 0, green: 0, blue: 0 },
+  );
+  average.red /= Math.max(1, samples.length);
+  average.green /= Math.max(1, samples.length);
+  average.blue /= Math.max(1, samples.length);
+  const deviation =
+    samples.reduce(
+      (total, sample) =>
+        total + colorDistance(sample[0], sample[1], sample[2], average.red, average.green, average.blue),
+      0,
+    ) / Math.max(1, samples.length);
+  return { ...average, deviation };
+}
+
+function readRgb(data: Uint8ClampedArray, x: number, y: number, width: number): [number, number, number] {
+  const index = (y * width + x) * 4;
+  return [data[index], data[index + 1], data[index + 2]];
+}
+
+function colorDistance(
+  redA: number,
+  greenA: number,
+  blueA: number,
+  redB: number,
+  greenB: number,
+  blueB: number,
+) {
+  return Math.hypot(redA - redB, greenA - greenB, blueA - blueB);
+}
+
+function createProductIsolationWorkingImage(image: HTMLImageElement, analysis: ProductImageAnalysis) {
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return image.src;
+
+  ctx.filter = "blur(7px) saturate(55%) contrast(88%) brightness(108%)";
+  ctx.drawImage(image, 0, 0, width, height);
+  ctx.filter = "none";
+  ctx.fillStyle = "rgba(248, 247, 242, 0.22)";
+  ctx.fillRect(0, 0, width, height);
+
+  const box = analysis.foregroundBox;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.width, box.height);
+  ctx.clip();
+  ctx.drawImage(image, 0, 0, width, height);
+  ctx.restore();
+
+  return canvas.toDataURL("image/png");
+}
+
+async function applyCutoutMaskToOriginal(originalSrc: string, cutoutSrc: string) {
+  const [original, cutout] = await Promise.all([
+    loadImageElement(originalSrc),
+    loadImageElement(cutoutSrc),
+  ]);
+  const width = original.naturalWidth || cutout.naturalWidth;
+  const height = original.naturalHeight || cutout.naturalHeight;
+  if (!width || !height) return cutoutSrc;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return cutoutSrc;
+
+  ctx.drawImage(original, 0, 0, width, height);
+  const originalPixels = ctx.getImageData(0, 0, width, height);
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(cutout, 0, 0, width, height);
+  const maskPixels = ctx.getImageData(0, 0, width, height);
+  const alpha = refineMaskAlpha(maskPixels.data, width, height);
+
+  for (let index = 0; index < originalPixels.data.length; index += 4) {
+    originalPixels.data[index + 3] = alpha[index / 4];
+  }
+  ctx.putImageData(originalPixels, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function refineMaskAlpha(data: Uint8ClampedArray, width: number, height: number) {
+  const alpha = new Uint8ClampedArray(width * height);
+  for (let index = 0; index < alpha.length; index += 1) alpha[index] = data[index * 4 + 3];
+
+  const refined = new Uint8ClampedArray(alpha);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      const value = alpha[index];
+      let strongNeighbors = 0;
+      let weakNeighbors = 0;
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          if (!offsetX && !offsetY) continue;
+          const neighbor = alpha[(y + offsetY) * width + x + offsetX];
+          if (neighbor > 170) strongNeighbors += 1;
+          if (neighbor > 24) weakNeighbors += 1;
+        }
+      }
+
+      // Fill tiny holes, but avoid broad feathering so furniture edges stay crisp.
+      if (value < 40 && strongNeighbors >= 6) refined[index] = 220;
+      // Remove only obvious isolated specks; keep thin lamp arms/chair legs.
+      if (value > 140 && weakNeighbors <= 1) refined[index] = 0;
+    }
+  }
+  return refined;
+}
+
+async function scoreCutoutMask(cutoutSrc: string, analysis: ProductImageAnalysis) {
+  const image = await loadImageElement(cutoutSrc);
+  const width = Math.min(160, image.naturalWidth || image.width);
+  const height = Math.max(
+    1,
+    Math.round(((image.naturalHeight || image.height) / Math.max(1, image.naturalWidth || image.width)) * width),
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return { score: 0, acceptable: false };
+  ctx.drawImage(image, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  let foregroundPixels = 0;
+  let edgePixels = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = pixels[(y * width + x) * 4 + 3];
+      if (alpha <= 32) continue;
+      foregroundPixels += 1;
+      if (x <= 1 || y <= 1 || x >= width - 2 || y >= height - 2) edgePixels += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (maxX < minX || maxY < minY) return { score: 0, acceptable: false };
+
+  const coverage = foregroundPixels / (width * height);
+  const boxAreaRatio = ((maxX - minX + 1) * (maxY - minY + 1)) / (width * height);
+  const edgeTouchRatio = edgePixels / Math.max(1, foregroundPixels);
+  const holeRatio = estimateMaskHoleRatio(pixels, width, height, minX, minY, maxX, maxY);
+  let score = 100;
+  if (coverage < 0.025 || coverage > 0.9) score -= 40;
+  if (analysis.isLikelyProduct && boxAreaRatio < analysis.areaRatio * 0.45) score -= 25;
+  if (analysis.isLikelyProduct && edgeTouchRatio > Math.max(0.2, analysis.borderTouchRatio + 0.16)) {
+    score -= 12;
+  }
+  if (holeRatio > 0.22) score -= 20;
+  if (holeRatio > 0.36) score -= 18;
+  return { score, acceptable: score >= 74 };
+}
+
+function estimateMaskHoleRatio(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+) {
+  const insetX = Math.max(1, Math.round((maxX - minX) * 0.08));
+  const insetY = Math.max(1, Math.round((maxY - minY) * 0.08));
+  let transparent = 0;
+  let total = 0;
+  for (let y = minY + insetY; y <= maxY - insetY; y += 1) {
+    for (let x = minX + insetX; x <= maxX - insetX; x += 1) {
+      total += 1;
+      if (data[(y * width + x) * 4 + 3] < 24) transparent += 1;
+    }
+  }
+  return transparent / Math.max(1, total);
 }
 
 async function rescueForegroundDetails(originalSrc: string, cutoutSrc: string) {
