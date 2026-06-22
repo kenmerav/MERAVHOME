@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
+import { normalizeMoneyInput } from "@/lib/money";
 
 const PRODUCT_IMAGE_BUCKET = "product-images";
 const BACKGROUND_REMOVED_BUCKET = "background-removed-images";
@@ -104,6 +105,16 @@ function cleanText(value: unknown) {
 
 function firstText(...values: unknown[]) {
   return values.map(cleanText).find(Boolean) ?? "";
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, fieldValue]) => {
+      if (fieldValue == null) return false;
+      if (typeof fieldValue === "string") return fieldValue.trim().length > 0;
+      return true;
+    }),
+  ) as Partial<T>;
 }
 
 function isSafeColorFinish(value: unknown) {
@@ -450,7 +461,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const finish = isSafeColorFinish(rawFinish) ? rawFinish : "";
           const dimensions = firstText(productData.dimensions);
           const sku = firstText(productData.sku);
-          const price = firstText(productData.price);
+          const price = normalizeMoneyInput(firstText(productData.price));
           const materialCategory = inferMaterialCategory(
             `${productName} ${productData.category ?? ""}`,
             sourcePageUrl,
@@ -490,7 +501,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
             .eq("product_url", sourcePageUrl)
             .maybeSingle();
 
-          const productPatch = {
+          const productInsert = {
             name: productName,
             category,
             subcategory: null,
@@ -500,19 +511,29 @@ export const Route = createFileRoute("/api/extension/import-product")({
             finish: finish || null,
             sku: sku || null,
             dimensions: dimensions || null,
-            price: price || null,
+            price,
             description: null,
             notes: null,
           };
+          const productUpdate = compactObject({
+            name: productName,
+            vendor,
+            product_url: sourcePageUrl,
+            image_url: imageForProduct,
+            finish,
+            sku,
+            dimensions,
+            price,
+          });
 
           const { data: product, error: productError } = existingProduct
             ? await supabaseAdmin
                 .from("products")
-                .update(productPatch as any)
+                .update(productUpdate as any)
                 .eq("id", (existingProduct as any).id)
                 .select()
                 .single()
-            : await supabaseAdmin.from("products").insert(productPatch as any).select().single();
+            : await supabaseAdmin.from("products").insert(productInsert as any).select().single();
           if (productError || !product) {
             throw productError ?? new Error("Could not create product.");
           }

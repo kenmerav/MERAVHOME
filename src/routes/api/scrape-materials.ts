@@ -17,6 +17,10 @@ function firstString(...vals: unknown[]) {
   return vals.find((v): v is string => typeof v === "string" && v.trim().length > 0)?.trim() ?? "";
 }
 
+function hasValue(value: unknown) {
+  return typeof value === "string" ? value.trim().length > 0 : value != null;
+}
+
 function firstPrice(...vals: unknown[]) {
   for (const val of vals) {
     if (typeof val !== "string") continue;
@@ -31,6 +35,29 @@ function firstPrice(...vals: unknown[]) {
     return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
   }
   return "";
+}
+
+function compactPayload<T extends Record<string, unknown>>(payload: T) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => {
+      if (value == null) return false;
+      if (typeof value === "string") return value.trim().length > 0;
+      return true;
+    }),
+  ) as Partial<T>;
+}
+
+function fillBlankProductFields(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown>,
+) {
+  const patch: Record<string, unknown> = {};
+  Object.entries(incoming).forEach(([key, value]) => {
+    if (!hasValue(value)) return;
+    if (hasValue(existing?.[key])) return;
+    patch[key] = value;
+  });
+  return patch;
 }
 
 type Scraped = {
@@ -154,7 +181,18 @@ export const Route = createFileRoute("/api/scrape-materials")({
               .maybeSingle();
 
             if (existing) {
-              const refreshed = existing.price ? null : await scrapeOne(url, fcKey);
+              const needsBackfill = [
+                existing.name,
+                existing.vendor,
+                existing.image_url,
+                existing.finish,
+                existing.sku,
+                existing.dimensions,
+                existing.price,
+                existing.unit_cost,
+                existing.shipping,
+              ].some((value) => !hasValue(value));
+              const refreshed = needsBackfill ? await scrapeOne(url, fcKey) : null;
               rows.push({
                 material_item_id: it.id,
                 url,
@@ -225,7 +263,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               productId = cleanUuid(dup?.id);
             }
 
-            const payload = {
+            const payload = compactPayload({
               name: row.scraped.name || "Untitled product",
               category: toProductCategory(matItem?.category),
               vendor: row.scraped.vendor || null,
@@ -237,10 +275,18 @@ export const Route = createFileRoute("/api/scrape-materials")({
               price: normalizeMoneyInput(row.scraped.price),
               unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
               shipping: normalizeMoneyInput(row.scraped.shipping),
-            };
+            });
 
             if (productId) {
-              await supabaseAdmin.from("products").update(payload).eq("id", productId);
+              const { data: existingProduct } = await supabaseAdmin
+                .from("products")
+                .select("*")
+                .eq("id", productId)
+                .maybeSingle();
+              const patch = fillBlankProductFields(existingProduct as any, payload);
+              if (Object.keys(patch).length) {
+                await supabaseAdmin.from("products").update(patch).eq("id", productId);
+              }
             } else {
               const { data: inserted, error: insErr } = await supabaseAdmin
                 .from("products")
