@@ -625,6 +625,10 @@ function ProjectDesignBoardsPage() {
         : products.filter((product) => productMatchesBoardCatalogCategory(product, category)),
     [category, products],
   );
+  const sortedRooms = useMemo(
+    () => [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [rooms],
+  );
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
   const filteredProjectMaterials = useMemo(
     () =>
@@ -3332,7 +3336,7 @@ function ProjectDesignBoardsPage() {
                     className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
                   >
                     <option value="">No room assigned</option>
-                    {rooms.map((room) => (
+                    {sortedRooms.map((room) => (
                       <option key={room.id} value={room.id}>
                         {room.name}
                       </option>
@@ -3402,7 +3406,7 @@ function ProjectDesignBoardsPage() {
               {selected && selectedCount <= 1 && (
                 <SelectedPanel
                   selected={selected}
-                  rooms={rooms}
+                  rooms={sortedRooms}
                   products={products}
                   activePageRoomId={activePage.roomId}
                   onUpdate={(patch) => updateElement(selected.id, patch)}
