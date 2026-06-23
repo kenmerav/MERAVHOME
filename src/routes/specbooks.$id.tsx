@@ -588,6 +588,7 @@ function SpecCard({
               href={p.product_url}
               target="_blank"
               rel="noreferrer"
+              onClick={(event) => event.stopPropagation()}
               className="text-xs break-all underline inline-flex items-start gap-1 print:text-[10px] print:leading-tight"
             >
               {p.product_url} <ExternalLink className="w-3 h-3 mt-0.5 shrink-0" />
