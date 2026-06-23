@@ -626,7 +626,10 @@ function ProjectDesignBoardsPage() {
     [category, products],
   );
   const sortedRooms = useMemo(
-    () => [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    () =>
+      [...rooms].sort((a, b) =>
+        a.name.trim().toLocaleLowerCase().localeCompare(b.name.trim().toLocaleLowerCase()),
+      ),
     [rooms],
   );
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
