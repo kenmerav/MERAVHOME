@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search } from "lucide-react";
+import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
@@ -380,7 +380,8 @@ function RoomMaterialsSection({
             </thead>
             <tbody>
               {sortedItems.map((it) => {
-                const complete = it.product_url && it.product_url.trim().length > 0;
+                const hasProductLink = !!(it.product_url && it.product_url.trim().length > 0);
+                const complete = hasProductLink;
                 const linkedProductId = cleanUuid(it.product?.id);
                 return (
                   <tr key={it.id} className="border-t border-border align-middle">
@@ -406,6 +407,12 @@ function RoomMaterialsSection({
                         )}
                         {it.product && (
                           <span className="text-[10px] tracking-wider uppercase text-emerald-700">Scraped</span>
+                        )}
+                        {!hasProductLink && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-800">
+                            <AlertTriangle className="h-3 w-3" />
+                            Needs Link
+                          </span>
                         )}
                       </div>
                       <CatalogProductPicker
@@ -471,7 +478,13 @@ function RoomMaterialsSection({
                       <InlineInput
                         value={it.product_url ?? ""}
                         onSave={(v) => update(it.id, { product_url: v || null, scrape_status: "pending" })}
+                        className={!hasProductLink ? "border-amber-300 bg-amber-50/60 focus-visible:border-amber-500 focus-visible:ring-amber-200" : undefined}
                       />
+                      {!hasProductLink && (
+                        <div className="mt-1 text-[11px] text-amber-800">
+                          Add a source link so this item can flow cleanly into scraping, specs, and procurement.
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput
@@ -787,12 +800,14 @@ function InlineInput({
   type = "text",
   disabled,
   placeholder,
+  className,
 }: {
   value: string;
   onSave: (v: string) => void;
   type?: string;
   disabled?: boolean;
   placeholder?: string;
+  className?: string;
 }) {
   const [local, setLocal] = useState(value);
   useEffect(() => {
@@ -806,7 +821,7 @@ function InlineInput({
       disabled={disabled}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => { if (local !== value) onSave(local); }}
-      className="h-8 border-transparent hover:border-input focus:border-input bg-transparent"
+      className={`h-8 border-transparent hover:border-input focus:border-input bg-transparent ${className ?? ""}`}
     />
   );
 }
