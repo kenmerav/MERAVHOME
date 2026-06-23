@@ -88,11 +88,34 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
   if (!payload.imageUrl) throw new Error("Could not find the product image.");
   if (!payload.sourcePageUrl) throw new Error("Could not find the product URL.");
 
-  await updateProgress(42, "Preparing product image...");
-  const imageDataUrl = await imageDataUrlFromUrl(payload.imageUrl);
-  if (imageDataUrl) payload.imageDataUrl = imageDataUrl;
+  let body;
+  const shouldSendBrowserImage = needsBrowserImageData(payload.imageUrl);
+  if (shouldSendBrowserImage) {
+    await updateProgress(42, "Preparing product image...");
+    const imageDataUrl = await imageDataUrlFromUrl(payload.imageUrl);
+    if (imageDataUrl) payload.imageDataUrl = imageDataUrl;
+  }
 
-  await updateProgress(68, "Saving to Studio...");
+  await updateProgress(62, "Saving to Studio...");
+  try {
+    body = await importProduct(studioUrl, extensionToken, payload);
+  } catch (error) {
+    if (payload.imageDataUrl || !shouldRetryWithBrowserImage(error)) throw error;
+    await updateProgress(48, "Retrying product image...");
+    const imageDataUrl = await imageDataUrlFromUrl(payload.imageUrl);
+    if (!imageDataUrl) throw error;
+    body = await importProduct(studioUrl, extensionToken, { ...payload, imageDataUrl });
+  }
+
+  const title = body.warning ? "Imported with review needed" : "Sent to MERAV Studio";
+  const message = body.warning || "Product added to the active design board page.";
+  await updateProgress(100, message, { done: true });
+  notify(title, message);
+  setTimeout(() => updateProgress(0, "", { clearBadge: true }), 1600);
+  return body;
+}
+
+async function importProduct(studioUrl, extensionToken, payload) {
   const response = await fetch(`${studioUrl}/api/extension/import-product`, {
     method: "POST",
     headers: {
@@ -105,13 +128,16 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
   if (!response.ok || body.error) {
     throw new Error(body.error || `Studio import failed (${response.status}).`);
   }
-
-  const title = body.warning ? "Imported with review needed" : "Sent to MERAV Studio";
-  const message = body.warning || "Product added to the active design board page.";
-  await updateProgress(100, message, { done: true });
-  notify(title, message);
-  setTimeout(() => updateProgress(0, "", { clearBadge: true }), 1600);
   return body;
+}
+
+function needsBrowserImageData(imageUrl) {
+  return /^data:image\//i.test(imageUrl || "") || /^(blob|filesystem):/i.test(imageUrl || "");
+}
+
+function shouldRetryWithBrowserImage(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /download product image|selected image url|product image is required|image url did not return an image/i.test(message);
 }
 
 async function imageDataUrlFromUrl(imageUrl) {
