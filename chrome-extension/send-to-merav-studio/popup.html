@@ -57,6 +57,11 @@
         background: white;
         color: #17130f;
       }
+      button.connect {
+        margin-top: 0;
+        background: #1f4e5f;
+        border-color: #1f4e5f;
+      }
       button:disabled {
         cursor: not-allowed;
         opacity: 0.55;
@@ -90,12 +95,26 @@
       .error {
         color: #9d2c21;
       }
+      .connection {
+        display: none;
+        margin-top: 14px;
+        padding: 12px;
+        border: 1px solid #ded9cd;
+        background: white;
+      }
+      .connection.visible {
+        display: block;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>Send to Studio</h1>
       <p>Choose the destination once, then send products straight onto that design board page.</p>
+      <div id="connection" class="connection">
+        <p>Connect this extension to your MERAV Studio login before sending products.</p>
+        <button id="connect" class="connect">Connect to Studio</button>
+      </div>
       <label>
         Project
         <select id="projectSelect">

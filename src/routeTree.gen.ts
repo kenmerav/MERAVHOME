@@ -22,6 +22,7 @@ import { Route as HoursIndexRouteImport } from './routes/hours.index'
 import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
 import { Route as PrototypeDesignBoardRouteImport } from './routes/prototype.design-board'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
+import { Route as ExtensionConnectRouteImport } from './routes/extension.connect'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
@@ -47,6 +48,7 @@ import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.ap
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
 import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
 import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
+import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/extension/connect-token'
 import { Route as ApiExtensionBoardPagesRouteImport } from './routes/api/extension/board-pages'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
@@ -113,6 +115,11 @@ const PrototypeDesignBoardRoute = PrototypeDesignBoardRouteImport.update({
 const PresentationsIdRoute = PresentationsIdRouteImport.update({
   id: '/presentations/$id',
   path: '/presentations/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExtensionConnectRoute = ExtensionConnectRouteImport.update({
+  id: '/extension/connect',
+  path: '/extension/connect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
@@ -245,6 +252,12 @@ const ApiExtensionImportProductRoute =
     path: '/api/extension/import-product',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiExtensionConnectTokenRoute =
+  ApiExtensionConnectTokenRouteImport.update({
+    id: '/api/extension/connect-token',
+    path: '/api/extension/connect-token',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiExtensionBoardPagesRoute = ApiExtensionBoardPagesRouteImport.update({
   id: '/api/extension/board-pages',
   path: '/api/extension/board-pages',
@@ -275,6 +288,7 @@ export interface FileRoutesByFullPath {
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
+  '/extension/connect': typeof ExtensionConnectRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/prototype/design-board': typeof PrototypeDesignBoardRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
@@ -284,6 +298,7 @@ export interface FileRoutesByFullPath {
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
   '/api/extension/board-pages': typeof ApiExtensionBoardPagesRoute
+  '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -317,6 +332,7 @@ export interface FileRoutesByTo {
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
+  '/extension/connect': typeof ExtensionConnectRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/prototype/design-board': typeof PrototypeDesignBoardRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
@@ -326,6 +342,7 @@ export interface FileRoutesByTo {
   '/specbooks': typeof SpecbooksIndexRoute
   '/users': typeof UsersIndexRoute
   '/api/extension/board-pages': typeof ApiExtensionBoardPagesRoute
+  '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -360,6 +377,7 @@ export interface FileRoutesById {
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
+  '/extension/connect': typeof ExtensionConnectRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/prototype/design-board': typeof PrototypeDesignBoardRoute
   '/specbooks/$id': typeof SpecbooksIdRoute
@@ -369,6 +387,7 @@ export interface FileRoutesById {
   '/specbooks/': typeof SpecbooksIndexRoute
   '/users/': typeof UsersIndexRoute
   '/api/extension/board-pages': typeof ApiExtensionBoardPagesRoute
+  '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
@@ -404,6 +423,7 @@ export interface FileRouteTypes {
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
+    | '/extension/connect'
     | '/presentations/$id'
     | '/prototype/design-board'
     | '/specbooks/$id'
@@ -413,6 +433,7 @@ export interface FileRouteTypes {
     | '/specbooks/'
     | '/users/'
     | '/api/extension/board-pages'
+    | '/api/extension/connect-token'
     | '/api/extension/import-product'
     | '/api/extension/projects'
     | '/api/stripe/webhook'
@@ -446,6 +467,7 @@ export interface FileRouteTypes {
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
+    | '/extension/connect'
     | '/presentations/$id'
     | '/prototype/design-board'
     | '/specbooks/$id'
@@ -455,6 +477,7 @@ export interface FileRouteTypes {
     | '/specbooks'
     | '/users'
     | '/api/extension/board-pages'
+    | '/api/extension/connect-token'
     | '/api/extension/import-product'
     | '/api/extension/projects'
     | '/api/stripe/webhook'
@@ -488,6 +511,7 @@ export interface FileRouteTypes {
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog_/$productId'
+    | '/extension/connect'
     | '/presentations/$id'
     | '/prototype/design-board'
     | '/specbooks/$id'
@@ -497,6 +521,7 @@ export interface FileRouteTypes {
     | '/specbooks/'
     | '/users/'
     | '/api/extension/board-pages'
+    | '/api/extension/connect-token'
     | '/api/extension/import-product'
     | '/api/extension/projects'
     | '/api/stripe/webhook'
@@ -531,6 +556,7 @@ export interface RootRouteChildren {
   ApiUploadRoomImageRoute: typeof ApiUploadRoomImageRoute
   ApiUsersRoute: typeof ApiUsersRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
+  ExtensionConnectRoute: typeof ExtensionConnectRoute
   PresentationsIdRoute: typeof PresentationsIdRoute
   PrototypeDesignBoardRoute: typeof PrototypeDesignBoardRoute
   SpecbooksIdRoute: typeof SpecbooksIdRoute
@@ -540,6 +566,7 @@ export interface RootRouteChildren {
   SpecbooksIndexRoute: typeof SpecbooksIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   ApiExtensionBoardPagesRoute: typeof ApiExtensionBoardPagesRoute
+  ApiExtensionConnectTokenRoute: typeof ApiExtensionConnectTokenRoute
   ApiExtensionImportProductRoute: typeof ApiExtensionImportProductRoute
   ApiExtensionProjectsRoute: typeof ApiExtensionProjectsRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
@@ -646,6 +673,13 @@ declare module '@tanstack/react-router' {
       path: '/presentations/$id'
       fullPath: '/presentations/$id'
       preLoaderRoute: typeof PresentationsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/extension/connect': {
+      id: '/extension/connect'
+      path: '/extension/connect'
+      fullPath: '/extension/connect'
+      preLoaderRoute: typeof ExtensionConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog_/$productId': {
@@ -823,6 +857,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiExtensionImportProductRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/extension/connect-token': {
+      id: '/api/extension/connect-token'
+      path: '/api/extension/connect-token'
+      fullPath: '/api/extension/connect-token'
+      preLoaderRoute: typeof ApiExtensionConnectTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/extension/board-pages': {
       id: '/api/extension/board-pages'
       path: '/api/extension/board-pages'
@@ -859,6 +900,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUploadRoomImageRoute: ApiUploadRoomImageRoute,
   ApiUsersRoute: ApiUsersRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
+  ExtensionConnectRoute: ExtensionConnectRoute,
   PresentationsIdRoute: PresentationsIdRoute,
   PrototypeDesignBoardRoute: PrototypeDesignBoardRoute,
   SpecbooksIdRoute: SpecbooksIdRoute,
@@ -868,6 +910,7 @@ const rootRouteChildren: RootRouteChildren = {
   SpecbooksIndexRoute: SpecbooksIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   ApiExtensionBoardPagesRoute: ApiExtensionBoardPagesRoute,
+  ApiExtensionConnectTokenRoute: ApiExtensionConnectTokenRoute,
   ApiExtensionImportProductRoute: ApiExtensionImportProductRoute,
   ApiExtensionProjectsRoute: ApiExtensionProjectsRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,

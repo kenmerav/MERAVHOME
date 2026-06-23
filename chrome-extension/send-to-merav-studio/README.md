@@ -29,9 +29,11 @@ without opening Studio or asking again.
 3. Turn on **Developer mode**.
 4. Click **Load unpacked**.
 5. Select `chrome-extension/send-to-merav-studio`.
-6. Open extension options and save:
+6. Click the extension icon and choose **Connect to Studio**.
+   - You must be signed into MERAV Studio in the same Chrome profile.
+   - Employees do not need to copy or paste the extension token.
+7. Choose and save:
    - Studio URL: `https://studio.meravinteriors.com`
-   - Extension token matching `MERAV_EXTENSION_TOKEN`
    - Click **Load Projects**
    - Choose the project you are sourcing into
 

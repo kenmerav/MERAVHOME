@@ -69,7 +69,7 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
     throw new Error("Open a MERAV design board once, or set a project ID in extension settings.");
   }
   if (!extensionToken) {
-    throw new Error("Add your MERAV extension token in extension settings.");
+    throw new Error("Click the extension icon and connect to MERAV Studio first.");
   }
 
   await updateProgress(20, "Reading product details...");

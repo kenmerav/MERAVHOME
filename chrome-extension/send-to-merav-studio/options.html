@@ -58,6 +58,10 @@
         background: white;
         color: #17130f;
       }
+      button.connect {
+        background: #1f4e5f;
+        border-color: #1f4e5f;
+      }
       .hint {
         margin-top: 8px;
         font-size: 12px;
@@ -78,10 +82,10 @@
     <main>
       <h1>Send to MERAV Studio</h1>
       <p>
-        Open a MERAV design board once and this extension will remember that project. You can also
-        paste a project ID below. After setup, right-click any product image and choose
+        Connect to MERAV Studio once, choose the project you are sourcing into, then right-click any product image and choose
         <code>Send to MERAV Studio</code>.
       </p>
+      <button id="connect" class="connect">Connect to Studio</button>
       <label>
         Studio URL
         <input id="studioUrl" placeholder="https://studio.meravinteriors.com" />
@@ -96,10 +100,6 @@
       <label>
         Manual Project ID
         <input id="projectId" placeholder="Only needed if the dropdown does not load" />
-      </label>
-      <label>
-        Extension Token
-        <input id="extensionToken" type="password" placeholder="MERAV extension token" />
       </label>
       <button id="loadProjects" class="secondary">Load Projects</button>
       <button id="save">Save Settings</button>

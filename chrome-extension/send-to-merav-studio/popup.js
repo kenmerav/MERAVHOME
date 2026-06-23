@@ -75,13 +75,29 @@ document.getElementById("options").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
+document.getElementById("connect").addEventListener("click", async () => {
+  setStatus("Opening Studio connection...");
+  try {
+    const connected = await connectToStudio();
+    settings = { ...settings, ...connected };
+    setConnectionVisible(false);
+    setStatus("Connected to Studio.");
+    await loadProjects();
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Could not connect to Studio.", true);
+  }
+});
+
 async function loadProjects() {
   const token = settings.extensionToken;
   if (!token) {
+    setConnectionVisible(true);
     renderSelect([], "");
-    setStatus("Open Settings and paste the extension token first.", true);
+    renderBoardPageSelect([], "");
+    setStatus("Connect to Studio first.", true);
     return;
   }
+  setConnectionVisible(false);
 
   try {
     const studioUrl = normalizeStudioUrl(settings.studioUrl);
@@ -102,6 +118,44 @@ async function loadProjects() {
     renderBoardPageSelect([], "");
     setStatus(error instanceof Error ? error.message : "Could not load projects.", true);
   }
+}
+
+async function connectToStudio() {
+  const studioUrl = normalizeStudioUrl(settings.studioUrl);
+  const redirectUrl = chrome.identity.getRedirectURL("studio-connect");
+  const authUrl = `${studioUrl}/extension/connect?redirect=${encodeURIComponent(redirectUrl)}`;
+  const responseUrl = await launchWebAuthFlow({ url: authUrl, interactive: true });
+  const response = new URL(responseUrl);
+  const params = new URLSearchParams(response.hash.replace(/^#/, ""));
+  const token = params.get("token") || "";
+  const returnedStudioUrl = normalizeStudioUrl(params.get("studioUrl") || studioUrl);
+  if (!token) {
+    throw new Error("Studio did not return a connection token. Make sure you are signed into Studio.");
+  }
+  const values = { extensionToken: token, studioUrl: returnedStudioUrl };
+  await chrome.storage.sync.set(values);
+  return values;
+}
+
+function launchWebAuthFlow(details) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(details, (responseUrl) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message || "Studio connection was cancelled."));
+        return;
+      }
+      if (!responseUrl) {
+        reject(new Error("Studio connection was cancelled."));
+        return;
+      }
+      resolve(responseUrl);
+    });
+  });
+}
+
+function setConnectionVisible(isVisible) {
+  document.getElementById("connection").classList.toggle("visible", isVisible);
 }
 
 function renderSelect(projects, selectedProjectId) {

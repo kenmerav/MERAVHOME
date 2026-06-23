@@ -1,11 +1,10 @@
-const fields = ["studioUrl", "projectId", "extensionToken"];
+const fields = ["studioUrl", "projectId"];
 const DEFAULT_STUDIO_URL = "https://studio.meravinteriors.com";
 
 chrome.storage.sync.get(["studioUrl", "projectId", "extensionToken", "lastStudioProjectId"], (settings) => {
   document.getElementById("studioUrl").value =
     settings.studioUrl || DEFAULT_STUDIO_URL;
   document.getElementById("projectId").value = settings.projectId || settings.lastStudioProjectId || "";
-  document.getElementById("extensionToken").value = settings.extensionToken || "";
   loadProjects({ quiet: true });
 });
 
@@ -23,14 +22,26 @@ document.getElementById("loadProjects").addEventListener("click", () => loadProj
 document.getElementById("projectSelect").addEventListener("change", (event) => {
   document.getElementById("projectId").value = event.target.value;
 });
+document.getElementById("connect").addEventListener("click", async () => {
+  const status = document.getElementById("status");
+  status.textContent = "Opening Studio connection...";
+  try {
+    const connected = await connectToStudio();
+    document.getElementById("studioUrl").value = connected.studioUrl;
+    status.textContent = "Connected to Studio.";
+    await loadProjects();
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Could not connect to Studio.";
+  }
+});
 
 async function loadProjects(options = {}) {
   const status = document.getElementById("status");
   const studioUrl = normalizeStudioUrl(document.getElementById("studioUrl").value);
-  const token = document.getElementById("extensionToken").value.trim();
+  const { extensionToken: token } = await chrome.storage.sync.get(["extensionToken"]);
   const selectedProjectId = document.getElementById("projectId").value.trim();
   if (!token) {
-    if (!options.quiet) status.textContent = "Paste the extension token first, then load projects.";
+    if (!options.quiet) status.textContent = "Connect to Studio first, then load projects.";
     return;
   }
 
@@ -49,6 +60,40 @@ async function loadProjects(options = {}) {
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Could not load projects.";
   }
+}
+
+async function connectToStudio() {
+  const studioUrl = normalizeStudioUrl(document.getElementById("studioUrl").value);
+  const redirectUrl = chrome.identity.getRedirectURL("studio-connect");
+  const authUrl = `${studioUrl}/extension/connect?redirect=${encodeURIComponent(redirectUrl)}`;
+  const responseUrl = await launchWebAuthFlow({ url: authUrl, interactive: true });
+  const response = new URL(responseUrl);
+  const params = new URLSearchParams(response.hash.replace(/^#/, ""));
+  const token = params.get("token") || "";
+  const returnedStudioUrl = normalizeStudioUrl(params.get("studioUrl") || studioUrl);
+  if (!token) {
+    throw new Error("Studio did not return a connection token. Make sure you are signed into Studio.");
+  }
+  const values = { extensionToken: token, studioUrl: returnedStudioUrl };
+  await chrome.storage.sync.set(values);
+  return values;
+}
+
+function launchWebAuthFlow(details) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(details, (responseUrl) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message || "Studio connection was cancelled."));
+        return;
+      }
+      if (!responseUrl) {
+        reject(new Error("Studio connection was cancelled."));
+        return;
+      }
+      resolve(responseUrl);
+    });
+  });
 }
 
 function renderProjects(projects, selectedProjectId) {
