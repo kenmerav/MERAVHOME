@@ -3742,7 +3742,7 @@ function BoardObject({
         width: element.width,
         height: element.height,
         zIndex: element.zIndex,
-        transform: `rotate(${element.rotation ?? 0}deg)`,
+        transform: element.type === "image" ? undefined : `rotate(${element.rotation ?? 0}deg)`,
         opacity: isHidden ? 0.22 : 1,
         outlineColor: remoteUser?.color,
       }}
@@ -3824,7 +3824,10 @@ function BoardObject({
               kind="preview"
               className="h-full w-full object-contain"
               draggable={false}
-              style={imageAdjustmentStyle(element)}
+              style={{
+                ...imageAdjustmentStyle(element),
+                transform: `rotate(${element.rotation ?? 0}deg)`,
+              }}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center border border-dashed border-stone-300 bg-[#faf9f5] p-4 text-center font-display text-2xl text-stone-400">
@@ -4930,6 +4933,14 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage) {
 async function drawBoardElementForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
   ctx.save();
   ctx.globalAlpha = element.visible === false ? 0.22 : 1;
+
+  if (element.type === "image") {
+    ctx.translate(element.x, element.y);
+    await drawBoardImageForExport(ctx, element);
+    ctx.restore();
+    return;
+  }
+
   const centerX = element.x + element.width / 2;
   const centerY = element.y + element.height / 2;
   ctx.translate(centerX, centerY);
@@ -4956,7 +4967,12 @@ async function drawBoardImageForExport(ctx: CanvasRenderingContext2D, element: B
   if (element.src) {
     try {
       const image = await loadImageElement(await imageSourceForCanvas(element.src));
+      ctx.save();
+      ctx.translate(element.width / 2, element.height / 2);
+      ctx.rotate(((element.rotation ?? 0) * Math.PI) / 180);
+      ctx.translate(-element.width / 2, -element.height / 2);
       drawImageContain(ctx, image, 0, 0, element.width, element.height, element);
+      ctx.restore();
     } catch (error) {
       console.warn("[Design Board] Could not draw image into PDF", error);
       drawImageFallback(ctx, element);

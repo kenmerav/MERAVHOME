@@ -97,9 +97,13 @@ function ProductPage() {
       notes: clean(form.notes),
       description: clean(form.description),
     });
+    await db.updateMaterialItemsByProduct(safeProductId, {
+      category: displayCategory,
+    });
     setForm((prev) => prev ? { ...prev, price, unit_cost, shipping } : prev);
     qc.invalidateQueries({ queryKey: ["product", safeProductId] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
+    qc.invalidateQueries({ queryKey: ["materialItems"] });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     toast.success("Product updated");
   };

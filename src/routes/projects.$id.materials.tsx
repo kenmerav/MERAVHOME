@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
+import { db, SUBCATEGORIES, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
@@ -287,7 +287,21 @@ function RoomMaterialsSection({
 
   const update = async (id: string, patch: Partial<MaterialItem>) => {
     if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
+    const currentItem = items.find((item) => item.id === id);
     await db.updateMaterialItem(id, patch);
+    if (
+      typeof patch.category === "string" &&
+      currentItem?.product_id &&
+      isUuid(currentItem.product_id)
+    ) {
+      const productCategory = toProductCategory(patch.category);
+      await db.updateProduct(currentItem.product_id, {
+        category: productCategory,
+        subcategory: SUBCATEGORIES[productCategory]?.[0] ?? null,
+      });
+      qc.invalidateQueries({ queryKey: ["catalog"] });
+      qc.invalidateQueries({ queryKey: ["product", currentItem.product_id] });
+    }
     invalidate();
   };
 
