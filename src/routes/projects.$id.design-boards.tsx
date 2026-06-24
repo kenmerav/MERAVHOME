@@ -1399,17 +1399,21 @@ function ProjectDesignBoardsPage() {
     }
     if (!product) throw new Error("Could not create catalog product.");
 
+    const materialIdentity = buildBoardMaterialIdentity({
+      roomId: room.id,
+      label: itemLabel,
+      productUrl,
+      color: finish,
+    });
     const matchingMaterial = materialItems.find((item) => {
       if (item.room_id !== room.id) return false;
       if (element.materialItemId && item.id === element.materialItemId) return true;
-      if (item.product_id && item.product_id === product.id) return true;
-      if (productUrl && item.product_url && normalizeExternalUrl(item.product_url) === productUrl) {
-        return true;
-      }
-      return (
-        item.item_label.trim().toLowerCase() === itemLabel.toLowerCase() &&
-        item.category?.toLowerCase() === materialCategory.toLowerCase()
-      );
+      return buildBoardMaterialIdentity({
+        roomId: item.room_id,
+        label: item.item_label,
+        productUrl: item.product_url,
+        color: item.color,
+      }) === materialIdentity;
     });
     const existingMaterialId = element.materialItemId || matchingMaterial?.id || null;
     const existingMaterial = existingMaterialId
@@ -1484,7 +1488,7 @@ function ProjectDesignBoardsPage() {
               link: product.product_url || element.link || "",
               materialItemId: materialItem?.id ?? element.materialItemId ?? null,
               materialRoomId: room.id,
-              materialCategory: category,
+              materialCategory,
               materialQuantity: quantity,
               materialFinish: finish,
               materialDimensions: dimensions,
@@ -1564,9 +1568,6 @@ function ProjectDesignBoardsPage() {
           if (element.type !== "image") continue;
           if (element.materialInfoNotNeeded) continue;
           const room = resolveMaterialRoom(element, page);
-          const linkedProduct = element.productId
-            ? products.find((product) => product.id === element.productId)
-            : null;
           const missingInfo = imageMaterialReadinessIssues(element, page);
           if (!room || missingInfo.length) {
             for (const issue of missingInfo) {
@@ -1579,20 +1580,12 @@ function ProjectDesignBoardsPage() {
           }
           const itemLabel = imageMaterialLabel(element);
           const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : "";
-          const category =
-            element.materialCategory ||
-            linkedProduct?.category ||
-            inferMaterialCategory(itemLabel, productUrl);
           const finish = (element.materialFinish || element.finish || "").trim();
-          const dimensions = (element.materialDimensions || linkedProduct?.dimensions || "").trim();
-          const identity = element.productId || productUrl || element.src || itemLabel;
           const key = [
             room.id,
-            identity.trim().toLowerCase(),
-            itemLabel.toLowerCase(),
-            category.toLowerCase(),
-            finish.toLowerCase(),
-            dimensions.toLowerCase(),
+            normalizeMaterialIdentityText(itemLabel),
+            normalizeMaterialIdentityUrl(productUrl),
+            normalizeMaterialIdentityText(finish),
           ].join("::");
           const quantity =
             element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
@@ -6139,6 +6132,34 @@ function normalizeExternalUrl(url: string) {
   const trimmed = url.trim();
   if (!trimmed) return "#";
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function normalizeMaterialIdentityText(value?: string | null) {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizeMaterialIdentityUrl(value?: string | null) {
+  const normalized = value?.trim() ? normalizeExternalUrl(value).trim() : "";
+  return normalized.replace(/\/+$/, "").toLowerCase();
+}
+
+function buildBoardMaterialIdentity({
+  roomId,
+  label,
+  productUrl,
+  color,
+}: {
+  roomId: string;
+  label?: string | null;
+  productUrl?: string | null;
+  color?: string | null;
+}) {
+  return [
+    roomId,
+    normalizeMaterialIdentityText(label),
+    normalizeMaterialIdentityUrl(productUrl),
+    normalizeMaterialIdentityText(color),
+  ].join("::");
 }
 
 function fileToDataUrl(file: File) {
