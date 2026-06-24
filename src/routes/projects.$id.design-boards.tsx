@@ -2005,6 +2005,15 @@ function ProjectDesignBoardsPage() {
     broadcastPatch({ kind: "patch-page", pageId: selectedPageId, patch });
   };
 
+  const updateActivePageRoom = (roomId: string) => {
+    const selectedRoom = sortedRooms.find((room) => room.id === roomId);
+    const patch: Partial<BoardPage> = selectedRoom
+      ? { roomId: selectedRoom.id, title: selectedRoom.name }
+      : { roomId: null };
+    if (selectedRoom) setPageTitleDraft(selectedRoom.name);
+    updateActivePage(patch);
+  };
+
   const restoreVersion = useCallback(
     async (version: DesignBoardVersionMeta) => {
       if (!canRestoreDesignBoards) return;
@@ -3341,7 +3350,7 @@ function ProjectDesignBoardsPage() {
                   Room
                   <select
                     value={activePage.roomId ?? ""}
-                    onChange={(event) => updateActivePage({ roomId: event.target.value || null })}
+                    onChange={(event) => updateActivePageRoom(event.target.value)}
                     className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
                   >
                     <option value="">No room assigned</option>
