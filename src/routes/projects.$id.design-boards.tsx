@@ -1426,12 +1426,13 @@ function ProjectDesignBoardsPage() {
         0,
         ...materialItems.filter((item) => item.room_id === room.id).map((item) => item.sort_order),
       ) + 1;
+    const finalMaterialCategory = existingMaterial?.category || materialCategory;
     const materialPatch: Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product"> = {
       room_id: room.id,
       project_id: id,
       item_label: itemLabel,
       client_product_name: buildClientProductName(room.name, itemLabel),
-      category: materialCategory,
+      category: finalMaterialCategory,
       is_required: false,
       sort_order: sortOrder,
       cad_label: null,
@@ -1488,7 +1489,7 @@ function ProjectDesignBoardsPage() {
               link: product.product_url || element.link || "",
               materialItemId: materialItem?.id ?? element.materialItemId ?? null,
               materialRoomId: room.id,
-              materialCategory,
+              materialCategory: finalMaterialCategory,
               materialQuantity: quantity,
               materialFinish: finish,
               materialDimensions: dimensions,
