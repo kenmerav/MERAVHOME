@@ -297,27 +297,6 @@ async function tryFreeBackgroundRemoval(buffer: Buffer, contentType: string) {
   }
 }
 
-function transformUrl(src: string, width: number, height: number, quality: number) {
-  try {
-    const url = new URL(src);
-    const marker = "/storage/v1/object/public/";
-    const index = url.pathname.indexOf(marker);
-    if (index === -1) return src;
-    url.pathname =
-      url.pathname.slice(0, index) +
-      "/storage/v1/render/image/public/" +
-      url.pathname.slice(index + marker.length);
-    url.search = "";
-    url.searchParams.set("width", String(width));
-    url.searchParams.set("height", String(height));
-    url.searchParams.set("resize", "contain");
-    url.searchParams.set("quality", String(quality));
-    return url.toString();
-  } catch {
-    return src;
-  }
-}
-
 function normalizeBoardState(value: unknown): BoardState {
   const candidate = value && typeof value === "object" ? (value as Partial<BoardState>) : {};
   const pages = Array.isArray(candidate.pages)
@@ -584,8 +563,12 @@ export const Route = createFileRoute("/api/extension/import-product")({
             };
           });
 
-          const thumbnailUrl = transformUrl(imageForProduct, 240, 240, 72);
-          const previewUrl = transformUrl(imageForProduct, BOARD_WIDTH, BOARD_HEIGHT, 82);
+          // Keep extension responses compatible with existing callers without
+          // creating Supabase image transformation URLs. Stored derivative files
+          // can replace these later, but dynamic transforms are too expensive
+          // for design-board-heavy workflows.
+          const thumbnailUrl = imageForProduct;
+          const previewUrl = imageForProduct;
           const colorWarning = rawFinish && !finish
             ? `Product imported, but Studio skipped "${rawFinish}" because it did not look like a real color/finish.`
             : !finish

@@ -4732,36 +4732,11 @@ function OptimizedBoardImage({
 
 function imageVariantUrl(src: string, kind: ImageVariantKind) {
   if (kind === "original") return src;
-  const transform =
-    kind === "thumbnail"
-      ? { width: 240, height: 240, quality: 72 }
-      : { width: BOARD_WIDTH, height: BOARD_HEIGHT, quality: 82 };
-  return supabaseImageTransformUrl(src, transform) ?? src;
-}
-
-function supabaseImageTransformUrl(
-  src: string,
-  transform: { width: number; height: number; quality: number },
-) {
-  if (!src || src.startsWith("data:image/")) return null;
-  try {
-    const url = new URL(src);
-    const marker = "/storage/v1/object/public/";
-    const index = url.pathname.indexOf(marker);
-    if (index === -1) return null;
-    url.pathname =
-      url.pathname.slice(0, index) +
-      "/storage/v1/render/image/public/" +
-      url.pathname.slice(index + marker.length);
-    url.search = "";
-    url.searchParams.set("width", String(transform.width));
-    url.searchParams.set("height", String(transform.height));
-    url.searchParams.set("resize", "contain");
-    url.searchParams.set("quality", String(transform.quality));
-    return url.toString();
-  } catch {
-    return null;
-  }
+  // Avoid Supabase's dynamic image transformation endpoint during normal board use.
+  // Those transformation requests are metered separately and can spike quickly on
+  // image-heavy design boards. The UI still requests thumbnail/preview variants,
+  // but until stored derivative files exist we use the regular public image URL.
+  return src;
 }
 
 function ToolbarButton({
