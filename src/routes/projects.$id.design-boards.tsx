@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
   MessageSquare,
   Plus,
+  RotateCw,
   Search,
   Scissors,
   Trash2,
@@ -2100,6 +2101,12 @@ function ProjectDesignBoardsPage() {
     );
   };
 
+  const rotateSelectedImage = () => {
+    if (!selected || selectedCount !== 1 || selected.type !== "image") return;
+    const nextRotation = ((selected.rotation ?? 0) + 90) % 360;
+    updateElement(selected.id, { rotation: nextRotation });
+  };
+
   const removeSelected = useCallback(() => {
     const idsToRemove = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
     if (!idsToRemove.length) return;
@@ -2788,6 +2795,12 @@ function ProjectDesignBoardsPage() {
               </ToolbarButton>
               <ToolbarButton onClick={() => moveLayer("back")} disabled={!selectedCount}>
                 <ArrowDown className="h-4 w-4" /> Back
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={rotateSelectedImage}
+                disabled={!selected || selectedCount !== 1 || selected.type !== "image"}
+              >
+                <RotateCw className="h-4 w-4" /> Rotate
               </ToolbarButton>
               <ToolbarButton
                 onClick={removeSelectedBackground}
