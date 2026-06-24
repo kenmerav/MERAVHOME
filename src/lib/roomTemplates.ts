@@ -39,6 +39,13 @@ export const ALL_CATEGORIES = [
 ] as const;
 export type ItemCategory = (typeof ALL_CATEGORIES)[number];
 
+type ProductCategoryShape = {
+  category?: ProductCategory | string | null;
+  subcategory?: string | null;
+  name?: string | null;
+  product_url?: string | null;
+};
+
 // Map a loose template/material category to the strict product-catalog enum.
 export function toProductCategory(c: string | null | undefined): ProductCategory {
   if (!c) return "Decor";
@@ -58,6 +65,39 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
     Pendant: "Lighting",
   };
   return map[c] ?? "Decor";
+}
+
+export function productDisplayCategory(product: ProductCategoryShape): ItemCategory {
+  if (product.category === "Tile") return "Tile & Stone";
+  if (product.category === "Countertops") return "Countertops";
+  if (product.category && (ALL_CATEGORIES as readonly string[]).includes(product.category)) {
+    return product.category as ItemCategory;
+  }
+
+  const inferred = inferMaterialCategory(
+    `${product.name ?? ""} ${product.subcategory ?? ""}`,
+    product.product_url,
+  );
+  if (product.category === "Decor" && inferred === "Other") return "Accessories";
+  return inferred;
+}
+
+export function productMatchesItemCategory(product: ProductCategoryShape, category: ItemCategory): boolean {
+  if (category === "Tile & Stone") return product.category === "Tile";
+  if (category === "Countertops") return product.category === "Countertops";
+
+  const strictCategory = toProductCategory(category);
+  if (product.category !== strictCategory) return false;
+
+  if (strictCategory === "Decor" || strictCategory === "Hardware") {
+    return productDisplayCategory(product) === category;
+  }
+
+  return true;
+}
+
+export function sampleAppliesToCategory(category: ItemCategory | string | null | undefined) {
+  return category === "Tile & Stone" || category === "Flooring";
 }
 
 function normalizeCategoryText(value: string) {

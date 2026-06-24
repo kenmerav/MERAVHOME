@@ -147,6 +147,7 @@ export interface Product {
   unit_cost: string | null;
   shipping: string | null;
   description: string | null;
+  has_sample: boolean;
   created_at: string;
   updated_at: string;
 }

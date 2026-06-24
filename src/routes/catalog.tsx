@@ -3,7 +3,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Plus, Search, ExternalLink, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/db";
+import { db, SUBCATEGORIES, type Product, type ProductCategory } from "@/lib/db";
+import {
+  ALL_CATEGORIES,
+  productDisplayCategory,
+  productMatchesItemCategory,
+  sampleAppliesToCategory,
+  toProductCategory,
+  type ItemCategory,
+} from "@/lib/roomTemplates";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 
+type SampleFilter = "All" | "Sample" | "No sample";
+
 export const Route = createFileRoute("/catalog")({
   head: () => ({ meta: [{ title: "Product Catalog — MERAV Studio" }] }),
   component: CatalogPage,
@@ -20,20 +30,27 @@ export const Route = createFileRoute("/catalog")({
 
 function CatalogPage() {
   const [search, setSearch] = useState("");
-  const [cat, setCat] = useState<ProductCategory | "All">("All");
+  const [cat, setCat] = useState<ItemCategory | "All">("All");
   const [vendor, setVendor] = useState("All");
+  const [sampleFilter, setSampleFilter] = useState<SampleFilter>("All");
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
     queryFn: async () => (await db.listCatalog(search)) ?? [],
   });
-  const categoryFiltered = cat === "All" ? products : products.filter(p => p.category === cat);
+  const showSampleFilter = cat !== "All" && sampleAppliesToCategory(cat);
+  const categoryFiltered = cat === "All" ? products : products.filter(p => productMatchesItemCategory(p, cat));
+  const sampleFiltered =
+    showSampleFilter && sampleFilter !== "All"
+      ? categoryFiltered.filter((p) => sampleFilter === "Sample" ? p.has_sample : !p.has_sample)
+      : categoryFiltered;
   const vendors = Array.from(
-    new Set(categoryFiltered.map((p) => p.vendor?.trim()).filter((value): value is string => Boolean(value))),
+    new Set(sampleFiltered.map((p) => p.vendor?.trim()).filter((value): value is string => Boolean(value))),
   ).sort((a, b) => a.localeCompare(b));
-  const filtered = vendor === "All" ? categoryFiltered : categoryFiltered.filter(p => p.vendor === vendor);
-  const setCategory = (category: ProductCategory | "All") => {
+  const filtered = vendor === "All" ? sampleFiltered : sampleFiltered.filter(p => p.vendor === vendor);
+  const setCategory = (category: ItemCategory | "All") => {
     setCat(category);
     setVendor("All");
+    setSampleFilter("All");
   };
 
   useEffect(() => {
@@ -60,13 +77,25 @@ function CatalogPage() {
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products" className="pl-9" />
           </div>
           <div className="flex gap-1 flex-wrap">
-            {(["All", ...PRODUCT_CATEGORIES] as const).map(c => (
+            {(["All", ...ALL_CATEGORIES] as const).map(c => (
               <button key={c} onClick={() => setCategory(c)}
                 className={cn("text-xs px-3 py-1.5 border", cat === c ? "border-ink bg-ink text-primary-foreground" : "border-border text-muted-foreground hover:border-ink")}>
                 {c}
               </button>
             ))}
           </div>
+          {showSampleFilter && (
+            <Select value={sampleFilter} onValueChange={(value) => setSampleFilter(value as SampleFilter)}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Sample" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Samples</SelectItem>
+                <SelectItem value="Sample">Sample</SelectItem>
+                <SelectItem value="No sample">No sample</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Select value={vendor} onValueChange={setVendor}>
             <SelectTrigger className="w-full sm:w-56">
               <SelectValue placeholder="Vendor" />
@@ -92,8 +121,10 @@ function CatalogPage() {
   );
 }
 
-function CatalogCard({ p }: { p: any }) {
+function CatalogCard({ p }: { p: Product }) {
   const qc = useQueryClient();
+  const displayCategory = productDisplayCategory(p);
+  const showSampleBadge = sampleAppliesToCategory(displayCategory);
   const remove = async () => {
     if (!confirm(`Delete "${p.name}"? It will be removed from any room using it.`)) return;
     await db.deleteProduct(p.id);
@@ -111,10 +142,15 @@ function CatalogCard({ p }: { p: any }) {
         </button>
       </div>
       <Link to="/catalog/$productId" params={{ productId: p.id }} className="block hover:text-ink/70 transition-colors">
-        <div className="eyebrow mb-1">{p.category}{p.subcategory ? ` · ${p.subcategory}` : ""}</div>
+        <div className="eyebrow mb-1">{displayCategory}{p.subcategory ? ` · ${p.subcategory}` : ""}</div>
         <h4 className="font-display text-lg leading-tight">{p.name}</h4>
         {p.vendor && <p className="text-xs text-muted-foreground mt-1">{p.vendor}</p>}
         {p.finish && <p className="text-xs text-muted-foreground">{p.finish}</p>}
+        {showSampleBadge && (
+          <p className={cn("text-[11px] mt-1", p.has_sample ? "text-emerald-700" : "text-amber-700")}>
+            {p.has_sample ? "Sample on hand" : "No sample"}
+          </p>
+        )}
         {(p.price || p.unit_cost || p.shipping) && (
           <p className="text-[11px] text-muted-foreground mt-1">
             {[p.price && `Client ${p.price}`, p.unit_cost && `Cost ${p.unit_cost}`, p.shipping && `Ship ${p.shipping}`].filter(Boolean).join(" · ")}
@@ -134,8 +170,9 @@ function CatalogCard({ p }: { p: any }) {
 function NewProductDialog() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [category, setCategory] = useState<ProductCategory>("Lighting");
-  const [f, setF] = useState({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", dimensions: "", price: "", unit_cost: "", shipping: "", notes: "", subcategory: SUBCATEGORIES.Lighting[0] });
+  const [category, setCategory] = useState<ItemCategory>("Lighting");
+  const strictCategory = toProductCategory(category);
+  const [f, setF] = useState({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", dimensions: "", price: "", unit_cost: "", shipping: "", notes: "", subcategory: SUBCATEGORIES.Lighting[0], has_sample: false });
 
   const submit = async () => {
     if (!f.name.trim()) return toast.error("Name required");
@@ -143,11 +180,11 @@ function NewProductDialog() {
       name: f.name, vendor: f.vendor || null, product_url: f.product_url || null, image_url: f.image_url || null,
       finish: f.finish || null, sku: f.sku || null, dimensions: f.dimensions || null, price: normalizeMoneyInput(f.price),
       unit_cost: normalizeMoneyInput(f.unit_cost), shipping: normalizeMoneyInput(f.shipping), notes: f.notes || null,
-      category, subcategory: f.subcategory || null,
+      category: strictCategory, subcategory: f.subcategory || null, has_sample: sampleAppliesToCategory(category) ? f.has_sample : false,
     });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     setOpen(false);
-    setF({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", dimensions: "", price: "", unit_cost: "", shipping: "", notes: "", subcategory: SUBCATEGORIES[category][0] });
+    setF({ name: "", vendor: "", product_url: "", image_url: "", finish: "", sku: "", dimensions: "", price: "", unit_cost: "", shipping: "", notes: "", subcategory: SUBCATEGORIES[strictCategory][0], has_sample: false });
     toast.success("Product added to catalog");
   };
 
@@ -163,18 +200,35 @@ function NewProductDialog() {
         <div className="space-y-3 max-h-[70vh] overflow-y-auto">
           <div>
             <Label className="eyebrow">Category</Label>
-            <Select value={category} onValueChange={v => { setCategory(v as ProductCategory); setF(prev => ({ ...prev, subcategory: SUBCATEGORIES[v as ProductCategory][0] })); }}>
+            <Select value={category} onValueChange={v => {
+              const nextCategory = v as ItemCategory;
+              const nextStrictCategory = toProductCategory(nextCategory);
+              setCategory(nextCategory);
+              setF(prev => ({ ...prev, subcategory: SUBCATEGORIES[nextStrictCategory][0], has_sample: sampleAppliesToCategory(nextCategory) ? prev.has_sample : false }));
+            }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{PRODUCT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+              <SelectContent>{ALL_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
             <Label className="eyebrow">Subcategory</Label>
             <Select value={f.subcategory} onValueChange={v => setF({ ...f, subcategory: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{SUBCATEGORIES[category].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              <SelectContent>{SUBCATEGORIES[strictCategory].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+          {sampleAppliesToCategory(category) && (
+            <div>
+              <Label className="eyebrow">Sample</Label>
+              <Select value={f.has_sample ? "yes" : "no"} onValueChange={v => setF({ ...f, has_sample: v === "yes" })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Sample</SelectItem>
+                  <SelectItem value="no">No sample</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {([["name","Product Name"],["vendor","Vendor"],["product_url","Product URL"],["image_url","Image URL"],["finish","Finish"],["sku","SKU"],["dimensions","Dimensions"],["price","Client Price"],["unit_cost","Unit Cost"],["shipping","Shipping"]] as const).map(([k,l]) => (
             <div key={k}>
               <Label className="eyebrow">{l}</Label>

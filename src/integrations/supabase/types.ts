@@ -381,6 +381,7 @@ export type Database = {
           description: string | null
           dimensions: string | null
           finish: string | null
+          has_sample: boolean
           id: string
           image_url: string | null
           name: string
@@ -400,6 +401,7 @@ export type Database = {
           description?: string | null
           dimensions?: string | null
           finish?: string | null
+          has_sample?: boolean
           id?: string
           image_url?: string | null
           name: string
@@ -419,6 +421,7 @@ export type Database = {
           description?: string | null
           dimensions?: string | null
           finish?: string | null
+          has_sample?: boolean
           id?: string
           image_url?: string | null
           name?: string
