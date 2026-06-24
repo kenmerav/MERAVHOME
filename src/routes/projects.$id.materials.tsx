@@ -448,6 +448,11 @@ function RoomMaterialsSection({
                         onSave={(v) => update(it.id, { client_product_name: v || buildClientProductName(room.name, it.item_label) })}
                         placeholder="Kitchen Pendant"
                       />
+                      {actualProductName(it, room) && (
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {actualProductName(it, room)}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3">
                       <Select
@@ -578,6 +583,13 @@ function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSa
       </DialogContent>
     </Dialog>
   );
+}
+
+function actualProductName(item: MaterialItem, room: Room) {
+  const actualName = item.product?.name?.trim();
+  if (!actualName) return null;
+  const clientName = clientProductName(item, room).trim();
+  return actualName.toLocaleLowerCase() === clientName.toLocaleLowerCase() ? null : actualName;
 }
 
 function EditItemNameButton({

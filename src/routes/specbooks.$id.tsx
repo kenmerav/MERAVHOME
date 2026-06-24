@@ -302,7 +302,14 @@ export function SpecBookDocument({
                       <tr key={it.id} className="border-b border-border/60 align-top">
                         <td className="py-3 pr-4 font-display">{room.name}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{it.category || "—"}</td>
-                        <td className="py-3 pr-4">{clientProductName(it, room)}</td>
+                        <td className="py-3 pr-4">
+                          <div>{clientProductName(it, room)}</div>
+                          {actualProductName(it, room) && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {actualProductName(it, room)}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 pr-4 text-muted-foreground">
                           {it.product?.vendor || "—"}
                         </td>
@@ -566,7 +573,11 @@ function SpecCard({
           )}
         </div>
         <h3 className="font-display text-3xl leading-tight print:text-[28px]">{displayName}</h3>
-        {p?.name && <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">{p.name}</p>}
+        {actualProductName(item, room) && (
+          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">
+            {actualProductName(item, room)}
+          </p>
+        )}
         {p?.vendor && (
           <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">{p.vendor}</p>
         )}
@@ -776,6 +787,13 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
       <dd>{value}</dd>
     </div>
   );
+}
+
+function actualProductName(item: MaterialItem, room: Room) {
+  const actualName = item.product?.name?.trim();
+  if (!actualName) return null;
+  const clientName = clientProductName(item, room).trim();
+  return actualName.toLocaleLowerCase() === clientName.toLocaleLowerCase() ? null : actualName;
 }
 
 function Field({ label, value, onChange, className = "" }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {

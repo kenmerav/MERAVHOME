@@ -1374,9 +1374,11 @@ function ProjectDesignBoardsPage() {
     if (productUrl && (!product || linkedProductUrl !== productUrl)) {
       product = await db.findProductByUrl(productUrl);
     }
+    const actualProductName = element.productName?.trim() || itemLabel;
+
     if (!product) {
       product = await db.createProduct({
-        name: itemLabel,
+        name: actualProductName,
         category,
         product_url: productUrl,
         image_url: productImageUrl,
