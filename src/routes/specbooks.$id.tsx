@@ -5,14 +5,13 @@ import { ArrowLeft, Printer, ExternalLink, ChevronDown } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   db,
-  PRODUCT_CATEGORIES,
   SUBCATEGORIES,
   type MaterialItem,
   type Product,
   type ProductCategory,
   type Room,
 } from "@/lib/db";
-import { ALL_CATEGORIES } from "@/lib/roomTemplates";
+import { ALL_CATEGORIES, toProductCategory } from "@/lib/roomTemplates";
 import { clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -615,6 +614,7 @@ function SpecCard({
       <SpecProductEditDialog
         open={open}
         onOpenChange={setOpen}
+        item={item}
         product={p}
         projectId={projectId}
       />
@@ -626,15 +626,18 @@ function SpecCard({
 function SpecProductEditDialog({
   open,
   onOpenChange,
+  item,
   product,
   projectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  item: MaterialItem;
   product: Product;
   projectId: string;
 }) {
   const qc = useQueryClient();
+  const [materialCategory, setMaterialCategory] = useState(item.category || "Other");
   const [form, setForm] = useState<ProductForm>({
     name: product.name,
     category: product.category,
@@ -652,7 +655,7 @@ function SpecProductEditDialog({
     description: product.description,
   });
   const [saving, setSaving] = useState(false);
-  const category = form.category as ProductCategory;
+  const productCategory = form.category as ProductCategory;
 
   const update = (patch: Partial<ProductForm>) => {
     setForm((current) => ({ ...current, ...patch }));
@@ -677,6 +680,9 @@ function SpecProductEditDialog({
         shipping: normalizeMoneyInput(form.shipping),
         notes: clean(form.notes),
         description: clean(form.description),
+      });
+      await db.updateMaterialItem(item.id, {
+        category: materialCategory,
       });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["product", product.id] }),
@@ -705,16 +711,19 @@ function SpecProductEditDialog({
           <div>
             <Label className="eyebrow">Category</Label>
             <Select
-              value={form.category}
-              onValueChange={(value) =>
+              value={materialCategory}
+              onValueChange={(value) => {
+                const nextProductCategory = toProductCategory(value);
+                setMaterialCategory(value);
                 update({
-                  category: value as ProductCategory,
-                  subcategory: SUBCATEGORIES[value as ProductCategory][0],
-                })}
+                  category: nextProductCategory,
+                  subcategory: SUBCATEGORIES[nextProductCategory][0],
+                });
+              }}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {PRODUCT_CATEGORIES.map((item) => (
+                {ALL_CATEGORIES.map((item) => (
                   <SelectItem key={item} value={item}>{item}</SelectItem>
                 ))}
               </SelectContent>
@@ -723,12 +732,12 @@ function SpecProductEditDialog({
           <div>
             <Label className="eyebrow">Subcategory</Label>
             <Select
-              value={form.subcategory ?? SUBCATEGORIES[category][0]}
+              value={form.subcategory ?? SUBCATEGORIES[productCategory][0]}
               onValueChange={(value) => update({ subcategory: value })}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {SUBCATEGORIES[category].map((item) => (
+                {SUBCATEGORIES[productCategory].map((item) => (
                   <SelectItem key={item} value={item}>{item}</SelectItem>
                 ))}
               </SelectContent>

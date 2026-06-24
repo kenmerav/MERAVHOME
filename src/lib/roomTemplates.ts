@@ -4,6 +4,7 @@
 import { PRODUCT_CATEGORIES, type ProductCategory } from "@/lib/productCategories";
 
 export type ItemTemplate = { label: string; category: string };
+export { PRODUCT_CATEGORIES } from "@/lib/productCategories";
 
 export const PRESET_ROOMS = [
   "Kitchen",
