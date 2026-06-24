@@ -62,6 +62,15 @@ export const Route = createFileRoute("/projects/$id/design-boards")({
   component: ProjectDesignBoardsPage,
 });
 
+function sortRoomsAlphabetically(rooms: Room[]) {
+  return [...rooms].sort((a, b) =>
+    a.name
+      .trim()
+      .toLocaleLowerCase()
+      .localeCompare(b.name.trim().toLocaleLowerCase(), undefined, { numeric: true }),
+  );
+}
+
 type BoardElementType = "image" | "text" | "shape";
 
 type BoardElement = {
@@ -452,7 +461,7 @@ function ProjectDesignBoardsPage() {
   });
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", id],
-    queryFn: async () => (await db.listRooms(id)) ?? [],
+    queryFn: async () => sortRoomsAlphabetically((await db.listRooms(id)) ?? []),
   });
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
@@ -626,10 +635,7 @@ function ProjectDesignBoardsPage() {
     [category, products],
   );
   const sortedRooms = useMemo(
-    () =>
-      [...rooms].sort((a, b) =>
-        a.name.trim().toLocaleLowerCase().localeCompare(b.name.trim().toLocaleLowerCase()),
-      ),
+    () => sortRoomsAlphabetically(rooms),
     [rooms],
   );
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
