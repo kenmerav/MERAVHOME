@@ -2612,10 +2612,6 @@ function ProjectDesignBoardsPage() {
               </Link>
               <div className="eyebrow">Studio Design Boards</div>
               <h1 className="font-display text-4xl leading-tight">{activePage.title}</h1>
-              <p className="mt-2 max-w-2xl text-sm text-stone-600">
-                Build the board here so product links, labels, vendor info, pricing, and finish
-                details stay connected instead of being trapped inside a PDF.
-              </p>
               <div className="mt-3 text-xs uppercase tracking-[0.18em] text-stone-500">
                 {saveStatus === "loading" && "Loading shared board"}
                 {saveStatus === "ready" && "Shared board ready"}
