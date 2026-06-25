@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, ExternalLink, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, SUBCATEGORIES, type Product, type ProductCategory } from "@/lib/db";
@@ -22,17 +22,36 @@ import { normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 
 type SampleFilter = "All" | "Sample" | "No sample";
+type CatalogSearch = {
+  q?: string;
+  category?: ItemCategory;
+  vendor?: string;
+  sample?: SampleFilter;
+};
+
+const isItemCategory = (value: unknown): value is ItemCategory =>
+  typeof value === "string" && (ALL_CATEGORIES as readonly string[]).includes(value);
+
+const isSampleFilter = (value: unknown): value is SampleFilter =>
+  value === "Sample" || value === "No sample";
 
 export const Route = createFileRoute("/catalog")({
   head: () => ({ meta: [{ title: "Product Catalog — MERAV Studio" }] }),
+  validateSearch: (search: Record<string, unknown>): CatalogSearch => ({
+    q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+    category: isItemCategory(search.category) ? search.category : undefined,
+    vendor: typeof search.vendor === "string" && search.vendor.trim() ? search.vendor : undefined,
+    sample: isSampleFilter(search.sample) ? search.sample : undefined,
+  }),
   component: CatalogPage,
 });
 
 function CatalogPage() {
-  const [search, setSearch] = useState("");
-  const [cat, setCat] = useState<ItemCategory | "All">("All");
-  const [vendor, setVendor] = useState("All");
-  const [sampleFilter, setSampleFilter] = useState<SampleFilter>("All");
+  const routeSearch = Route.useSearch();
+  const [search, setSearch] = useState(routeSearch.q ?? "");
+  const [cat, setCat] = useState<ItemCategory | "All">(routeSearch.category ?? "All");
+  const [vendor, setVendor] = useState(routeSearch.vendor ?? "All");
+  const [sampleFilter, setSampleFilter] = useState<SampleFilter>(routeSearch.sample ?? "All");
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
     queryFn: async () => (await db.listCatalog(search)) ?? [],
@@ -52,6 +71,15 @@ function CatalogPage() {
     setVendor("All");
     setSampleFilter("All");
   };
+  const catalogSearch = useMemo(
+    () => ({
+      q: search.trim() || undefined,
+      category: cat === "All" ? undefined : cat,
+      vendor: vendor === "All" ? undefined : vendor,
+      sample: sampleFilter === "All" ? undefined : sampleFilter,
+    }),
+    [cat, sampleFilter, search, vendor],
+  );
 
   useEffect(() => {
     if (vendor !== "All" && !vendors.includes(vendor)) setVendor("All");
@@ -113,7 +141,7 @@ function CatalogPage() {
           <div className="border border-dashed border-border py-20 text-center text-sm text-muted-foreground">No products yet.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-            {filtered.map(p => <CatalogCard key={p.id} p={p} />)}
+            {filtered.map(p => <CatalogCard key={p.id} p={p} catalogSearch={catalogSearch} />)}
           </div>
         )}
       </div>
@@ -121,7 +149,7 @@ function CatalogPage() {
   );
 }
 
-function CatalogCard({ p }: { p: Product }) {
+function CatalogCard({ p, catalogSearch }: { p: Product; catalogSearch: CatalogSearch }) {
   const qc = useQueryClient();
   const displayCategory = productDisplayCategory(p);
   const showSampleBadge = sampleAppliesToCategory(displayCategory);
@@ -134,14 +162,14 @@ function CatalogCard({ p }: { p: Product }) {
   return (
     <div className="group">
       <div className="aspect-square bg-bone overflow-hidden mb-3 relative">
-        <Link to="/catalog/$productId" params={{ productId: p.id }} className="block w-full h-full" title={`Open ${p.name}`}>
+        <Link to="/catalog/$productId" params={{ productId: p.id }} search={catalogSearch} className="block w-full h-full" title={`Open ${p.name}`}>
           {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" /> : <div className="w-full h-full" />}
         </Link>
         <button onClick={remove} className="absolute top-2 right-2 bg-background/90 p-1.5 opacity-0 group-hover:opacity-100">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-      <Link to="/catalog/$productId" params={{ productId: p.id }} className="block hover:text-ink/70 transition-colors">
+      <Link to="/catalog/$productId" params={{ productId: p.id }} search={catalogSearch} className="block hover:text-ink/70 transition-colors">
         <div className="eyebrow mb-1">{displayCategory}{p.subcategory ? ` · ${p.subcategory}` : ""}</div>
         <h4 className="font-display text-lg leading-tight">{p.name}</h4>
         {p.vendor && <p className="text-xs text-muted-foreground mt-1">{p.vendor}</p>}

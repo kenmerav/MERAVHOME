@@ -21,8 +21,28 @@ import { supabase } from "@/integrations/supabase/client";
 import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
 
+type SampleFilter = "Sample" | "No sample";
+type ProductCatalogSearch = {
+  q?: string;
+  category?: ItemCategory;
+  vendor?: string;
+  sample?: SampleFilter;
+};
+
+const isItemCategory = (value: unknown): value is ItemCategory =>
+  typeof value === "string" && (ALL_CATEGORIES as readonly string[]).includes(value);
+
+const isSampleFilter = (value: unknown): value is SampleFilter =>
+  value === "Sample" || value === "No sample";
+
 export const Route = createFileRoute("/catalog_/$productId")({
   head: () => ({ meta: [{ title: "Product — MERAV Studio" }] }),
+  validateSearch: (search: Record<string, unknown>): ProductCatalogSearch => ({
+    q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+    category: isItemCategory(search.category) ? search.category : undefined,
+    vendor: typeof search.vendor === "string" && search.vendor.trim() ? search.vendor : undefined,
+    sample: isSampleFilter(search.sample) ? search.sample : undefined,
+  }),
   component: ProductPage,
 });
 
@@ -34,6 +54,7 @@ const PRODUCT_IMAGE_BUCKET = "product-images";
 
 function ProductPage() {
   const { productId } = Route.useParams();
+  const catalogSearch = Route.useSearch();
   const safeProductId = cleanUuid(productId);
   const qc = useQueryClient();
   const { data: product, isLoading } = useQuery({
@@ -111,7 +132,7 @@ function ProductPage() {
   return (
     <AppShell>
       <div className="page-pad max-w-[1400px]">
-        <Link to="/catalog" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
+        <Link to="/catalog" search={catalogSearch} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
           <ArrowLeft className="w-3.5 h-3.5" /> Product Catalog
         </Link>
 
