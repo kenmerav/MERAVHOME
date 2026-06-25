@@ -3472,14 +3472,14 @@ function ProjectDesignBoardsPage() {
                         {filteredProjectMaterials.length}
                       </div>
                     </div>
-                    <div className="max-h-[240px] space-y-3 overflow-y-auto pr-1">
+                    <div className="space-y-3">
                       {filteredProjectMaterials.slice(0, 60).map((item) => (
                         <MaterialTrayItem key={item.id} item={item} />
                       ))}
                     </div>
                   </div>
                 )}
-                <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
+                <div className="space-y-3">
                   {filteredProducts.slice(0, 80).map((product) => (
                     <ProductTrayItem key={product.id} product={product} />
                   ))}
