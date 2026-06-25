@@ -11,7 +11,7 @@ import {
   type ProductCategory,
   type Room,
 } from "@/lib/db";
-import { ALL_CATEGORIES, toProductCategory } from "@/lib/roomTemplates";
+import { ALL_CATEGORIES, normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
 import { clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,14 +35,14 @@ const KITCHEN_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Countertops + Tile", sources: ["Countertops", "Tile & Stone"] },
-  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware", "Hardware"] },
+  { label: "Cabinetry", sources: ["Cabinetry", "Cabinetry & Hardware", "Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
 ];
 const BATHROOM_SECTIONS: Section[] = [
   { label: "Tile + Stone", sources: ["Tile & Stone", "Countertops"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Lighting", sources: ["Lighting"] },
-  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware", "Hardware"] },
+  { label: "Cabinetry", sources: ["Cabinetry", "Cabinetry & Hardware", "Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
   { label: "Accessories", sources: ["Accessories"] },
 ];
@@ -59,7 +59,7 @@ const DEFAULT_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Tile + Stone", sources: ["Tile & Stone", "Countertops"] },
-  { label: "Cabinetry + Hardware", sources: ["Cabinetry & Hardware", "Hardware"] },
+  { label: "Cabinetry", sources: ["Cabinetry", "Cabinetry & Hardware", "Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
   { label: "Accessories", sources: ["Accessories"] },
 ];
@@ -247,7 +247,7 @@ export function SpecBookDocument({
                 ))
               : ALL_CATEGORIES.filter((c) =>
                   items.some(
-                    (it) => !it.not_needed && it.product_id && it.product && it.category === c,
+                    (it) => !it.not_needed && it.product_id && it.product && normalizeItemCategory(it.category) === c,
                   ),
                 ).map((c, i) => (
                   <TocRow
@@ -301,7 +301,7 @@ export function SpecBookDocument({
                     return list.map((it) => (
                       <tr key={it.id} className="border-b border-border/60 align-top">
                         <td className="py-3 pr-4 font-display">{room.name}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{it.category || "—"}</td>
+                        <td className="py-3 pr-4 text-muted-foreground">{normalizeItemCategory(it.category) ?? it.category ?? "—"}</td>
                         <td className="py-3 pr-4">
                           <div>{clientProductName(it, room)}</div>
                           {actualProductName(it, room) && (
@@ -343,7 +343,7 @@ export function SpecBookDocument({
                 (it) => !it.not_needed && it.product_id && it.product,
               );
               return ALL_CATEGORIES.map((cat) => {
-                const list = visibleItems.filter((it) => it.category === cat);
+                const list = visibleItems.filter((it) => normalizeItemCategory(it.category) === cat);
                 if (list.length === 0) return null;
                 return (
                   <CategorySpec
@@ -458,7 +458,7 @@ function RoomSpec({
     const used = new Set<string>();
     const out = sections
       .map((sec) => {
-        const list = items.filter((it) => it.category && sec.sources.includes(it.category));
+        const list = items.filter((it) => it.category && sec.sources.includes(normalizeItemCategory(it.category) ?? it.category));
         list.forEach((it) => used.add(it.id));
         return { label: sec.label, list };
       })
@@ -648,7 +648,7 @@ function SpecProductEditDialog({
   projectId: string;
 }) {
   const qc = useQueryClient();
-  const [materialCategory, setMaterialCategory] = useState(item.category || "Other");
+  const [materialCategory, setMaterialCategory] = useState(normalizeItemCategory(item.category) || "Other");
   const [form, setForm] = useState<ProductForm>({
     name: product.name,
     category: product.category,

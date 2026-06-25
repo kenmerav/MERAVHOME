@@ -50,6 +50,7 @@ import { buildClientProductName } from "@/lib/clientProductName";
 import {
   ALL_CATEGORIES,
   inferMaterialCategory,
+  normalizeItemCategory,
   toProductCategory,
   type ItemCategory,
 } from "@/lib/roomTemplates";
@@ -302,7 +303,7 @@ const BOARD_TEXT_COLOR_OPTIONS = [
 const NARROW_BOARD_CATALOG_CATEGORIES = new Set<ItemCategory>([
   "Accent Mirrors",
   "Accessories",
-  "Cabinetry & Hardware",
+  "Cabinetry",
   "Doors Base & Case",
   "Tile & Stone",
   "Wall Coverings",
@@ -354,10 +355,8 @@ function materialItemMatchesBoardCategory(item: MaterialItem, category: ItemCate
 }
 
 function normalizedMaterialItemCategory(item: MaterialItem): ItemCategory {
-  const itemCategory = item.category?.trim();
-  if (itemCategory && (ALL_CATEGORIES as readonly string[]).includes(itemCategory)) {
-    return itemCategory as ItemCategory;
-  }
+  const itemCategory = normalizeItemCategory(item.category);
+  if (itemCategory) return itemCategory;
   return inferredMaterialItemCategory(item);
 }
 
@@ -4543,9 +4542,9 @@ function SelectedPanel({
               Category
               <select
                 value={
-                  selected.materialCategory ||
+                  normalizeItemCategory(selected.materialCategory) ||
                   inferMaterialCategory(imageMaterialLabel(selected), selected.link) ||
-                  linkedProduct?.category ||
+                  normalizeItemCategory(linkedProduct?.category) ||
                   "Other"
                 }
                 onChange={(event) => onUpdate({ materialCategory: event.target.value })}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, SUBCATEGORIES, type MaterialItem, type Product, type Room } from "@/lib/db";
-import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
+import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -470,7 +470,7 @@ function RoomMaterialsSection({
                     </td>
                     <td className="py-2 pr-3">
                       <Select
-                        value={it.category ?? "Decor"}
+                        value={normalizeItemCategory(it.category) ?? "Other"}
                         onValueChange={(v) => update(it.id, { category: v })}
                       >
                         <SelectTrigger className="h-8 border-transparent hover:border-input focus:border-input bg-transparent text-xs">

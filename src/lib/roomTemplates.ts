@@ -24,7 +24,7 @@ export const ALL_CATEGORIES = [
   "Accent Mirrors",
   "Accessories",
   "Appliances",
-  "Cabinetry & Hardware",
+  "Cabinetry",
   "Countertops",
   "Doors Base & Case",
   "Flooring",
@@ -38,6 +38,14 @@ export const ALL_CATEGORIES = [
   "Wall Coverings",
 ] as const;
 export type ItemCategory = (typeof ALL_CATEGORIES)[number];
+
+export function normalizeItemCategory(value: string | null | undefined): ItemCategory | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed === "Cabinetry & Hardware") return "Cabinetry";
+  if ((ALL_CATEGORIES as readonly string[]).includes(trimmed)) return trimmed as ItemCategory;
+  return null;
+}
 
 type ProductCategoryShape = {
   category?: ProductCategory | string | null;
@@ -70,9 +78,8 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
 export function productDisplayCategory(product: ProductCategoryShape): ItemCategory {
   if (product.category === "Tile") return "Tile & Stone";
   if (product.category === "Countertops") return "Countertops";
-  if (product.category && (ALL_CATEGORIES as readonly string[]).includes(product.category)) {
-    return product.category as ItemCategory;
-  }
+  const normalizedCategory = normalizeItemCategory(product.category);
+  if (normalizedCategory) return normalizedCategory;
 
   const inferred = inferMaterialCategory(
     `${product.name ?? ""} ${product.subcategory ?? ""}`,
@@ -138,7 +145,7 @@ export function inferMaterialCategory(label: string | null | undefined, productU
   if (
     /\b(cabinet|cabinetry|hardware|knob|knobs|pull|pulls|latch|latches|appliance pull|cabinet finish|cabinet color|cabinet paint)\b/.test(text)
   ) {
-    return "Cabinetry & Hardware";
+    return "Cabinetry";
   }
 
   if (/\b(faucet|shower|toilet|plumbing|pot filler|drain|valve|trim kit|hand shower)\b/.test(text)) {
@@ -185,8 +192,8 @@ const KITCHEN: ItemTemplate[] = [
   { label: "Sink", category: "Plumbing" },
   { label: "Tile", category: "Tile & Stone" },
   { label: "Countertop", category: "Countertops" },
-  { label: "Cabinet Finish", category: "Cabinetry & Hardware" },
-  { label: "Cabinet Hardware", category: "Cabinetry & Hardware" },
+  { label: "Cabinet Finish", category: "Cabinetry" },
+  { label: "Cabinet Hardware", category: "Cabinetry" },
   { label: "Flooring", category: "Flooring" },
   { label: "Paint", category: "Paint" },
 ];
@@ -224,8 +231,8 @@ const BATHROOM: ItemTemplate[] = [
   { label: "Sconce", category: "Lighting" },
   { label: "Lighting", category: "Lighting" },
   { label: "Accent Mirrors", category: "Accessories" },
-  { label: "Cabinetry Finish", category: "Cabinetry & Hardware" },
-  { label: "Cabinet Hardware", category: "Cabinetry & Hardware" },
+  { label: "Cabinetry Finish", category: "Cabinetry" },
+  { label: "Cabinet Hardware", category: "Cabinetry" },
   { label: "Flooring", category: "Flooring" },
   { label: "Paint", category: "Paint" },
   { label: "Towel Hook", category: "Hardware" },

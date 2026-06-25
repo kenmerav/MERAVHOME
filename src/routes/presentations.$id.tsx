@@ -1841,7 +1841,7 @@ function SpreadSidebar({
           )}
         </Card>
         {(editing || hasCabinetry) && (
-          <Card label="Cabinetry & Hardware">
+          <Card label="Cabinetry">
             <Detail
               product={data.cabinetProduct?.product}
               fallbackImage={data.cabinetMaterial?.product?.image_url}
