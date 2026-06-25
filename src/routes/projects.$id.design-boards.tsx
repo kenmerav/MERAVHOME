@@ -2695,18 +2695,11 @@ function ProjectDesignBoardsPage() {
                       </option>
                     ))}
                   </select>
-                  <input
-                    aria-label="Text font size"
-                    type="number"
-                    min={8}
-                    max={220}
+                  <DraftFontSizeInput
+                    ariaLabel="Text font size"
                     value={selected.fontSize ?? 24}
-                    onChange={(event) =>
-                      updateElement(selected.id, {
-                        fontSize: clampNumber(Number(event.target.value) || 24, 8, 220),
-                      })
-                    }
                     className="w-16 border-l border-stone-200 pl-2 text-sm outline-none"
+                    onCommit={(fontSize) => updateElement(selected.id, { fontSize })}
                   />
                   <label className="flex items-center gap-2 border-l border-stone-200 pl-2 text-xs uppercase tracking-[0.16em] text-stone-500">
                     Color
@@ -4272,15 +4265,11 @@ function SelectedPanel({
           </label>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
             Font size
-            <input
-              type="number"
-              min={8}
-              max={220}
+            <DraftFontSizeInput
+              ariaLabel="Text font size"
               value={selected.fontSize ?? 24}
-              onChange={(event) =>
-                onUpdate({ fontSize: clampNumber(Number(event.target.value) || 24, 8, 220) })
-              }
               className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+              onCommit={(fontSize) => onUpdate({ fontSize })}
             />
           </label>
           <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
@@ -4777,6 +4766,67 @@ function ToolbarButton({
     >
       {children}
     </button>
+  );
+}
+
+function DraftFontSizeInput({
+  value,
+  onCommit,
+  className,
+  ariaLabel,
+}: {
+  value: number;
+  onCommit: (value: number) => void;
+  className?: string;
+  ariaLabel: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commitDraft = useCallback(() => {
+    const nextValue = draft.trim();
+    if (!nextValue) {
+      setDraft(String(value));
+      return;
+    }
+
+    const parsed = Number(nextValue);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+
+    const fontSize = clampNumber(Math.round(parsed), 8, 220);
+    setDraft(String(fontSize));
+    if (fontSize !== value) onCommit(fontSize);
+  }, [draft, onCommit, value]);
+
+  return (
+    <input
+      aria-label={ariaLabel}
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setDraft(nextValue);
+
+        const parsed = Number(nextValue);
+        if (nextValue.trim() && Number.isFinite(parsed) && parsed >= 8 && parsed <= 220) {
+          onCommit(Math.round(parsed));
+        }
+      }}
+      onBlur={commitDraft}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      }}
+      className={className}
+    />
   );
 }
 
