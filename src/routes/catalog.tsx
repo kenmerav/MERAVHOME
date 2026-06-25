@@ -172,6 +172,7 @@ function CatalogCard({ p, catalogSearch }: { p: Product; catalogSearch: CatalogS
       <Link to="/catalog/$productId" params={{ productId: p.id }} search={catalogSearch} className="block hover:text-ink/70 transition-colors">
         <div className="eyebrow mb-1">{displayCategory}{p.subcategory ? ` · ${p.subcategory}` : ""}</div>
         <h4 className="font-display text-lg leading-tight">{p.name}</h4>
+        <p className="text-[11px] text-muted-foreground mt-1">Product name: {p.name}</p>
         {p.vendor && <p className="text-xs text-muted-foreground mt-1">{p.vendor}</p>}
         {p.finish && <p className="text-xs text-muted-foreground">{p.finish}</p>}
         {showSampleBadge && (

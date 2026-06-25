@@ -1359,7 +1359,10 @@ function ProjectDesignBoardsPage() {
       toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
     const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
-    const productImageUrl = element.src || null;
+    // Use the exact image currently visible on the board. If a user restores the
+    // original before sending to materials, the catalog should follow that choice
+    // instead of keeping an older background-removed cutout.
+    const productImageUrl = element.src || element.backgroundRemovedUrl || null;
     const quantity =
       quantityOverride && quantityOverride > 0
         ? quantityOverride
