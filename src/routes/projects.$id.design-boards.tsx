@@ -572,6 +572,18 @@ function ProjectDesignBoardsPage() {
   );
   const selected =
     elements.find((element) => element.id === selectedId) ?? selectedElements[0] ?? null;
+  const selectedImageElements = useMemo(
+    () => selectedElements.filter((element) => element.type === "image"),
+    [selectedElements],
+  );
+  const selectedImageTargets = selectedImageElements.length
+    ? selectedImageElements
+    : selected?.type === "image"
+      ? [selected]
+      : [];
+  const selectedImagesMarkedNoMaterialInfo =
+    selectedImageTargets.length > 0 &&
+    selectedImageTargets.every((element) => element.materialInfoNotNeeded);
   const commentTarget = selected
     ? {
         targetType: "element" as const,
@@ -2109,6 +2121,25 @@ function ProjectDesignBoardsPage() {
     updateElement(selected.id, { rotation: nextRotation });
   };
 
+  const toggleSelectedMaterialInfoRequirement = () => {
+    if (!selectedImageTargets.length) return;
+    const targetIds = new Set(selectedImageTargets.map((element) => element.id));
+    const nextValue = !selectedImagesMarkedNoMaterialInfo;
+    pushUndo();
+    setElements((current) =>
+      current.map((element) =>
+        targetIds.has(element.id)
+          ? { ...element, materialInfoNotNeeded: nextValue }
+          : element,
+      ),
+    );
+    toast.success(
+      nextValue
+        ? `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} marked as not needing material info.`
+        : `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} now require material info.`,
+    );
+  };
+
   const removeSelected = useCallback(() => {
     const idsToRemove = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
     if (!idsToRemove.length) return;
@@ -2861,6 +2892,13 @@ function ProjectDesignBoardsPage() {
               </ToolbarButton>
               <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={toggleSelectedMaterialInfoRequirement}
+                disabled={!selectedImageTargets.length}
+                title="Mark selected image items as not needing label/link for materials"
+              >
+                {selectedImagesMarkedNoMaterialInfo ? "Require Label / Link" : "No Label / Link Needed"}
               </ToolbarButton>
               <ToolbarButton
                 onClick={() => {
