@@ -110,6 +110,27 @@ const DEFAULT_PRESENTATION_SECTION_LABELS = {
   faucet: "Faucet",
 } as const;
 
+function hasMeaningfulMaterialInput(material: MaterialItem) {
+  const product = material.product;
+  const hasProductDetails = [
+    product?.image_url,
+    product?.name,
+    product?.vendor,
+    product?.sku,
+    product?.finish,
+    product?.dimensions,
+  ].some((value) => typeof value === "string" && value.trim().length > 0);
+  const hasProductPrice =
+    typeof product?.price === "number" ||
+    typeof product?.unit_cost === "number" ||
+    typeof product?.shipping === "number";
+  const hasMaterialDetails = [material.product_url, material.color, material.notes].some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+
+  return material.not_needed !== true && Boolean(material.product_id || hasProductDetails || hasProductPrice || hasMaterialDetails);
+}
+
 function buildRoomData(
   room: any,
   images: any[],
@@ -149,11 +170,12 @@ function buildRoomData(
   const pickProduct = (cat: string) =>
     key.find((s) => s.product?.category === cat) ||
     selections.find((s) => s.product?.category === cat);
+  const presentationMaterials = materials.filter(hasMeaningfulMaterialInput);
   const pickMaterialItem = (...labels: string[]) => {
     const wanted = labels.map((label) => label.toLowerCase());
     return (
-      materials.find((m) => wanted.includes(m.item_label.toLowerCase())) ||
-      materials.find((m) => wanted.some((label) => m.category?.toLowerCase().includes(label)))
+      presentationMaterials.find((m) => wanted.includes(m.item_label.toLowerCase())) ||
+      presentationMaterials.find((m) => wanted.some((label) => m.category?.toLowerCase().includes(label)))
     );
   };
   const materialById = new Map(materials.map((m) => [m.id, m]));
@@ -161,20 +183,21 @@ function buildRoomData(
   const paletteMaterials = room.presentation_palette_item_ids?.length
     ? (room.presentation_palette_item_ids
         .map((id: string) => materialById.get(id))
+        .filter((material): material is MaterialItem => Boolean(material && hasMeaningfulMaterialInput(material)))
         .filter(Boolean)
         .slice(0, 4) as MaterialItem[])
-    : materials.slice(0, 4);
+    : presentationMaterials.slice(0, 4);
 
   return {
     views,
     renderingOptions: approvedRenders,
     sketchupOptions: sketchups,
-    materials,
+    materials: presentationMaterials,
     paletteMaterials,
     cabinetProduct: pickProduct("Hardware"),
     cabinetMaterial:
       pickById(room.presentation_cabinet_item_id) ||
-      pickMaterialItem("Cabinet Finish", "Cabinet Hardware") ||
+      pickMaterialItem("Cabinet Finish", "Cabinet Hardware", "Cabinetry") ||
       null,
     counter:
       pickById(room.presentation_counter_item_id) ||
