@@ -95,6 +95,10 @@ export interface Room {
   design_concept: string | null;
   design_notes: string | null;
   presentation_palette_item_ids: string[] | null;
+  presentation_palette_label: string | null;
+  presentation_cabinet_label: string | null;
+  presentation_counter_label: string | null;
+  presentation_faucet_label: string | null;
   presentation_overlay_label: string | null;
   presentation_overlay_body: string | null;
   presentation_rendering_image_id: string | null;

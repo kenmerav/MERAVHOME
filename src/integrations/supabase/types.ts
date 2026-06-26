@@ -684,11 +684,15 @@ export type Database = {
           design_notes: string | null
           id: string
           name: string
+          presentation_cabinet_label: string | null
           presentation_cabinet_item_id: string | null
+          presentation_counter_label: string | null
           presentation_counter_item_id: string | null
+          presentation_faucet_label: string | null
           presentation_faucet_item_id: string | null
           presentation_overlay_body: string | null
           presentation_overlay_label: string | null
+          presentation_palette_label: string | null
           presentation_palette_item_ids: string[] | null
           project_id: string
           sort_order: number
@@ -701,11 +705,15 @@ export type Database = {
           design_notes?: string | null
           id?: string
           name: string
+          presentation_cabinet_label?: string | null
           presentation_cabinet_item_id?: string | null
+          presentation_counter_label?: string | null
           presentation_counter_item_id?: string | null
+          presentation_faucet_label?: string | null
           presentation_faucet_item_id?: string | null
           presentation_overlay_body?: string | null
           presentation_overlay_label?: string | null
+          presentation_palette_label?: string | null
           presentation_palette_item_ids?: string[] | null
           project_id: string
           sort_order?: number
@@ -718,11 +726,15 @@ export type Database = {
           design_notes?: string | null
           id?: string
           name?: string
+          presentation_cabinet_label?: string | null
           presentation_cabinet_item_id?: string | null
+          presentation_counter_label?: string | null
           presentation_counter_item_id?: string | null
+          presentation_faucet_label?: string | null
           presentation_faucet_item_id?: string | null
           presentation_overlay_body?: string | null
           presentation_overlay_label?: string | null
+          presentation_palette_label?: string | null
           presentation_palette_item_ids?: string[] | null
           project_id?: string
           sort_order?: number

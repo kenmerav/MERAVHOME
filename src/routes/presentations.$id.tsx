@@ -103,6 +103,12 @@ const DESIGN_BOARD_PRESENTATION_HEIGHT = 900;
 const DEFAULT_OVERLAY_LABEL = "Photoreal Visualization";
 const DEFAULT_OVERLAY_BODY =
   "A true-to-life preview of your space, designed to give you confidence in every material, finish, and detail.";
+const DEFAULT_PRESENTATION_SECTION_LABELS = {
+  palette: "Material Palette",
+  cabinet: "Cabinetry",
+  counter: "Countertop",
+  faucet: "Faucet",
+} as const;
 
 function buildRoomData(
   room: any,
@@ -1733,6 +1739,7 @@ function RoomSpread({
         </div>
         <SpreadSidebar
           data={data}
+          room={room}
           view={view}
           showSketch={showSketchInCard}
           onPick={onPick}
@@ -1746,12 +1753,14 @@ function RoomSpread({
 
 function SpreadSidebar({
   data,
+  room,
   view,
   showSketch = true,
   onPick,
   onUpdateViewSketch,
 }: {
   data: RoomData;
+  room: any;
   view: RoomData["views"][number];
   showSketch?: boolean;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
@@ -1808,7 +1817,16 @@ function SpreadSidebar({
       )}
 
       <div className="grid grid-cols-2 gap-6 print:gap-3">
-        <Card label="Material Palette">
+        <Card
+          label={
+            <EditableSectionLabel
+              value={room.presentation_palette_label}
+              fallback={DEFAULT_PRESENTATION_SECTION_LABELS.palette}
+              editing={editing}
+              onChange={(value) => onPick?.({ presentation_palette_label: value })}
+            />
+          }
+        >
           <div className="grid grid-cols-2 gap-1.5">
             {paletteItems.map((m) => (
               <div key={m.id} className="aspect-square bg-bone overflow-hidden">
@@ -1841,7 +1859,16 @@ function SpreadSidebar({
           )}
         </Card>
         {(editing || hasCabinetry) && (
-          <Card label="Cabinetry">
+          <Card
+            label={
+              <EditableSectionLabel
+                value={room.presentation_cabinet_label}
+                fallback={DEFAULT_PRESENTATION_SECTION_LABELS.cabinet}
+                editing={editing}
+                onChange={(value) => onPick?.({ presentation_cabinet_label: value })}
+              />
+            }
+          >
             <Detail
               product={data.cabinetProduct?.product}
               fallbackImage={data.cabinetMaterial?.product?.image_url}
@@ -1866,7 +1893,16 @@ function SpreadSidebar({
       {(editing || hasCounter || hasFaucet) && (
         <div className="grid grid-cols-2 gap-6 print:gap-3">
           {(editing || hasCounter) && (
-            <Card label="Countertop">
+            <Card
+              label={
+                <EditableSectionLabel
+                  value={room.presentation_counter_label}
+                  fallback={DEFAULT_PRESENTATION_SECTION_LABELS.counter}
+                  editing={editing}
+                  onChange={(value) => onPick?.({ presentation_counter_label: value })}
+                />
+              }
+            >
               <div className="flex gap-3">
                 <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
                   {data.counter?.product?.image_url && (
@@ -1906,7 +1942,16 @@ function SpreadSidebar({
             </Card>
           )}
           {(editing || hasFaucet) && (
-            <Card label="Faucet">
+            <Card
+              label={
+                <EditableSectionLabel
+                  value={room.presentation_faucet_label}
+                  fallback={DEFAULT_PRESENTATION_SECTION_LABELS.faucet}
+                  editing={editing}
+                  onChange={(value) => onPick?.({ presentation_faucet_label: value })}
+                />
+              }
+            >
               <Detail
                 product={data.faucet?.product}
                 fallbackImage={data.faucet?.product?.image_url}
@@ -1989,7 +2034,34 @@ function PresentationPickSelect({
   );
 }
 
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function EditableSectionLabel({
+  value,
+  fallback,
+  editing,
+  onChange,
+}: {
+  value?: string | null;
+  fallback: string;
+  editing: boolean;
+  onChange: (value: string | null) => void;
+}) {
+  const label = value?.trim() || fallback;
+  if (!editing) return <>{label}</>;
+  return (
+    <input
+      key={`${fallback}-${value ?? ""}`}
+      defaultValue={label}
+      onBlur={(event) => onChange(event.target.value.trim() || null)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+      className="w-full border border-border bg-background px-2 py-1 text-[10px] uppercase tracking-[0.28em] text-muted-foreground"
+      aria-label={`${fallback} section label`}
+    />
+  );
+}
+
+function Card({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="border border-border p-4 lg:p-5 print:p-3 bg-background">
       <div className="eyebrow text-[10px] mb-3">{label}</div>
