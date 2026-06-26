@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, SUBCATEGORIES, type MaterialItem, type Product, type Room } from "@/lib/db";
+import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,22 @@ type ScrapedRow = {
     error?: string;
   };
 };
+
+function productCategoryPatchForMaterialCategory(category: string): Partial<Product> {
+  const normalized = normalizeItemCategory(category) ?? "Other";
+  const productCategory = toProductCategory(normalized);
+  const patch: Partial<Product> = { category: productCategory };
+
+  // Product Catalog has a stricter category enum, so keep the studio-specific
+  // category on subcategory when the enum has to collapse it to Decor/Hardware.
+  if (productCategory === "Decor" || productCategory === "Hardware") {
+    patch.subcategory = normalized;
+  } else if (normalized === "Tile & Stone") {
+    patch.subcategory = "Tile";
+  }
+
+  return patch;
+}
 
 function MaterialsPage() {
   const { id } = Route.useParams();
@@ -294,11 +310,7 @@ function RoomMaterialsSection({
       currentItem?.product_id &&
       isUuid(currentItem.product_id)
     ) {
-      const productCategory = toProductCategory(patch.category);
-      await db.updateProduct(currentItem.product_id, {
-        category: productCategory,
-        subcategory: SUBCATEGORIES[productCategory]?.[0] ?? null,
-      });
+      await db.updateProduct(currentItem.product_id, productCategoryPatchForMaterialCategory(patch.category));
       qc.invalidateQueries({ queryKey: ["catalog"] });
       qc.invalidateQueries({ queryKey: ["product", currentItem.product_id] });
     }

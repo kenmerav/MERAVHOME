@@ -114,8 +114,34 @@ function normalizeCategoryText(value: string) {
 export function inferMaterialCategory(label: string | null | undefined, productUrl?: string | null): ItemCategory {
   const text = normalizeCategoryText(`${label ?? ""} ${productUrl ?? ""}`);
 
-  if (/\b(sink|sinks|basin|lavatory|undermount sink|farmhouse sink|tub|tubs|bathtub|freestanding tub|soaking tub)\b/.test(text)) {
+  if (/\b(wallpaper|wall paper|wallcovering|wall covering|wall coverings|grasscloth|grass cloth)\b/.test(text)) {
+    return "Wall Coverings";
+  }
+
+  if (/\b(mirror|mirrors|medicine cabinet)\b/.test(text)) {
+    return "Accent Mirrors";
+  }
+
+  if (/\b(tile|tiles|zellige|backsplash|mosaic|stone tile|floor tile|wall tile)\b/.test(text)) {
+    return "Tile & Stone";
+  }
+
+  if (/\b(cabinetry finish|cabinet finish|cabinet finishes|cabinet color|cabinet paint)\b/.test(text)) {
+    return "Cabinetry";
+  }
+
+  if (
+    /\b(cabinet knob|cabinet knobs|cabinet pull|cabinet pulls|knob|knobs|pull|pulls|latch|latches|appliance pull|robe hook|coat hook|towel hook|hook|hooks|toilet paper holder|paper holder|tp holder|hand towel holder|towel holder|towel ring|towel bar)\b/.test(text)
+  ) {
+    return "Hardware";
+  }
+
+  if (/\b(sink|sinks|basin|lavatory|undermount sink|farmhouse sink|shower system|shower drain|tub|tubs|bathtub|freestanding tub|soaking tub|faucet|faucets|tub filler|pot filler|shower|toilet|plumbing|drain|valve|trim kit|hand shower)\b/.test(text)) {
     return "Plumbing";
+  }
+
+  if (/\b(ceiling fan|sconce|sconces|pendant|pendants|lamp|light|lighting|chandelier|lantern|flush mount|semi flush)\b/.test(text)) {
+    return "Lighting";
   }
 
   if (
@@ -124,44 +150,16 @@ export function inferMaterialCategory(label: string | null | undefined, productU
     return "Appliances";
   }
 
-  if (/\b(wallpaper|wall paper|wallcovering|wall covering|grasscloth|grass cloth)\b/.test(text)) {
-    return "Wall Coverings";
-  }
-
-  if (
-    /\b(robe hook|coat hook|towel hook|hook|hooks|toilet paper holder|paper holder|tp holder|hand towel holder|towel ring|towel bar)\b/.test(text)
-  ) {
-    return "Hardware";
-  }
-
   if (/\b(door|doors|baseboard|base board|casing|case moulding|case molding|trim|moulding|molding|door stop|door hardware|hinge|hinges)\b/.test(text)) {
     return "Doors Base & Case";
   }
 
-  if (/\b(mirror|mirrors|medicine cabinet)\b/.test(text)) {
-    return "Accent Mirrors";
-  }
-
-  if (
-    /\b(cabinet|cabinetry|hardware|knob|knobs|pull|pulls|latch|latches|appliance pull|cabinet finish|cabinet color|cabinet paint)\b/.test(text)
-  ) {
+  if (/\b(cabinet|cabinetry|hardware)\b/.test(text)) {
     return "Cabinetry";
-  }
-
-  if (/\b(faucet|shower|toilet|plumbing|pot filler|drain|valve|trim kit|hand shower)\b/.test(text)) {
-    return "Plumbing";
   }
 
   if (/\b(countertop|countertops|counter top|counter tops|slab|marble|quartz|quartzite|granite|soapstone|stone counter)\b/.test(text)) {
     return "Countertops";
-  }
-
-  if (/\b(tile|zellige|backsplash|mosaic|stone tile|floor tile|wall tile)\b/.test(text)) {
-    return "Tile & Stone";
-  }
-
-  if (/\b(pendant|sconce|lamp|light|lighting|chandelier|lantern|flush mount|semi flush)\b/.test(text)) {
-    return "Lighting";
   }
 
   if (/\b(paint|limewash|lime wash|wall paint|ceiling paint|trim paint|cabinet paint|stain)\b/.test(text)) {
