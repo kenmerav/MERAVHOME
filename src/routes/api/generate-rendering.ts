@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { waitUntil } from "@vercel/functions";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { uploadRoomImageFromDataUrl } from "@/lib/roomImageStorage.server";
 
@@ -225,7 +226,9 @@ async function generateRenderingImage({
 
 async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPayload, "roomId" | "sketchupId" | "sketchupUrl">> & EnqueueRenderingPayload & { placeholderId: string; origin: string }) {
   const { placeholderId, origin, roomId, sketchupCaption, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = payload;
+  const startedAt = Date.now();
   try {
+    console.info(`[rendering:${placeholderId}] started`);
     const { data: currentPlaceholder } = await supabaseAdmin
       .from("room_images")
       .select("id, status")
@@ -276,8 +279,10 @@ async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPay
         error_message: null,
       })
       .eq("id", placeholderId);
+    console.info(`[rendering:${placeholderId}] completed in ${Date.now() - startedAt}ms`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";
+    console.error(`[rendering:${placeholderId}] failed after ${Date.now() - startedAt}ms`, error);
     const { data: latestPlaceholder } = await supabaseAdmin
       .from("room_images")
       .select("id")
@@ -347,17 +352,19 @@ export const Route = createFileRoute("/api/generate-rendering")({
               return Response.json({ error: error?.message || "Could not create rendering job." }, { status: 500 });
             }
 
-            void processQueuedRendering({
-              placeholderId: placeholder.id,
-              origin,
-              roomId,
-              sketchupId,
-              sketchupCaption,
-              sketchupUrl,
-              referenceImageUrl,
-              referenceImageUrls,
-              extraContext,
-            });
+            waitUntil(
+              processQueuedRendering({
+                placeholderId: placeholder.id,
+                origin,
+                roomId,
+                sketchupId,
+                sketchupCaption,
+                sketchupUrl,
+                referenceImageUrl,
+                referenceImageUrls,
+                extraContext,
+              }),
+            );
 
             return Response.json({ queued: true, placeholder });
           }
