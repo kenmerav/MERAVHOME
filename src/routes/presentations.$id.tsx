@@ -1155,7 +1155,7 @@ function RoomSlide({
           )}
         </div>
       </div>
-      <SpreadSidebar data={data} view={view} />
+      <SpreadSidebar data={data} room={room} view={view} />
       <PresentationFooter />
     </div>
   );
@@ -1760,7 +1760,7 @@ function SpreadSidebar({
   onUpdateViewSketch,
 }: {
   data: RoomData;
-  room: any;
+  room?: any;
   view: RoomData["views"][number];
   showSketch?: boolean;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
@@ -1820,7 +1820,7 @@ function SpreadSidebar({
         <Card
           label={
             <EditableSectionLabel
-              value={room.presentation_palette_label}
+              value={room?.presentation_palette_label}
               fallback={DEFAULT_PRESENTATION_SECTION_LABELS.palette}
               editing={editing}
               onChange={(value) => onPick?.({ presentation_palette_label: value })}
@@ -1862,7 +1862,7 @@ function SpreadSidebar({
           <Card
             label={
               <EditableSectionLabel
-                value={room.presentation_cabinet_label}
+                value={room?.presentation_cabinet_label}
                 fallback={DEFAULT_PRESENTATION_SECTION_LABELS.cabinet}
                 editing={editing}
                 onChange={(value) => onPick?.({ presentation_cabinet_label: value })}
@@ -1896,7 +1896,7 @@ function SpreadSidebar({
             <Card
               label={
                 <EditableSectionLabel
-                  value={room.presentation_counter_label}
+                  value={room?.presentation_counter_label}
                   fallback={DEFAULT_PRESENTATION_SECTION_LABELS.counter}
                   editing={editing}
                   onChange={(value) => onPick?.({ presentation_counter_label: value })}
@@ -1945,7 +1945,7 @@ function SpreadSidebar({
             <Card
               label={
                 <EditableSectionLabel
-                  value={room.presentation_faucet_label}
+                  value={room?.presentation_faucet_label}
                   fallback={DEFAULT_PRESENTATION_SECTION_LABELS.faucet}
                   editing={editing}
                   onChange={(value) => onPick?.({ presentation_faucet_label: value })}
