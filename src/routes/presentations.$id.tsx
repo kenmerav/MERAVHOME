@@ -1870,7 +1870,7 @@ function SpreadSidebar({
             }
           >
             <Detail
-              product={data.cabinetProduct?.product}
+              product={data.cabinetMaterial ? undefined : data.cabinetProduct?.product}
               fallbackImage={data.cabinetMaterial?.product?.image_url}
               fallbackName={
                 data.cabinetMaterial
