@@ -129,6 +129,7 @@ export interface RoomImage {
   revision_parent_id: string | null;
   revision_number: number;
   error_message: string | null;
+  created_at?: string;
 }
 
 export interface Product {

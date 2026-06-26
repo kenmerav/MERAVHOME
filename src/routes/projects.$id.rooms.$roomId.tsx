@@ -19,6 +19,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { normalizeMoneyInput } from "@/lib/money";
 import { compressImageSource, fileToCompressedDataUrl } from "@/lib/imagePayload";
+import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 
 async function scrapeProductUrl(url: string) {
@@ -76,7 +77,7 @@ function RoomPage() {
   const { data: room } = useQuery({ queryKey: ["room", roomId], queryFn: () => db.getRoom(roomId) });
   const { data: images = [] } = useQuery({
     queryKey: ["roomImages", roomId],
-    queryFn: async () => (await db.listRoomImages(roomId)) ?? [],
+    queryFn: async () => resolveStaleRenderingJobs((await db.listRoomImages(roomId)) ?? []),
     refetchInterval: 4000,
   });
   const { data: selections = [] } = useQuery({ queryKey: ["roomProducts", roomId], queryFn: async () => (await db.listRoomProducts(roomId)) ?? [] });

@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { resolveImage } from "@/lib/local-assets";
 import { compressImageSource, fileToCompressedDataUrl } from "@/lib/imagePayload";
+import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 
 async function persistRoomImageUrl(roomId: string, kind: "sketchup" | "rendering", value: string, fileName?: string) {
@@ -40,7 +41,7 @@ function ProjectRenderingsPage() {
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
   const { data: allImages = [] } = useQuery({
     queryKey: ["projectRoomImages", id],
-    queryFn: async () => (await db.listProjectRoomImages(id)) ?? [],
+    queryFn: async () => resolveStaleRenderingJobs((await db.listProjectRoomImages(id)) ?? []),
     refetchInterval: 4000,
   });
 
