@@ -15,6 +15,10 @@ export const Route = createFileRoute("/projects/")({
 
 function ProjectsListPage() {
   const [filter, setFilter] = useState<"active" | "archive">("active");
+  const { data: profile, isLoading: profileLoading } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
+  });
   const {
     data: projects = [],
     isLoading,
@@ -26,6 +30,7 @@ function ProjectsListPage() {
   const activeProjects = projects.filter((p) => p.status !== "Complete");
   const archivedProjects = projects.filter((p) => p.status === "Complete");
   const visibleProjects = filter === "archive" ? archivedProjects : activeProjects;
+  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
 
   return (
     <AppShell>
@@ -35,7 +40,7 @@ function ProjectsListPage() {
             <div className="eyebrow mb-3">Index</div>
             <h1 className="editorial-hero text-5xl lg:text-6xl">Projects</h1>
           </div>
-          <NewProjectDialog />
+          {!profileLoading && !isSharedUser && <NewProjectDialog />}
         </div>
 
         <div className="flex flex-wrap gap-2 mb-8">

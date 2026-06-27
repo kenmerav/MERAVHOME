@@ -22,6 +22,7 @@ import {
   Truck,
   Palette,
   ShieldCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -65,7 +66,12 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canManageStudio, canViewFinancials, canViewProcurement } from "@/lib/permissions";
+import {
+  canManageStudio,
+  canViewFinancials,
+  canViewProcurement,
+  canViewProjectSurface,
+} from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { templateForRoomName } from "@/lib/roomTemplates";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
@@ -131,7 +137,7 @@ function ProjectDetailPage() {
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
   });
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["currentProfile"],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -141,7 +147,7 @@ function ProjectDetailPage() {
     },
   });
 
-  if (!project) {
+  if (!project || profileLoading) {
     return (
       <AppShell>
         <div className="p-16 text-muted-foreground">Loading…</div>
@@ -150,6 +156,7 @@ function ProjectDetailPage() {
   }
 
   const isClientUser = profile?.role === "Client";
+  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
   const designBoardPages = normalizeRoomCoverBoardPages(designBoard?.board_state);
 
   const setStatus = async (s: ProjectStatus) => {
@@ -179,7 +186,7 @@ function ProjectDetailPage() {
         <div className="flex items-start lg:items-end justify-between mb-12 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">{project.client_name}</div>
-            {isClientUser ? (
+            {isSharedUser ? (
               <h1 className="editorial-hero text-5xl lg:text-7xl">{project.name}</h1>
             ) : (
               <EditableProjectName
@@ -192,7 +199,7 @@ function ProjectDetailPage() {
               />
             )}
           </div>
-          {!isClientUser && (
+          {!isSharedUser && (
             <div className="flex w-full lg:w-auto flex-wrap items-center gap-3">
               <Select value={project.status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
                 <SelectTrigger className="w-44">
@@ -336,60 +343,149 @@ function ProjectDetailPage() {
           </section>
         )}
 
-        <div className="mt-8 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-          <div>
-            <div className="eyebrow mb-2">Rooms</div>
-            <h2 className="font-display text-3xl">Project rooms</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Every selection, rendering, presentation, and spec is tied to a room.
-            </p>
-          </div>
-          {!isClientUser && <AddRoomDialog projectId={id} />}
-        </div>
-
-        {rooms.length === 0 ? (
-          <div className="border border-dashed border-border py-20 text-center">
-            <DoorOpen className="w-6 h-6 mx-auto text-muted-foreground mb-3" />
-            <p className="font-display text-2xl">Start by adding the first room</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              e.g. Kitchen, Pantry, Powder Bath, Primary Bath…
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rooms.map((r) => (
-              <RoomCard
-                key={r.id}
-                room={r}
-                projectId={id}
-                canDelete={!isClientUser}
-                boardPages={designBoardPages}
-              />
-            ))}
-          </div>
+        {isSharedUser && (
+          <SharedProjectPortal project={project} projectId={id} profile={profile} />
         )}
 
-        {/* Project-level concept */}
-        <div className="mt-20 pt-12 border-t border-border grid md:grid-cols-2 lg:grid-cols-4 gap-12">
-          <div>
-            <div className="eyebrow mb-2">Client</div>
-            <p className="font-display text-2xl">{project.client_name}</p>
+        {!isSharedUser && (
+          <>
+            <div className="mt-8 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+              <div>
+                <div className="eyebrow mb-2">Rooms</div>
+                <h2 className="font-display text-3xl">Project rooms</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Every selection, rendering, presentation, and spec is tied to a room.
+                </p>
+              </div>
+              <AddRoomDialog projectId={id} />
+            </div>
+
+            {rooms.length === 0 ? (
+              <div className="border border-dashed border-border py-20 text-center">
+                <DoorOpen className="w-6 h-6 mx-auto text-muted-foreground mb-3" />
+                <p className="font-display text-2xl">Start by adding the first room</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  e.g. Kitchen, Pantry, Powder Bath, Primary Bath…
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {rooms.map((r) => (
+                  <RoomCard
+                    key={r.id}
+                    room={r}
+                    projectId={id}
+                    canDelete
+                    boardPages={designBoardPages}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {!isSharedUser && (
+          <div className="mt-20 pt-12 border-t border-border grid md:grid-cols-2 lg:grid-cols-4 gap-12">
+            <div>
+              <div className="eyebrow mb-2">Client</div>
+              <p className="font-display text-2xl">{project.client_name}</p>
+            </div>
+            <div>
+              <div className="eyebrow mb-2">Status</div>
+              <StatusBadge status={project.status} />
+            </div>
+            <div>
+              <div className="eyebrow mb-2">Project Label</div>
+              <p className="font-display text-2xl">{project.project_label || "Unlabeled"}</p>
+            </div>
+            <div>
+              <div className="eyebrow mb-2">Design Notes</div>
+              <p className="text-sm leading-relaxed">{project.design_notes || "—"}</p>
+            </div>
           </div>
-          <div>
-            <div className="eyebrow mb-2">Status</div>
-            <StatusBadge status={project.status} />
-          </div>
-          <div>
-            <div className="eyebrow mb-2">Project Label</div>
-            <p className="font-display text-2xl">{project.project_label || "Unlabeled"}</p>
-          </div>
-          <div>
-            <div className="eyebrow mb-2">Design Notes</div>
-            <p className="text-sm leading-relaxed">{project.design_notes || "—"}</p>
-          </div>
-        </div>
+        )}
       </div>
     </AppShell>
+  );
+}
+
+function SharedProjectPortal({
+  project,
+  projectId,
+  profile,
+}: {
+  project: Project;
+  projectId: string;
+  profile: { role: "Client" | "Contractor"; is_active: boolean } | null | undefined;
+}) {
+  const links = [
+    profile?.role === "Client" && project.approval_live
+      ? {
+          label: "Approvals",
+          description: "Review selections, approve items, request changes, and leave comments.",
+          href: `/client/approvals/${projectId}`,
+          icon: CheckCircle2,
+        }
+      : null,
+    canViewProjectSurface(profile, project, "specBook")
+      ? {
+          label: "Spec Book",
+          description: "View the current approved project specifications.",
+          href: `/specbooks/${projectId}`,
+          icon: BookOpen,
+        }
+      : null,
+    canViewProjectSurface(profile, project, "presentations")
+      ? {
+          label: "Presentation",
+          description: "Open the presentation boards shared for this project.",
+          href: `/presentations/${projectId}`,
+          icon: LayoutTemplate,
+        }
+      : null,
+    canViewProjectSurface(profile, project, "designBoards")
+      ? {
+          label: "Design Boards",
+          description: "View the design boards shared by the studio team.",
+          href: `/projects/${projectId}/design-boards`,
+          icon: Palette,
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    label: string;
+    description: string;
+    href: string;
+    icon: LucideIcon;
+  }>;
+
+  return (
+    <section className="mt-8 border border-border bg-bone/20 p-6 lg:p-8">
+      <div className="eyebrow mb-2">Project Portal</div>
+      <h2 className="font-display text-3xl">Shared project items</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        The studio will turn each section on when it is ready for you.
+      </p>
+      {links.length === 0 ? (
+        <div className="mt-8 border border-dashed border-border bg-white p-8 text-sm text-muted-foreground">
+          Nothing has been shared yet. Once approvals, presentations, or the spec book are ready,
+          they will appear here.
+        </div>
+      ) : (
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {links.map(({ label, description, href, icon: Icon }) => (
+            <a
+              key={label}
+              href={href}
+              className="group border border-border bg-white p-5 transition-colors hover:border-ink hover:bg-bone/40"
+            >
+              <Icon className="h-5 w-5 text-muted-foreground group-hover:text-ink" />
+              <h3 className="mt-5 font-display text-2xl">{label}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

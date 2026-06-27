@@ -153,6 +153,8 @@ export function SpecBookDocument({
     !publicView &&
     profile?.is_active === true &&
     (profile.role === "Admin" || profile.role === "Employee");
+  const isSharedSpecView =
+    publicView || profile?.role === "Client" || profile?.role === "Contractor";
   const visibility = publicView
     ? { showPricing: true, showLinks: true }
     : specBookVisibilityForRole(profile, project);
@@ -320,7 +322,7 @@ export function SpecBookDocument({
                         <td className="py-3 pr-4 text-muted-foreground">{normalizeItemCategory(it.category) ?? it.category ?? "—"}</td>
                         <td className="py-3 pr-4">
                           <div>{clientProductName(it, room)}</div>
-                          {actualProductName(it, room) && (
+                          {!isSharedSpecView && actualProductName(it, room) && (
                             <div className="mt-1 text-xs text-muted-foreground">
                               {actualProductName(it, room)}
                             </div>
@@ -351,6 +353,7 @@ export function SpecBookDocument({
                 projectId={id}
                 canEditProducts={canEditProducts}
                 showLinks={visibility.showLinks}
+                hideInternalProductDetails={isSharedSpecView}
               />
             ))
           : (() => {
@@ -372,6 +375,7 @@ export function SpecBookDocument({
                     projectId={id}
                     canEditProducts={canEditProducts}
                     showLinks={visibility.showLinks}
+                    hideInternalProductDetails={isSharedSpecView}
                   />
                 );
               });
@@ -400,6 +404,7 @@ function CategorySpec({
   projectId,
   canEditProducts,
   showLinks,
+  hideInternalProductDetails,
 }: {
   category: string;
   items: MaterialItem[];
@@ -408,6 +413,7 @@ function CategorySpec({
   projectId: string;
   canEditProducts: boolean;
   showLinks: boolean;
+  hideInternalProductDetails: boolean;
 }) {
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -449,6 +455,7 @@ function CategorySpec({
                   projectId={projectId}
                   canEditProducts={canEditProducts}
                   showLinks={showLinks}
+                  hideInternalProductDetails={hideInternalProductDetails}
                 />
               ))}
             </div>
@@ -467,6 +474,7 @@ function RoomSpec({
   projectId,
   canEditProducts,
   showLinks,
+  hideInternalProductDetails,
 }: {
   num: string;
   room: Room;
@@ -475,6 +483,7 @@ function RoomSpec({
   projectId: string;
   canEditProducts: boolean;
   showLinks: boolean;
+  hideInternalProductDetails: boolean;
 }) {
   const sections = sectionsForRoom(room.name);
   const grouped = useMemo(() => {
@@ -521,6 +530,7 @@ function RoomSpec({
                   projectId={projectId}
                   canEditProducts={canEditProducts}
                   showLinks={showLinks}
+                  hideInternalProductDetails={hideInternalProductDetails}
                 />
               ))}
             </div>
@@ -555,12 +565,14 @@ function SpecCard({
   projectId,
   canEditProducts,
   showLinks,
+  hideInternalProductDetails,
 }: {
   item: MaterialItem;
   room: Room;
   projectId: string;
   canEditProducts: boolean;
   showLinks: boolean;
+  hideInternalProductDetails: boolean;
 }) {
   const p = item.product;
   const displayName = clientProductName(item, room);
@@ -599,7 +611,7 @@ function SpecCard({
           )}
         </div>
         <h3 className="font-display text-3xl leading-tight print:text-[28px]">{displayName}</h3>
-        {actualProductName(item, room) && (
+        {!hideInternalProductDetails && actualProductName(item, room) && (
           <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">
             {actualProductName(item, room)}
           </p>
@@ -611,7 +623,7 @@ function SpecCard({
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-4 print:gap-x-6 print:gap-y-2 print:text-[12px]">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
-          <Detail label="SKU" value={p?.sku} />
+          {!hideInternalProductDetails && <Detail label="SKU" value={p?.sku} />}
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />
           <Detail label="Quantity" value={item.quantity != null ? String(item.quantity) : null} />
