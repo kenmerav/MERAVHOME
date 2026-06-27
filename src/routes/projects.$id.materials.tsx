@@ -63,6 +63,33 @@ function productCategoryPatchForMaterialCategory(category: string): Partial<Prod
   return patch;
 }
 
+function formatLastUpdated(value: string | null | undefined) {
+  if (!value) return "Not updated yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not updated yet";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function latestTimestamp(values: Array<string | null | undefined>) {
+  let latest = 0;
+  let latestValue: string | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (!Number.isNaN(time) && time > latest) {
+      latest = time;
+      latestValue = value;
+    }
+  }
+  return latestValue;
+}
+
 function MaterialsPage() {
   const { id } = Route.useParams();
   const projectId = cleanUuid(id);
@@ -113,6 +140,15 @@ function MaterialsPage() {
     const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
     return { done, total };
   }, [items]);
+  const lastUpdatedAt = useMemo(
+    () =>
+      latestTimestamp([
+        project?.updated_at,
+        ...rooms.map((room) => room.updated_at),
+        ...items.flatMap((item) => [item.updated_at, item.product?.updated_at]),
+      ]),
+    [items, project?.updated_at, rooms],
+  );
 
   const runScrape = async () => {
     if (!projectId) return toast.error("Invalid project link.");
@@ -203,6 +239,9 @@ function MaterialsPage() {
           <div>
             <div className="eyebrow mb-2">{project.name} · {project.client_name}</div>
             <h1 className="editorial-hero text-4xl lg:text-6xl">Materials</h1>
+            <div className="mt-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Last updated {formatLastUpdated(lastUpdatedAt)}
+            </div>
             <p className="text-sm text-muted-foreground mt-3 max-w-xl">
               Fill in CAD label, product link, quantity, and color for every required item. Delete anything you don't need.
               When you're ready, scrape every link to save products into the catalog.

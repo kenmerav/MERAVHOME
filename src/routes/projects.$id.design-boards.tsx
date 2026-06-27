@@ -74,6 +74,19 @@ function sortRoomsAlphabetically(rooms: Room[]) {
   );
 }
 
+function formatLastUpdated(value: string | null | undefined) {
+  if (!value) return "Not updated yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not updated yet";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 type BoardElementType = "image" | "text" | "shape";
 
 type BoardElement = {
@@ -2656,6 +2669,9 @@ function ProjectDesignBoardsPage() {
                 {saveStatus === "saved" && "Shared board saved"}
                 {saveStatus === "error" && "Could not save shared board"}
                 {saveStatus === "local" && "Local-only view"}
+              </div>
+              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-stone-500">
+                Last updated {formatLastUpdated(sharedBoard?.updated_at ?? project.updated_at)}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
