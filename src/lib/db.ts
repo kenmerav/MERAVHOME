@@ -654,20 +654,27 @@ export const db = {
       Omit<FinancialInvoicePayment, "id" | "invoice_id" | "created_at" | "updated_at">
     >,
   ) => {
-    const created = (
-      await supabase
+    const insertInvoice = async (payload: typeof invoice) =>
+      supabase
         .from("financial_invoices")
-        .insert(invoice as any)
+        .insert(payload as any)
         .select()
-        .single()
-    ).data as FinancialInvoice | null;
+        .single();
+
+    let { data: created, error: invoiceError } = await insertInvoice(invoice);
+    if (invoiceError?.code === "42703" && invoiceError.message?.includes("client_visible")) {
+      const { client_visible: _clientVisible, ...legacyInvoice } = invoice as typeof invoice & { client_visible?: boolean };
+      ({ data: created, error: invoiceError } = await insertInvoice(legacyInvoice));
+    }
+    if (invoiceError) throw invoiceError;
     if (!created) return null;
     if (payments.length) {
-      await supabase
+      const { error: paymentsError } = await supabase
         .from("financial_invoice_payments")
         .insert(payments.map((payment) => ({ ...payment, invoice_id: created.id })) as any);
+      if (paymentsError) throw paymentsError;
     }
-    return created;
+    return created as FinancialInvoice;
   },
   attachFinancialInvoiceToProject: async (invoiceId: string, projectId: string) => {
     const invoice = (
