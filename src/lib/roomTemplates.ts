@@ -154,10 +154,6 @@ export function inferMaterialCategory(label: string | null | undefined, productU
     return "Doors Base & Case";
   }
 
-  if (/\b(cabinet|cabinetry|hardware)\b/.test(text)) {
-    return "Cabinetry";
-  }
-
   if (/\b(countertop|countertops|counter top|counter tops|slab|marble|quartz|quartzite|granite|soapstone|stone counter)\b/.test(text)) {
     return "Countertops";
   }
@@ -168,6 +164,10 @@ export function inferMaterialCategory(label: string | null | undefined, productU
 
   if (/\b(floor|flooring|wood floor|carpet|rug)\b/.test(text)) {
     return "Flooring";
+  }
+
+  if (/\b(cabinet|cabinetry|hardware)\b/.test(text)) {
+    return "Cabinetry";
   }
 
   if (/\b(chair|table|sofa|sectional|ottoman|stool|bench|bed|nightstand|dresser|desk|console|sideboard|cabinet)\b/.test(text)) {

@@ -668,6 +668,10 @@ function ProjectDesignBoardsPage() {
     () => sortRoomsAlphabetically(rooms),
     [rooms],
   );
+  const productById = useMemo(
+    () => new Map(products.map((product) => [product.id, product] as const)),
+    [products],
+  );
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
   const filteredProjectMaterials = useMemo(
     () =>
@@ -710,7 +714,10 @@ function ProjectDesignBoardsPage() {
   );
   const imageMaterialReadinessIssues = useCallback(
     (element: BoardElement, page: BoardPage) => {
-      const issues = imageMaterialIssues(element);
+      const issues = imageMaterialIssues(
+        element,
+        element.productId ? productById.get(element.productId) : null,
+      );
       if (
         element.type === "image" &&
         !element.materialInfoNotNeeded &&
@@ -720,7 +727,7 @@ function ProjectDesignBoardsPage() {
       }
       return issues;
     },
-    [resolveMaterialRoom],
+    [productById, resolveMaterialRoom],
   );
   const activePageMissingInfoCount = imageElements.filter(
     (element) => imageMaterialReadinessIssues(element, activePage).length,
@@ -1369,19 +1376,17 @@ function ProjectDesignBoardsPage() {
       return { status: "skipped" };
     }
 
-    const missingInfo = imageMaterialIssues(element);
+    const linkedProduct = element.productId ? productById.get(element.productId) ?? null : null;
+    const missingInfo = imageMaterialIssues(element, linkedProduct);
     if (missingInfo.length) {
       return { status: "skipped" };
     }
     const itemLabel = imageMaterialLabel(element);
 
-    const linkedProduct = element.productId
-      ? products.find((product) => product.id === element.productId)
-      : null;
-    const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : null;
     const linkedProductUrl = linkedProduct?.product_url
       ? normalizeExternalUrl(linkedProduct.product_url)
       : null;
+    const productUrl = boardElementProductUrl(element, linkedProduct);
     const inferredMaterialCategory = inferMaterialCategory(itemLabel, productUrl);
     const materialCategory = element.materialCategory || inferredMaterialCategory;
     let category: ProductCategory =
@@ -1615,7 +1620,10 @@ function ProjectDesignBoardsPage() {
             continue;
           }
           const itemLabel = imageMaterialLabel(element);
-          const productUrl = element.link?.trim() ? normalizeExternalUrl(element.link) : "";
+          const linkedProduct = element.productId
+            ? productById.get(element.productId) ?? null
+            : null;
+          const productUrl = boardElementProductUrl(element, linkedProduct) ?? "";
           const finish = (element.materialFinish || element.finish || "").trim();
           const key = [
             room.id,
@@ -1824,7 +1832,11 @@ function ProjectDesignBoardsPage() {
   };
 
   const quickEditElementLink = (element: BoardElement, pageId: string) => {
-    const nextLink = window.prompt("Product link", element.link || "");
+    const linkedProduct = element.productId ? productById.get(element.productId) ?? null : null;
+    const nextLink = window.prompt(
+      "Product link",
+      boardElementProductUrl(element, linkedProduct) || "",
+    );
     if (nextLink === null) return;
     updateElement(element.id, { link: nextLink.trim() }, pageId);
   };
@@ -3048,6 +3060,9 @@ function ProjectDesignBoardsPage() {
                           <BoardObject
                             key={element.id}
                             element={element}
+                            linkedProduct={
+                              element.productId ? productById.get(element.productId) ?? null : null
+                            }
                             selected={selectedIdSet.has(element.id)}
                             showResizeHandle={selectedCount <= 1}
                             remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
@@ -3763,6 +3778,7 @@ function PageThumbnail({
 
 function BoardObject({
   element,
+  linkedProduct,
   selected,
   showResizeHandle,
   remoteUsers,
@@ -3778,6 +3794,7 @@ function BoardObject({
   onStartResize,
 }: {
   element: BoardElement;
+  linkedProduct?: Product | null;
   selected: boolean;
   showResizeHandle: boolean;
   remoteUsers: ActiveBoardUser[];
@@ -3795,7 +3812,8 @@ function BoardObject({
   const isLocked = element.locked === true;
   const isHidden = element.visible === false;
   const remoteUser = remoteUsers[0];
-  const materialIssues = element.type === "image" ? imageMaterialIssues(element) : [];
+  const materialIssues =
+    element.type === "image" ? imageMaterialIssues(element, linkedProduct) : [];
 
   return (
     <div
@@ -4280,7 +4298,8 @@ function SelectedPanel({
   const linkedProduct = selected.productId
     ? products.find((product) => product.id === selected.productId)
     : null;
-  const selectedMaterialIssues = selected.type === "image" ? imageMaterialIssues(selected) : [];
+  const selectedMaterialIssues =
+    selected.type === "image" ? imageMaterialIssues(selected, linkedProduct) : [];
   const [quantityDraft, setQuantityDraft] = useState(
     selected.materialQuantity == null ? "" : String(selected.materialQuantity),
   );
@@ -4980,11 +4999,17 @@ function imageMaterialLabel(element: BoardElement) {
   return (element.label || element.productName || "").trim();
 }
 
-function imageMaterialIssues(element: BoardElement) {
+function boardElementProductUrl(element: BoardElement, linkedProduct?: Product | null) {
+  if (element.link?.trim()) return normalizeExternalUrl(element.link);
+  if (linkedProduct?.product_url?.trim()) return normalizeExternalUrl(linkedProduct.product_url);
+  return null;
+}
+
+function imageMaterialIssues(element: BoardElement, linkedProduct?: Product | null) {
   if (element.type !== "image" || element.materialInfoNotNeeded) return [];
   const issues: string[] = [];
   if (!imageMaterialLabel(element)) issues.push("label");
-  if (!element.link?.trim()) issues.push("link");
+  if (!boardElementProductUrl(element, linkedProduct)) issues.push("link");
   return issues;
 }
 
