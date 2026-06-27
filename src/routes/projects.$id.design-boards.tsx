@@ -447,6 +447,7 @@ function ProjectDesignBoardsPage() {
   >("loading");
   const [thumbnailViewport, setThumbnailViewport] = useState({ scrollLeft: 0, width: 0 });
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [missingInfoOpen, setMissingInfoOpen] = useState(false);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
@@ -739,6 +740,28 @@ function ProjectDesignBoardsPage() {
         (element) => element.type === "image" && imageMaterialReadinessIssues(element, page).length,
       ).length,
     0,
+  );
+  const missingMaterialInfoItems = useMemo(
+    () =>
+      pages.flatMap((page, pageIndex) =>
+        page.elements.flatMap((element) => {
+          if (element.type !== "image") return [];
+          const issues = imageMaterialReadinessIssues(element, page);
+          if (!issues.length) return [];
+          const room = resolveMaterialRoom(element, page);
+          return [
+            {
+              pageId: page.id,
+              pageTitle: page.title || `Board ${pageIndex + 1}`,
+              pageNumber: pageIndex + 1,
+              element,
+              issues,
+              roomName: room?.name ?? "No room assigned",
+            },
+          ];
+        }),
+      ),
+    [imageMaterialReadinessIssues, pages, resolveMaterialRoom],
   );
   const allBoardDetailsHidden =
     imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
@@ -1057,6 +1080,7 @@ function ProjectDesignBoardsPage() {
     setActiveUsers([]);
     setSaveStatus("loading");
     setHistoryOpen(false);
+    setMissingInfoOpen(false);
     setPreviewVersionId(null);
   }, [id]);
 
@@ -2018,6 +2042,13 @@ function ProjectDesignBoardsPage() {
     }
   };
 
+  const reviewMissingMaterialInfoItem = (pageId: string, elementId: string) => {
+    selectPage(pageId, true, false);
+    selectOnly(elementId);
+    setToolsPinned(true);
+    setMissingInfoOpen(true);
+  };
+
   useEffect(() => {
     const pageId = pendingPageFocusRef.current;
     if (!pageId || selectedPageId !== pageId) return;
@@ -2707,10 +2738,17 @@ function ProjectDesignBoardsPage() {
                   </select>
                 </label>
                 {boardMissingInfoCount > 0 && (
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMissingInfoOpen(true);
+                      setToolsPinned(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-100"
+                  >
                     <AlertTriangle className="h-3.5 w-3.5" />
                     {boardMissingInfoCount} need material info
-                  </div>
+                  </button>
                 )}
                 {onlineUsers.slice(0, 8).map((user) => (
                   <div
@@ -3477,6 +3515,85 @@ function ProjectDesignBoardsPage() {
                       Add label, link, and room before sending to Materials so specs and
                       presentations stay clean.
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => setMissingInfoOpen((current) => !current)}
+                      className="mt-2 text-xs font-medium underline-offset-4 hover:underline"
+                    >
+                      {missingInfoOpen ? "Hide review list" : "Review missing items"}
+                    </button>
+                  </div>
+                )}
+                {missingInfoOpen && missingMaterialInfoItems.length > 0 && (
+                  <div className="mt-3 border border-amber-300 bg-white">
+                    <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3 py-2">
+                      <div>
+                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-amber-900">
+                          Missing Material Info
+                        </div>
+                        <div className="mt-0.5 text-xs text-amber-800">
+                          Review items before sending to Materials.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMissingInfoOpen(false)}
+                        className="text-xs text-amber-900 underline-offset-4 hover:underline"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="max-h-80 divide-y divide-stone-100 overflow-y-auto">
+                      {missingMaterialInfoItems.map((item) => (
+                        <div key={`${item.pageId}:${item.element.id}`} className="p-3">
+                          <div className="flex gap-3">
+                            <div className="h-14 w-14 shrink-0 overflow-hidden bg-[#f6f3ee]">
+                              {item.element.src ? (
+                                <OptimizedBoardImage
+                                  src={item.element.src}
+                                  alt={imageMaterialLabel(item.element) || "Missing item"}
+                                  kind="thumbnail"
+                                  className="h-full w-full object-contain"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-xs text-stone-300">
+                                  IMG
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium text-ink">
+                                {imageMaterialLabel(item.element) || "Unlabeled item"}
+                              </div>
+                              <div className="mt-1 text-xs text-stone-500">
+                                Page {item.pageNumber}: {item.pageTitle}
+                              </div>
+                              <div className="mt-1 text-xs text-stone-500">{item.roomName}</div>
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {item.issues.map((issue) => (
+                                  <span
+                                    key={issue}
+                                    className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
+                                  >
+                                    Missing {issue}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              reviewMissingMaterialInfoItem(item.pageId, item.element.id)
+                            }
+                            className="mt-3 inline-flex w-full items-center justify-center border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-50"
+                          >
+                            Review item
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <button
