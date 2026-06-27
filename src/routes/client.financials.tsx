@@ -168,7 +168,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
         <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:min-w-[360px]">
           <InvoiceMetric label="Total" value={formatMoney(invoice.total_amount ?? 0)} />
           <InvoiceMetric label="Paid" value={formatMoney(invoice.paid_amount ?? 0)} />
-          <InvoiceMetric label="Balance" value={formatMoney(invoice.balance_due ?? 0)} />
+          <InvoiceMetric label="Remaining Due" value={formatMoney(invoice.balance_due ?? 0)} />
         </div>
       </div>
 
