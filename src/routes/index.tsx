@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowRight, CalendarDays, CheckCircle2, FileText, Plus, ReceiptText, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileText, Plus, ReceiptText, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type ApprovalStatus, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
@@ -175,10 +175,6 @@ function DashboardPage() {
           {!isSharedUser && <NewProjectDialog />}
         </div>
 
-        {isClientUser && (
-          <ClientApprovalsOverview summaries={clientApprovalSummaries} approvalsReady={approvalsReady} />
-        )}
-
         {isSharedUser && (
           <SharedDashboardOverview
             dashboard={sharedDashboard}
@@ -222,86 +218,6 @@ function DashboardPage() {
   );
 }
 
-function ClientApprovalsOverview({
-  summaries,
-  approvalsReady,
-}: {
-  summaries: Array<{
-    project: Project;
-    roomCount: number;
-    itemCount: number;
-    needReviewCount: number;
-    approvedCount: number;
-    changesCount: number;
-  }>;
-  approvalsReady: Array<{
-    project: Project;
-    roomCount: number;
-    itemCount: number;
-    needReviewCount: number;
-    approvedCount: number;
-    changesCount: number;
-  }>;
-}) {
-  return (
-    <section className="mb-12 space-y-6">
-      <div className="border border-border bg-bone/30 p-6 lg:p-8">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          <div>
-            <div className="eyebrow mb-2">Approvals</div>
-            <h2 className="font-display text-3xl">{approvalsReady.length > 0 ? "Selections ready for your review" : "No approvals waiting right now"}</h2>
-            <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
-              {approvalsReady.length > 0
-                ? `You currently have ${approvalsReady.reduce((sum, summary) => sum + summary.needReviewCount, 0)} selection${approvalsReady.reduce((sum, summary) => sum + summary.needReviewCount, 0) === 1 ? "" : "s"} that still need your approval.`
-                : "When new selections are ready, they’ll show up here so you can jump straight into review."}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {approvalsReady.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {approvalsReady.map((summary) => (
-            <Link
-              key={summary.project.id}
-              to="/client/approvals/$projectId"
-              params={{ projectId: summary.project.id }}
-              className="group border border-border bg-background p-6 hover:border-ink transition-colors"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="eyebrow mb-2">Needs Review</div>
-                  <h3 className="font-display text-3xl leading-tight">{summary.project.name}</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">{summary.project.client_name}</p>
-                </div>
-                <div className="rounded-full bg-[#f1e3c8] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-ink">
-                  {summary.needReviewCount} Pending
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-4 text-sm text-muted-foreground">
-                <span>{summary.roomCount} room{summary.roomCount === 1 ? "" : "s"}</span>
-                <span>{summary.approvedCount} approved</span>
-                <span>{summary.changesCount} changes</span>
-              </div>
-              <div className="mt-6 inline-flex items-center gap-2 text-sm text-ink group-hover:gap-3 transition-all">
-                Open approvals <ArrowRight className="h-4 w-4" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {summaries.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <MetricCard label="Projects With Approvals" value={summaries.length} />
-          <MetricCard label="Selections Need Review" value={summaries.reduce((sum, summary) => sum + summary.needReviewCount, 0)} />
-          <MetricCard label="Selections Approved" value={summaries.reduce((sum, summary) => sum + summary.approvedCount, 0)} />
-        </div>
-      )}
-    </section>
-  );
-}
-
 function SharedDashboardOverview({
   dashboard,
   loading,
@@ -326,28 +242,35 @@ function SharedDashboardOverview({
 
   return (
     <section className="mb-12 space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <MetricCard label="Open To-Dos" value={todos.length} />
-        {isClientUser && <MetricCard label="Invoices" value={invoices.length} />}
-        <MetricCard label="Timelines" value={timelines.length} />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
-        <div className="border border-border bg-background p-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6">
+        <div className="border border-border bg-background p-6 lg:p-8">
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <div className="eyebrow mb-2">To Do</div>
-              <h2 className="font-display text-3xl">Needs your attention</h2>
+              <h2 className="font-display text-3xl">Needs review</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Invoices that are due and selections waiting for approval will show up here.
+              </p>
             </div>
           </div>
           {todos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open action items right now.</p>
+            <div className="rounded-sm border border-dashed border-border bg-bone/20 p-6">
+              <p className="font-display text-2xl">Nothing needs review right now.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                When a payment is due or selections are ready, they’ll appear here.
+              </p>
+            </div>
           ) : (
             <div className="divide-y divide-border">
               {todos.slice(0, 8).map((todo) => (
                 <div key={todo.id} className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
-                    <div className="font-medium">{todo.title}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-bone px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                        {todo.kind === "invoice" ? "Invoice Due" : "Approval"}
+                      </span>
+                      <div className="font-medium">{todo.title}</div>
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       {todo.project_name}
                       {todo.amount != null ? ` - ${formatMoney(todo.amount)}` : ""}
@@ -359,9 +282,13 @@ function SharedDashboardOverview({
                       Review <ArrowRight className="h-4 w-4" />
                     </Link>
                   ) : (
-                    <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      <ReceiptText className="h-4 w-4" /> Invoice
-                    </span>
+                    <Link
+                      to="/client/financials"
+                      search={todo.project_id ? { project: todo.project_id } : undefined}
+                      className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink"
+                    >
+                      View invoice <ArrowRight className="h-4 w-4" />
+                    </Link>
                   )}
                 </div>
               ))}
@@ -369,7 +296,7 @@ function SharedDashboardOverview({
           )}
         </div>
 
-        <div className="border border-border bg-bone/20 p-6">
+        <div className="border border-border bg-bone/20 p-6 lg:p-8">
           <div className="eyebrow mb-2">Shared Projects</div>
           <h2 className="font-display text-3xl mb-5">Quick links</h2>
           {sharedProjects.length === 0 ? (
@@ -401,86 +328,26 @@ function SharedDashboardOverview({
                         Design Boards
                       </Link>
                     )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {isClientUser && (
-        <div className="border border-border bg-background p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <ReceiptText className="h-5 w-5 text-muted-foreground" />
-            <div>
-              <div className="eyebrow mb-1">Invoices</div>
-              <h2 className="font-display text-3xl">Current and past invoices</h2>
-            </div>
-          </div>
-          {invoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No invoices have been shared yet.</p>
-          ) : (
-            <div className="divide-y divide-border">
-              {invoices.map((invoice) => (
-                <div key={invoice.id} className="py-4 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4">
-                  <div>
-                    <div className="font-medium">{invoice.file_name || "Invoice"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {invoice.project_name}
-                      {invoice.invoice_date ? ` - ${formatDashboardDate(invoice.invoice_date)}` : ""}
-                      {invoice.balance_due != null ? ` - Balance ${formatMoney(invoice.balance_due)}` : ""}
-                    </div>
-                    {invoice.payments.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        {invoice.payments.map((payment) => (
-                          <span key={payment.id} className="border border-border px-2 py-1">
-                            {payment.label}: {formatMoney(payment.amount)} · {payment.status}
-                          </span>
-                        ))}
-                      </div>
+                    {isClientUser && (
+                      <Link
+                        to="/client/financials"
+                        search={{ project: project.id }}
+                        className="text-xs border border-border px-3 py-1.5 hover:border-ink"
+                      >
+                        Financials
+                      </Link>
+                    )}
+                    {timelines.some((timeline) => timeline.project_id === project.id) && (
+                      <span className="text-xs border border-border px-3 py-1.5 text-muted-foreground">
+                        Timeline shared
+                      </span>
                     )}
                   </div>
-                  {invoice.pdf_data_url && (
-                    <ClientInvoiceActions documentUrl={invoice.pdf_data_url} fileName={invoice.file_name} />
-                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
-      )}
-
-      <div className="border border-border bg-background p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <CalendarDays className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <div className="eyebrow mb-1">Timeline</div>
-            <h2 className="font-display text-3xl">Project timelines</h2>
-          </div>
-        </div>
-        {timelines.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No timelines have been shared yet.</p>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {timelines.map((timeline) => (
-              <div key={timeline.id} className="border border-border p-5">
-                <div className="eyebrow mb-2">{timeline.timeline_date ? formatDashboardDate(timeline.timeline_date) : "Timeline"}</div>
-                <div className="font-display text-2xl">{timeline.title}</div>
-                <div className="text-sm text-muted-foreground mt-1">{timeline.project_name}</div>
-                {timeline.html_data_url && (
-                  <button
-                    type="button"
-                    onClick={() => window.open(timeline.html_data_url!, "_blank", "noopener,noreferrer")}
-                    className="mt-4 inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
-                  >
-                    Open Timeline
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </section>
   );
@@ -511,15 +378,6 @@ function ClientInvoiceActions({ documentUrl, fileName }: { documentUrl: string |
       <button type="button" onClick={download} className="inline-flex items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-primary-foreground">
         <FileText className="h-4 w-4" /> Download PDF
       </button>
-    </div>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-border bg-background px-5 py-4">
-      <div className="eyebrow mb-2">{label}</div>
-      <div className="font-display text-3xl">{value}</div>
     </div>
   );
 }

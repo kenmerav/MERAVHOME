@@ -47,6 +47,55 @@ function paymentIsOpen(payment: any) {
   return payment?.status === "due" && Number(payment?.amount || 0) > 0;
 }
 
+async function approvalTodosForProjects(projects: Array<{ id: string; name: string; access: { approvals: boolean } }>) {
+  const approvalProjects = projects.filter((project) => project.access.approvals);
+  if (!approvalProjects.length) return [];
+
+  const approvalProjectIds = approvalProjects.map((project) => project.id);
+  const { data: rooms, error: roomsError } = await supabaseAdmin
+    .from("rooms")
+    .select("id,project_id,approval_visible")
+    .in("project_id", approvalProjectIds)
+    .neq("approval_visible", false);
+  if (roomsError) throw roomsError;
+
+  const visibleRooms = rooms ?? [];
+  const roomIds = visibleRooms.map((room: any) => room.id).filter(Boolean);
+  if (!roomIds.length) return [];
+
+  const { data: selections, error: selectionsError } = await supabaseAdmin
+    .from("room_products")
+    .select("id,room_id,approval_status,approval_visible")
+    .in("room_id", roomIds)
+    .neq("approval_visible", false)
+    .eq("approval_status", "undecided");
+  if (selectionsError) throw selectionsError;
+
+  const roomProjectByRoomId = new Map(visibleRooms.map((room: any) => [room.id, room.project_id]));
+  const countsByProject = new Map<string, number>();
+  for (const selection of selections ?? []) {
+    const projectId = roomProjectByRoomId.get((selection as any).room_id);
+    if (!projectId) continue;
+    countsByProject.set(projectId, (countsByProject.get(projectId) ?? 0) + 1);
+  }
+
+  return approvalProjects
+    .map((project) => {
+      const count = countsByProject.get(project.id) ?? 0;
+      if (count <= 0) return null;
+      return {
+        id: `approval-${project.id}`,
+        kind: "approval",
+        title: `${count} selection${count === 1 ? "" : "s"} need review`,
+        project_id: project.id,
+        project_name: project.name,
+        href: `/client/approvals/${project.id}`,
+        count,
+      };
+    })
+    .filter(Boolean);
+}
+
 export const Route = createFileRoute("/api/client-dashboard")({
   server: {
     handlers: {
@@ -134,6 +183,8 @@ export const Route = createFileRoute("/api/client-dashboard")({
             });
           }
 
+          const approvalTodos = await approvalTodosForProjects(projects);
+
           const todos = [
             ...invoices.flatMap((invoice) =>
               (invoice.payments ?? [])
@@ -149,16 +200,7 @@ export const Route = createFileRoute("/api/client-dashboard")({
                   invoice_id: invoice.id,
                 })),
             ),
-            ...projects
-              .filter((project) => project.access.approvals)
-              .map((project) => ({
-                id: `approval-${project.id}`,
-                kind: "approval",
-                title: "Review selections",
-                project_id: project.id,
-                project_name: project.name,
-                href: `/client/approvals/${project.id}`,
-              })),
+            ...approvalTodos,
           ];
 
           return json({ projects, invoices, timelines, todos });
