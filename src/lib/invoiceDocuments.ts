@@ -3,7 +3,11 @@ export function invoicePdfFileName(fileName?: string | null) {
   return `${safeName}.pdf`;
 }
 
-export async function openInvoiceDocument(documentUrl: string | null, fileName?: string | null) {
+type InvoiceDocumentOptions = {
+  paymentUrl?: string | null;
+};
+
+export async function openInvoiceDocument(documentUrl: string | null, fileName?: string | null, options: InvoiceDocumentOptions = {}) {
   if (!documentUrl) return;
   const target = window.open("", "_blank");
   if (target) target.opener = null;
@@ -17,7 +21,7 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
 
     const blob = await (await fetch(documentUrl)).blob();
     if (blob.type === "text/html") {
-      const html = await blob.text();
+      const html = applyInvoicePaymentLink(await blob.text(), options.paymentUrl);
       if (target) {
         target.document.open();
         target.document.write(html);
@@ -45,7 +49,7 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
   }
 }
 
-export async function downloadInvoiceDocument(documentUrl: string | null, fileName?: string | null) {
+export async function downloadInvoiceDocument(documentUrl: string | null, fileName?: string | null, options: InvoiceDocumentOptions = {}) {
   if (!documentUrl) return;
 
   if (!documentUrl.startsWith("data:")) {
@@ -55,13 +59,35 @@ export async function downloadInvoiceDocument(documentUrl: string | null, fileNa
 
   const blob = await (await fetch(documentUrl)).blob();
   if (blob.type === "text/html") {
-    printHtmlAsPdf(await blob.text(), fileName);
+    printHtmlAsPdf(applyInvoicePaymentLink(await blob.text(), options.paymentUrl), fileName);
     return;
   }
 
   const url = URL.createObjectURL(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
   triggerDownload(url, invoicePdfFileName(fileName));
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function applyInvoicePaymentLink(html: string, paymentUrl?: string | null) {
+  if (!html.includes("CLICK HERE TO PAY")) return html;
+
+  if (paymentUrl) {
+    const safeUrl = escapeHtmlAttribute(paymentUrl);
+    const linked = `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">CLICK HERE TO PAY</a>`;
+    return html
+      .replace(/<a\b[^>]*>\s*CLICK HERE TO PAY\s*<\/a>/gi, linked)
+      .replace(/(?<![>\w])CLICK HERE TO PAY(?!\s*<\/a>)/gi, linked);
+  }
+
+  return html.replace(/<a\b[^>]*>\s*CLICK HERE TO PAY\s*<\/a>/gi, "CLICK HERE TO PAY");
+}
+
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function printHtmlAsPdf(html: string, fileName?: string | null) {

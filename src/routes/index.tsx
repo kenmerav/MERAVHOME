@@ -50,6 +50,7 @@ type SharedDashboard = {
       amount: number;
       due_date: string | null;
       status: string;
+      notes: string | null;
       paid_at: string | null;
     }>;
   }>;

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Download, FileText, ReceiptText } from "lucide-react";
+import { ArrowRight, Download, ExternalLink, FileText, ReceiptText } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ type ClientInvoice = {
     amount: number;
     due_date: string | null;
     status: string;
+    notes: string | null;
     paid_at: string | null;
   }>;
 };
@@ -137,10 +138,11 @@ function ClientFinancialsPage() {
 function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
   const duePayments = invoice.payments.filter((payment) => payment.status === "due");
   const paidPayments = invoice.payments.filter((payment) => payment.status === "paid");
+  const paymentUrl = currentPaymentUrl(invoice);
 
   const handleOpen = async () => {
     try {
-      await openInvoiceDocument(invoice.pdf_data_url, invoice.file_name);
+      await openInvoiceDocument(invoice.pdf_data_url, invoice.file_name, { paymentUrl });
     } catch {
       toast.error("Could not open invoice.");
     }
@@ -148,7 +150,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 
   const handleDownload = async () => {
     try {
-      await downloadInvoiceDocument(invoice.pdf_data_url, invoice.file_name);
+      await downloadInvoiceDocument(invoice.pdf_data_url, invoice.file_name, { paymentUrl });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not download invoice.");
     }
@@ -204,6 +206,11 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
         <div className="flex flex-wrap gap-2">
           {invoice.pdf_data_url && (
             <>
+              {paymentUrl && (
+                <Button type="button" variant="outline" onClick={() => window.open(paymentUrl, "_blank", "noopener,noreferrer")}>
+                  <ExternalLink className="h-4 w-4" /> Pay Online
+                </Button>
+              )}
               <Button type="button" variant="outline" onClick={handleOpen}>
                 <FileText className="h-4 w-4" /> View Invoice
               </Button>
@@ -216,6 +223,16 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
       </div>
     </article>
   );
+}
+
+function currentPaymentUrl(invoice: ClientInvoice) {
+  const dueWithLink = invoice.payments.find((payment) => payment.status === "due" && stripeLinkFromNotes(payment.notes));
+  const anyWithLink = invoice.payments.find((payment) => stripeLinkFromNotes(payment.notes));
+  return stripeLinkFromNotes(dueWithLink?.notes) ?? stripeLinkFromNotes(anyWithLink?.notes);
+}
+
+function stripeLinkFromNotes(notes?: string | null) {
+  return notes?.match(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/i)?.[0] ?? null;
 }
 
 function InvoiceMetric({ label, value }: { label: string; value: string }) {
