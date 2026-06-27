@@ -13,14 +13,8 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
   if (target) target.opener = null;
 
   try {
-    if (!documentUrl.startsWith("data:")) {
-      if (target) target.location.href = documentUrl;
-      else window.open(documentUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
     const blob = await (await fetch(documentUrl)).blob();
-    if (blob.type === "text/html") {
+    if (isHtmlInvoice(blob, documentUrl)) {
       const html = applyInvoicePaymentLink(await blob.text(), options.paymentUrl);
       if (target) {
         target.document.open();
@@ -52,13 +46,8 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
 export async function downloadInvoiceDocument(documentUrl: string | null, fileName?: string | null, options: InvoiceDocumentOptions = {}) {
   if (!documentUrl) return;
 
-  if (!documentUrl.startsWith("data:")) {
-    triggerDownload(documentUrl, invoicePdfFileName(fileName));
-    return;
-  }
-
   const blob = await (await fetch(documentUrl)).blob();
-  if (blob.type === "text/html") {
+  if (isHtmlInvoice(blob, documentUrl)) {
     printHtmlAsPdf(applyInvoicePaymentLink(await blob.text(), options.paymentUrl), fileName);
     return;
   }
@@ -69,17 +58,24 @@ export async function downloadInvoiceDocument(documentUrl: string | null, fileNa
 }
 
 function applyInvoicePaymentLink(html: string, paymentUrl?: string | null) {
-  if (!html.includes("CLICK HERE TO PAY")) return html;
-
   if (paymentUrl) {
     const safeUrl = escapeHtmlAttribute(paymentUrl);
     const linked = `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">CLICK HERE TO PAY</a>`;
-    return html
-      .replace(/<a\b[^>]*>\s*CLICK HERE TO PAY\s*<\/a>/gi, linked)
-      .replace(/(?<![>\w])CLICK HERE TO PAY(?!\s*<\/a>)/gi, linked);
+    const updatedStripeUrls = html.replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, safeUrl);
+    if (!updatedStripeUrls.includes("CLICK HERE TO PAY")) return updatedStripeUrls;
+
+    return updatedStripeUrls
+      .replace(/<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/gi, linked)
+      .replace(/(?<![>\w])CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY(?!\s*<\/a>)/gi, linked);
   }
 
-  return html.replace(/<a\b[^>]*>\s*CLICK HERE TO PAY\s*<\/a>/gi, "CLICK HERE TO PAY");
+  return html
+    .replace(/<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/gi, "CLICK HERE TO PAY")
+    .replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, "#");
+}
+
+function isHtmlInvoice(blob: Blob, documentUrl: string) {
+  return blob.type.toLowerCase().includes("text/html") || /^data:text\/html/i.test(documentUrl) || /\.html?(?:$|\?)/i.test(documentUrl);
 }
 
 function escapeHtmlAttribute(value: string) {
