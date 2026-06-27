@@ -244,7 +244,7 @@ export interface UserProfile {
   updated_at: string;
 }
 
-export type FinancialPaymentStatus = "due" | "paid" | "waived";
+export type FinancialPaymentStatus = "not_due" | "due" | "paid" | "waived";
 
 export interface FinancialInvoice {
   id: string;

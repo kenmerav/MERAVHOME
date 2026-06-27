@@ -165,8 +165,8 @@ export function ServiceInvoiceCreator({
         project_id: projectId,
         label: `Phase ${index + 1} - ${phase.name}`,
         amount: phaseAmount(fee, phase.percent),
-        due_date: phase.dueDate || null,
-        status: "due" as const,
+        due_date: null,
+        status: (index === 0 ? "due" : "not_due") as const,
         notes: serviceDraft.currentPhase === phase.name && serviceDraft.stripeLink ? `Stripe payment link: ${serviceDraft.stripeLink}` : null,
         stripe_payment_link_id: serviceDraft.currentPhase === phase.name ? serviceDraft.stripePaymentLinkId || null : null,
         stripe_checkout_session_id: null,
@@ -370,7 +370,7 @@ export function ServiceInvoiceCreator({
                       <th className="py-3 px-4">Phase</th>
                       <th className="py-3 px-4 text-right">Percent</th>
                       <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4">Due Date</th>
+                      <th className="py-3 px-4">Due When</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -383,8 +383,8 @@ export function ServiceInvoiceCreator({
                             <Input value={phase.percent} onChange={(e) => updateServicePhase(index, { percent: e.target.value })} className="text-right" />
                           </td>
                           <td className="py-3 px-4 text-right min-w-[130px]">{formatMoney(phaseAmount(fee, phase.percent))}</td>
-                          <td className="py-3 px-4 min-w-[160px]">
-                            <Input type="date" value={phase.dueDate} onChange={(e) => updateServicePhase(index, { dueDate: e.target.value })} />
+                          <td className="py-3 px-4 min-w-[220px] text-muted-foreground">
+                            {phaseDueLabel(phase.name)}
                           </td>
                         </tr>
                       );
@@ -702,6 +702,14 @@ function formatDateForInvoice(value: string) {
   return `${Number(month)}/${Number(day)}/${year}`;
 }
 
+function phaseDueLabel(phase: InvoicePhaseName) {
+  if (phase === "Project Start") return "Due at project start";
+  if (phase === "Design Presentation") return "Due when design presentation is delivered";
+  if (phase === "Design Document Delivery") return "Due when design document is delivered";
+  if (phase === "Project Completion") return "Due at project completion";
+  return `Due at ${phase}`;
+}
+
 function htmlDataUrl(html: string) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
@@ -712,8 +720,8 @@ function printServiceInvoiceDraft(draft: ServiceInvoiceDraft) {
   const payments = draft.phases.map((phase, index) => ({
     label: `Phase ${index + 1} - ${phase.name}`,
     amount: phaseAmount(fee, phase.percent),
-    due_date: phase.dueDate || null,
-    status: "due",
+    due_date: null,
+    status: index === 0 ? "due" : "not_due",
     notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
     sort_order: index,
   }));

@@ -140,7 +140,7 @@ function FinancialsPage() {
 
   const totals = useMemo(() => {
     const payments = invoices.flatMap((invoice) => invoice.payments ?? []);
-    const due = payments.filter((payment) => payment.status !== "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const due = payments.filter((payment) => payment.status === "due").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const paid = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     return { due, paid, total: due + paid, count: payments.length };
   }, [invoices]);
@@ -317,8 +317,8 @@ function FinancialsPage() {
         project_id: id,
         label: `Phase ${index + 1} - ${phase.name}`,
         amount: phaseAmount(fee, phase.percent),
-        due_date: phase.dueDate || null,
-        status: "due" as const,
+        due_date: null,
+        status: (index === 0 ? "due" : "not_due") as const,
         notes: serviceDraft.currentPhase === phase.name && serviceDraft.stripeLink ? `Stripe payment link: ${serviceDraft.stripeLink}` : null,
         stripe_payment_link_id: serviceDraft.currentPhase === phase.name ? serviceDraft.stripePaymentLinkId || null : null,
         stripe_checkout_session_id: null,
@@ -648,7 +648,7 @@ function FinancialsPage() {
                         <th className="py-3 px-4">Phase</th>
                         <th className="py-3 px-4 text-right">Percent</th>
                         <th className="py-3 px-4 text-right">Amount</th>
-                        <th className="py-3 px-4">Due Date</th>
+                        <th className="py-3 px-4">Due When</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -661,8 +661,8 @@ function FinancialsPage() {
                               <Input value={phase.percent} onChange={(e) => updateServicePhase(index, { percent: e.target.value })} className="text-right" />
                             </td>
                             <td className="py-3 px-4 text-right min-w-[130px]">{formatMoney(phaseAmount(fee, phase.percent))}</td>
-                            <td className="py-3 px-4 min-w-[160px]">
-                              <Input type="date" value={phase.dueDate} onChange={(e) => updateServicePhase(index, { dueDate: e.target.value })} />
+                            <td className="py-3 px-4 min-w-[220px] text-muted-foreground">
+                              {phaseDueLabel(phase.name)}
                             </td>
                           </tr>
                         );
@@ -806,7 +806,7 @@ function PaymentTable({
           <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border">
             <th className="py-3 px-4">Payment Due</th>
             <th className="py-3 px-4 text-right">Amount</th>
-            <th className="py-3 px-4">Due Date</th>
+            <th className="py-3 px-4">Due When</th>
             <th className="py-3 px-4">Status</th>
             {editable && <th className="py-3 px-4"></th>}
           </tr>
@@ -824,11 +824,11 @@ function PaymentTable({
                   <EditableMoneyCell payment={payment as FinancialInvoicePayment} saving={savingPaymentId === (payment as FinancialInvoicePayment).id} onSave={onSavedPaymentChange} />
                 )}
               </td>
-              <td className="py-3 px-4 min-w-[160px]">
+              <td className="py-3 px-4 min-w-[220px]">
                 {editable ? (
-                  <Input type="date" value={payment.due_date ?? ""} onChange={(e) => onChange?.(index, { due_date: e.target.value || null })} />
+                  <span className="text-sm text-muted-foreground">{paymentDueLabel(payment)}</span>
                 ) : (
-                  <EditableDateCell payment={payment as FinancialInvoicePayment} saving={savingPaymentId === (payment as FinancialInvoicePayment).id} onSave={onSavedPaymentChange} />
+                  <span className="text-sm text-muted-foreground">{paymentDueLabel(payment)}</span>
                 )}
               </td>
               <td className="py-3 px-4 min-w-[150px]">
@@ -838,6 +838,7 @@ function PaymentTable({
                   className="h-9 w-full border border-input bg-background px-2 text-xs capitalize"
                 >
                   <option value="due">Due</option>
+                  <option value="not_due">Not due yet</option>
                   <option value="paid">Paid</option>
                   <option value="waived">Waived</option>
                 </select>
@@ -888,41 +889,6 @@ function EditableMoneyCell({
       }}
       className="text-right"
       aria-label={`Amount for ${payment.label}`}
-    />
-  );
-}
-
-function EditableDateCell({
-  payment,
-  saving,
-  onSave,
-}: {
-  payment: FinancialInvoicePayment;
-  saving?: boolean;
-  onSave?: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
-}) {
-  const [value, setValue] = useState(payment.due_date ?? "");
-
-  const save = () => {
-    const due_date = value || null;
-    if (due_date !== payment.due_date) onSave?.(payment, { due_date });
-  };
-
-  return (
-    <Input
-      type="date"
-      value={value}
-      disabled={saving}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          setValue(payment.due_date ?? "");
-          e.currentTarget.blur();
-        }
-      }}
-      aria-label={`Due date for ${payment.label}`}
     />
   );
 }
@@ -1241,6 +1207,24 @@ function formatDateForInvoice(value: string) {
   return `${month}/${day}/${year}`;
 }
 
+function phaseDueLabel(phase: InvoicePhaseName) {
+  if (phase === "Project Start") return "Due at project start";
+  if (phase === "Design Presentation") return "Due when design presentation is delivered";
+  if (phase === "Design Document Delivery") return "Due when design document is delivered";
+  if (phase === "Project Completion") return "Due at project completion";
+  return `Due at ${phase}`;
+}
+
+function paymentDueLabel(payment: Pick<FinancialInvoicePayment, "label" | "due_date"> | ReviewPayment) {
+  const clean = String(payment.label || "Payment").replace(/^Phase \d+ - /, "");
+  if (clean === "Project Start") return "Due at project start";
+  if (clean === "Design Presentation") return "Due when design presentation is delivered";
+  if (clean === "Design Document Delivery") return "Due when design document is delivered";
+  if (clean === "Project Completion") return "Due at project completion";
+  if (payment.due_date) return `Due ${formatDateForInvoice(payment.due_date)}`;
+  return clean;
+}
+
 function htmlDataUrl(html: string) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
@@ -1259,8 +1243,8 @@ function serviceInvoiceHtmlFromInvoice(invoice: FinancialInvoice) {
     const payments = (invoice.payments?.length ? invoice.payments : draft.phases.map((phase, index) => ({
       label: `Phase ${index + 1} - ${phase.name}`,
       amount: phaseAmount(fee, phase.percent),
-      due_date: phase.dueDate || null,
-      status: "due",
+      due_date: null,
+      status: index === 0 ? "due" : "not_due",
       notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
       sort_order: index,
     }))).map((payment) => ({
@@ -1430,8 +1414,8 @@ function printServiceInvoiceDraft(draft: ServiceInvoiceDraft) {
   const payments = draft.phases.map((phase, index) => ({
     label: `Phase ${index + 1} - ${phase.name}`,
     amount: phaseAmount(fee, phase.percent),
-    due_date: phase.dueDate || null,
-    status: "due",
+    due_date: null,
+    status: index === 0 ? "due" : "not_due",
     notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
     sort_order: index,
   }));

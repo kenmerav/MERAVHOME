@@ -44,7 +44,7 @@ function accessForProject(project: Project, role: UserProfile["role"]) {
 }
 
 function paymentIsOpen(payment: any) {
-  return payment?.status !== "paid" && payment?.status !== "waived" && Number(payment?.amount || 0) > 0;
+  return payment?.status === "due" && Number(payment?.amount || 0) > 0;
 }
 
 export const Route = createFileRoute("/api/client-dashboard")({

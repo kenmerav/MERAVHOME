@@ -73,7 +73,7 @@ function FinancialsOverviewPage() {
         (invoice.payments ?? []).filter((payment) => isInDateRange(payment.due_date || invoice.invoice_date || invoice.created_at, selectedRange)),
       );
       const paid = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-      const due = payments.filter((payment) => payment.status !== "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const due = payments.filter((payment) => payment.status === "due").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       const revenue = paid + due;
       const procurement = procurementTotals(
         procurementItems.filter((item) => item.room_product?.room?.project?.id === project.id && isInDateRange(item.updated_at, selectedRange)),
