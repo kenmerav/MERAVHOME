@@ -18,6 +18,7 @@ import { canViewFinancials } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
+import { downloadInvoiceDocument, openInvoiceDocument } from "@/lib/invoiceDocuments";
 
 type SharedDashboard = {
   projects: Array<{
@@ -441,13 +442,7 @@ function SharedDashboardOverview({
                     )}
                   </div>
                   {invoice.pdf_data_url && (
-                    <button
-                      type="button"
-                      onClick={() => window.open(invoice.pdf_data_url!, "_blank", "noopener,noreferrer")}
-                      className="inline-flex items-center justify-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
-                    >
-                      <FileText className="h-4 w-4" /> Open Invoice
-                    </button>
+                    <ClientInvoiceActions documentUrl={invoice.pdf_data_url} fileName={invoice.file_name} />
                   )}
                 </div>
               ))}
@@ -488,6 +483,35 @@ function SharedDashboardOverview({
         )}
       </div>
     </section>
+  );
+}
+
+function ClientInvoiceActions({ documentUrl, fileName }: { documentUrl: string | null; fileName?: string | null }) {
+  const open = async () => {
+    try {
+      await openInvoiceDocument(documentUrl, fileName);
+    } catch {
+      toast.error("Could not open invoice.");
+    }
+  };
+
+  const download = async () => {
+    try {
+      await downloadInvoiceDocument(documentUrl, fileName);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not download invoice.");
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={open} className="inline-flex items-center justify-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
+        <FileText className="h-4 w-4" /> View
+      </button>
+      <button type="button" onClick={download} className="inline-flex items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-primary-foreground">
+        <FileText className="h-4 w-4" /> Download PDF
+      </button>
+    </div>
   );
 }
 

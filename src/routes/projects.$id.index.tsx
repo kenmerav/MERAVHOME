@@ -427,6 +427,14 @@ function SharedProjectPortal({
           icon: CheckCircle2,
         }
       : null,
+    profile?.role === "Client"
+      ? {
+          label: "Financials",
+          description: "View shared invoices, payment status, and download invoice PDFs.",
+          href: `/client/financials?project=${projectId}`,
+          icon: DollarSign,
+        }
+      : null,
     canViewProjectSurface(profile, project, "specBook")
       ? {
           label: "Spec Book",

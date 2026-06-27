@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -16,6 +16,7 @@ const nav: NavItem[] = [
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
   { to: "/procurement", label: "Procurement", icon: Truck },
   { to: "/financials", label: "Financials", icon: DollarSign },
+  { to: "/client/financials", label: "Financials", icon: ReceiptText },
   { to: "/hours", label: "Hours", icon: Clock },
   { to: "/users", label: "Users", icon: UserCog },
 ];
@@ -77,7 +78,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   useEffect(() => {
-    if (!loadingAuth && (loc.pathname.startsWith("/procurement") || loc.pathname.startsWith("/financials") || loc.pathname.includes("/financials")) && !canViewFinancials(profile)) {
+    const isClientFinancials = loc.pathname.startsWith("/client/financials");
+    const isStudioFinancials = loc.pathname.startsWith("/procurement") || loc.pathname.startsWith("/financials") || (loc.pathname.includes("/financials") && !isClientFinancials);
+    if (!loadingAuth && isStudioFinancials && !canViewFinancials(profile)) {
       navigate({ to: "/" });
     }
   }, [loadingAuth, loc.pathname, navigate, profile]);
@@ -140,6 +143,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             if (to === "/catalog" && profile?.role === "Client") return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
+            if (to === "/client/financials" && profile?.role !== "Client") return null;
             if (to === "/hours" && !canLogHours(profile)) return null;
             const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
             return (
@@ -205,6 +209,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               if (to === "/catalog" && profile?.role === "Client") return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
+              if (to === "/client/financials" && profile?.role !== "Client") return null;
               if (to === "/hours" && !canLogHours(profile)) return null;
               const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
               return (
