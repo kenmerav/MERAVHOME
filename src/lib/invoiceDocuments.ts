@@ -58,20 +58,28 @@ export async function downloadInvoiceDocument(documentUrl: string | null, fileNa
 }
 
 function applyInvoicePaymentLink(html: string, paymentUrl?: string | null) {
-  if (paymentUrl) {
-    const safeUrl = escapeHtmlAttribute(paymentUrl);
-    const linked = `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">CLICK HERE TO PAY</a>`;
-    const updatedStripeUrls = html.replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, safeUrl);
-    if (!updatedStripeUrls.includes("CLICK HERE TO PAY")) return updatedStripeUrls;
+  const withoutEmbeddedPayRow = removeEmbeddedPayRow(html);
 
-    return updatedStripeUrls
-      .replace(/<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/gi, linked)
-      .replace(/(?<![>\w])CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY(?!\s*<\/a>)/gi, linked);
+  // The client portal has its own current Pay Online button. Strip stale
+  // Stripe URLs from saved invoice HTML so old phase links cannot be reused.
+  if (!paymentUrl) {
+    return withoutEmbeddedPayRow.replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, "#");
   }
 
-  return html
+  return withoutEmbeddedPayRow.replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, escapeHtmlAttribute(paymentUrl));
+}
+
+function removeEmbeddedPayRow(html: string) {
+  const withoutPayBlock = html.replace(
+    /<div\s+class=["']pay["'][^>]*>\s*<div>[\s\S]*?<\/div>\s*<div>[\s\S]*?<\/div>\s*<\/div>/gi,
+    "",
+  );
+
+  if (withoutPayBlock !== html) return withoutPayBlock;
+
+  return withoutPayBlock
     .replace(/<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/gi, "CLICK HERE TO PAY")
-    .replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, "#");
+    .replace(/(?<![>\w])CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY(?!\s*<\/a>)/gi, "");
 }
 
 function isHtmlInvoice(blob: Blob, documentUrl: string) {
