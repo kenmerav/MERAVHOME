@@ -54,6 +54,7 @@ import {
   toProductCategory,
   type ItemCategory,
 } from "@/lib/roomTemplates";
+import { canViewProjectSurface } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -446,6 +447,10 @@ function ProjectDesignBoardsPage() {
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
   });
+  const canViewDesignBoards =
+    profile?.is_active === true &&
+    project != null &&
+    canViewProjectSurface(profile, project, "designBoards");
   const {
     data: sharedBoard,
     isLoading: loadingSharedBoard,
@@ -453,7 +458,7 @@ function ProjectDesignBoardsPage() {
   } = useQuery({
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
-    enabled: canEditDesignBoards,
+    enabled: canViewDesignBoards,
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
@@ -2615,15 +2620,14 @@ function ProjectDesignBoardsPage() {
     );
   }
 
-  if (!loadingProfile && !canEditDesignBoards) {
+  if (!loadingProfile && !canViewDesignBoards) {
     return (
       <AppShell>
         <div className="p-16">
           <div className="eyebrow">Design Boards</div>
-          <h1 className="mt-3 font-display text-5xl">Employee access only</h1>
+          <h1 className="mt-3 font-display text-5xl">Not ready to view yet</h1>
           <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
-            Design boards are currently available to MERAV admins and employees only. Client and
-            contractor sharing can be added later when we define what they should see.
+            Design boards are not currently shared for your role on this project.
           </p>
         </div>
       </AppShell>
@@ -2694,6 +2698,7 @@ function ProjectDesignBoardsPage() {
                 ))}
               </div>
             </div>
+            {canEditDesignBoards && (
             <div className="flex flex-wrap items-center gap-2">
               <ToolbarButton
                 onClick={() =>
@@ -2926,6 +2931,7 @@ function ProjectDesignBoardsPage() {
                 <Trash2 className="h-4 w-4" /> Delete
               </ToolbarButton>
             </div>
+            )}
           </div>
         </div>
 
@@ -2969,11 +2975,16 @@ function ProjectDesignBoardsPage() {
                         height: BOARD_HEIGHT,
                         transform: `scale(${boardScale})`,
                       }}
-                      onDrop={(event) => handleBoardDrop(event, page.id)}
-                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        if (canEditDesignBoards) handleBoardDrop(event, page.id);
+                      }}
+                      onDragOver={(event) => {
+                        if (canEditDesignBoards) event.preventDefault();
+                      }}
                       onPointerDown={(event) => {
                         if (event.target !== event.currentTarget) return;
                         selectPage(page.id, false, false);
+                        if (!canEditDesignBoards) return;
                         clearSelection();
                         const rect = event.currentTarget.getBoundingClientRect();
                         const pointX = clamp(
@@ -3027,13 +3038,24 @@ function ProjectDesignBoardsPage() {
                             commentCount={
                               commentCountsByElement.get(`${page.id}:${element.id}`) ?? 0
                             }
-                            onQuickComment={() => quickCommentElement(element, page.id)}
-                            onQuickLink={() => quickEditElementLink(element, page.id)}
-                            onQuickLabel={() => quickEditElementLabel(element, page.id)}
-                            onQuickFinish={() => quickEditElementFinish(element, page.id)}
-                            onQuickDelete={() => quickDeleteElement(element, page.id)}
+                            onQuickComment={() => {
+                              if (canEditDesignBoards) quickCommentElement(element, page.id);
+                            }}
+                            onQuickLink={() => {
+                              if (canEditDesignBoards) quickEditElementLink(element, page.id);
+                            }}
+                            onQuickLabel={() => {
+                              if (canEditDesignBoards) quickEditElementLabel(element, page.id);
+                            }}
+                            onQuickFinish={() => {
+                              if (canEditDesignBoards) quickEditElementFinish(element, page.id);
+                            }}
+                            onQuickDelete={() => {
+                              if (canEditDesignBoards) quickDeleteElement(element, page.id);
+                            }}
                             onSelect={(event) => {
                               selectPage(page.id, false, false);
+                              if (!canEditDesignBoards) return;
                               if (event.shiftKey || event.metaKey) {
                                 toggleSelectedElement(element.id);
                               } else if (selectedCount > 1 && selectedIdSet.has(element.id)) {
@@ -3042,8 +3064,11 @@ function ProjectDesignBoardsPage() {
                                 selectOnly(element.id);
                               }
                             }}
-                            onChange={(patch) => updateElement(element.id, patch, page.id)}
+                            onChange={(patch) => {
+                              if (canEditDesignBoards) updateElement(element.id, patch, page.id);
+                            }}
                             onStartMove={(event) => {
+                              if (!canEditDesignBoards) return;
                               pushUndo();
                               event.currentTarget.setPointerCapture(event.pointerId);
                               selectPage(page.id, false, false);
@@ -3069,6 +3094,7 @@ function ProjectDesignBoardsPage() {
                               });
                             }}
                             onStartResize={(event) => {
+                              if (!canEditDesignBoards) return;
                               event.stopPropagation();
                               pushUndo();
                               event.currentTarget.setPointerCapture(event.pointerId);
@@ -3087,7 +3113,7 @@ function ProjectDesignBoardsPage() {
                           />
                         ))}
 
-                      {isActivePage && selectedBounds && selectedCount > 1 && (
+                      {canEditDesignBoards && isActivePage && selectedBounds && selectedCount > 1 && (
                         <div
                           className="pointer-events-none absolute border-2 border-[#1f4e5f]"
                           style={{

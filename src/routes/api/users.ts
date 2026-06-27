@@ -47,6 +47,10 @@ async function syncProjectAssignments(userId: string, projectIds: string[]) {
   if (error) throw error;
 }
 
+function canUseProjectAssignments(role: UserRole, canViewAllProjects?: boolean) {
+  return role === "Client" || role === "Contractor" || (role === "Employee" && canViewAllProjects === false);
+}
+
 export const Route = createFileRoute("/api/users")({
   server: {
     handlers: {
@@ -99,6 +103,7 @@ export const Route = createFileRoute("/api/users")({
             password?: string;
             hourly_rate?: number;
             project_ids?: string[];
+            can_view_all_projects?: boolean;
           };
 
           const email = body.email?.trim().toLowerCase();
@@ -106,6 +111,7 @@ export const Route = createFileRoute("/api/users")({
           const role = body.role;
           const password = body.password?.trim() || "merav";
           const projectIds = cleanProjectIds(body.project_ids);
+          const canViewAllProjects = role === "Employee" ? body.can_view_all_projects !== false : role === "Admin";
 
           if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400);
           if (!fullName) return json({ error: "Enter the user's name." }, 400);
@@ -142,12 +148,12 @@ export const Route = createFileRoute("/api/users")({
 
           const { data: profile, error: profileError } = await supabaseAdmin
             .from("user_profiles")
-            .upsert({ id: userId, email, full_name: fullName, role, hourly_rate: hourlyRate, is_active: true, is_owner: OVERALL_ADMIN_EMAILS.has(email) } as any, { onConflict: "id" })
+            .upsert({ id: userId, email, full_name: fullName, role, hourly_rate: hourlyRate, is_active: true, is_owner: OVERALL_ADMIN_EMAILS.has(email), can_view_all_projects: canViewAllProjects } as any, { onConflict: "id" })
             .select()
             .single();
 
           if (profileError) return json({ error: profileError.message }, 500);
-          await syncProjectAssignments(userId, role === "Client" || role === "Contractor" ? projectIds : []);
+          await syncProjectAssignments(userId, canUseProjectAssignments(role, canViewAllProjects) ? projectIds : []);
           return json({ user: profile });
         } catch (e: any) {
           console.error("Create user failed", e);
@@ -168,6 +174,7 @@ export const Route = createFileRoute("/api/users")({
             password?: string;
             hourly_rate?: number;
             project_ids?: string[];
+            can_view_all_projects?: boolean;
           };
 
           if (!body.id) return json({ error: "Missing user id." }, 400);
@@ -196,6 +203,10 @@ export const Route = createFileRoute("/api/users")({
 
           const fullName = body.full_name?.trim() || existing.full_name;
           const isActive = isProtectedAdmin || willBeProtectedAdmin ? true : body.is_active ?? existing.is_active;
+          const canViewAllProjects =
+            role === "Employee"
+              ? body.can_view_all_projects ?? existing.can_view_all_projects ?? true
+              : role === "Admin";
           const userUpdate: Parameters<typeof supabaseAdmin.auth.admin.updateUserById>[1] = {
             email,
             email_confirm: true,
@@ -215,13 +226,14 @@ export const Route = createFileRoute("/api/users")({
               hourly_rate: hourlyRate,
               is_active: isActive,
               is_owner: isProtectedAdmin || willBeProtectedAdmin,
+              can_view_all_projects: canViewAllProjects,
             } as any)
             .eq("id", body.id)
             .select()
             .single();
           if (profileError) return json({ error: profileError.message }, 500);
           if (body.project_ids) {
-            await syncProjectAssignments(body.id, role === "Client" || role === "Contractor" ? cleanProjectIds(body.project_ids) : []);
+            await syncProjectAssignments(body.id, canUseProjectAssignments(role, canViewAllProjects) ? cleanProjectIds(body.project_ids) : []);
           }
           return json({ user: profile });
         } catch (e: any) {

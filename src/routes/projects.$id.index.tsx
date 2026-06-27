@@ -21,6 +21,7 @@ import {
   FileText,
   Truck,
   Palette,
+  ShieldCheck,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -265,6 +266,15 @@ function ProjectDetailPage() {
               >
                 <SlidersHorizontal className="w-4 h-4" /> Approval Setup
               </Link>
+              {canManageStudio(profile) && (
+                <ProjectAccessDialog
+                  project={project}
+                  onSaved={() => {
+                    qc.invalidateQueries({ queryKey: ["project", id] });
+                    qc.invalidateQueries({ queryKey: ["projects"] });
+                  }}
+                />
+              )}
               <Link
                 to="/client/approvals/$projectId"
                 params={{ projectId: id }}
@@ -720,6 +730,154 @@ function ProjectInfoDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ProjectAccessDialog({
+  project,
+  onSaved,
+}: {
+  project: Project;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    client_can_view_spec_book: project.client_can_view_spec_book,
+    client_can_view_presentations: project.client_can_view_presentations,
+    client_can_view_design_boards: project.client_can_view_design_boards,
+    client_spec_show_pricing: project.client_spec_show_pricing,
+    client_spec_show_links: project.client_spec_show_links,
+    contractor_can_view_spec_book: project.contractor_can_view_spec_book,
+    contractor_can_view_presentations: project.contractor_can_view_presentations,
+    contractor_can_view_design_boards: project.contractor_can_view_design_boards,
+    contractor_spec_show_pricing: project.contractor_spec_show_pricing,
+    contractor_spec_show_links: project.contractor_spec_show_links,
+  });
+
+  const resetForm = () => {
+    setForm({
+      client_can_view_spec_book: project.client_can_view_spec_book,
+      client_can_view_presentations: project.client_can_view_presentations,
+      client_can_view_design_boards: project.client_can_view_design_boards,
+      client_spec_show_pricing: project.client_spec_show_pricing,
+      client_spec_show_links: project.client_spec_show_links,
+      contractor_can_view_spec_book: project.contractor_can_view_spec_book,
+      contractor_can_view_presentations: project.contractor_can_view_presentations,
+      contractor_can_view_design_boards: project.contractor_can_view_design_boards,
+      contractor_spec_show_pricing: project.contractor_spec_show_pricing,
+      contractor_spec_show_links: project.contractor_spec_show_links,
+    });
+  };
+
+  const toggle = (key: keyof typeof form) => {
+    setForm((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await db.updateProject(project.id, form);
+      toast.success("Project access updated");
+      setOpen(false);
+      onSaved();
+    } catch (error) {
+      toast.error(errorMessage(error, "Unable to update project access."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) resetForm();
+      }}
+    >
+      <DialogTrigger asChild>
+        <button className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors">
+          <ShieldCheck className="w-4 h-4" /> Access
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-3xl font-normal">Project Access</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-5 md:grid-cols-2">
+          <AccessRolePanel
+            title="Client"
+            description="Control what the client can open and what details they see in the spec book."
+            rows={[
+              ["Spec Book Ready", form.client_can_view_spec_book, () => toggle("client_can_view_spec_book")],
+              ["Presentations Ready", form.client_can_view_presentations, () => toggle("client_can_view_presentations")],
+              ["Design Boards Ready", form.client_can_view_design_boards, () => toggle("client_can_view_design_boards")],
+              ["Spec Shows Pricing", form.client_spec_show_pricing, () => toggle("client_spec_show_pricing")],
+              ["Spec Shows Product Links", form.client_spec_show_links, () => toggle("client_spec_show_links")],
+            ]}
+          />
+          <AccessRolePanel
+            title="Builder / GC"
+            description="Control when the builder can access project documents and whether the full spec is visible."
+            rows={[
+              ["Spec Book Ready", form.contractor_can_view_spec_book, () => toggle("contractor_can_view_spec_book")],
+              ["Presentations Ready", form.contractor_can_view_presentations, () => toggle("contractor_can_view_presentations")],
+              ["Design Boards Ready", form.contractor_can_view_design_boards, () => toggle("contractor_can_view_design_boards")],
+              ["Spec Shows Pricing", form.contractor_spec_show_pricing, () => toggle("contractor_spec_show_pricing")],
+              ["Spec Shows Product Links", form.contractor_spec_show_links, () => toggle("contractor_spec_show_links")],
+            ]}
+          />
+        </div>
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="px-5 py-2.5 border border-border text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={save}
+            className="px-5 py-2.5 bg-ink text-primary-foreground text-sm disabled:opacity-60"
+          >
+            {saving ? "Saving..." : "Save Access"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AccessRolePanel({
+  title,
+  description,
+  rows,
+}: {
+  title: string;
+  description: string;
+  rows: [string, boolean, () => void][];
+}) {
+  return (
+    <div className="border border-border p-5">
+      <h3 className="font-display text-2xl">{title}</h3>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+      <div className="mt-5 divide-y divide-border">
+        {rows.map(([label, checked, onChange]) => (
+          <label key={label} className="flex cursor-pointer items-center justify-between gap-4 py-3 text-sm">
+            <span>{label}</span>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={onChange}
+              className="h-5 w-5 accent-ink"
+            />
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

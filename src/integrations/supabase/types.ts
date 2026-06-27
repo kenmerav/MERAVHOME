@@ -493,6 +493,16 @@ export type Database = {
           approval_show_quantity: boolean
           approval_show_vendor: boolean
           client_name: string
+          client_can_view_design_boards: boolean
+          client_can_view_presentations: boolean
+          client_can_view_spec_book: boolean
+          client_spec_show_links: boolean
+          client_spec_show_pricing: boolean
+          contractor_can_view_design_boards: boolean
+          contractor_can_view_presentations: boolean
+          contractor_can_view_spec_book: boolean
+          contractor_spec_show_links: boolean
+          contractor_spec_show_pricing: boolean
           cover_image_url: string | null
           created_at: string
           design_concept: string | null
@@ -514,6 +524,16 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name: string
+          client_can_view_design_boards?: boolean
+          client_can_view_presentations?: boolean
+          client_can_view_spec_book?: boolean
+          client_spec_show_links?: boolean
+          client_spec_show_pricing?: boolean
+          contractor_can_view_design_boards?: boolean
+          contractor_can_view_presentations?: boolean
+          contractor_can_view_spec_book?: boolean
+          contractor_spec_show_links?: boolean
+          contractor_spec_show_pricing?: boolean
           cover_image_url?: string | null
           created_at?: string
           design_concept?: string | null
@@ -535,6 +555,16 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name?: string
+          client_can_view_design_boards?: boolean
+          client_can_view_presentations?: boolean
+          client_can_view_spec_book?: boolean
+          client_spec_show_links?: boolean
+          client_spec_show_pricing?: boolean
+          contractor_can_view_design_boards?: boolean
+          contractor_can_view_presentations?: boolean
+          contractor_can_view_spec_book?: boolean
+          contractor_spec_show_links?: boolean
+          contractor_spec_show_pricing?: boolean
           cover_image_url?: string | null
           created_at?: string
           design_concept?: string | null
@@ -752,6 +782,7 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          can_view_all_projects: boolean
           created_at: string
           email: string
           full_name: string
@@ -763,6 +794,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          can_view_all_projects?: boolean
           created_at?: string
           email: string
           full_name: string
@@ -774,6 +806,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          can_view_all_projects?: boolean
           created_at?: string
           email?: string
           full_name?: string

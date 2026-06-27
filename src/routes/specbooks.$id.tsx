@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
+import { canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -130,6 +131,18 @@ export function SpecBookDocument({
 
   if (!project) return <div className="p-16 text-muted-foreground">Loading…</div>;
 
+  if (!publicView && profile && !canViewProjectSurface(profile, project, "specBook")) {
+    return (
+      <div className="p-16">
+        <div className="eyebrow">Spec Book</div>
+        <h1 className="mt-3 font-display text-5xl">Not ready to view yet</h1>
+        <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+          This spec book is not currently shared for your role on this project.
+        </p>
+      </div>
+    );
+  }
+
   const today = new Date().toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
@@ -140,6 +153,9 @@ export function SpecBookDocument({
     !publicView &&
     profile?.is_active === true &&
     (profile.role === "Admin" || profile.role === "Employee");
+  const visibility = publicView
+    ? { showPricing: true, showLinks: true }
+    : specBookVisibilityForRole(profile, project);
   const specBookUrl = `https://studio.meravinteriors.com/specbooks/public/${id}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=svg&data=${encodeURIComponent(
     specBookUrl,
@@ -334,6 +350,7 @@ export function SpecBookDocument({
                 projectName={project.name}
                 projectId={id}
                 canEditProducts={canEditProducts}
+                showLinks={visibility.showLinks}
               />
             ))
           : (() => {
@@ -354,6 +371,7 @@ export function SpecBookDocument({
                     projectName={project.name}
                     projectId={id}
                     canEditProducts={canEditProducts}
+                    showLinks={visibility.showLinks}
                   />
                 );
               });
@@ -381,6 +399,7 @@ function CategorySpec({
   projectName,
   projectId,
   canEditProducts,
+  showLinks,
 }: {
   category: string;
   items: MaterialItem[];
@@ -388,6 +407,7 @@ function CategorySpec({
   projectName: string;
   projectId: string;
   canEditProducts: boolean;
+  showLinks: boolean;
 }) {
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -428,6 +448,7 @@ function CategorySpec({
                   room={room!}
                   projectId={projectId}
                   canEditProducts={canEditProducts}
+                  showLinks={showLinks}
                 />
               ))}
             </div>
@@ -445,6 +466,7 @@ function RoomSpec({
   projectName,
   projectId,
   canEditProducts,
+  showLinks,
 }: {
   num: string;
   room: Room;
@@ -452,6 +474,7 @@ function RoomSpec({
   projectName: string;
   projectId: string;
   canEditProducts: boolean;
+  showLinks: boolean;
 }) {
   const sections = sectionsForRoom(room.name);
   const grouped = useMemo(() => {
@@ -497,6 +520,7 @@ function RoomSpec({
                   room={room}
                   projectId={projectId}
                   canEditProducts={canEditProducts}
+                  showLinks={showLinks}
                 />
               ))}
             </div>
@@ -530,11 +554,13 @@ function SpecCard({
   room,
   projectId,
   canEditProducts,
+  showLinks,
 }: {
   item: MaterialItem;
   room: Room;
   projectId: string;
   canEditProducts: boolean;
+  showLinks: boolean;
 }) {
   const p = item.product;
   const displayName = clientProductName(item, room);
@@ -591,7 +617,7 @@ function SpecCard({
           <Detail label="Quantity" value={item.quantity != null ? String(item.quantity) : null} />
         </dl>
 
-        {p?.product_url && (
+        {showLinks && p?.product_url && (
           <div className="mt-5 print:mt-3">
             <dt className="eyebrow mb-1">Product URL</dt>
             <a

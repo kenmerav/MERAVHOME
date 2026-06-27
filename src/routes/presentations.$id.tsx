@@ -19,6 +19,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
+import { canViewProjectSurface } from "@/lib/permissions";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 
@@ -337,6 +338,10 @@ function PresentationPage() {
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => db.getProject(projectId),
+  });
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
   });
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", projectId],
@@ -785,6 +790,25 @@ function PresentationPage() {
       </AppShell>
     );
 
+  const canViewPresentation =
+    profile?.is_active === true && canViewProjectSurface(profile, project, "presentations");
+  const canEditPresentation =
+    profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
+
+  if (!loadingProfile && !canViewPresentation) {
+    return (
+      <AppShell>
+        <div className="p-16">
+          <div className="eyebrow">Presentation</div>
+          <h1 className="mt-3 font-display text-5xl">Not ready to view yet</h1>
+          <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+            This presentation is not currently shared for your role on this project.
+          </p>
+        </div>
+      </AppShell>
+    );
+  }
+
   if (presenting) {
     const total = slides.length;
     const current = slides[Math.min(slide, total - 1)];
@@ -851,18 +875,22 @@ function PresentationPage() {
             <ArrowLeft className="w-3.5 h-3.5" /> Back to project
           </Link>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEditingPicks((value) => !value)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
-            >
-              {editingPicks ? "Done Editing" : "Edit Picks"}
-            </button>
-            <button
-              onClick={() => setEditingText((value) => !value)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
-            >
-              <Type className="w-4 h-4" /> {editingText ? "Done Text" : "Edit Text"}
-            </button>
+            {canEditPresentation && (
+              <>
+                <button
+                  onClick={() => setEditingPicks((value) => !value)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
+                >
+                  {editingPicks ? "Done Editing" : "Edit Picks"}
+                </button>
+                <button
+                  onClick={() => setEditingText((value) => !value)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
+                >
+                  <Type className="w-4 h-4" /> {editingText ? "Done Text" : "Edit Text"}
+                </button>
+              </>
+            )}
             <button
               onClick={enterPresent}
               className="inline-flex items-center gap-2 px-5 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"

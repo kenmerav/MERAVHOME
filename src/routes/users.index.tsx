@@ -28,8 +28,8 @@ function roleLabel(role: UserRole) {
   return role === "Contractor" ? "Builder / GC" : role;
 }
 
-function canAssignProjects(role: UserRole) {
-  return ASSIGNABLE_ROLES.includes(role);
+function canAssignProjects(role: UserRole, canViewAllProjects = true) {
+  return ASSIGNABLE_ROLES.includes(role) || (role === "Employee" && !canViewAllProjects);
 }
 
 export const Route = createFileRoute("/users/")({
@@ -48,6 +48,7 @@ function UsersPage() {
   const [hourlyRate, setHourlyRate] = useState("");
   const [password, setPassword] = useState("merav");
   const [projectIds, setProjectIds] = useState<string[]>([]);
+  const [employeeProjectScope, setEmployeeProjectScope] = useState<"all" | "assigned">("all");
   const [busy, setBusy] = useState(false);
   const [roleFilter, setRoleFilter] = useState<"All" | UserRole>("All");
 
@@ -93,7 +94,8 @@ function UsersPage() {
         role,
         hourly_rate: role === "Employee" ? moneyNumber(hourlyRate) : 0,
         password,
-        project_ids: canAssignProjects(role) ? projectIds : [],
+        can_view_all_projects: role === "Employee" ? employeeProjectScope === "all" : role === "Admin",
+        project_ids: canAssignProjects(role, employeeProjectScope === "all") ? projectIds : [],
       }),
     });
     const body = await res.json();
@@ -109,10 +111,11 @@ function UsersPage() {
     setHourlyRate("");
     setPassword("merav");
     setProjectIds([]);
+    setEmployeeProjectScope("all");
     await loadUsers();
   };
 
-  const updateUser = async (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[] }) => {
+  const updateUser = async (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[]; can_view_all_projects?: boolean }) => {
     setBusy(true);
     const res = await authedFetch("/api/users", {
       method: "PATCH",
@@ -123,6 +126,7 @@ function UsersPage() {
         hourly_rate: (patch.role ?? user.role) === "Employee" ? patch.hourly_rate ?? user.hourly_rate : 0,
         is_active: patch.is_active ?? user.is_active,
         password: patch.password,
+        can_view_all_projects: patch.can_view_all_projects ?? user.can_view_all_projects,
         project_ids: patch.project_ids,
       }),
     });
@@ -179,7 +183,20 @@ function UsersPage() {
                 <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
               </div>
             )}
-            {canAssignProjects(role) && (
+            {role === "Employee" && (
+              <div>
+                <Label className="eyebrow">Project Access</Label>
+                <select
+                  value={employeeProjectScope}
+                  onChange={(e) => setEmployeeProjectScope(e.target.value as "all" | "assigned")}
+                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="all">All projects</option>
+                  <option value="assigned">Assigned projects only</option>
+                </select>
+              </div>
+            )}
+            {canAssignProjects(role, employeeProjectScope === "all") && (
               <ProjectAssignmentPicker
                 projects={projects}
                 selectedProjectIds={projectIds}
@@ -243,7 +260,7 @@ function UserRow({
   user: ManagedUser;
   projects: UserProject[];
   busy: boolean;
-  onSave: (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[] }) => void;
+  onSave: (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[]; can_view_all_projects?: boolean }) => void;
 }) {
   const [fullName, setFullName] = useState(user.full_name);
   const [email, setEmail] = useState(user.email);
@@ -252,6 +269,9 @@ function UserRow({
   const [isActive, setIsActive] = useState(user.is_active);
   const [password, setPassword] = useState("");
   const [projectIds, setProjectIds] = useState<string[]>(user.assigned_project_ids ?? []);
+  const [userProjectScope, setUserProjectScope] = useState<"all" | "assigned">(
+    user.role === "Employee" && user.can_view_all_projects === false ? "assigned" : "all",
+  );
   const isProtectedAdmin = OVERALL_ADMIN_EMAILS.has(user.email.toLowerCase());
 
   useEffect(() => {
@@ -262,6 +282,7 @@ function UserRow({
     setIsActive(user.is_active);
     setPassword("");
     setProjectIds(user.assigned_project_ids ?? []);
+    setUserProjectScope(user.role === "Employee" && user.can_view_all_projects === false ? "assigned" : "all");
   }, [user]);
 
   const saveUser = () => {
@@ -272,7 +293,8 @@ function UserRow({
       hourly_rate: role === "Employee" ? moneyNumber(hourlyRate) : 0,
       is_active: isActive,
       password: password || undefined,
-      project_ids: canAssignProjects(role) ? projectIds : [],
+      can_view_all_projects: role === "Employee" ? userProjectScope === "all" : role === "Admin",
+      project_ids: canAssignProjects(role, userProjectScope === "all") ? projectIds : [],
     });
   };
 
@@ -335,7 +357,21 @@ function UserRow({
         </div>
       </div>
 
-      {canAssignProjects(role) && (
+      {role === "Employee" && (
+        <div>
+          <Label className="eyebrow">Project Access</Label>
+          <select
+            value={userProjectScope}
+            onChange={(e) => setUserProjectScope(e.target.value as "all" | "assigned")}
+            className="mt-2 flex h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="all">All projects</option>
+            <option value="assigned">Assigned projects only</option>
+          </select>
+        </div>
+      )}
+
+      {canAssignProjects(role, userProjectScope === "all") && (
         <ProjectAssignmentPicker
           projects={projects}
           selectedProjectIds={projectIds}

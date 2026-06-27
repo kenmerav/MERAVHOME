@@ -82,6 +82,16 @@ export interface Project {
   approval_show_dimensions: boolean;
   approval_show_finish: boolean;
   approval_live: boolean;
+  client_can_view_spec_book: boolean;
+  client_can_view_presentations: boolean;
+  client_can_view_design_boards: boolean;
+  client_spec_show_pricing: boolean;
+  client_spec_show_links: boolean;
+  contractor_can_view_spec_book: boolean;
+  contractor_can_view_presentations: boolean;
+  contractor_can_view_design_boards: boolean;
+  contractor_spec_show_pricing: boolean;
+  contractor_spec_show_links: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -228,6 +238,7 @@ export interface UserProfile {
   role: UserRole;
   is_active: boolean;
   is_owner: boolean;
+  can_view_all_projects: boolean;
   hourly_rate: number;
   created_at: string;
   updated_at: string;
@@ -338,7 +349,11 @@ async function getCurrentProjectAccess() {
     return { profile: typedProfile, assignedProjectIds: [] as string[] };
   }
 
-  if (typedProfile.role !== "Client" && typedProfile.role !== "Contractor") {
+  if (
+    typedProfile.role !== "Client" &&
+    typedProfile.role !== "Contractor" &&
+    (typedProfile.role !== "Employee" || typedProfile.can_view_all_projects !== false)
+  ) {
     return { profile: typedProfile, assignedProjectIds: [] as string[] };
   }
 
@@ -369,7 +384,12 @@ export const db = {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
     let query = supabase.from("projects").select("*").order("updated_at", { ascending: false });
 
-    if (profile && (profile.role === "Client" || profile.role === "Contractor")) {
+    if (
+      profile &&
+      (profile.role === "Client" ||
+        profile.role === "Contractor" ||
+        (profile.role === "Employee" && profile.can_view_all_projects === false))
+    ) {
       if (!assignedProjectIds.length) return [] as Project[];
       query = query.in("id", assignedProjectIds);
     }
@@ -380,7 +400,9 @@ export const db = {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
     if (
       profile &&
-      (profile.role === "Client" || profile.role === "Contractor") &&
+      (profile.role === "Client" ||
+        profile.role === "Contractor" ||
+        (profile.role === "Employee" && profile.can_view_all_projects === false)) &&
       !assignedProjectIds.includes(id)
     ) {
       return null;
