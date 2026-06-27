@@ -33,6 +33,7 @@ import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-mate
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
+import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
@@ -176,6 +177,12 @@ const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
   path: '/api/parse-invoice-pdf',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMarkFinancialPaymentDueRoute =
+  ApiMarkFinancialPaymentDueRouteImport.update({
+    id: '/api/mark-financial-payment-due',
+    path: '/api/mark-financial-payment-due',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiImportMaterialsPdfRoute = ApiImportMaterialsPdfRouteImport.update({
   id: '/api/import-materials-pdf',
   path: '/api/import-materials-pdf',
@@ -292,6 +299,7 @@ export interface FileRoutesByFullPath {
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
+  '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
@@ -338,6 +346,7 @@ export interface FileRoutesByTo {
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
+  '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
@@ -385,6 +394,7 @@ export interface FileRoutesById {
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
+  '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
@@ -433,6 +443,7 @@ export interface FileRouteTypes {
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
+    | '/api/mark-financial-payment-due'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
     | '/api/remove-design-board-background'
@@ -479,6 +490,7 @@ export interface FileRouteTypes {
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
+    | '/api/mark-financial-payment-due'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
     | '/api/remove-design-board-background'
@@ -525,6 +537,7 @@ export interface FileRouteTypes {
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
+    | '/api/mark-financial-payment-due'
     | '/api/parse-invoice-pdf'
     | '/api/projects'
     | '/api/remove-design-board-background'
@@ -572,6 +585,7 @@ export interface RootRouteChildren {
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
+  ApiMarkFinancialPaymentDueRoute: typeof ApiMarkFinancialPaymentDueRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
@@ -778,6 +792,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiParseInvoicePdfRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mark-financial-payment-due': {
+      id: '/api/mark-financial-payment-due'
+      path: '/api/mark-financial-payment-due'
+      fullPath: '/api/mark-financial-payment-due'
+      preLoaderRoute: typeof ApiMarkFinancialPaymentDueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/import-materials-pdf': {
       id: '/api/import-materials-pdf'
       path: '/api/import-materials-pdf'
@@ -932,6 +953,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
+  ApiMarkFinancialPaymentDueRoute: ApiMarkFinancialPaymentDueRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiProjectsRoute: ApiProjectsRoute,
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,

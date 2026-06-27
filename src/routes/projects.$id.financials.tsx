@@ -390,8 +390,32 @@ function FinancialsPage() {
 
   const updatePaymentStatus = async (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => {
     if (!allowed) return toast.error("Only Ken and Katie can edit invoices.");
-    await db.updateFinancialPayment(payment.id, { status });
-    qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+    setSavingPaymentId(payment.id);
+    try {
+      if (status === "due") {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error("Sign in as Ken or Katie to use invoice tools.");
+        const res = await fetch("/api/mark-financial-payment-due", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ paymentId: payment.id }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || "Could not mark payment due.");
+        if (body?.warning) toast.warning(body.warning);
+        else toast.success("Payment marked due and Stripe link updated");
+      } else {
+        await db.updateFinancialPayment(payment.id, { status });
+        toast.success("Payment status updated");
+      }
+      qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Could not update payment.");
+    } finally {
+      setSavingPaymentId(null);
+    }
   };
 
   const updateSavedPayment = async (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => {
@@ -834,8 +858,9 @@ function PaymentTable({
               <td className="py-3 px-4 min-w-[150px]">
                 <select
                   value={payment.status}
+                  disabled={savingPaymentId === (payment as FinancialInvoicePayment).id}
                   onChange={(e) => editable ? onChange?.(index, { status: e.target.value as any }) : onStatus?.(payment as FinancialInvoicePayment, e.target.value as any)}
-                  className="h-9 w-full border border-input bg-background px-2 text-xs capitalize"
+                  className="h-9 w-full border border-input bg-background px-2 text-xs capitalize disabled:opacity-60"
                 >
                   <option value="due">Due</option>
                   <option value="not_due">Not due yet</option>

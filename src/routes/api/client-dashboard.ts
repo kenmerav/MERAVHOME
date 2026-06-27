@@ -47,6 +47,10 @@ function paymentIsOpen(payment: any) {
   return payment?.status === "due" && Number(payment?.amount || 0) > 0;
 }
 
+function stripeLinkFromNotes(notes?: string | null) {
+  return notes?.match(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/i)?.[0] ?? null;
+}
+
 async function approvalTodosForProjects(projects: Array<{ id: string; name: string; access: { approvals: boolean } }>) {
   const approvalProjects = projects.filter((project) => project.access.approvals);
   if (!approvalProjects.length) return [];
@@ -198,6 +202,7 @@ export const Route = createFileRoute("/api/client-dashboard")({
                   amount: payment.amount,
                   due_date: payment.due_date,
                   invoice_id: invoice.id,
+                  payment_url: stripeLinkFromNotes(payment.notes),
                 })),
             ),
             ...approvalTodos,

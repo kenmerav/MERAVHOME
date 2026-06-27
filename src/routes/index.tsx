@@ -71,6 +71,7 @@ type SharedDashboard = {
     amount?: number;
     due_date?: string | null;
     invoice_id?: string;
+    payment_url?: string | null;
     href?: string;
   }>;
 };
@@ -283,13 +284,25 @@ function SharedDashboardOverview({
                       Review <ArrowRight className="h-4 w-4" />
                     </Link>
                   ) : (
-                    <Link
-                      to="/client/financials"
-                      search={todo.project_id ? { project: todo.project_id } : undefined}
-                      className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink"
-                    >
-                      View invoice <ArrowRight className="h-4 w-4" />
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                      {todo.payment_url ? (
+                        <a
+                          href={todo.payment_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 text-sm border border-ink bg-ink px-4 py-2 text-white hover:bg-ink/90"
+                        >
+                          Pay online <ArrowRight className="h-4 w-4" />
+                        </a>
+                      ) : null}
+                      <Link
+                        to="/client/financials"
+                        search={todo.project_id ? { project: todo.project_id } : undefined}
+                        className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink"
+                      >
+                        View invoice <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
                   )}
                 </div>
               ))}
