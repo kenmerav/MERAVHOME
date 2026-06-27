@@ -227,8 +227,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 
 function currentPaymentUrl(invoice: ClientInvoice) {
   const dueWithLink = invoice.payments.find((payment) => payment.status === "due" && stripeLinkFromNotes(payment.notes));
-  const anyWithLink = invoice.payments.find((payment) => stripeLinkFromNotes(payment.notes));
-  return stripeLinkFromNotes(dueWithLink?.notes) ?? stripeLinkFromNotes(anyWithLink?.notes);
+  return stripeLinkFromNotes(dueWithLink?.notes);
 }
 
 function stripeLinkFromNotes(notes?: string | null) {
