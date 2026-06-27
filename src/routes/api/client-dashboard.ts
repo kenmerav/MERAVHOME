@@ -171,6 +171,13 @@ export const Route = createFileRoute("/api/client-dashboard")({
             invoices = (invoiceRows ?? []).map((invoice: any) => {
               const project = projects.find((item) => item.id === invoice.project_id);
               const payments = [...(invoice.payments ?? [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+              const paymentTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+              const totalAmount = paymentTotal > 0 ? paymentTotal : Number(invoice.total_amount || 0);
+              const paidAmount = payments.length
+                ? payments
+                    .filter((payment) => payment.status === "paid")
+                    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+                : Number(invoice.paid_amount || 0);
               return {
                 id: invoice.id,
                 project_id: invoice.project_id,
@@ -178,9 +185,9 @@ export const Route = createFileRoute("/api/client-dashboard")({
                 file_name: invoice.file_name ?? "Invoice",
                 pdf_data_url: invoice.pdf_data_url,
                 invoice_date: invoice.invoice_date,
-                total_amount: invoice.total_amount,
-                paid_amount: invoice.paid_amount,
-                balance_due: invoice.balance_due,
+                total_amount: totalAmount,
+                paid_amount: paidAmount,
+                balance_due: Math.max(totalAmount - paidAmount, 0),
                 created_at: invoice.created_at,
                 payments,
               };

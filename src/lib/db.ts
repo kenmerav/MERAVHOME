@@ -64,6 +64,28 @@ export const WORKFLOW_STAGES = [
   "Procurement",
 ] as const;
 
+async function syncFinancialInvoiceTotals(invoiceId: string) {
+  const { data: payments } = await supabase
+    .from("financial_invoice_payments")
+    .select("amount,status")
+    .eq("invoice_id", invoiceId);
+
+  const rows = (payments ?? []) as Array<Pick<FinancialInvoicePayment, "amount" | "status">>;
+  const totalAmount = rows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const paidAmount = rows
+    .filter((payment) => payment.status === "paid")
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+
+  await supabase
+    .from("financial_invoices")
+    .update({
+      total_amount: totalAmount,
+      paid_amount: paidAmount,
+      balance_due: Math.max(totalAmount - paidAmount, 0),
+    } as any)
+    .eq("id", invoiceId);
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -691,15 +713,22 @@ export const db = {
       .eq("invoice_id", invoiceId);
     return invoice;
   },
-  updateFinancialPayment: async (id: string, patch: Partial<FinancialInvoicePayment>) =>
-    (
+  updateFinancialPayment: async (id: string, patch: Partial<FinancialInvoicePayment>) => {
+    const payment = (
       await supabase
         .from("financial_invoice_payments")
         .update(patch as any)
         .eq("id", id)
         .select()
         .single()
-    ).data as FinancialInvoicePayment | null,
+    ).data as FinancialInvoicePayment | null;
+
+    if (payment?.invoice_id) {
+      await syncFinancialInvoiceTotals(payment.invoice_id);
+    }
+
+    return payment;
+  },
   updateFinancialInvoice: async (id: string, patch: Partial<FinancialInvoice>) =>
     (
       await supabase
