@@ -23,6 +23,7 @@ import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
 import { Route as PrototypeDesignBoardRouteImport } from './routes/prototype.design-board'
 import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
 import { Route as ExtensionConnectRouteImport } from './routes/extension.connect'
+import { Route as ClientFinancialsRouteImport } from './routes/client.financials'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
@@ -121,6 +122,11 @@ const PresentationsIdRoute = PresentationsIdRouteImport.update({
 const ExtensionConnectRoute = ExtensionConnectRouteImport.update({
   id: '/extension/connect',
   path: '/extension/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientFinancialsRoute = ClientFinancialsRouteImport.update({
+  id: '/client/financials',
+  path: '/client/financials',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
@@ -295,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
+  '/client/financials': typeof ClientFinancialsRoute
   '/extension/connect': typeof ExtensionConnectRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/prototype/design-board': typeof PrototypeDesignBoardRoute
@@ -340,6 +347,7 @@ export interface FileRoutesByTo {
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
+  '/client/financials': typeof ClientFinancialsRoute
   '/extension/connect': typeof ExtensionConnectRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/prototype/design-board': typeof PrototypeDesignBoardRoute
@@ -386,6 +394,7 @@ export interface FileRoutesById {
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
+  '/client/financials': typeof ClientFinancialsRoute
   '/extension/connect': typeof ExtensionConnectRoute
   '/presentations/$id': typeof PresentationsIdRoute
   '/prototype/design-board': typeof PrototypeDesignBoardRoute
@@ -433,6 +442,7 @@ export interface FileRouteTypes {
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
+    | '/client/financials'
     | '/extension/connect'
     | '/presentations/$id'
     | '/prototype/design-board'
@@ -478,6 +488,7 @@ export interface FileRouteTypes {
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
+    | '/client/financials'
     | '/extension/connect'
     | '/presentations/$id'
     | '/prototype/design-board'
@@ -523,6 +534,7 @@ export interface FileRouteTypes {
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog_/$productId'
+    | '/client/financials'
     | '/extension/connect'
     | '/presentations/$id'
     | '/prototype/design-board'
@@ -569,6 +581,7 @@ export interface RootRouteChildren {
   ApiUploadRoomImageRoute: typeof ApiUploadRoomImageRoute
   ApiUsersRoute: typeof ApiUsersRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
+  ClientFinancialsRoute: typeof ClientFinancialsRoute
   ExtensionConnectRoute: typeof ExtensionConnectRoute
   PresentationsIdRoute: typeof PresentationsIdRoute
   PrototypeDesignBoardRoute: typeof PrototypeDesignBoardRoute
@@ -693,6 +706,13 @@ declare module '@tanstack/react-router' {
       path: '/extension/connect'
       fullPath: '/extension/connect'
       preLoaderRoute: typeof ExtensionConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/client/financials': {
+      id: '/client/financials'
+      path: '/client/financials'
+      fullPath: '/client/financials'
+      preLoaderRoute: typeof ClientFinancialsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog_/$productId': {
@@ -921,6 +941,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUploadRoomImageRoute: ApiUploadRoomImageRoute,
   ApiUsersRoute: ApiUsersRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
+  ClientFinancialsRoute: ClientFinancialsRoute,
   ExtensionConnectRoute: ExtensionConnectRoute,
   PresentationsIdRoute: PresentationsIdRoute,
   PrototypeDesignBoardRoute: PrototypeDesignBoardRoute,
