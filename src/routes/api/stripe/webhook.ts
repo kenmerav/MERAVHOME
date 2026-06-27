@@ -53,15 +53,17 @@ async function syncInvoiceTotals(invoiceId: string) {
 }
 
 async function markPaymentLinkPaid({
+  paymentId,
   paymentLinkId,
   checkoutSessionId,
   paymentIntentId,
 }: {
+  paymentId?: string | null;
   paymentLinkId?: string | null;
   checkoutSessionId?: string | null;
   paymentIntentId?: string | null;
 }) {
-  if (!paymentLinkId && !paymentIntentId) return { updated: 0 };
+  if (!paymentId && !paymentLinkId && !paymentIntentId) return { updated: 0 };
 
   let query = supabaseAdmin
     .from("financial_invoice_payments")
@@ -73,7 +75,9 @@ async function markPaymentLinkPaid({
     } as any)
     .select("id,invoice_id");
 
-  query = paymentLinkId
+  query = paymentId
+    ? query.eq("id", paymentId)
+    : paymentLinkId
     ? query.eq("stripe_payment_link_id", paymentLinkId)
     : query.eq("stripe_payment_intent_id", paymentIntentId);
 
@@ -101,6 +105,7 @@ export const Route = createFileRoute("/api/stripe/webhook")({
           if (event.type === "checkout.session.completed") {
             const session = event.data?.object ?? {};
             const result = await markPaymentLinkPaid({
+              paymentId: typeof session.metadata?.payment_id === "string" ? session.metadata.payment_id : null,
               paymentLinkId: typeof session.payment_link === "string" ? session.payment_link : null,
               checkoutSessionId: session.id ?? null,
               paymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
@@ -111,6 +116,7 @@ export const Route = createFileRoute("/api/stripe/webhook")({
           if (event.type === "payment_intent.succeeded") {
             const intent = event.data?.object ?? {};
             const result = await markPaymentLinkPaid({
+              paymentId: typeof intent.metadata?.payment_id === "string" ? intent.metadata.payment_id : null,
               paymentIntentId: intent.id ?? null,
             });
             return json({ received: true, ...result });
