@@ -28,7 +28,7 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
       return;
     }
 
-    const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+    const pdfBlob = await sanitizeInvoicePdfBlob(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
     const url = URL.createObjectURL(pdfBlob);
     if (target) {
       target.document.title = invoicePdfFileName(fileName);
@@ -52,9 +52,64 @@ export async function downloadInvoiceDocument(documentUrl: string | null, fileNa
     return;
   }
 
-  const url = URL.createObjectURL(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
+  const pdfBlob = await sanitizeInvoicePdfBlob(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
+  const url = URL.createObjectURL(pdfBlob);
   triggerDownload(url, invoicePdfFileName(fileName));
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function sanitizeInvoicePdfBlob(blob: Blob) {
+  try {
+    const { PDFDocument, PDFName, rgb } = await import("pdf-lib");
+    const pdfDoc = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true });
+    let removedStripeLink = false;
+
+    for (const page of pdfDoc.getPages()) {
+      const annots = page.node.Annots();
+      if (!annots) continue;
+
+      const keptAnnotations = [];
+      for (let index = 0; index < annots.size(); index += 1) {
+        const annotationRef = annots.get(index);
+        const annotation = pdfDoc.context.lookup(annotationRef) as any;
+        const action = annotation?.lookup?.(PDFName.of("A"));
+        const uri = action?.lookup?.(PDFName.of("URI"));
+        const uriText = typeof uri?.decodeText === "function" ? uri.decodeText() : uri?.asString?.() || "";
+
+        if (/https:\/\/(?:buy|checkout)\.stripe\.com\//i.test(uriText)) {
+          removedStripeLink = true;
+          continue;
+        }
+
+        keptAnnotations.push(annotationRef);
+      }
+
+      if (keptAnnotations.length !== annots.size()) {
+        page.node.set(PDFName.of("Annots"), pdfDoc.context.obj(keptAnnotations));
+      }
+    }
+
+    if (removedStripeLink) {
+      const firstPage = pdfDoc.getPages()[0];
+      const { width, height } = firstPage.getSize();
+
+      // Uploaded invoice PDFs keep old Stripe links baked into the file. Cover
+      // only the legacy pay strip; the client portal Pay Online button is current.
+      firstPage.drawRectangle({
+        x: width * 0.54,
+        y: height * 0.16,
+        width: width * 0.43,
+        height: height * 0.055,
+        color: rgb(1, 1, 1),
+        borderWidth: 0,
+      });
+    }
+
+    return new Blob([await pdfDoc.save()], { type: "application/pdf" });
+  } catch (error) {
+    console.warn("Could not sanitize invoice PDF payment link.", error);
+    return blob;
+  }
 }
 
 function applyInvoicePaymentLink(html: string, paymentUrl?: string | null) {
