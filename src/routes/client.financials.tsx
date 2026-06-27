@@ -161,7 +161,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
       <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-start">
         <div>
           <div className="eyebrow mb-2">{invoice.invoice_date ? formatDashboardDate(invoice.invoice_date) : "Invoice"}</div>
-          <h2 className="font-display text-3xl">{invoice.file_name || "Invoice"}</h2>
+          <h2 className="font-display text-3xl">{invoiceTitle(invoice)}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{invoice.project_name}</p>
         </div>
 
@@ -228,6 +228,11 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 function currentPaymentUrl(invoice: ClientInvoice) {
   const dueWithLink = invoice.payments.find((payment) => payment.status === "due" && stripeLinkFromNotes(payment.notes));
   return stripeLinkFromNotes(dueWithLink?.notes);
+}
+
+function invoiceTitle(invoice: ClientInvoice) {
+  const projectName = invoice.project_name?.trim();
+  return projectName ? `${projectName} Invoice` : "Invoice";
 }
 
 function stripeLinkFromNotes(notes?: string | null) {
