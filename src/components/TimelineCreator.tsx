@@ -132,6 +132,7 @@ export function TimelineCreator({
         timeline_date: draft.timelineDate || null,
         html_data_url: htmlDataUrl(html),
         raw_text: JSON.stringify({ type: "project_timeline", ...draft }),
+        client_visible: Boolean(projectId),
       });
       toast.success(projectId ? "Timeline saved to project" : "Timeline saved. Attach it when you create the project.");
       setDraft(null);

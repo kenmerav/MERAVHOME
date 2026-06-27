@@ -215,6 +215,7 @@ export function ProductInvoiceCreator({
           total_amount: totals.total,
           paid_amount: totals.paid,
           balance_due: totals.balance,
+          client_visible: true,
           raw_text: JSON.stringify({
             type: "product_invoice",
             draft,

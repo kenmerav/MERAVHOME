@@ -136,6 +136,7 @@ export type Database = {
       financial_invoices: {
         Row: {
           balance_due: number | null
+          client_visible: boolean
           client_name: string | null
           created_at: string
           file_name: string | null
@@ -151,6 +152,7 @@ export type Database = {
         }
         Insert: {
           balance_due?: number | null
+          client_visible?: boolean
           client_name?: string | null
           created_at?: string
           file_name?: string | null
@@ -166,6 +168,7 @@ export type Database = {
         }
         Update: {
           balance_due?: number | null
+          client_visible?: boolean
           client_name?: string | null
           created_at?: string
           file_name?: string | null
@@ -440,6 +443,7 @@ export type Database = {
       project_timelines: {
         Row: {
           client_name: string | null
+          client_visible: boolean
           created_at: string
           html_data_url: string | null
           id: string
@@ -452,6 +456,7 @@ export type Database = {
         }
         Insert: {
           client_name?: string | null
+          client_visible?: boolean
           created_at?: string
           html_data_url?: string | null
           id?: string
@@ -464,6 +469,7 @@ export type Database = {
         }
         Update: {
           client_name?: string | null
+          client_visible?: boolean
           created_at?: string
           html_data_url?: string | null
           id?: string

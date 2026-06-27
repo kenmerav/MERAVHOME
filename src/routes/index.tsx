@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, Plus, X } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCircle2, FileText, Plus, ReceiptText, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type ApprovalStatus, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
@@ -18,6 +18,60 @@ import { canViewFinancials } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
+
+type SharedDashboard = {
+  projects: Array<{
+    id: string;
+    name: string;
+    client_name: string;
+    status: string;
+    cover_image_url: string | null;
+    access: {
+      specBook: boolean;
+      presentations: boolean;
+      designBoards: boolean;
+      approvals: boolean;
+    };
+  }>;
+  invoices: Array<{
+    id: string;
+    project_id: string;
+    project_name: string;
+    file_name: string;
+    pdf_data_url: string | null;
+    invoice_date: string | null;
+    total_amount: number | null;
+    paid_amount: number | null;
+    balance_due: number | null;
+    payments: Array<{
+      id: string;
+      label: string;
+      amount: number;
+      due_date: string | null;
+      status: string;
+      paid_at: string | null;
+    }>;
+  }>;
+  timelines: Array<{
+    id: string;
+    project_id: string;
+    project_name: string;
+    title: string;
+    timeline_date: string | null;
+    html_data_url: string | null;
+  }>;
+  todos: Array<{
+    id: string;
+    kind: "invoice" | "approval";
+    title: string;
+    project_id: string;
+    project_name: string;
+    amount?: number;
+    due_date?: string | null;
+    invoice_id?: string;
+    href?: string;
+  }>;
+};
 
 
 export const Route = createFileRoute("/")({
@@ -48,6 +102,22 @@ function DashboardPage() {
   const canCreateInvoices = canViewFinancials(profile);
   const activeProjects = projects.filter((p) => p.status !== "Complete");
   const isClientUser = profile?.role === "Client";
+  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
+  const { data: sharedDashboard, isLoading: sharedDashboardLoading } = useQuery({
+    queryKey: ["clientDashboard", profile?.id],
+    enabled: isSharedUser,
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in to view your dashboard.");
+      const res = await fetch("/api/client-dashboard", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not load dashboard.");
+      return body as SharedDashboard;
+    },
+  });
   const { data: clientApprovalSummaries = [] } = useQuery({
     queryKey: ["clientApprovalSummaries", activeProjects.map((project) => project.id)],
     enabled: isClientUser && activeProjects.length > 0,
@@ -94,21 +164,29 @@ function DashboardPage() {
         <div className="flex items-end justify-between mb-12 lg:mb-16 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">{isClientUser ? "Client Portal" : "The Studio"}</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">{isClientUser ? "Your Projects" : "Active Projects"}</h1>
+            <h1 className="editorial-hero text-5xl lg:text-7xl">{isSharedUser ? "Your Projects" : "Active Projects"}</h1>
             <p className="mt-4 text-muted-foreground max-w-xl">
-              {isClientUser
-                ? "Review current selections, leave comments, and jump straight into approvals that are ready for your feedback."
+              {isSharedUser
+                ? "Review what MERAV Studio has shared with you, including invoices, timelines, approvals, and project documents."
                 : "Every selection lives here once. Use it for presentations, spec books, and procurement."}
             </p>
           </div>
-          {!isClientUser && <NewProjectDialog />}
+          {!isSharedUser && <NewProjectDialog />}
         </div>
 
         {isClientUser && (
           <ClientApprovalsOverview summaries={clientApprovalSummaries} approvalsReady={approvalsReady} />
         )}
 
-        {canCreateInvoices && !isClientUser && (
+        {isSharedUser && (
+          <SharedDashboardOverview
+            dashboard={sharedDashboard}
+            loading={sharedDashboardLoading}
+            isClientUser={isClientUser}
+          />
+        )}
+
+        {canCreateInvoices && !isSharedUser && (
           <section className="border border-border bg-bone/20 p-6 mb-12">
             <div className="space-y-5">
               <div>
@@ -129,7 +207,7 @@ function DashboardPage() {
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
         ) : activeProjects.length === 0 ? (
-          <EmptyState isClientUser={isClientUser} />
+          <EmptyState isClientUser={isSharedUser} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-14">
             {activeProjects.map((p) => {
@@ -223,6 +301,196 @@ function ClientApprovalsOverview({
   );
 }
 
+function SharedDashboardOverview({
+  dashboard,
+  loading,
+  isClientUser,
+}: {
+  dashboard?: SharedDashboard;
+  loading: boolean;
+  isClientUser: boolean;
+}) {
+  if (loading) {
+    return (
+      <section className="mb-12 border border-border bg-bone/20 p-6 text-sm text-muted-foreground">
+        Loading shared dashboard…
+      </section>
+    );
+  }
+
+  const todos = dashboard?.todos ?? [];
+  const invoices = dashboard?.invoices ?? [];
+  const timelines = dashboard?.timelines ?? [];
+  const sharedProjects = dashboard?.projects ?? [];
+
+  return (
+    <section className="mb-12 space-y-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <MetricCard label="Open To-Dos" value={todos.length} />
+        {isClientUser && <MetricCard label="Invoices" value={invoices.length} />}
+        <MetricCard label="Timelines" value={timelines.length} />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
+        <div className="border border-border bg-background p-6">
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <div className="eyebrow mb-2">To Do</div>
+              <h2 className="font-display text-3xl">Needs your attention</h2>
+            </div>
+          </div>
+          {todos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No open action items right now.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {todos.slice(0, 8).map((todo) => (
+                <div key={todo.id} className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{todo.title}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {todo.project_name}
+                      {todo.amount != null ? ` - ${formatMoney(todo.amount)}` : ""}
+                      {todo.due_date ? ` - Due ${formatDashboardDate(todo.due_date)}` : ""}
+                    </div>
+                  </div>
+                  {todo.kind === "approval" && todo.href ? (
+                    <Link to={todo.href as any} className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink">
+                      Review <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      <ReceiptText className="h-4 w-4" /> Invoice
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border border-border bg-bone/20 p-6">
+          <div className="eyebrow mb-2">Shared Projects</div>
+          <h2 className="font-display text-3xl mb-5">Quick links</h2>
+          {sharedProjects.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No shared project links yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {sharedProjects.map((project) => (
+                <div key={project.id} className="border border-border bg-background p-4">
+                  <div className="font-display text-2xl">{project.name}</div>
+                  <div className="text-sm text-muted-foreground mb-3">{project.client_name}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {project.access.approvals && (
+                      <Link to="/client/approvals/$projectId" params={{ projectId: project.id }} className="text-xs border border-border px-3 py-1.5 hover:border-ink">
+                        Approvals
+                      </Link>
+                    )}
+                    {project.access.presentations && (
+                      <Link to="/presentations/$id" params={{ id: project.id }} className="text-xs border border-border px-3 py-1.5 hover:border-ink">
+                        Presentation
+                      </Link>
+                    )}
+                    {project.access.specBook && (
+                      <Link to="/specbooks/$id" params={{ id: project.id }} className="text-xs border border-border px-3 py-1.5 hover:border-ink">
+                        Spec Book
+                      </Link>
+                    )}
+                    {project.access.designBoards && (
+                      <Link to="/projects/$id/design-boards" params={{ id: project.id }} className="text-xs border border-border px-3 py-1.5 hover:border-ink">
+                        Design Boards
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isClientUser && (
+        <div className="border border-border bg-background p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <ReceiptText className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <div className="eyebrow mb-1">Invoices</div>
+              <h2 className="font-display text-3xl">Current and past invoices</h2>
+            </div>
+          </div>
+          {invoices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No invoices have been shared yet.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {invoices.map((invoice) => (
+                <div key={invoice.id} className="py-4 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4">
+                  <div>
+                    <div className="font-medium">{invoice.file_name || "Invoice"}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {invoice.project_name}
+                      {invoice.invoice_date ? ` - ${formatDashboardDate(invoice.invoice_date)}` : ""}
+                      {invoice.balance_due != null ? ` - Balance ${formatMoney(invoice.balance_due)}` : ""}
+                    </div>
+                    {invoice.payments.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        {invoice.payments.map((payment) => (
+                          <span key={payment.id} className="border border-border px-2 py-1">
+                            {payment.label}: {formatMoney(payment.amount)} · {payment.status}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {invoice.pdf_data_url && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(invoice.pdf_data_url!, "_blank", "noopener,noreferrer")}
+                      className="inline-flex items-center justify-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+                    >
+                      <FileText className="h-4 w-4" /> Open Invoice
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="border border-border bg-background p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <CalendarDays className="h-5 w-5 text-muted-foreground" />
+          <div>
+            <div className="eyebrow mb-1">Timeline</div>
+            <h2 className="font-display text-3xl">Project timelines</h2>
+          </div>
+        </div>
+        {timelines.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No timelines have been shared yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {timelines.map((timeline) => (
+              <div key={timeline.id} className="border border-border p-5">
+                <div className="eyebrow mb-2">{timeline.timeline_date ? formatDashboardDate(timeline.timeline_date) : "Timeline"}</div>
+                <div className="font-display text-2xl">{timeline.title}</div>
+                <div className="text-sm text-muted-foreground mt-1">{timeline.project_name}</div>
+                {timeline.html_data_url && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(timeline.html_data_url!, "_blank", "noopener,noreferrer")}
+                    className="mt-4 inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+                  >
+                    Open Timeline
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="border border-border bg-background px-5 py-4">
@@ -230,6 +498,16 @@ function MetricCard({ label, value }: { label: string; value: number }) {
       <div className="font-display text-3xl">{value}</div>
     </div>
   );
+}
+
+function formatDashboardDate(value: string) {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function ProjectCard({

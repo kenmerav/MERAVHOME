@@ -225,6 +225,7 @@ function FinancialsPage() {
         paid_amount: review.invoice.paid_amount,
         balance_due: review.invoice.balance_due,
         raw_text: review.invoice.raw_text,
+        client_visible: true,
       }, review.invoice.payments.map((payment, index) => ({
         project_id: id,
         label: payment.label || "Payment Due",
@@ -337,6 +338,7 @@ function FinancialsPage() {
         paid_amount: paid,
         balance_due: Math.max(fee - paid, 0),
         raw_text: JSON.stringify({ type: "design_service_invoice", ...serviceDraft }),
+        client_visible: true,
       }, payments);
       toast.success("Design service invoice saved");
       setServiceDraft(null);
@@ -420,6 +422,18 @@ function FinancialsPage() {
       toast.error(e?.message || "Could not delete invoice.");
     } finally {
       setDeletingInvoiceId(null);
+    }
+  };
+
+  const toggleClientVisible = async (invoice: FinancialInvoice) => {
+    if (!allowed) return toast.error("Only Ken and Katie can edit invoices.");
+    try {
+      await db.updateFinancialInvoice(invoice.id, { client_visible: !invoice.client_visible });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+      toast.success(!invoice.client_visible ? "Invoice will show on the client dashboard" : "Invoice hidden from the client dashboard");
+    } catch (e: any) {
+      toast.error(e?.message || "Could not update invoice visibility.");
     }
   };
 
@@ -701,6 +715,7 @@ function FinancialsPage() {
               onPaymentUpdate={updateSavedPayment}
               savingPaymentId={savingPaymentId}
               onDelete={deleteInvoice}
+              onClientVisible={toggleClientVisible}
               deleting={deletingInvoiceId === invoice.id}
             />
           ))}
@@ -716,6 +731,7 @@ function InvoiceCard({
   onPaymentUpdate,
   savingPaymentId,
   onDelete,
+  onClientVisible,
   deleting,
 }: {
   invoice: FinancialInvoice;
@@ -723,6 +739,7 @@ function InvoiceCard({
   onPaymentUpdate: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
   savingPaymentId?: string | null;
   onDelete: (invoice: FinancialInvoice) => void;
+  onClientVisible: (invoice: FinancialInvoice) => void;
   deleting?: boolean;
 }) {
   const payments = [...(invoice.payments ?? [])].sort((a, b) => a.sort_order - b.sort_order);
@@ -738,6 +755,13 @@ function InvoiceCard({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onClientVisible(invoice)}
+            className={`inline-flex items-center gap-2 text-sm px-4 py-2 border ${invoice.client_visible ? "border-emerald-700 text-emerald-800" : "border-border text-muted-foreground hover:border-ink"}`}
+          >
+            {invoice.client_visible ? "Client Visible" : "Show to Client"}
+          </button>
           {printableDataUrl && (
             <button type="button" onClick={() => openInvoicePdf(printableDataUrl, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
               <FileText className="w-4 h-4" /> PDF

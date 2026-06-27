@@ -258,6 +258,7 @@ export interface FinancialInvoice {
   paid_amount: number | null;
   balance_due: number | null;
   raw_text: string | null;
+  client_visible: boolean;
   created_at: string;
   updated_at: string;
   payments?: FinancialInvoicePayment[];
@@ -291,6 +292,7 @@ export interface ProjectTimeline {
   timeline_date: string | null;
   html_data_url: string | null;
   raw_text: string | null;
+  client_visible: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -671,7 +673,7 @@ export const db = {
     const invoice = (
       await supabase
         .from("financial_invoices")
-        .update({ project_id: projectId } as any)
+        .update({ project_id: projectId, client_visible: true } as any)
         .eq("id", invoiceId)
         .select()
         .single()
@@ -691,6 +693,15 @@ export const db = {
         .select()
         .single()
     ).data as FinancialInvoicePayment | null,
+  updateFinancialInvoice: async (id: string, patch: Partial<FinancialInvoice>) =>
+    (
+      await supabase
+        .from("financial_invoices")
+        .update(patch as any)
+        .eq("id", id)
+        .select()
+        .single()
+    ).data as FinancialInvoice | null,
   deleteFinancialInvoice: async (id: string) =>
     supabase.from("financial_invoices").delete().eq("id", id),
 
@@ -727,7 +738,7 @@ export const db = {
     (
       await supabase
         .from("project_timelines" as any)
-        .update({ project_id: projectId } as any)
+        .update({ project_id: projectId, client_visible: true } as any)
         .eq("id", timelineId)
         .select()
         .single()

@@ -186,6 +186,7 @@ export function ServiceInvoiceCreator({
         paid_amount: paid,
         balance_due: Math.max(fee - paid, 0),
         raw_text: JSON.stringify({ type: "design_service_invoice", ...serviceDraft }),
+        client_visible: Boolean(projectId),
       }, payments);
       toast.success(projectId ? "Design service invoice saved" : "Service invoice saved. Attach it when you create the project.");
       setServiceDraft(null);
