@@ -1469,17 +1469,24 @@ function ProjectDesignBoardsPage() {
       productUrl,
       color: finish,
     });
-    const matchingMaterial = materialItems.find((item) => {
-      if (item.room_id !== room.id) return false;
-      if (element.materialItemId && item.id === element.materialItemId) return true;
-      return buildBoardMaterialIdentity({
+    const materialMatchesIdentity = (item: MaterialItem) =>
+      buildBoardMaterialIdentity({
         roomId: item.room_id,
         label: item.item_label,
         productUrl: item.product_url,
         color: item.color,
       }) === materialIdentity;
-    });
-    const existingMaterialId = element.materialItemId || matchingMaterial?.id || null;
+    const materialFromElementId = element.materialItemId
+      ? materialItems.find((item) => item.id === element.materialItemId) ?? null
+      : null;
+    const matchingMaterial = materialItems.find(materialMatchesIdentity) ?? null;
+    // Board layers can outlive/replace materials. If a layer points at a material
+    // whose label/link/color no longer matches, ignore that stale id so a sink
+    // cannot overwrite a countertop row (or vice versa).
+    const existingMaterialId =
+      materialFromElementId && materialMatchesIdentity(materialFromElementId)
+        ? materialFromElementId.id
+        : matchingMaterial?.id || null;
     const existingMaterial = existingMaterialId
       ? materialItems.find((item) => item.id === existingMaterialId) || matchingMaterial || null
       : null;
@@ -1714,6 +1721,7 @@ function ProjectDesignBoardsPage() {
         if (result.status === "sent") {
           sent += 1;
           if (result.materialItemId) syncedMaterialIds.add(result.materialItemId);
+          const groupElementIds = new Set(group.elements.map(({ element }) => element.id));
           const duplicateMaterialIds = Array.from(
             new Set(
               group.elements
@@ -1722,7 +1730,13 @@ function ProjectDesignBoardsPage() {
                   Boolean(materialItemId && materialItemId !== result.materialItemId),
                 ),
             ),
-          );
+          ).filter((materialItemId) => {
+            const duplicateMaterial = materialItems.find((item) => item.id === materialItemId);
+            return Boolean(
+              duplicateMaterial?.source_board_element_id &&
+                groupElementIds.has(duplicateMaterial.source_board_element_id),
+            );
+          });
           for (const materialItemId of duplicateMaterialIds) {
             await db.deleteMaterialItem(materialItemId);
           }
