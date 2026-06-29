@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
 import { formatMoney, normalizeMoneyInput, procurementTotals } from "@/lib/money";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -412,7 +413,7 @@ function ProcurementPage() {
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
                           {p?.image_url && (
                             <img
-                              src={p.image_url}
+                              src={normalizeSupabaseImageUrl(p.image_url)}
                               alt=""
                               className="w-full h-full object-cover"
                               loading="lazy"

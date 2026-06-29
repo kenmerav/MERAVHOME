@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/projects/$id/materials")({
@@ -492,7 +493,7 @@ function RoomMaterialsSection({
                           className="mt-2 flex items-center gap-2 pl-3.5 group/product"
                         >
                           {it.product.image_url ? (
-                            <img src={it.product.image_url} alt="" className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink" />
+                            <img src={normalizeSupabaseImageUrl(it.product.image_url)} alt="" className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           ) : (
                             <div className="w-10 h-10 bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           )}
@@ -812,7 +813,7 @@ function CatalogProductPicker({
                   className={`w-full grid grid-cols-[64px_1fr] gap-4 p-3 text-left hover:bg-bone/50 ${product.id === currentProductId ? "bg-bone" : ""}`}
                 >
                   {product.image_url ? (
-                    <img src={product.image_url} alt="" className="h-16 w-16 object-cover bg-bone border border-border" />
+                    <img src={normalizeSupabaseImageUrl(product.image_url)} alt="" className="h-16 w-16 object-cover bg-bone border border-border" />
                   ) : (
                     <div className="h-16 w-16 bg-bone border border-border" />
                   )}
@@ -1025,7 +1026,7 @@ function ReviewDialog({
               <div key={row.material_item_id} className="border border-border p-4 grid grid-cols-1 sm:grid-cols-[120px_1fr_auto] gap-4">
                 <div className="aspect-square bg-bone overflow-hidden">
                   {row.scraped.image_url ? (
-                    <img src={row.scraped.image_url} alt="" className="w-full h-full object-cover" />
+                    <img src={normalizeSupabaseImageUrl(row.scraped.image_url)} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full grid place-items-center text-muted-foreground text-xs">No image</div>
                   )}

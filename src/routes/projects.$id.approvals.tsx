@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Project, type Room, type RoomProduct } from "@/lib/db";
 import { formatMoney, moneyValue } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 
 export const Route = createFileRoute("/projects/$id/approvals")({
   head: () => ({ meta: [{ title: "Approval Setup — MERAV Studio" }] }),
@@ -236,7 +237,7 @@ function SetupItemRow({ item, roomVisible, onToggle }: { item: SetupItem; roomVi
   return (
     <div className={cn("grid gap-4 p-5 md:grid-cols-[92px_1fr_auto] md:items-center", !visible && "bg-bone/40")}>
       <div className="flex h-20 w-20 items-center justify-center bg-bone">
-        {detail.image ? <img src={detail.image} alt="" className="max-h-full max-w-full object-contain" /> : <EyeOff className="h-5 w-5 text-muted-foreground" />}
+        {detail.image ? <img src={normalizeSupabaseImageUrl(detail.image)} alt="" className="max-h-full max-w-full object-contain" /> : <EyeOff className="h-5 w-5 text-muted-foreground" />}
       </div>
       <div>
         <div className="flex flex-wrap items-center gap-2">

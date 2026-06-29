@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { resolveImage } from "@/lib/local-assets";
+import { normalizeSupabaseImageUrl, resolveImage } from "@/lib/local-assets";
 import { compressImageSource, fileToCompressedDataUrl } from "@/lib/imagePayload";
 import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
@@ -248,7 +248,7 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
   return (
     <div className="border border-border p-3 flex flex-col">
       <div className="relative aspect-[4/3] bg-bone overflow-hidden mb-3">
-        <img src={sk.url} alt={sk.caption || ""} className="w-full h-full object-cover" loading="lazy" />
+        <img src={normalizeSupabaseImageUrl(sk.url)} alt={sk.caption || ""} className="w-full h-full object-cover" loading="lazy" />
         <StatusPill status={status} />
         <button onClick={removeSk} className="absolute top-2 right-2 bg-background/90 p-1.5 hover:bg-background">
           <Trash2 className="w-3.5 h-3.5" />
@@ -414,7 +414,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
 
   return (
     <div className="group relative aspect-[4/3] bg-bone overflow-hidden">
-      <img src={rendering.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+      <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full h-full object-cover" loading="lazy" />
       <div className="absolute top-1 right-1 bg-background/90 text-[9px] uppercase tracking-wider px-1.5 py-0.5">
         V{version}
       </div>
@@ -434,7 +434,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
-              <img src={rendering.url} alt="" className="w-full" />
+              <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                 <div>
                   <Label className="eyebrow">Review Status</Label>
@@ -593,7 +593,7 @@ function AddSketchupDialog({ roomId, projectId }: { roomId: string; projectId: s
             <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading || saving} />
             {url.startsWith("data:") && (
               <div className="mt-2 aspect-[4/3] bg-bone overflow-hidden">
-                <img src={url} alt="preview" className="w-full h-full object-cover" />
+                <img src={normalizeSupabaseImageUrl(url)} alt="preview" className="w-full h-full object-cover" />
               </div>
             )}
           </div>
@@ -699,7 +699,7 @@ function AddExternalRenderingDialog({
             <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading || saving} />
             {url.startsWith("data:") && (
               <div className="mt-2 aspect-[4/3] bg-bone overflow-hidden">
-                <img src={url} alt="Rendering preview" className="w-full h-full object-cover" />
+                <img src={normalizeSupabaseImageUrl(url)} alt="Rendering preview" className="w-full h-full object-cover" />
               </div>
             )}
           </div>
@@ -885,7 +885,7 @@ function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
       {imageUrl && (
         <div className="mt-3 flex items-center gap-3">
           <div className="h-20 w-20 bg-background overflow-hidden border border-border">
-            <img src={imageUrl} alt={fileName || "Revision reference"} className="h-full w-full object-cover" />
+            <img src={normalizeSupabaseImageUrl(imageUrl)} alt={fileName || "Revision reference"} className="h-full w-full object-cover" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm truncate">{fileName || "Reference image"}</p>

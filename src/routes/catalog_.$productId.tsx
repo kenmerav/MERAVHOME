@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 
 type SampleFilter = "Sample" | "No sample";
 type ProductCatalogSearch = {
@@ -301,7 +302,7 @@ function ProductImageEditor({
         title="Edit product image"
       >
         {form.image_url ? (
-          <img src={form.image_url} alt={form.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
+          <img src={normalizeSupabaseImageUrl(form.image_url)} alt={form.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
         ) : (
           <div className="w-full h-full grid place-items-center text-center text-sm text-muted-foreground">
             <div>

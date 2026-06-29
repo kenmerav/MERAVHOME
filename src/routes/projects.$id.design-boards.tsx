@@ -47,6 +47,7 @@ import {
   type UserProfile,
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import {
   ALL_CATEGORIES,
   inferMaterialCategory,
@@ -3564,7 +3565,7 @@ function ProjectDesignBoardsPage() {
                             <div className="h-14 w-14 shrink-0 overflow-hidden bg-[#f6f3ee]">
                               {item.element.src ? (
                                 <OptimizedBoardImage
-                                  src={item.element.src}
+                                  src={normalizeSupabaseImageUrl(item.element.src)}
                                   alt={imageMaterialLabel(item.element) || "Missing item"}
                                   kind="thumbnail"
                                   className="h-full w-full object-contain"
@@ -3798,7 +3799,7 @@ function LightweightPageElement({ element }: { element: BoardElement }) {
     >
       {element.type === "image" && element.src && (
         <OptimizedBoardImage
-          src={element.src}
+          src={normalizeSupabaseImageUrl(element.src)}
           alt=""
           kind="thumbnail"
           className="h-full w-full object-contain"
@@ -3865,7 +3866,7 @@ function PageThumbnail({
             >
               {element.type === "image" && element.src && renderImages && (
                 <OptimizedBoardImage
-                  src={element.src}
+                  src={normalizeSupabaseImageUrl(element.src)}
                   alt=""
                   kind="thumbnail"
                   className="h-full w-full object-contain"
@@ -4039,7 +4040,7 @@ function BoardObject({
         <>
           {element.src ? (
             <OptimizedBoardImage
-              src={element.src}
+              src={normalizeSupabaseImageUrl(element.src)}
               alt={element.label ?? ""}
               kind="preview"
               className="h-full w-full object-contain"
@@ -4869,7 +4870,7 @@ function ProductTrayItem({ product }: { product: Product }) {
         <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-white">
           {product.image_url ? (
             <OptimizedBoardImage
-              src={product.image_url}
+              src={normalizeSupabaseImageUrl(product.image_url)}
               alt={product.name}
               kind="thumbnail"
               className="max-h-full max-w-full object-contain transition group-hover:scale-105"
@@ -4966,12 +4967,13 @@ function OptimizedBoardImage({
 }
 
 function imageVariantUrl(src: string, kind: ImageVariantKind) {
-  if (kind === "original") return src;
+  const normalizedSrc = normalizeSupabaseImageUrl(src);
+  if (kind === "original") return normalizedSrc;
   // Avoid Supabase's dynamic image transformation endpoint during normal board use.
   // Those transformation requests are metered separately and can spike quickly on
   // image-heavy design boards. The UI still requests thumbnail/preview variants,
   // but until stored derivative files exist we use the regular public image URL.
-  return src;
+  return normalizedSrc;
 }
 
 function ToolbarButton({

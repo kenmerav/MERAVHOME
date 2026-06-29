@@ -19,6 +19,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { canViewProjectSurface } from "@/lib/permissions";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
@@ -1196,9 +1197,9 @@ function RoomSlide({
         </div>
         <div className="relative overflow-hidden flex-1 min-h-0">
           {view.hero ? (
-            <img src={view.hero.url} alt={room.name} className="w-full h-full object-contain" />
+            <img src={normalizeSupabaseImageUrl(view.hero.url)} alt={room.name} className="w-full h-full object-contain" />
           ) : view.sketch ? (
-            <img src={view.sketch.url} alt={room.name} className="w-full h-full object-contain" />
+            <img src={normalizeSupabaseImageUrl(view.sketch.url)} alt={room.name} className="w-full h-full object-contain" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
               No image yet
@@ -1587,7 +1588,7 @@ function DesignBoardCanvasElement({
   const transform = element.rotation ? `rotate(${element.rotation}deg)` : undefined;
 
   if (element.type === "image") {
-    const src = element.backgroundRemovedUrl || element.src;
+    const src = normalizeSupabaseImageUrl(element.backgroundRemovedUrl || element.src);
     if (!src) return null;
     return (
       <div
@@ -1724,9 +1725,9 @@ function RoomSpread({
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-28 print:pb-24">
         <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
           {view.hero ? (
-            <img src={view.hero.url} alt={room.name} className="w-full h-full object-contain" />
+            <img src={normalizeSupabaseImageUrl(view.hero.url)} alt={room.name} className="w-full h-full object-contain" />
           ) : view.sketch ? (
-            <img src={view.sketch.url} alt={room.name} className="w-full h-full object-contain" />
+            <img src={normalizeSupabaseImageUrl(view.sketch.url)} alt={room.name} className="w-full h-full object-contain" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
               No image yet
@@ -1840,7 +1841,7 @@ function SpreadSidebar({
         <Card label="Design Model">
           <div className="aspect-[4/3] bg-bone overflow-hidden">
             {view.sketch ? (
-              <img src={view.sketch.url} alt="" className="w-full h-full object-contain" />
+              <img src={normalizeSupabaseImageUrl(view.sketch.url)} alt="" className="w-full h-full object-contain" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-[11px] text-muted-foreground">
                 No SketchUp yet
@@ -1883,7 +1884,7 @@ function SpreadSidebar({
               <div key={m.id} className="aspect-square bg-bone overflow-hidden">
                 {m.product?.image_url && (
                   <img
-                    src={m.product.image_url}
+                    src={normalizeSupabaseImageUrl(m.product.image_url)}
                     alt={clientProductName(m, { name: "" })}
                     className="w-full h-full object-contain p-1"
                   />
@@ -1958,7 +1959,7 @@ function SpreadSidebar({
                 <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
                   {data.counter?.product?.image_url && (
                     <img
-                      src={data.counter.product.image_url}
+                      src={normalizeSupabaseImageUrl(data.counter.product.image_url)}
                       alt=""
                       className="w-full h-full object-contain p-1"
                     />
@@ -2137,7 +2138,7 @@ function Detail({
   return (
     <div className="flex gap-3">
       <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-        {img && <img src={img} alt="" className="w-full h-full object-contain p-1" />}
+        {img && <img src={normalizeSupabaseImageUrl(img)} alt="" className="w-full h-full object-contain p-1" />}
       </div>
       <div className="min-w-0 self-center">
         <div className="font-display text-sm leading-tight">{product?.name || fallbackName}</div>

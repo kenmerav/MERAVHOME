@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 import { canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -625,7 +626,7 @@ function SpecCard({
       <div className="aspect-square bg-bone overflow-hidden print:self-start print:max-w-[170px]">
         {p?.image_url ? (
           <img
-            src={p.image_url}
+            src={normalizeSupabaseImageUrl(p.image_url)}
             alt={p?.name ?? displayName}
             className="w-full h-full object-contain p-4 print:p-2"
             loading="lazy"

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ArrowLeft, BookOpen, LayoutTemplate, Plus, Sparkles, Trash2, ExternalLink, Star, Search, Eye, Download, GitBranch } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { resolveImage } from "@/lib/local-assets";
+import { normalizeSupabaseImageUrl, resolveImage } from "@/lib/local-assets";
 import {
   db, PRODUCT_CATEGORIES, SUBCATEGORIES,
   type ProductCategory, type Product, type RoomProduct,
@@ -244,7 +244,7 @@ function ImageGrid({ title, roomId, kind, images }: { title: string; roomId: str
                 <Input type="file" accept="image/*" onChange={e => onFile(e.target.files?.[0])} disabled={uploading} />
                 {url.startsWith("data:") && (
                   <div className="mt-2 aspect-[4/3] bg-bone overflow-hidden">
-                    <img src={url} alt="preview" className="w-full h-full object-cover" />
+                    <img src={normalizeSupabaseImageUrl(url)} alt="preview" className="w-full h-full object-cover" />
                   </div>
                 )}
               </div>
@@ -265,7 +265,7 @@ function ImageGrid({ title, roomId, kind, images }: { title: string; roomId: str
           {images.map(img => (
             <div key={img.id} className="group relative">
               <div className="aspect-[4/3] bg-bone overflow-hidden">
-                <img src={img.url} alt={img.caption || ""} className="w-full h-full object-cover" loading="lazy" />
+                <img src={normalizeSupabaseImageUrl(img.url)} alt={img.caption || ""} className="w-full h-full object-cover" loading="lazy" />
               </div>
               {img.caption && <p className="text-xs text-muted-foreground mt-2">{img.caption}</p>}
               <button onClick={() => remove(img.id)} className="absolute top-2 right-2 bg-background/90 p-1.5 opacity-0 group-hover:opacity-100">
@@ -315,7 +315,7 @@ function SelectionCard({ sel, roomId }: { sel: RoomProduct; roomId: string }) {
   return (
     <div className="group">
       <div className="aspect-square bg-bone overflow-hidden mb-3 relative">
-        {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" loading="lazy" /> : <div className="w-full h-full" />}
+        {p.image_url ? <img src={normalizeSupabaseImageUrl(p.image_url)} alt={p.name} className="w-full h-full object-cover" loading="lazy" /> : <div className="w-full h-full" />}
         <button onClick={toggleKey} title="Key selection"
           className={cn("absolute top-2 left-2 p-1.5", sel.is_key_selection ? "bg-brass text-ink" : "bg-background/90 opacity-0 group-hover:opacity-100")}>
           <Star className="w-3.5 h-3.5" fill={sel.is_key_selection ? "currentColor" : "none"} />
@@ -405,7 +405,7 @@ function ProductPicker({ category, roomId }: { category: ProductCategory; roomId
                 {filtered.map(p => (
                   <button key={p.id} onClick={() => link(p.id)} className="text-left border border-border p-3 hover:border-ink flex gap-3">
                     <div className="w-14 h-14 bg-bone flex-shrink-0 overflow-hidden">
-                      {p.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" />}
+                      {p.image_url && <img src={normalizeSupabaseImageUrl(p.image_url)} alt="" className="w-full h-full object-cover" />}
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground truncate">{p.vendor || "—"}</div>
@@ -469,7 +469,7 @@ function ProjectMaterialsPanel({ projectId, room, items }: { projectId: string; 
           {items.map(m => (
             <div key={m.id} className="group">
               <div className="aspect-square bg-bone overflow-hidden mb-3 relative">
-                {m.product?.image_url && <img src={m.product.image_url} alt={clientProductName(m, room)} className="w-full h-full object-cover" loading="lazy" />}
+                {m.product?.image_url && <img src={normalizeSupabaseImageUrl(m.product.image_url)} alt={clientProductName(m, room)} className="w-full h-full object-cover" loading="lazy" />}
               </div>
               <div className="eyebrow mb-1">{m.category}</div>
               <h4 className="font-display text-lg leading-tight">{clientProductName(m, room)}</h4>
@@ -659,7 +659,7 @@ function RenderingsPanel({ roomId, images, sketchups, selections, materials, roo
               return (
                 <div key={sk.id} className="border border-border p-3">
                   <div className="aspect-[4/3] bg-bone overflow-hidden mb-3">
-                    <img src={sk.url} alt={sk.caption || ""} className="w-full h-full object-cover" />
+                    <img src={normalizeSupabaseImageUrl(sk.url)} alt={sk.caption || ""} className="w-full h-full object-cover" />
                   </div>
                   {sk.caption && <p className="text-xs text-muted-foreground mb-2">{sk.caption}</p>}
                   <div className="flex items-center justify-between gap-2">
@@ -845,7 +845,7 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
     <div className="group">
       <button type="button" onClick={() => setOpen(true)} className="block w-full text-left">
         <div className="aspect-[4/3] bg-bone overflow-hidden mb-3 relative">
-          <img src={rendering.url} alt={rendering.caption || ""} className="w-full h-full object-cover" loading="lazy" />
+          <img src={normalizeSupabaseImageUrl(rendering.url)} alt={rendering.caption || ""} className="w-full h-full object-cover" loading="lazy" />
           <div className="absolute top-2 left-2 bg-background/90 text-[9px] uppercase tracking-wider px-2 py-1">V{version}</div>
           <div className="absolute bottom-2 left-2 right-2 bg-background/90 text-[9px] uppercase tracking-wider px-2 py-1 text-center truncate">
             {reviewLabel(reviewStatus)}
@@ -867,7 +867,7 @@ function RoomRenderingCard({ rendering, sketchup, siblings, disabled, onUpdate, 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
-          <img src={rendering.url} alt="" className="w-full" />
+          <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
             <div>
               <Label className="eyebrow">Review Status</Label>
@@ -1000,7 +1000,7 @@ function MaterialReferenceSelect({
       {selected && (
         <div className="mt-3 flex items-center gap-3 border border-border bg-bone/30 p-3">
           {selected.product?.image_url ? (
-            <img src={selected.product.image_url} alt="" className="h-14 w-14 object-cover bg-background border border-border" />
+            <img src={normalizeSupabaseImageUrl(selected.product.image_url)} alt="" className="h-14 w-14 object-cover bg-background border border-border" />
           ) : (
             <div className="h-14 w-14 bg-background border border-border flex items-center justify-center text-[10px] uppercase tracking-wider text-muted-foreground">
               No image
@@ -1071,7 +1071,7 @@ function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
       {imageUrl && (
         <div className="mt-3 flex items-center gap-3">
           <div className="h-20 w-20 bg-background overflow-hidden border border-border">
-            <img src={imageUrl} alt={fileName || "Revision reference"} className="h-full w-full object-cover" />
+            <img src={normalizeSupabaseImageUrl(imageUrl)} alt={fileName || "Revision reference"} className="h-full w-full object-cover" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm truncate">{fileName || "Reference image"}</p>

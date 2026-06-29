@@ -73,6 +73,7 @@ import {
   canViewProjectSurface,
 } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { templateForRoomName } from "@/lib/roomTemplates";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
 
@@ -1174,7 +1175,7 @@ function RoomCoverBoardPreviewElement({ element }: { element: RoomCoverBoardElem
   const transform = element.rotation ? `rotate(${element.rotation}deg)` : undefined;
 
   if (element.type === "image") {
-    const src = element.backgroundRemovedUrl || element.src;
+    const src = normalizeSupabaseImageUrl(element.backgroundRemovedUrl || element.src);
     if (!src) return null;
     return (
       <div
@@ -1301,7 +1302,7 @@ function RoomCard({
             <RoomCoverBoardPreview page={selectedBoardPage} />
           ) : heroUrl ? (
             <img
-              src={heroUrl}
+              src={normalizeSupabaseImageUrl(heroUrl)}
               alt={room.name}
               className="w-full h-full object-cover"
               loading="lazy"
@@ -1492,7 +1493,7 @@ function RoomCoverImageSection({
               className="group relative aspect-[4/3] overflow-hidden border border-border bg-bone transition hover:border-ink"
             >
               <img
-                src={image.url}
+                src={normalizeSupabaseImageUrl(image.url)}
                 alt={image.caption ?? title}
                 className="h-full w-full object-cover"
                 loading="lazy"
@@ -1746,7 +1747,7 @@ function CoverImageDialog({
           {currentUrl && (
             <div className="flex items-center gap-4">
               <div className="w-32 aspect-[4/3] bg-bone overflow-hidden border border-border">
-                <img src={currentUrl} alt="current cover" className="w-full h-full object-cover" />
+                <img src={normalizeSupabaseImageUrl(currentUrl)} alt="current cover" className="w-full h-full object-cover" />
               </div>
               <button
                 onClick={() => save(null)}
@@ -1795,7 +1796,7 @@ function CoverImageDialog({
                     className="group relative aspect-[4/3] bg-bone overflow-hidden border border-border hover:border-ink"
                   >
                     <img
-                      src={img.url}
+                      src={normalizeSupabaseImageUrl(img.url)}
                       alt={img.caption ?? ""}
                       className="w-full h-full object-cover"
                       loading="lazy"

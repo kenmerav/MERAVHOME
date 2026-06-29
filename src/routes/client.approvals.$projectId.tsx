@@ -8,6 +8,7 @@ import { db, type ApprovalStatus, type MaterialItem, type Product, type Project,
 import { formatMoney, moneyValue } from "@/lib/money";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 
 export const Route = createFileRoute("/client/approvals/$projectId")({
   head: () => ({ meta: [{ title: "Client Approvals — MERAV Interiors" }] }),
@@ -369,7 +370,7 @@ function OverviewGrid({ rooms, items, onSelectRoom }: { rooms: Room[]; items: Ap
           >
             <div className="flex h-56 items-center justify-center rounded-[20px] bg-[#faf8f4]">
               {firstImage ? (
-                <img src={firstImage} alt="" className="max-h-full max-w-full object-contain" />
+                <img src={normalizeSupabaseImageUrl(firstImage)} alt="" className="max-h-full max-w-full object-contain" />
               ) : (
                 <div className="flex h-32 w-32 items-center justify-center rounded-full bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-300">No Image</div>
               )}
@@ -423,7 +424,7 @@ function RoomApprovalGrid({
             <button type="button" onClick={() => onOpen(item)} className="block w-full text-left">
               <div className="flex h-56 items-center justify-center rounded-[20px] bg-[#faf8f4]">
                 {detail.image ? (
-                  <img src={detail.image} alt={detail.name} className="max-h-full max-w-full object-contain" />
+                  <img src={normalizeSupabaseImageUrl(detail.image)} alt={detail.name} className="max-h-full max-w-full object-contain" />
                 ) : (
                   <div className="flex h-32 w-32 items-center justify-center rounded-full bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-300">No Image</div>
                 )}
@@ -497,7 +498,7 @@ function CommentsBoard({ items, onOpen }: { items: ApprovalItem[]; onOpen: (item
               className="grid w-full gap-4 py-5 text-left transition hover:bg-stone-50/70 md:grid-cols-[88px_1fr_auto] md:items-center"
             >
               <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[#faf8f4]">
-                {detail.image ? <img src={detail.image} alt="" className="max-h-full max-w-full object-contain" /> : <MessageSquare className="h-5 w-5 text-stone-300" />}
+                {detail.image ? <img src={normalizeSupabaseImageUrl(detail.image)} alt="" className="max-h-full max-w-full object-contain" /> : <MessageSquare className="h-5 w-5 text-stone-300" />}
               </div>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -578,7 +579,7 @@ function ApprovalDetailModal({
                 <ChevronLeft className="h-6 w-6" />
               </button>
               {detail.image ? (
-                <img src={detail.image} alt={detail.name} className="max-h-[560px] max-w-[78%] object-contain" />
+                <img src={normalizeSupabaseImageUrl(detail.image)} alt={detail.name} className="max-h-[560px] max-w-[78%] object-contain" />
               ) : (
                 <div className="flex h-48 w-48 items-center justify-center border border-border bg-background text-xs uppercase tracking-[0.2em] text-muted-foreground">No Image</div>
               )}
@@ -595,7 +596,7 @@ function ApprovalDetailModal({
             {detail.image && (
               <div className="mt-8 flex justify-center">
                 <div className="h-24 w-24 border border-border bg-background p-2">
-                  <img src={detail.image} alt="" className="h-full w-full object-contain" />
+                  <img src={normalizeSupabaseImageUrl(detail.image)} alt="" className="h-full w-full object-contain" />
                 </div>
               </div>
             )}
