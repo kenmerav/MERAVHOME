@@ -242,6 +242,7 @@ function DashboardPage() {
 
 function StudioRemindersPanel({ projects }: { projects: Project[] }) {
   const qc = useQueryClient();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -294,6 +295,7 @@ function StudioRemindersPanel({ projects }: { projects: Project[] }) {
       setAssignedTo("studio");
       setPriority("normal");
       setNotes("");
+      setIsAddDialogOpen(false);
       toast.success("Reminder added");
       qc.invalidateQueries({ queryKey: ["studioReminders"] });
     } catch (error) {
@@ -333,8 +335,73 @@ function StudioRemindersPanel({ projects }: { projects: Project[] }) {
               Ken/Katie-only reminders for due dates, follow-ups, and project items that should not fall through the cracks.
             </p>
           </div>
-          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            {openReminders.length} open
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              {openReminders.length} open
+            </div>
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild>
+                <button type="button" className="inline-flex items-center justify-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground">
+                  <Plus className="h-4 w-4" /> Add Reminder
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle className="font-display text-3xl">Add Reminder</DialogTitle>
+                </DialogHeader>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="md:col-span-2 space-y-1.5">
+                    <Label className="eyebrow">Reminder</Label>
+                    <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Follow up on cabinet quote" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="eyebrow">Project</Label>
+                    <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="h-10 w-full border border-input bg-background px-3 text-sm">
+                      <option value="">No project / general</option>
+                      {projects
+                        .slice()
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="eyebrow">Assigned To</Label>
+                    <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value as StudioReminder["assigned_to"])} className="h-10 w-full border border-input bg-background px-3 text-sm">
+                      <option value="studio">Ken + Katie</option>
+                      <option value="ken">Ken</option>
+                      <option value="katie">Katie</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="eyebrow">Due Date</Label>
+                    <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="eyebrow">Reminder Date</Label>
+                    <Input type="date" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="eyebrow">Priority</Label>
+                    <select value={priority} onChange={(e) => setPriority(e.target.value as StudioReminder["priority"])} className="h-10 w-full border border-input bg-background px-3 text-sm">
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-2 space-y-1.5">
+                    <Label className="eyebrow">Notes</Label>
+                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional context, phone number, vendor note, etc." />
+                  </div>
+                </div>
+                <button type="button" onClick={createReminder} disabled={busy || data?.setupNeeded} className="mt-2 inline-flex items-center justify-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50">
+                  <Plus className="h-4 w-4" /> {busy ? "Adding..." : "Add Reminder"}
+                </button>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -344,61 +411,7 @@ function StudioRemindersPanel({ projects }: { projects: Project[] }) {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
-          <div className="border border-border bg-bone/20 p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="md:col-span-2 space-y-1.5">
-                <Label className="eyebrow">Reminder</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Follow up on cabinet quote" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="eyebrow">Project</Label>
-                <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="h-10 w-full border border-input bg-background px-3 text-sm">
-                  <option value="">No project / general</option>
-                  {projects
-                    .slice()
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="eyebrow">Assigned To</Label>
-                <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value as StudioReminder["assigned_to"])} className="h-10 w-full border border-input bg-background px-3 text-sm">
-                  <option value="studio">Ken + Katie</option>
-                  <option value="ken">Ken</option>
-                  <option value="katie">Katie</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="eyebrow">Due Date</Label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="eyebrow">Reminder Date</Label>
-                <Input type="date" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="eyebrow">Priority</Label>
-                <select value={priority} onChange={(e) => setPriority(e.target.value as StudioReminder["priority"])} className="h-10 w-full border border-input bg-background px-3 text-sm">
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
-                  <option value="low">Low</option>
-                </select>
-              </div>
-              <div className="md:col-span-2 space-y-1.5">
-                <Label className="eyebrow">Notes</Label>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional context, phone number, vendor note, etc." />
-              </div>
-            </div>
-            <button type="button" onClick={createReminder} disabled={busy || data?.setupNeeded} className="mt-4 inline-flex items-center justify-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50">
-              <Plus className="h-4 w-4" /> {busy ? "Adding…" : "Add Reminder"}
-            </button>
-          </div>
-
+        <div className="grid grid-cols-1 gap-6">
           <div className="border border-border bg-background">
             <div className="border-b border-border px-4 py-3">
               <div className="eyebrow">Open Items</div>
