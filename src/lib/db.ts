@@ -114,6 +114,8 @@ export interface Project {
   contractor_can_view_design_boards: boolean;
   contractor_spec_show_pricing: boolean;
   contractor_spec_show_links: boolean;
+  is_pinned: boolean;
+  last_opened_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -406,7 +408,11 @@ export const db = {
   /* PROJECTS */
   listProjects: async () => {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
-    let query = supabase.from("projects").select("*").order("updated_at", { ascending: false });
+    const baseQuery = () => supabase.from("projects").select("*");
+    let query = baseQuery()
+      .order("is_pinned", { ascending: false })
+      .order("last_opened_at", { ascending: false, nullsFirst: false })
+      .order("updated_at", { ascending: false });
 
     if (
       profile &&
@@ -418,7 +424,22 @@ export const db = {
       query = query.in("id", assignedProjectIds);
     }
 
-    return (await query).data as Project[] | null;
+    const result = await query;
+    if (!result.error) return result.data as Project[] | null;
+    if (result.error.code !== "42703") return null;
+
+    let fallback = baseQuery().order("updated_at", { ascending: false });
+    if (
+      profile &&
+      (profile.role === "Client" ||
+        profile.role === "Contractor" ||
+        (profile.role === "Employee" && profile.can_view_all_projects === false))
+    ) {
+      if (!assignedProjectIds.length) return [] as Project[];
+      fallback = fallback.in("id", assignedProjectIds);
+    }
+
+    return (await fallback).data as Project[] | null;
   },
   getProject: async (id: string) => {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
@@ -444,6 +465,8 @@ export const db = {
   updateProject: async (id: string, p: Partial<Project>) =>
     (await supabase.from("projects").update(p).eq("id", id).select().single())
       .data as Project | null,
+  markProjectOpened: async (id: string) =>
+    supabase.from("projects").update({ last_opened_at: new Date().toISOString() } as any).eq("id", id),
 
   /* ROOMS */
   listRooms: async (projectId: string) =>

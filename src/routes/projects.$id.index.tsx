@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -146,6 +146,15 @@ function ProjectDetailPage() {
       return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
     },
   });
+  const isClientUser = profile?.role === "Client";
+  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
+
+  useEffect(() => {
+    if (profileLoading || isSharedUser) return;
+    db.markProjectOpened(id)
+      .then(() => qc.invalidateQueries({ queryKey: ["projects"] }))
+      .catch(() => undefined);
+  }, [id, isSharedUser, profileLoading, qc]);
 
   if (!project || profileLoading) {
     return (
@@ -155,8 +164,6 @@ function ProjectDetailPage() {
     );
   }
 
-  const isClientUser = profile?.role === "Client";
-  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
   const designBoardPages = normalizeRoomCoverBoardPages(designBoard?.board_state);
 
   const setStatus = async (s: ProjectStatus) => {

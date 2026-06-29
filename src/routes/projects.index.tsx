@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Pin } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
 import { NewProjectDialog, StatusBadge } from "./index";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/projects/")({
   head: () => ({
@@ -14,6 +16,7 @@ export const Route = createFileRoute("/projects/")({
 });
 
 function ProjectsListPage() {
+  const qc = useQueryClient();
   const [filter, setFilter] = useState<"active" | "archive">("active");
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -31,6 +34,17 @@ function ProjectsListPage() {
   const archivedProjects = projects.filter((p) => p.status === "Complete");
   const visibleProjects = filter === "archive" ? archivedProjects : activeProjects;
   const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
+  const canPinProjects = !profileLoading && !isSharedUser;
+
+  const togglePinned = async (projectId: string, pinned: boolean) => {
+    try {
+      await db.updateProject(projectId, { is_pinned: !pinned } as any);
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success(!pinned ? "Project pinned" : "Project unpinned");
+    } catch {
+      toast.error("Could not update pinned project.");
+    }
+  };
 
   return (
     <AppShell>
@@ -78,39 +92,63 @@ function ProjectsListPage() {
                 : "No active projects. Completed projects live in Archive."}
             </div>
           ) : (
-            visibleProjects.map((p) => (
-              <Link
-                key={p.id}
-                to="/projects/$id"
-                params={{ id: p.id }}
-                className="grid grid-cols-[72px_1fr] sm:grid-cols-[80px_1fr_auto] lg:grid-cols-[100px_2fr_1.5fr_1fr_auto] items-center gap-4 sm:gap-6 py-5 border-b border-border hover:bg-bone/40 transition-colors group"
-              >
-                <div className="aspect-[4/5] bg-bone overflow-hidden">
-                  {p.cover_image_url && (
-                    <img
-                      src={resolveImage(p.cover_image_url)}
-                      alt={p.name}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
+            visibleProjects.map((p) => {
+              const pinned = Boolean(p.is_pinned);
+              const recentDate = p.last_opened_at || p.updated_at;
+              return (
+                <div key={p.id} className="relative border-b border-border transition-colors hover:bg-bone/40">
+                  <Link
+                    to="/projects/$id"
+                    params={{ id: p.id }}
+                    className="grid grid-cols-[72px_1fr] sm:grid-cols-[80px_1fr_auto] lg:grid-cols-[100px_2fr_1.5fr_1fr_auto_84px] items-center gap-4 sm:gap-6 py-5 pr-14 lg:pr-4 group"
+                  >
+                    <div className="aspect-[4/5] bg-bone overflow-hidden">
+                      {p.cover_image_url && (
+                        <img
+                          src={resolveImage(p.cover_image_url)}
+                          alt={p.name}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        {pinned && <Pin className="h-3.5 w-3.5 fill-ink text-ink" />}
+                        <h3 className="font-display text-xl sm:text-2xl leading-tight">{p.name}</h3>
+                      </div>
+                      <div className="eyebrow mt-1">
+                        {p.project_label || p.project_type}
+                        <span className="lg:hidden"> · {p.client_name}</span>
+                      </div>
+                    </div>
+                    <div className="hidden lg:block text-sm text-muted-foreground">{p.client_name}</div>
+                    <div className="hidden lg:block">
+                      <StatusBadge status={p.status} />
+                    </div>
+                    <div className="text-xs text-muted-foreground hidden lg:block">
+                      {p.last_opened_at ? "Opened " : "Updated "}
+                      {new Date(recentDate).toLocaleDateString()}
+                    </div>
+                  </Link>
+                  {canPinProjects && (
+                    <button
+                      type="button"
+                      onClick={() => togglePinned(p.id, pinned)}
+                      className={`absolute right-2 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center border transition-colors ${
+                        pinned
+                          ? "border-ink bg-ink text-primary-foreground"
+                          : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
+                      }`}
+                      aria-label={pinned ? `Unpin ${p.name}` : `Pin ${p.name}`}
+                      title={pinned ? "Unpin project" : "Pin project"}
+                    >
+                      <Pin className={`h-4 w-4 ${pinned ? "fill-current" : ""}`} />
+                    </button>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <h3 className="font-display text-xl sm:text-2xl leading-tight">{p.name}</h3>
-                  <div className="eyebrow mt-1">
-                    {p.project_label || p.project_type}
-                    <span className="lg:hidden"> · {p.client_name}</span>
-                  </div>
-                </div>
-                <div className="hidden lg:block text-sm text-muted-foreground">{p.client_name}</div>
-                <div className="hidden lg:block">
-                  <StatusBadge status={p.status} />
-                </div>
-                <div className="text-xs text-muted-foreground hidden lg:block">
-                  {new Date(p.updated_at).toLocaleDateString()}
-                </div>
-              </Link>
-            ))
+              );
+            })
           )}
         </div>
       </div>

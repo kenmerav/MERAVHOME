@@ -514,7 +514,9 @@ export type Database = {
           design_concept: string | null
           design_notes: string | null
           id: string
+          is_pinned: boolean
           key_design_elements: string | null
+          last_opened_at: string | null
           name: string
           project_label: string | null
           project_summary: string | null
@@ -545,7 +547,9 @@ export type Database = {
           design_concept?: string | null
           design_notes?: string | null
           id?: string
+          is_pinned?: boolean
           key_design_elements?: string | null
+          last_opened_at?: string | null
           name: string
           project_label?: string | null
           project_summary?: string | null
@@ -576,7 +580,9 @@ export type Database = {
           design_concept?: string | null
           design_notes?: string | null
           id?: string
+          is_pinned?: boolean
           key_design_elements?: string | null
+          last_opened_at?: string | null
           name?: string
           project_label?: string | null
           project_summary?: string | null
