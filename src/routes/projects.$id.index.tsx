@@ -297,6 +297,9 @@ function ProjectDetailPage() {
                   }}
                 />
               )}
+              {canViewFinancials(profile) && (
+                <ProjectTodoDialog projectId={id} />
+              )}
               <Link
                 to="/client/approvals/$projectId"
                 params={{ projectId: id }}
@@ -517,6 +520,184 @@ function SharedProjectPortal({
         </div>
       )}
     </section>
+  );
+}
+
+type ProjectTodoAssignee = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+};
+
+type ProjectTodo = {
+  id: string;
+  title: string;
+  notes: string | null;
+  due_date: string | null;
+  reminder_date: string | null;
+  status: string;
+  assigned_user?: ProjectTodoAssignee | null;
+};
+
+function ProjectTodoDialog({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [reminderDate, setReminderDate] = useState("");
+  const [priority, setPriority] = useState("normal");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["projectTodos", projectId],
+    enabled: open,
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch(`/api/project-todos?projectId=${encodeURIComponent(projectId)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not load project to-dos.");
+      return body as { todos: ProjectTodo[]; assignees: ProjectTodoAssignee[]; setupNeeded?: boolean };
+    },
+  });
+
+  const assignees = data?.assignees ?? [];
+  const openTodos = (data?.todos ?? []).filter((todo) => todo.status !== "complete");
+
+  const createTodo = async () => {
+    if (!title.trim()) return toast.error("Add a to-do title.");
+    if (!assignedUserId) return toast.error("Choose who this is for.");
+    setBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch("/api/project-todos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          assigned_user_id: assignedUserId,
+          title,
+          due_date: dueDate || null,
+          reminder_date: reminderDate || null,
+          priority,
+          notes,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not add to-do.");
+      toast.success("To-do assigned");
+      setTitle("");
+      setAssignedUserId("");
+      setDueDate("");
+      setReminderDate("");
+      setPriority("normal");
+      setNotes("");
+      qc.invalidateQueries({ queryKey: ["projectTodos", projectId] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add to-do.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+        >
+          <ClipboardList className="w-4 h-4" /> Assign To-Do
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <div className="eyebrow mb-2">Shared Follow-Up</div>
+          <DialogTitle className="font-display text-3xl">Assign a Project To-Do</DialogTitle>
+        </DialogHeader>
+        {data?.setupNeeded ? (
+          <div className="border border-dashed border-border bg-bone/30 p-4 text-sm text-muted-foreground">
+            Project to-do storage needs the Supabase migration before this can save.
+          </div>
+        ) : null}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="md:col-span-2 space-y-1.5">
+            <Label className="eyebrow">To-Do</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Confirm outlet layout before rough-in" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="eyebrow">Assigned To</Label>
+            <select
+              value={assignedUserId}
+              onChange={(e) => setAssignedUserId(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 text-sm"
+            >
+              <option value="">{isLoading ? "Loading..." : "Choose client / GC"}</option>
+              {assignees.map((assignee) => (
+                <option key={assignee.id} value={assignee.id}>
+                  {(assignee.full_name || assignee.email) + (assignee.role === "Contractor" ? " - GC/Builder" : " - Client")}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="eyebrow">Priority</Label>
+            <select value={priority} onChange={(e) => setPriority(e.target.value)} className="h-10 w-full border border-input bg-background px-3 text-sm">
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="eyebrow">Due Date</Label>
+            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="eyebrow">Reminder Date</Label>
+            <Input type="date" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+          </div>
+          <div className="md:col-span-2 space-y-1.5">
+            <Label className="eyebrow">Notes</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Add any context they need." />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={createTodo}
+          disabled={busy || data?.setupNeeded}
+          className="inline-flex items-center justify-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" /> {busy ? "Adding..." : "Add To-Do"}
+        </button>
+        <div className="border-t border-border pt-4">
+          <div className="eyebrow mb-3">Open Shared To-Dos</div>
+          {openTodos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No open shared to-dos for this project.</p>
+          ) : (
+            <div className="space-y-2">
+              {openTodos.slice(0, 6).map((todo) => (
+                <div key={todo.id} className="border border-border bg-bone/20 p-3 text-sm">
+                  <div className="font-medium">{todo.title}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    {todo.assigned_user?.full_name || todo.assigned_user?.email || "Assigned user"}
+                    {todo.due_date ? ` - Due ${formatDate(todo.due_date)}` : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1832,6 +2013,12 @@ function CoverImageDialog({
 
 export function NewProjectQuickNote() {
   return null;
+}
+
+function formatDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
 // Required to satisfy any tooling that imports field/textarea/etc. unused

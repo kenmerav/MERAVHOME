@@ -64,12 +64,15 @@ type SharedDashboard = {
   }>;
   todos: Array<{
     id: string;
-    kind: "invoice" | "approval";
+    kind: "invoice" | "approval" | "project_todo";
     title: string;
     project_id: string;
     project_name: string;
     amount?: number;
     due_date?: string | null;
+    reminder_date?: string | null;
+    notes?: string | null;
+    todo_id?: string;
     invoice_id?: string;
     payment_url?: string | null;
     href?: string;
@@ -612,7 +615,7 @@ function SharedDashboardOverview({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-bone px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                        {todo.kind === "invoice" ? "Invoice Due" : "Approval"}
+                        {todo.kind === "invoice" ? "Invoice Due" : todo.kind === "approval" ? "Approval" : "To-Do"}
                       </span>
                       <div className="font-medium">{todo.title}</div>
                     </div>
@@ -620,12 +623,16 @@ function SharedDashboardOverview({
                       {todo.project_name}
                       {todo.amount != null ? ` - ${formatMoney(todo.amount)}` : ""}
                       {todo.due_date ? ` - Due ${formatDashboardDate(todo.due_date)}` : ""}
+                      {todo.reminder_date ? ` - Reminder ${formatDashboardDate(todo.reminder_date)}` : ""}
                     </div>
+                    {todo.notes && <p className="mt-2 text-sm text-muted-foreground">{todo.notes}</p>}
                   </div>
                   {todo.kind === "approval" && todo.href ? (
                     <Link to={todo.href as any} className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink">
                       Review <ArrowRight className="h-4 w-4" />
                     </Link>
+                  ) : todo.kind === "project_todo" ? (
+                    <CompleteSharedTodoButton todoId={todo.todo_id} />
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {todo.payment_url ? (
@@ -707,6 +714,48 @@ function SharedDashboardOverview({
         </div>
       </div>
     </section>
+  );
+}
+
+function CompleteSharedTodoButton({ todoId }: { todoId?: string }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  const complete = async () => {
+    if (!todoId) return;
+    setBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch("/api/project-todos", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ id: todoId, status: "complete" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not complete to-do.");
+      toast.success("To-do completed");
+      qc.invalidateQueries({ queryKey: ["clientDashboard"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not complete to-do.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={complete}
+      disabled={busy || !todoId}
+      className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink disabled:opacity-50"
+    >
+      <CheckCircle2 className="h-4 w-4" />
+      {busy ? "Completing..." : "Mark Done"}
+    </button>
   );
 }
 

@@ -34,6 +34,7 @@ import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
+import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
@@ -187,6 +188,11 @@ const ApiProjectsRoute = ApiProjectsRouteImport.update({
   path: '/api/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProjectTodosRoute = ApiProjectTodosRouteImport.update({
+  id: '/api/project-todos',
+  path: '/api/project-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
   id: '/api/parse-invoice-pdf',
   path: '/api/parse-invoice-pdf',
@@ -328,6 +334,7 @@ export interface FileRoutesByFullPath {
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
+  '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
@@ -379,6 +386,7 @@ export interface FileRoutesByTo {
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
+  '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
@@ -431,6 +439,7 @@ export interface FileRoutesById {
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
+  '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
@@ -484,6 +493,7 @@ export interface FileRouteTypes {
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
     | '/api/parse-invoice-pdf'
+    | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
     | '/api/scrape-materials'
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
     | '/api/parse-invoice-pdf'
+    | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
     | '/api/scrape-materials'
@@ -586,6 +597,7 @@ export interface FileRouteTypes {
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
     | '/api/parse-invoice-pdf'
+    | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
     | '/api/scrape-materials'
@@ -638,6 +650,7 @@ export interface RootRouteChildren {
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
   ApiMarkFinancialPaymentDueRoute: typeof ApiMarkFinancialPaymentDueRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
+  ApiProjectTodosRoute: typeof ApiProjectTodosRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
@@ -853,6 +866,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/project-todos': {
+      id: '/api/project-todos'
+      path: '/api/project-todos'
+      fullPath: '/api/project-todos'
+      preLoaderRoute: typeof ApiProjectTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/parse-invoice-pdf': {
       id: '/api/parse-invoice-pdf'
       path: '/api/parse-invoice-pdf'
@@ -1038,6 +1058,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
   ApiMarkFinancialPaymentDueRoute: ApiMarkFinancialPaymentDueRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
+  ApiProjectTodosRoute: ApiProjectTodosRoute,
   ApiProjectsRoute: ApiProjectsRoute,
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,

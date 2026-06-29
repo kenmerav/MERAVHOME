@@ -33,6 +33,8 @@ type ReminderNotice = {
   project_name?: string | null;
 };
 
+type NoticeKind = "reminders" | "todos";
+
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const navigate = useNavigate();
@@ -45,6 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
   const [reminderNotices, setReminderNotices] = useState<ReminderNotice[]>([]);
   const [reminderNoticeOpen, setReminderNoticeOpen] = useState(false);
+  const [noticeKind, setNoticeKind] = useState<NoticeKind>("reminders");
 
   useEffect(() => {
     let active = true;
@@ -138,6 +141,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         const reminderIds = dueReminders.map((reminder) => reminder.id).sort().join(".");
         const storageKey = `merav.reminder-notices.${profile?.id}.${today}.${reminderIds}`;
         if (window.localStorage.getItem(storageKey) === "seen") return;
+        setNoticeKind("reminders");
         setReminderNotices(dueReminders);
         setReminderNoticeOpen(true);
       } catch (error) {
@@ -146,6 +150,68 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     void loadReminderNotices();
+    return () => {
+      active = false;
+    };
+  }, [loadingAuth, profile]);
+
+  useEffect(() => {
+    if (
+      loadingAuth ||
+      !profile ||
+      (profile.role !== "Client" && profile.role !== "Contractor") ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+    let active = true;
+
+    const loadSharedTodoNotices = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const res = await fetch("/api/client-dashboard", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !Array.isArray(body.todos)) return;
+
+        const today = localDateKey();
+        const dueTodos = body.todos
+          .filter((todo: any) => todo?.kind === "project_todo")
+          .filter((todo: any) => {
+            const reminderDate = typeof todo.reminder_date === "string" ? todo.reminder_date : null;
+            const dueDate = typeof todo.due_date === "string" ? todo.due_date : null;
+            return (
+              (reminderDate && reminderDate <= today) ||
+              (dueDate && dueDate <= today)
+            );
+          })
+          .map((todo: any) => ({
+            id: String(todo.todo_id || todo.id),
+            title: String(todo.title || "Project to-do"),
+            notes: typeof todo.notes === "string" ? todo.notes : null,
+            due_date: typeof todo.due_date === "string" ? todo.due_date : null,
+            reminder_date: typeof todo.reminder_date === "string" ? todo.reminder_date : null,
+            priority: null,
+            assigned_to: "shared",
+            project_name: typeof todo.project_name === "string" ? todo.project_name : null,
+          }));
+        if (!active || dueTodos.length === 0) return;
+
+        const todoIds = dueTodos.map((todo: ReminderNotice) => todo.id).sort().join(".");
+        const storageKey = `merav.shared-todo-notices.${profile.id}.${today}.${todoIds}`;
+        if (window.localStorage.getItem(storageKey) === "seen") return;
+        setNoticeKind("todos");
+        setReminderNotices(dueTodos);
+        setReminderNoticeOpen(true);
+      } catch (error) {
+        console.warn("[AppShell] Unable to load shared to-do notices.", error);
+      }
+    };
+
+    void loadSharedTodoNotices();
     return () => {
       active = false;
     };
@@ -308,6 +374,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         open={reminderNoticeOpen}
         reminders={reminderNotices}
         profileId={profile?.id}
+        kind={noticeKind}
         onOpenChange={setReminderNoticeOpen}
       />
     </div>
@@ -318,18 +385,21 @@ function ReminderNoticeDialog({
   open,
   reminders,
   profileId,
+  kind,
   onOpenChange,
 }: {
   open: boolean;
   reminders: ReminderNotice[];
   profileId?: string;
+  kind: NoticeKind;
   onOpenChange: (open: boolean) => void;
 }) {
   const markSeen = () => {
     if (typeof window !== "undefined" && profileId && reminders.length) {
       const today = localDateKey();
       const reminderIds = reminders.map((reminder) => reminder.id).sort().join(".");
-      window.localStorage.setItem(`merav.reminder-notices.${profileId}.${today}.${reminderIds}`, "seen");
+      const storagePrefix = kind === "todos" ? "merav.shared-todo-notices" : "merav.reminder-notices";
+      window.localStorage.setItem(`${storagePrefix}.${profileId}.${today}.${reminderIds}`, "seen");
     }
     onOpenChange(false);
   };
@@ -344,7 +414,7 @@ function ReminderNoticeDialog({
     >
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <div className="eyebrow mb-2">Studio Reminders</div>
+          <div className="eyebrow mb-2">{kind === "todos" ? "Project To-Dos" : "Studio Reminders"}</div>
           <DialogTitle className="font-display text-4xl font-normal">
             Items needing attention
           </DialogTitle>

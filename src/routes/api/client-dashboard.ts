@@ -195,8 +195,36 @@ export const Route = createFileRoute("/api/client-dashboard")({
           }
 
           const approvalTodos = await approvalTodosForProjects(projects);
+          const { data: projectTodoRows, error: projectTodosError } = await supabaseAdmin
+            .from("shared_project_todos" as any)
+            .select("id,project_id,title,notes,due_date,reminder_date,priority,status,created_at")
+            .eq("assigned_user_id", shared.user.id)
+            .eq("status", "open")
+            .in("project_id", projectIds)
+            .order("due_date", { ascending: true, nullsFirst: false })
+            .order("reminder_date", { ascending: true, nullsFirst: false })
+            .order("created_at", { ascending: false });
+          if (projectTodosError && projectTodosError.code !== "42P01") {
+            return json({ error: projectTodosError.message }, 500);
+          }
+
+          const projectTodos = (projectTodoRows ?? []).map((todo: any) => {
+            const project = projects.find((item) => item.id === todo.project_id);
+            return {
+              id: `project-todo-${todo.id}`,
+              kind: "project_todo",
+              title: todo.title,
+              project_id: todo.project_id,
+              project_name: project?.name ?? "Project",
+              due_date: todo.due_date,
+              reminder_date: todo.reminder_date,
+              notes: todo.notes,
+              todo_id: todo.id,
+            };
+          });
 
           const todos = [
+            ...projectTodos,
             ...invoices.flatMap((invoice) =>
               (invoice.payments ?? [])
                 .filter(paymentIsOpen)
