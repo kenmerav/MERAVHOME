@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, FileText, Plus, ReceiptText, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileText, Plus, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type ApprovalStatus, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
@@ -74,6 +74,22 @@ type SharedDashboard = {
     payment_url?: string | null;
     href?: string;
   }>;
+};
+
+type StudioReminder = {
+  id: string;
+  project_id: string | null;
+  project_name: string | null;
+  project_client_name: string | null;
+  title: string;
+  notes: string | null;
+  due_date: string | null;
+  reminder_date: string | null;
+  status: "open" | "complete";
+  priority: "low" | "normal" | "high";
+  assigned_to: "ken" | "katie" | "studio";
+  created_at: string;
+  completed_at: string | null;
 };
 
 
@@ -186,6 +202,10 @@ function DashboardPage() {
         )}
 
         {canCreateInvoices && !isSharedUser && (
+          <StudioRemindersPanel projects={activeProjects} />
+        )}
+
+        {canCreateInvoices && !isSharedUser && (
           <section className="border border-border bg-bone/20 p-6 mb-12">
             <div className="space-y-5">
               <div>
@@ -218,6 +238,316 @@ function DashboardPage() {
       </div>
     </AppShell>
   );
+}
+
+function StudioRemindersPanel({ projects }: { projects: Project[] }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [reminderDate, setReminderDate] = useState("");
+  const [assignedTo, setAssignedTo] = useState<StudioReminder["assigned_to"]>("studio");
+  const [priority, setPriority] = useState<StudioReminder["priority"]>("normal");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["studioReminders"],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to load reminders.");
+      const res = await fetch("/api/studio-reminders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not load reminders.");
+      return body as { reminders: StudioReminder[]; setupNeeded?: boolean };
+    },
+  });
+
+  const reminders = data?.reminders ?? [];
+  const openReminders = reminders
+    .filter((reminder) => reminder.status !== "complete")
+    .sort(compareStudioReminders);
+  const completedReminders = reminders
+    .filter((reminder) => reminder.status === "complete")
+    .slice(0, 3);
+
+  const createReminder = async () => {
+    if (!title.trim()) return toast.error("Add a reminder title first.");
+    setBusy(true);
+    try {
+      await reminderRequest("POST", {
+        title,
+        project_id: projectId || null,
+        due_date: dueDate || null,
+        reminder_date: reminderDate || null,
+        assigned_to: assignedTo,
+        priority,
+        notes,
+      });
+      setTitle("");
+      setProjectId("");
+      setDueDate("");
+      setReminderDate("");
+      setAssignedTo("studio");
+      setPriority("normal");
+      setNotes("");
+      toast.success("Reminder added");
+      qc.invalidateQueries({ queryKey: ["studioReminders"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add reminder.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateReminder = async (id: string, updates: Partial<StudioReminder>) => {
+    try {
+      await reminderRequest("PATCH", { id, ...updates });
+      qc.invalidateQueries({ queryKey: ["studioReminders"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update reminder.");
+    }
+  };
+
+  const deleteReminder = async (id: string) => {
+    try {
+      await reminderRequest("DELETE", null, id);
+      toast.success("Reminder removed");
+      qc.invalidateQueries({ queryKey: ["studioReminders"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete reminder.");
+    }
+  };
+
+  return (
+    <section className="border border-border bg-background p-6 mb-12">
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+          <div>
+            <div className="eyebrow mb-2">Internal Follow-Up</div>
+            <h2 className="font-display text-3xl">Studio reminders</h2>
+            <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
+              Ken/Katie-only reminders for due dates, follow-ups, and project items that should not fall through the cracks.
+            </p>
+          </div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+            {openReminders.length} open
+          </div>
+        </div>
+
+        {data?.setupNeeded ? (
+          <div className="border border-dashed border-border bg-bone/30 p-4 text-sm text-muted-foreground">
+            Reminder storage is ready in the app, but the Supabase migration still needs to be applied before reminders can save.
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
+          <div className="border border-border bg-bone/20 p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="md:col-span-2 space-y-1.5">
+                <Label className="eyebrow">Reminder</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Follow up on cabinet quote" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="eyebrow">Project</Label>
+                <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="h-10 w-full border border-input bg-background px-3 text-sm">
+                  <option value="">No project / general</option>
+                  {projects
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="eyebrow">Assigned To</Label>
+                <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value as StudioReminder["assigned_to"])} className="h-10 w-full border border-input bg-background px-3 text-sm">
+                  <option value="studio">Ken + Katie</option>
+                  <option value="ken">Ken</option>
+                  <option value="katie">Katie</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="eyebrow">Due Date</Label>
+                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="eyebrow">Reminder Date</Label>
+                <Input type="date" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="eyebrow">Priority</Label>
+                <select value={priority} onChange={(e) => setPriority(e.target.value as StudioReminder["priority"])} className="h-10 w-full border border-input bg-background px-3 text-sm">
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div className="md:col-span-2 space-y-1.5">
+                <Label className="eyebrow">Notes</Label>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional context, phone number, vendor note, etc." />
+              </div>
+            </div>
+            <button type="button" onClick={createReminder} disabled={busy || data?.setupNeeded} className="mt-4 inline-flex items-center justify-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50">
+              <Plus className="h-4 w-4" /> {busy ? "Adding…" : "Add Reminder"}
+            </button>
+          </div>
+
+          <div className="border border-border bg-background">
+            <div className="border-b border-border px-4 py-3">
+              <div className="eyebrow">Open Items</div>
+            </div>
+            {isLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading reminders…</div>
+            ) : openReminders.length === 0 ? (
+              <div className="p-4">
+                <p className="font-display text-2xl">Nothing due right now.</p>
+                <p className="mt-1 text-sm text-muted-foreground">A rare and beautiful creature. Let’s protect it.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {openReminders.map((reminder) => (
+                  <ReminderRow
+                    key={reminder.id}
+                    reminder={reminder}
+                    onComplete={() => updateReminder(reminder.id, { status: "complete" })}
+                    onDelete={() => deleteReminder(reminder.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {completedReminders.length > 0 && (
+          <div className="border-t border-border pt-4">
+            <div className="eyebrow mb-3">Recently Completed</div>
+            <div className="flex flex-wrap gap-2">
+              {completedReminders.map((reminder) => (
+                <button
+                  key={reminder.id}
+                  type="button"
+                  onClick={() => updateReminder(reminder.id, { status: "open" })}
+                  className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-ink hover:text-ink"
+                >
+                  Reopen: {reminder.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ReminderRow({
+  reminder,
+  onComplete,
+  onDelete,
+}: {
+  reminder: StudioReminder;
+  onComplete: () => void;
+  onDelete: () => void;
+}) {
+  const tone = reminderTone(reminder);
+  return (
+    <div className="p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${tone.className}`}>
+              {tone.label}
+            </span>
+            {reminder.priority === "high" && (
+              <span className="rounded-full bg-[#f8e6df] px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[#8b2b15]">
+                High
+              </span>
+            )}
+            <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+              {assigneeLabel(reminder.assigned_to)}
+            </span>
+          </div>
+          <div className="mt-2 font-medium">{reminder.title}</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {reminder.project_name || "General reminder"}
+            {reminder.due_date ? ` - Due ${formatDashboardDate(reminder.due_date)}` : ""}
+            {reminder.reminder_date ? ` - Reminder ${formatDashboardDate(reminder.reminder_date)}` : ""}
+          </div>
+          {reminder.notes && <p className="mt-2 text-sm text-muted-foreground">{reminder.notes}</p>}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button type="button" onClick={onComplete} className="inline-flex h-9 w-9 items-center justify-center border border-border hover:border-ink" aria-label="Mark reminder complete">
+            <CheckCircle2 className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onDelete} className="inline-flex h-9 w-9 items-center justify-center border border-border text-red-600 hover:border-red-300" aria-label="Delete reminder">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function reminderRequest(method: "POST" | "PATCH" | "DELETE", body?: unknown, id?: string) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error("Sign in as Ken or Katie first.");
+  const url = id ? `/api/studio-reminders?id=${encodeURIComponent(id)}` : "/api/studio-reminders";
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || "Reminder request failed.");
+  return data;
+}
+
+function compareStudioReminders(a: StudioReminder, b: StudioReminder) {
+  const aDate = a.due_date || a.reminder_date || "9999-12-31";
+  const bDate = b.due_date || b.reminder_date || "9999-12-31";
+  if (aDate !== bDate) return aDate.localeCompare(bDate);
+  const priorityRank = { high: 0, normal: 1, low: 2 };
+  if (priorityRank[a.priority] !== priorityRank[b.priority]) return priorityRank[a.priority] - priorityRank[b.priority];
+  return a.created_at.localeCompare(b.created_at);
+}
+
+function reminderTone(reminder: StudioReminder) {
+  const today = todayString();
+  if (reminder.due_date && reminder.due_date < today) {
+    return { label: "Overdue", className: "bg-[#f8e6df] text-[#8b2b15]" };
+  }
+  if (reminder.due_date === today) {
+    return { label: "Due Today", className: "bg-[#f1e3c8] text-ink" };
+  }
+  if (reminder.reminder_date && reminder.reminder_date <= today) {
+    return { label: "Reminder", className: "bg-[#e8efe6] text-ink" };
+  }
+  return { label: "Upcoming", className: "bg-bone text-muted-foreground" };
+}
+
+function todayString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function assigneeLabel(value: StudioReminder["assigned_to"]) {
+  if (value === "ken") return "Ken";
+  if (value === "katie") return "Katie";
+  return "Ken + Katie";
 }
 
 function SharedDashboardOverview({
