@@ -551,56 +551,60 @@ function ApprovalDetailModal({
   const status = getStatus(item);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/55 p-0 md:p-5">
-      <div className="relative h-full overflow-y-auto rounded-none bg-white p-6 shadow-2xl md:rounded-[24px] md:p-10">
-        <button type="button" onClick={onClose} className="absolute right-6 top-6 text-slate-500 hover:text-slate-900" aria-label="Close">
-          <X className="h-7 w-7" />
+    <div className="fixed inset-0 z-50 bg-ink/55 p-0 md:p-6">
+      <div className="relative h-full overflow-y-auto border border-border bg-background p-6 shadow-2xl md:p-10">
+        <button type="button" onClick={onClose} className="absolute right-6 top-6 inline-flex h-10 w-10 items-center justify-center border border-border bg-background text-muted-foreground hover:border-ink hover:text-ink" aria-label="Close">
+          <X className="h-5 w-5" />
         </button>
         <div className="grid min-h-full gap-10 lg:grid-cols-[1.15fr_0.85fr]">
           <section>
             <div className="flex flex-col gap-4 pr-12 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-2xl font-bold text-slate-800">{detail.name}</h2>
+              <div>
+                <div className="eyebrow mb-2">Selection Review</div>
+                <h2 className="font-display text-4xl leading-tight text-ink md:text-5xl">{detail.name}</h2>
+              </div>
               <div className="inline-flex w-fit items-center gap-3">
-                <span className="text-sm text-slate-500">{formatShortDate(item.approval_updated_at)}</span>
                 <ApprovalPill status={status} />
               </div>
             </div>
-            <div className="relative mt-10 flex min-h-[420px] items-center justify-center">
+            <div className="relative mt-10 flex min-h-[420px] items-center justify-center border border-border bg-bone/30">
               <button
                 type="button"
                 disabled={!hasPrevious}
                 onClick={onPrevious}
-                className="absolute left-0 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 disabled:opacity-25"
+                className="absolute left-4 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center border border-border bg-background text-muted-foreground hover:border-ink hover:text-ink disabled:opacity-25"
                 aria-label="Previous item"
               >
-                <ChevronLeft className="h-8 w-8" />
+                <ChevronLeft className="h-6 w-6" />
               </button>
               {detail.image ? (
                 <img src={detail.image} alt={detail.name} className="max-h-[560px] max-w-[78%] object-contain" />
               ) : (
-                <div className="flex h-48 w-48 items-center justify-center rounded-full bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-300">No Image</div>
+                <div className="flex h-48 w-48 items-center justify-center border border-border bg-background text-xs uppercase tracking-[0.2em] text-muted-foreground">No Image</div>
               )}
               <button
                 type="button"
                 disabled={!hasNext}
                 onClick={onNext}
-                className="absolute right-0 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 disabled:opacity-25"
+                className="absolute right-4 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center border border-border bg-background text-muted-foreground hover:border-ink hover:text-ink disabled:opacity-25"
                 aria-label="Next item"
               >
-                <ChevronRight className="h-8 w-8" />
+                <ChevronRight className="h-6 w-6" />
               </button>
             </div>
             {detail.image && (
               <div className="mt-8 flex justify-center">
-                <div className="h-24 w-24 rounded-xl border border-slate-200 p-2">
+                <div className="h-24 w-24 border border-border bg-background p-2">
                   <img src={detail.image} alt="" className="h-full w-full object-contain" />
                 </div>
               </div>
             )}
           </section>
 
-          <aside className="flex flex-col justify-center lg:pr-20">
-            <div className="space-y-6 text-xl text-slate-700">
+          <aside className="flex flex-col justify-center">
+            <div className="border border-border bg-background p-6">
+              <div className="eyebrow mb-5">Product Details</div>
+              <div className="grid gap-4 sm:grid-cols-2">
               <DetailLine label="Room" value={item.room.name} />
               {displaySettings.showVendor && <DetailLine label="Vendor" value={detail.vendor} />}
               {displaySettings.showPricing && <DetailLine label="Price per Item" value={detail.price > 0 ? formatMoney(detail.price) : null} />}
@@ -608,28 +612,29 @@ function ApprovalDetailModal({
               {displaySettings.showPricing && <DetailLine label="Total Price" value={detail.total > 0 ? formatMoney(detail.total) : null} />}
               {displaySettings.showDimensions && <DetailLine label="Dimensions" value={detail.dimensions} />}
               {displaySettings.showFinish && <DetailLine label="Color/Finish" value={detail.colorFinish} />}
+              </div>
             </div>
 
-            <div className="mt-10 rounded-[22px] bg-slate-100 p-6">
-              <label className="text-base text-slate-500" htmlFor="client-comment">Client Comments</label>
+            <div className="mt-6 border border-border bg-bone/40 p-6">
+              <label className="eyebrow" htmlFor="client-comment">Client Comments</label>
               <textarea
                 id="client-comment"
                 value={commentDraft}
                 onChange={(event) => onCommentChange(event.target.value)}
                 placeholder="Leave a note for the design team..."
-                className="mt-5 min-h-28 w-full resize-none border-0 border-b border-slate-300 bg-transparent text-lg outline-none focus:border-slate-700"
+                className="mt-5 min-h-28 w-full resize-none border-0 border-b border-border bg-transparent text-base leading-7 text-ink outline-none placeholder:text-muted-foreground focus:border-ink"
               />
-              <p className="mt-4 text-sm text-slate-500">Updated: {formatLongDate(item.approval_updated_at)}</p>
+              <p className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated: {formatLongDate(item.approval_updated_at)}</p>
             </div>
 
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <button type="button" disabled={saving} onClick={onApprove} className="rounded-xl bg-[#48a23f] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+              <button type="button" disabled={saving} onClick={onApprove} className="border border-[#3f7f38] bg-[#3f7f38] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#346f2f] disabled:opacity-50">
                 Approve This Item
               </button>
-              <button type="button" disabled={saving} onClick={onDecline} className="rounded-xl bg-slate-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+              <button type="button" disabled={saving} onClick={onDecline} className="border border-ink bg-ink px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-ink/90 disabled:opacity-50">
                 Request Change
               </button>
-              <button type="button" disabled={saving} onClick={onSaveComment} className="rounded-xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 disabled:opacity-50">
+              <button type="button" disabled={saving} onClick={onSaveComment} className="border border-border bg-background px-5 py-3 text-sm font-medium text-ink transition-colors hover:border-ink disabled:opacity-50">
                 Save Comment
               </button>
             </div>
@@ -654,20 +659,21 @@ function DetailLine({ label, value }: { label: string; value?: string | null }) 
   if (!value) return null;
   return (
     <div>
-      <span className="text-slate-500">{label}: </span>
-      <span className="font-bold text-slate-800">{value}</span>
+      <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">{label}</div>
+      <div className="mt-1 text-base font-medium text-ink">{value}</div>
     </div>
   );
 }
 
 function ApprovalPill({ status }: { status: ApprovalStatus }) {
+  const base = "inline-flex items-center gap-2 border px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em]";
   if (status === "approved") {
-    return <span className="inline-flex items-center gap-2 rounded-lg bg-[#48a23f] px-4 py-2 text-sm font-semibold text-white"><CheckCircle2 className="h-4 w-4" /> Approved</span>;
+    return <span className={cn(base, "border-[#3f7f38] bg-[#3f7f38] text-white")}><CheckCircle2 className="h-4 w-4" /> Approved</span>;
   }
   if (status === "declined") {
-    return <span className="inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white"><XCircle className="h-4 w-4" /> Change Requested</span>;
+    return <span className={cn(base, "border-ink bg-ink text-primary-foreground")}><XCircle className="h-4 w-4" /> Change Requested</span>;
   }
-  return <span className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">Undecided</span>;
+  return <span className={cn(base, "border-border bg-bone text-muted-foreground")}>Undecided</span>;
 }
 
 async function loadApprovalData(projectId: string) {
