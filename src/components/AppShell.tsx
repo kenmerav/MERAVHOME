@@ -5,7 +5,15 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
-import { canLogHours, canManageStudio, canViewFinancials, canViewProcurement } from "@/lib/permissions";
+import {
+  canLogHours,
+  canManageStudio,
+  canViewFinancials,
+  canViewProcurement,
+  canViewProductCatalog,
+  isClientRole,
+  isSharedProjectRole,
+} from "@/lib/permissions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
@@ -104,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (
       !loadingAuth &&
-      (profile?.role === "Client" || profile?.role === "Contractor") &&
+      isSharedProjectRole(profile?.role) &&
       loc.pathname.startsWith("/catalog")
     ) {
       navigate({ to: "/" });
@@ -159,7 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (
       loadingAuth ||
       !profile ||
-      (profile.role !== "Client" && profile.role !== "Contractor") ||
+      !isSharedProjectRole(profile.role) ||
       typeof window === "undefined"
     ) {
       return;
@@ -266,10 +274,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !canManageStudio(profile)) return null;
-            if (to === "/catalog" && (profile?.role === "Client" || profile?.role === "Contractor")) return null;
+            if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
-            if (to === "/client/financials" && profile?.role !== "Client") return null;
+            if (to === "/client/financials" && !isClientRole(profile?.role)) return null;
             if (to === "/hours" && !canLogHours(profile)) return null;
             const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
             return (
@@ -332,10 +340,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
-              if (to === "/catalog" && (profile?.role === "Client" || profile?.role === "Contractor")) return null;
+              if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
-              if (to === "/client/financials" && profile?.role !== "Client") return null;
+              if (to === "/client/financials" && !isClientRole(profile?.role)) return null;
               if (to === "/hours" && !canLogHours(profile)) return null;
               const active = exact ? loc.pathname === to : loc.pathname.startsWith(to);
               return (

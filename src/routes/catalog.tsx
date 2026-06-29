@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { normalizeMoneyInput } from "@/lib/money";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { canViewProductCatalog } from "@/lib/permissions";
 import { toast } from "sonner";
 
 type SampleFilter = "All" | "Sample" | "No sample";
@@ -98,7 +99,7 @@ function CatalogPage() {
     );
   }
 
-  if (profile?.role === "Client" || profile?.role === "Contractor") {
+  if (!canViewProductCatalog(profile)) {
     return (
       <AppShell>
         <div className="page-pad max-w-3xl">

@@ -14,6 +14,24 @@ export function canViewFinancials(profile?: Pick<UserProfile, "email" | "is_acti
 export const canViewProcurement = canViewFinancials;
 export const canManageHours = canViewFinancials;
 
+export function isContractorRole(role?: string | null) {
+  const normalized = String(role ?? "").trim().toLowerCase();
+  return normalized === "contractor" || normalized === "builder" || normalized === "gc";
+}
+
+export function isClientRole(role?: string | null) {
+  return String(role ?? "").trim().toLowerCase() === "client";
+}
+
+export function isSharedProjectRole(role?: string | null) {
+  return isClientRole(role) || isContractorRole(role);
+}
+
+export function isStudioTeamRole(role?: string | null) {
+  const normalized = String(role ?? "").trim().toLowerCase();
+  return normalized === "admin" || normalized === "employee";
+}
+
 export function canManageStudio(
   profile?: Pick<UserProfile, "email" | "is_active" | "role" | "is_owner"> | null,
 ) {
@@ -25,7 +43,11 @@ export function canManageStudio(
 }
 
 export function canLogHours(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
-  return !!profile?.is_active && (profile.role === "Admin" || profile.role === "Employee");
+  return !!profile?.is_active && isStudioTeamRole(profile.role);
+}
+
+export function canViewProductCatalog(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
+  return !!profile?.is_active && isStudioTeamRole(profile.role);
 }
 
 export type ProjectSurface = "specBook" | "presentations" | "designBoards";
@@ -44,13 +66,13 @@ export function canViewProjectSurface(
   surface: ProjectSurface,
 ) {
   if (!profile?.is_active || !project) return false;
-  if (profile.role === "Admin" || profile.role === "Employee") return true;
-  if (profile.role === "Client") {
+  if (isStudioTeamRole(profile.role)) return true;
+  if (isClientRole(profile.role)) {
     if (surface === "specBook") return project.client_can_view_spec_book;
     if (surface === "presentations") return project.client_can_view_presentations;
     return project.client_can_view_design_boards;
   }
-  if (profile.role === "Contractor") {
+  if (isContractorRole(profile.role)) {
     if (surface === "specBook") return project.contractor_can_view_spec_book;
     if (surface === "presentations") return project.contractor_can_view_presentations;
     return project.contractor_can_view_design_boards;
@@ -69,10 +91,10 @@ export function specBookVisibilityForRole(
   > | null | undefined,
 ) {
   if (!profile?.is_active || !project) return { showPricing: false, showLinks: false };
-  if (profile.role === "Admin" || profile.role === "Employee") {
+  if (isStudioTeamRole(profile.role)) {
     return { showPricing: true, showLinks: true };
   }
-  if (profile.role === "Contractor") {
+  if (isContractorRole(profile.role)) {
     return {
       showPricing: project.contractor_spec_show_pricing !== false,
       showLinks: project.contractor_spec_show_links !== false,

@@ -71,6 +71,9 @@ import {
   canViewFinancials,
   canViewProcurement,
   canViewProjectSurface,
+  isClientRole,
+  isContractorRole,
+  isSharedProjectRole,
 } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -147,8 +150,7 @@ function ProjectDetailPage() {
       return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
     },
   });
-  const isClientUser = profile?.role === "Client";
-  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
+  const isSharedUser = isSharedProjectRole(profile?.role);
 
   useEffect(() => {
     if (profileLoading || isSharedUser) return;
@@ -437,7 +439,7 @@ function SharedProjectPortal({
   profile: { role: "Client" | "Contractor"; is_active: boolean } | null | undefined;
 }) {
   const links = [
-    profile?.role === "Client" && project.approval_live
+    isClientRole(profile?.role) && project.approval_live
       ? {
           label: "Approvals",
           description: "Review selections, approve items, request changes, and leave comments.",
@@ -445,7 +447,7 @@ function SharedProjectPortal({
           icon: CheckCircle2,
         }
       : null,
-    profile?.role === "Client"
+    isClientRole(profile?.role)
       ? {
           label: "Invoices",
           description: "View shared invoices, payment status, and download invoice PDFs.",
@@ -453,7 +455,7 @@ function SharedProjectPortal({
           icon: DollarSign,
         }
       : null,
-    profile?.role === "Contractor"
+    isContractorRole(profile?.role)
       ? {
           label: "Construction Docs",
           description: "Open layout docs, SketchUp references, renderings, and construction files.",

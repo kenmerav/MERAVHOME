@@ -5,6 +5,7 @@ import { Pin } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
+import { isSharedProjectRole } from "@/lib/permissions";
 import { NewProjectDialog, StatusBadge } from "./index";
 import { toast } from "sonner";
 
@@ -33,7 +34,7 @@ function ProjectsListPage() {
   const activeProjects = projects.filter((p) => p.status !== "Complete");
   const archivedProjects = projects.filter((p) => p.status === "Complete");
   const visibleProjects = filter === "archive" ? archivedProjects : activeProjects;
-  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
+  const isSharedUser = isSharedProjectRole(profile?.role);
   const canPinProjects = !profileLoading && !isSharedUser;
 
   const togglePinned = async (projectId: string, pinned: boolean) => {
