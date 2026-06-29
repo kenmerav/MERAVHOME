@@ -27,6 +27,7 @@ import { Route as ClientFinancialsRouteImport } from './routes/client.financials
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
+import { Route as ApiUploadProjectDocumentRouteImport } from './routes/api/upload-project-document'
 import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
 import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
@@ -38,6 +39,7 @@ import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mar
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
+import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
@@ -47,6 +49,7 @@ import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$i
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
 import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
 import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
+import { Route as ProjectsIdConstructionDocsRouteImport } from './routes/projects.$id.construction-docs'
 import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
@@ -146,6 +149,12 @@ const ApiUploadRoomImageRoute = ApiUploadRoomImageRouteImport.update({
   path: '/api/upload-room-image',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUploadProjectDocumentRoute =
+  ApiUploadProjectDocumentRouteImport.update({
+    id: '/api/upload-project-document',
+    path: '/api/upload-project-document',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiUploadDesignBoardImageRoute =
   ApiUploadDesignBoardImageRouteImport.update({
     id: '/api/upload-design-board-image',
@@ -204,6 +213,11 @@ const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
   path: '/api/generate-rendering',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDesignBoardQuestionRoute = ApiDesignBoardQuestionRouteImport.update({
+  id: '/api/design-board-question',
+  path: '/api/design-board-question',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCreateStripePaymentLinkRoute =
   ApiCreateStripePaymentLinkRouteImport.update({
     id: '/api/create-stripe-payment-link',
@@ -250,6 +264,12 @@ const ProjectsIdDesignBoardsRoute = ProjectsIdDesignBoardsRouteImport.update({
   path: '/projects/$id/design-boards',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdConstructionDocsRoute =
+  ProjectsIdConstructionDocsRouteImport.update({
+    id: '/projects/$id/construction-docs',
+    path: '/projects/$id/construction-docs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsIdApprovalsRoute = ProjectsIdApprovalsRouteImport.update({
   id: '/projects/$id/approvals',
   path: '/projects/$id/approvals',
@@ -302,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/procurement': typeof ProcurementRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -313,6 +334,7 @@ export interface FileRoutesByFullPath {
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
+  '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
@@ -333,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
+  '/projects/$id/construction-docs': typeof ProjectsIdConstructionDocsRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
@@ -350,6 +373,7 @@ export interface FileRoutesByTo {
   '/procurement': typeof ProcurementRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -361,6 +385,7 @@ export interface FileRoutesByTo {
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
+  '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
@@ -381,6 +406,7 @@ export interface FileRoutesByTo {
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
+  '/projects/$id/construction-docs': typeof ProjectsIdConstructionDocsRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
@@ -399,6 +425,7 @@ export interface FileRoutesById {
   '/procurement': typeof ProcurementRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -410,6 +437,7 @@ export interface FileRoutesById {
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
+  '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
@@ -430,6 +458,7 @@ export interface FileRoutesById {
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
+  '/projects/$id/construction-docs': typeof ProjectsIdConstructionDocsRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
@@ -449,6 +478,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
+    | '/api/design-board-question'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -460,6 +490,7 @@ export interface FileRouteTypes {
     | '/api/scrape-url'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
+    | '/api/upload-project-document'
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
@@ -480,6 +511,7 @@ export interface FileRouteTypes {
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
+    | '/projects/$id/construction-docs'
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
@@ -497,6 +529,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
+    | '/api/design-board-question'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -508,6 +541,7 @@ export interface FileRouteTypes {
     | '/api/scrape-url'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
+    | '/api/upload-project-document'
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog/$productId'
@@ -528,6 +562,7 @@ export interface FileRouteTypes {
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
+    | '/projects/$id/construction-docs'
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
@@ -545,6 +580,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
+    | '/api/design-board-question'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -556,6 +592,7 @@ export interface FileRouteTypes {
     | '/api/scrape-url'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
+    | '/api/upload-project-document'
     | '/api/upload-room-image'
     | '/api/users'
     | '/catalog_/$productId'
@@ -576,6 +613,7 @@ export interface FileRouteTypes {
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
+    | '/projects/$id/construction-docs'
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
@@ -594,6 +632,7 @@ export interface RootRouteChildren {
   ProcurementRoute: typeof ProcurementRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
+  ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
@@ -605,6 +644,7 @@ export interface RootRouteChildren {
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiStudioRemindersRoute: typeof ApiStudioRemindersRoute
   ApiUploadDesignBoardImageRoute: typeof ApiUploadDesignBoardImageRoute
+  ApiUploadProjectDocumentRoute: typeof ApiUploadProjectDocumentRoute
   ApiUploadRoomImageRoute: typeof ApiUploadRoomImageRoute
   ApiUsersRoute: typeof ApiUsersRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
@@ -625,6 +665,7 @@ export interface RootRouteChildren {
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
   ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
+  ProjectsIdConstructionDocsRoute: typeof ProjectsIdConstructionDocsRoute
   ProjectsIdDesignBoardsRoute: typeof ProjectsIdDesignBoardsRoute
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
@@ -763,6 +804,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUploadRoomImageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/upload-project-document': {
+      id: '/api/upload-project-document'
+      path: '/api/upload-project-document'
+      fullPath: '/api/upload-project-document'
+      preLoaderRoute: typeof ApiUploadProjectDocumentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/upload-design-board-image': {
       id: '/api/upload-design-board-image'
       path: '/api/upload-design-board-image'
@@ -840,6 +888,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGenerateRenderingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/design-board-question': {
+      id: '/api/design-board-question'
+      path: '/api/design-board-question'
+      fullPath: '/api/design-board-question'
+      preLoaderRoute: typeof ApiDesignBoardQuestionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/create-stripe-payment-link': {
       id: '/api/create-stripe-payment-link'
       path: '/api/create-stripe-payment-link'
@@ -901,6 +956,13 @@ declare module '@tanstack/react-router' {
       path: '/projects/$id/design-boards'
       fullPath: '/projects/$id/design-boards'
       preLoaderRoute: typeof ProjectsIdDesignBoardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/construction-docs': {
+      id: '/projects/$id/construction-docs'
+      path: '/projects/$id/construction-docs'
+      fullPath: '/projects/$id/construction-docs'
+      preLoaderRoute: typeof ProjectsIdConstructionDocsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/$id/approvals': {
@@ -970,6 +1032,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProcurementRoute: ProcurementRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
+  ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
@@ -981,6 +1044,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiStudioRemindersRoute: ApiStudioRemindersRoute,
   ApiUploadDesignBoardImageRoute: ApiUploadDesignBoardImageRoute,
+  ApiUploadProjectDocumentRoute: ApiUploadProjectDocumentRoute,
   ApiUploadRoomImageRoute: ApiUploadRoomImageRoute,
   ApiUsersRoute: ApiUsersRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
@@ -1001,6 +1065,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
   ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,
+  ProjectsIdConstructionDocsRoute: ProjectsIdConstructionDocsRoute,
   ProjectsIdDesignBoardsRoute: ProjectsIdDesignBoardsRoute,
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,

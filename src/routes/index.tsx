@@ -691,7 +691,7 @@ function SharedDashboardOverview({
                         search={{ project: project.id }}
                         className="text-xs border border-border px-3 py-1.5 hover:border-ink"
                       >
-                        Financials
+                        Invoices
                       </Link>
                     )}
                     {timelines.some((timeline) => timeline.project_id === project.id) && (

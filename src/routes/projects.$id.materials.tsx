@@ -101,6 +101,10 @@ function MaterialsPage() {
     queryFn: () => db.getProject(projectId!),
     enabled: !!projectId,
   });
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
+  });
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", projectId],
     queryFn: async () => (await db.listRooms(projectId!)) ?? [],
@@ -120,6 +124,9 @@ function MaterialsPage() {
   const [importingPdf, setImportingPdf] = useState(false);
   const [reviewRows, setReviewRows] = useState<ScrapedRow[] | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
+
+  const canManageMaterials =
+    profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
 
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -227,6 +234,20 @@ function MaterialsPage() {
   };
 
   if (!projectId) return <AppShell><div className="p-16 text-muted-foreground">Invalid project link.</div></AppShell>;
+  if (loadingProfile) return <AppShell><div className="p-16 text-muted-foreground">Loading materials...</div></AppShell>;
+  if (!canManageMaterials) {
+    return (
+      <AppShell>
+        <div className="page-pad max-w-3xl">
+          <Link to="/projects/$id" params={{ id: projectId }} className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+            <ArrowLeft className="h-4 w-4" /> Back to project
+          </Link>
+          <h1 className="editorial-hero text-5xl">Materials</h1>
+          <p className="mt-4 text-muted-foreground">Materials editing is available to MERAV team members only.</p>
+        </div>
+      </AppShell>
+    );
+  }
   if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
 
   return (

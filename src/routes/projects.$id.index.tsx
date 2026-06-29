@@ -261,6 +261,13 @@ function ProjectDetailPage() {
                 <ClipboardList className="w-4 h-4" /> Materials
               </Link>
               <Link
+                to="/projects/$id/construction-docs"
+                params={{ id }}
+                className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+              >
+                <FileText className="w-4 h-4" /> Construction Docs
+              </Link>
+              <Link
                 to="/specbooks/$id"
                 params={{ id }}
                 className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
@@ -437,10 +444,18 @@ function SharedProjectPortal({
       : null,
     profile?.role === "Client"
       ? {
-          label: "Financials",
+          label: "Invoices",
           description: "View shared invoices, payment status, and download invoice PDFs.",
           href: `/client/financials?project=${projectId}`,
           icon: DollarSign,
+        }
+      : null,
+    profile?.role === "Contractor"
+      ? {
+          label: "Construction Docs",
+          description: "Open layout docs, SketchUp references, renderings, and construction files.",
+          href: `/projects/${projectId}/construction-docs`,
+          icon: FileText,
         }
       : null,
     canViewProjectSurface(profile, project, "specBook")

@@ -1,11 +1,12 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen, ReceiptText } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen, ReceiptText, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
 import { canLogHours, canManageStudio, canViewFinancials, canViewProcurement } from "@/lib/permissions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
@@ -16,11 +17,21 @@ const nav: NavItem[] = [
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
   { to: "/procurement", label: "Procurement", icon: Truck },
   { to: "/financials", label: "Financials", icon: DollarSign },
-  { to: "/client/financials", label: "Financials", icon: ReceiptText },
+  { to: "/client/financials", label: "Invoices", icon: ReceiptText },
   { to: "/hours", label: "Hours", icon: Clock },
   { to: "/users", label: "Users", icon: UserCog },
 ];
 
+type ReminderNotice = {
+  id: string;
+  title: string;
+  notes: string | null;
+  due_date: string | null;
+  reminder_date: string | null;
+  priority: string | null;
+  assigned_to: string | null;
+  project_name?: string | null;
+};
 
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
@@ -32,6 +43,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("merav.sidebar.collapsed") === "true";
   });
+  const [reminderNotices, setReminderNotices] = useState<ReminderNotice[]>([]);
+  const [reminderNoticeOpen, setReminderNoticeOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -86,10 +99,57 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [loadingAuth, loc.pathname, navigate, profile]);
 
   useEffect(() => {
-    if (!loadingAuth && profile?.role === "Client" && loc.pathname.startsWith("/catalog")) {
+    if (
+      !loadingAuth &&
+      (profile?.role === "Client" || profile?.role === "Contractor") &&
+      loc.pathname.startsWith("/catalog")
+    ) {
       navigate({ to: "/" });
     }
   }, [loadingAuth, loc.pathname, navigate, profile]);
+
+  useEffect(() => {
+    if (loadingAuth || !canViewFinancials(profile) || typeof window === "undefined") return;
+    let active = true;
+
+    const loadReminderNotices = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const res = await fetch("/api/studio-reminders", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !Array.isArray(body.reminders)) return;
+
+        const today = localDateKey();
+        const dueReminders = (body.reminders as ReminderNotice[]).filter((reminder) => {
+          if (!reminderMatchesProfile(reminder, profile)) return false;
+          const reminderDate = reminder.reminder_date;
+          const dueDate = reminder.due_date;
+          return (
+            (reminderDate && reminderDate <= today) ||
+            (dueDate && dueDate <= today)
+          );
+        });
+        if (!active || dueReminders.length === 0) return;
+
+        const reminderIds = dueReminders.map((reminder) => reminder.id).sort().join(".");
+        const storageKey = `merav.reminder-notices.${profile?.id}.${today}.${reminderIds}`;
+        if (window.localStorage.getItem(storageKey) === "seen") return;
+        setReminderNotices(dueReminders);
+        setReminderNoticeOpen(true);
+      } catch (error) {
+        console.warn("[AppShell] Unable to load reminder notices.", error);
+      }
+    };
+
+    void loadReminderNotices();
+    return () => {
+      active = false;
+    };
+  }, [loadingAuth, profile]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -140,7 +200,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !canManageStudio(profile)) return null;
-            if (to === "/catalog" && profile?.role === "Client") return null;
+            if (to === "/catalog" && (profile?.role === "Client" || profile?.role === "Contractor")) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
             if (to === "/client/financials" && profile?.role !== "Client") return null;
@@ -206,7 +266,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
-              if (to === "/catalog" && profile?.role === "Client") return null;
+              if (to === "/catalog" && (profile?.role === "Client" || profile?.role === "Contractor")) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
               if (to === "/client/financials" && profile?.role !== "Client") return null;
@@ -244,8 +304,105 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
 
       <main className="flex-1 min-w-0 pt-14 lg:pt-0">{children}</main>
+      <ReminderNoticeDialog
+        open={reminderNoticeOpen}
+        reminders={reminderNotices}
+        profileId={profile?.id}
+        onOpenChange={setReminderNoticeOpen}
+      />
     </div>
   );
+}
+
+function ReminderNoticeDialog({
+  open,
+  reminders,
+  profileId,
+  onOpenChange,
+}: {
+  open: boolean;
+  reminders: ReminderNotice[];
+  profileId?: string;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const markSeen = () => {
+    if (typeof window !== "undefined" && profileId && reminders.length) {
+      const today = localDateKey();
+      const reminderIds = reminders.map((reminder) => reminder.id).sort().join(".");
+      window.localStorage.setItem(`merav.reminder-notices.${profileId}.${today}.${reminderIds}`, "seen");
+    }
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) markSeen();
+        else onOpenChange(true);
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <div className="eyebrow mb-2">Studio Reminders</div>
+          <DialogTitle className="font-display text-4xl font-normal">
+            Items needing attention
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {reminders.map((reminder) => (
+            <div key={reminder.id} className="border border-border bg-bone/20 p-4">
+              <div className="flex items-start gap-3">
+                <Bell className="mt-1 h-4 w-4 shrink-0 text-amber-700" />
+                <div className="min-w-0">
+                  <div className="font-medium text-ink">{reminder.title}</div>
+                  {reminder.project_name && (
+                    <div className="mt-1 text-sm text-muted-foreground">{reminder.project_name}</div>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    {reminder.reminder_date && <span>Reminder: {formatNoticeDate(reminder.reminder_date)}</span>}
+                    {reminder.due_date && <span>Due: {formatNoticeDate(reminder.due_date)}</span>}
+                  </div>
+                  {reminder.notes && (
+                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{reminder.notes}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={markSeen}
+          className="mt-2 inline-flex items-center justify-center bg-ink px-5 py-2.5 text-sm text-primary-foreground"
+        >
+          Got it
+        </button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function localDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatNoticeDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function reminderMatchesProfile(reminder: ReminderNotice, profile: UserProfile | null) {
+  const assignee = reminder.assigned_to;
+  const email = profile?.email?.toLowerCase() ?? "";
+  if (assignee === "ken") return email === "ken@meravinteriors.com";
+  if (assignee === "katie") return email === "katie@meravinteriors.com";
+  return assignee === "studio";
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

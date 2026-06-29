@@ -431,6 +431,9 @@ function ProjectDesignBoardsPage() {
   const [toolsPinned, setToolsPinned] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentTagIds, setCommentTagIds] = useState<string[]>([]);
+  const [contractorQuestionOpen, setContractorQuestionOpen] = useState(false);
+  const [contractorQuestion, setContractorQuestion] = useState("");
+  const [contractorQuestionSending, setContractorQuestionSending] = useState(false);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [selectionMarquee, setSelectionMarquee] = useState<SelectionMarquee>(null);
   const [boardScale, setBoardScale] = useState(1);
@@ -466,6 +469,7 @@ function ProjectDesignBoardsPage() {
     profile?.is_active === true &&
     project != null &&
     canViewProjectSurface(profile, project, "designBoards");
+  const canAskDesignBoardQuestion = profile?.is_active === true && profile.role === "Contractor" && canViewDesignBoards;
   const {
     data: sharedBoard,
     isLoading: loadingSharedBoard,
@@ -486,6 +490,7 @@ function ProjectDesignBoardsPage() {
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
     queryFn: async () => (await db.listCatalog(search)) ?? [],
+    enabled: canEditDesignBoards,
   });
   const { data: roomImages = [] } = useQuery({
     queryKey: ["projectImages", id],
@@ -2683,6 +2688,42 @@ function ProjectDesignBoardsPage() {
     };
   }, [virtualizeThumbnails]);
 
+  const submitContractorQuestion = async () => {
+    const question = contractorQuestion.trim();
+    if (!question) {
+      toast.error("Add a question or comment first.");
+      return;
+    }
+    setContractorQuestionSending(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in again to send a question.");
+      const res = await fetch("/api/design-board-question", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          projectId: id,
+          pageId: activePage.id,
+          pageTitle: activePage.title,
+          question,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not send question.");
+      toast.success("Question sent to Ken/Katie.");
+      setContractorQuestion("");
+      setContractorQuestionOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send question.");
+    } finally {
+      setContractorQuestionSending(false);
+    }
+  };
+
   if (!project) {
     return (
       <AppShell>
@@ -2752,7 +2793,7 @@ function ProjectDesignBoardsPage() {
                     ))}
                   </select>
                 </label>
-                {boardMissingInfoCount > 0 && (
+                {canEditDesignBoards && boardMissingInfoCount > 0 && (
                   <button
                     type="button"
                     onClick={() => {
@@ -2777,6 +2818,16 @@ function ProjectDesignBoardsPage() {
                     <span>{user.name}</span>
                   </div>
                 ))}
+                {canAskDesignBoardQuestion && (
+                  <button
+                    type="button"
+                    onClick={() => setContractorQuestionOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-ink bg-ink px-3 py-1 text-xs font-medium text-white transition hover:bg-stone-800"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Ask Question
+                  </button>
+                )}
               </div>
             </div>
             {canEditDesignBoards && (
@@ -3463,6 +3514,7 @@ function ProjectDesignBoardsPage() {
             </DialogContent>
           </Dialog>
 
+          {canEditDesignBoards && (
           <aside
             className={cn(
               "group fixed right-0 top-0 z-50 flex h-screen transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden",
@@ -3748,6 +3800,39 @@ function ProjectDesignBoardsPage() {
               )}
             </div>
           </aside>
+          )}
+
+          <Dialog open={contractorQuestionOpen} onOpenChange={setContractorQuestionOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <div className="eyebrow mb-2">Design Board Question</div>
+                <DialogTitle className="font-display text-4xl font-normal">
+                  Send a note to MERAV
+                </DialogTitle>
+                <DialogDescription>
+                  This will notify Ken and Katie on their Studio reminder list.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="border border-border bg-bone/20 p-4 text-sm text-muted-foreground">
+                Page: <span className="font-medium text-ink">{activePage.title}</span>
+              </div>
+              <textarea
+                value={contractorQuestion}
+                onChange={(event) => setContractorQuestion(event.target.value)}
+                rows={6}
+                placeholder="Ask a question or leave a note about this page..."
+                className="w-full border border-border bg-background p-3 text-sm outline-none focus:border-ink"
+              />
+              <button
+                type="button"
+                onClick={submitContractorQuestion}
+                disabled={contractorQuestionSending}
+                className="inline-flex items-center justify-center bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-60"
+              >
+                {contractorQuestionSending ? "Sending..." : "Send Question"}
+              </button>
+            </DialogContent>
+          </Dialog>
         </main>
       </div>
     </AppShell>

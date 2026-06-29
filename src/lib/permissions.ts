@@ -25,7 +25,7 @@ export function canManageStudio(
 }
 
 export function canLogHours(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
-  return !!profile?.is_active && profile.role !== "Client";
+  return !!profile?.is_active && (profile.role === "Admin" || profile.role === "Employee");
 }
 
 export type ProjectSurface = "specBook" | "presentations" | "designBoards";

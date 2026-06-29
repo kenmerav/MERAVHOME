@@ -53,6 +53,10 @@ function CatalogPage() {
   const [cat, setCat] = useState<ItemCategory | "All">(routeSearch.category ?? "All");
   const [vendor, setVendor] = useState(routeSearch.vendor ?? "All");
   const [sampleFilter, setSampleFilter] = useState<SampleFilter>(routeSearch.sample ?? "All");
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
+  });
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
     queryFn: async () => (await db.listCatalog(search)) ?? [],
@@ -85,6 +89,25 @@ function CatalogPage() {
   useEffect(() => {
     if (vendor !== "All" && !vendors.includes(vendor)) setVendor("All");
   }, [vendor, vendors]);
+
+  if (loadingProfile) {
+    return (
+      <AppShell>
+        <div className="page-pad text-muted-foreground">Loading product catalog...</div>
+      </AppShell>
+    );
+  }
+
+  if (profile?.role === "Client" || profile?.role === "Contractor") {
+    return (
+      <AppShell>
+        <div className="page-pad max-w-3xl">
+          <h1 className="editorial-hero text-5xl">Product Catalog</h1>
+          <p className="mt-4 text-muted-foreground">Product Catalog is available to MERAV team members only.</p>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

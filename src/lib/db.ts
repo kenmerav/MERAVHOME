@@ -120,6 +120,28 @@ export interface Project {
   updated_at: string;
 }
 
+export type ProjectDocumentType =
+  | "SketchUp Rendering"
+  | "AI Rendering"
+  | "Layout Doc"
+  | "Construction Doc";
+
+export interface ProjectDocument {
+  id: string;
+  project_id: string;
+  title: string;
+  document_type: ProjectDocumentType;
+  file_url: string;
+  file_name: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  visible_to_contractors: boolean;
+  visible_to_clients: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Room {
   id: string;
   project_id: string;
@@ -467,6 +489,28 @@ export const db = {
       .data as Project | null,
   markProjectOpened: async (id: string) =>
     supabase.from("projects").update({ last_opened_at: new Date().toISOString() } as any).eq("id", id),
+
+  /* PROJECT DOCUMENTS */
+  listProjectDocuments: async (projectId: string) =>
+    (
+      await supabase
+        .from("project_documents" as any)
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+    ).data as ProjectDocument[] | null,
+  createProjectDocument: async (
+    document: Omit<ProjectDocument, "id" | "created_at" | "updated_at">,
+  ) =>
+    (
+      await supabase
+        .from("project_documents" as any)
+        .insert(document as any)
+        .select()
+        .single()
+    ).data as ProjectDocument | null,
+  deleteProjectDocument: async (id: string) =>
+    supabase.from("project_documents" as any).delete().eq("id", id),
 
   /* ROOMS */
   listRooms: async (projectId: string) =>

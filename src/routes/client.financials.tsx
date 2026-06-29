@@ -41,7 +41,7 @@ type ClientFinancialsDashboard = {
 export const Route = createFileRoute("/client/financials")({
   head: () => ({
     meta: [
-      { title: "Financials — MERAV Studio" },
+      { title: "Invoices — MERAV Studio" },
       { name: "description", content: "Client-facing MERAV Studio invoices and payment history." },
     ],
   }),
@@ -74,7 +74,7 @@ function ClientFinancialsPage() {
       <div className="page-pad max-w-[1300px]">
         <div className="mb-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="eyebrow mb-3">Client Financials</div>
+            <div className="eyebrow mb-3">Client Invoices</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">
               {selectedProject ? selectedProject.name : "Invoices"}
             </h1>
