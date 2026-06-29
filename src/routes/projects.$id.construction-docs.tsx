@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { db, type ProjectDocumentType } from "@/lib/db";
+import { canViewProjectSurface, isStudioTeamRole } from "@/lib/permissions";
 
 const DOCUMENT_TYPES: ProjectDocumentType[] = [
   "Construction Doc",
@@ -44,15 +45,13 @@ function ConstructionDocsPage() {
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
   });
+  const canManageDocs = profile?.is_active === true && isStudioTeamRole(profile.role);
+  const canViewDocs = canViewProjectSurface(profile, project, "constructionDocs");
   const { data: docs = [], isLoading: loadingDocs } = useQuery({
     queryKey: ["projectDocuments", id],
     queryFn: async () => (await db.listProjectDocuments(id)) ?? [],
-    enabled: !!project,
+    enabled: canViewDocs,
   });
-
-  const canManageDocs =
-    profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
-  const canViewDocs = canManageDocs || (profile?.is_active === true && profile.role === "Contractor");
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -122,7 +121,9 @@ function ConstructionDocsPage() {
             <ArrowLeft className="h-4 w-4" /> Back to project
           </Link>
           <h1 className="editorial-hero text-5xl">Construction Docs</h1>
-          <p className="mt-4 text-muted-foreground">These docs are not available for this login.</p>
+          <p className="mt-4 text-muted-foreground">
+            These docs have not been shared with this login yet.
+          </p>
         </div>
       </AppShell>
     );

@@ -39,6 +39,9 @@ function accessForProject(project: Project, role: UserProfile["role"]) {
     specBook: client ? project.client_can_view_spec_book : project.contractor_can_view_spec_book,
     presentations: client ? project.client_can_view_presentations : project.contractor_can_view_presentations,
     designBoards: client ? project.client_can_view_design_boards : project.contractor_can_view_design_boards,
+    constructionDocs: client
+      ? project.client_can_view_construction_docs
+      : project.contractor_can_view_construction_docs,
     approvals: client && project.approval_live === true,
   };
 }

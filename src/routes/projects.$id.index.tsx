@@ -455,7 +455,7 @@ function SharedProjectPortal({
           icon: DollarSign,
         }
       : null,
-    isContractorRole(profile?.role)
+    canViewProjectSurface(profile, project, "constructionDocs")
       ? {
           label: "Construction Docs",
           description: "Open layout docs, SketchUp references, renderings, and construction files.",
@@ -1056,11 +1056,13 @@ function ProjectAccessDialog({
     client_can_view_spec_book: project.client_can_view_spec_book,
     client_can_view_presentations: project.client_can_view_presentations,
     client_can_view_design_boards: project.client_can_view_design_boards,
+    client_can_view_construction_docs: project.client_can_view_construction_docs,
     client_spec_show_pricing: project.client_spec_show_pricing,
     client_spec_show_links: project.client_spec_show_links,
     contractor_can_view_spec_book: project.contractor_can_view_spec_book,
     contractor_can_view_presentations: project.contractor_can_view_presentations,
     contractor_can_view_design_boards: project.contractor_can_view_design_boards,
+    contractor_can_view_construction_docs: project.contractor_can_view_construction_docs,
     contractor_spec_show_pricing: project.contractor_spec_show_pricing,
     contractor_spec_show_links: project.contractor_spec_show_links,
   });
@@ -1070,11 +1072,13 @@ function ProjectAccessDialog({
       client_can_view_spec_book: project.client_can_view_spec_book,
       client_can_view_presentations: project.client_can_view_presentations,
       client_can_view_design_boards: project.client_can_view_design_boards,
+      client_can_view_construction_docs: project.client_can_view_construction_docs,
       client_spec_show_pricing: project.client_spec_show_pricing,
       client_spec_show_links: project.client_spec_show_links,
       contractor_can_view_spec_book: project.contractor_can_view_spec_book,
       contractor_can_view_presentations: project.contractor_can_view_presentations,
       contractor_can_view_design_boards: project.contractor_can_view_design_boards,
+      contractor_can_view_construction_docs: project.contractor_can_view_construction_docs,
       contractor_spec_show_pricing: project.contractor_spec_show_pricing,
       contractor_spec_show_links: project.contractor_spec_show_links,
     });
@@ -1123,6 +1127,7 @@ function ProjectAccessDialog({
               ["Spec Book Ready", form.client_can_view_spec_book, () => toggle("client_can_view_spec_book")],
               ["Presentations Ready", form.client_can_view_presentations, () => toggle("client_can_view_presentations")],
               ["Design Boards Ready", form.client_can_view_design_boards, () => toggle("client_can_view_design_boards")],
+              ["Construction Docs Ready", form.client_can_view_construction_docs, () => toggle("client_can_view_construction_docs")],
               ["Spec Shows Pricing", form.client_spec_show_pricing, () => toggle("client_spec_show_pricing")],
               ["Spec Shows Product Links", form.client_spec_show_links, () => toggle("client_spec_show_links")],
             ]}
@@ -1134,6 +1139,7 @@ function ProjectAccessDialog({
               ["Spec Book Ready", form.contractor_can_view_spec_book, () => toggle("contractor_can_view_spec_book")],
               ["Presentations Ready", form.contractor_can_view_presentations, () => toggle("contractor_can_view_presentations")],
               ["Design Boards Ready", form.contractor_can_view_design_boards, () => toggle("contractor_can_view_design_boards")],
+              ["Construction Docs Ready", form.contractor_can_view_construction_docs, () => toggle("contractor_can_view_construction_docs")],
               ["Spec Shows Pricing", form.contractor_spec_show_pricing, () => toggle("contractor_spec_show_pricing")],
               ["Spec Shows Product Links", form.contractor_spec_show_links, () => toggle("contractor_spec_show_links")],
             ]}

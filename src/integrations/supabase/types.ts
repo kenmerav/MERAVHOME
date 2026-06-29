@@ -499,11 +499,13 @@ export type Database = {
           approval_show_quantity: boolean
           approval_show_vendor: boolean
           client_name: string
+          client_can_view_construction_docs: boolean
           client_can_view_design_boards: boolean
           client_can_view_presentations: boolean
           client_can_view_spec_book: boolean
           client_spec_show_links: boolean
           client_spec_show_pricing: boolean
+          contractor_can_view_construction_docs: boolean
           contractor_can_view_design_boards: boolean
           contractor_can_view_presentations: boolean
           contractor_can_view_spec_book: boolean
@@ -532,11 +534,13 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name: string
+          client_can_view_construction_docs?: boolean
           client_can_view_design_boards?: boolean
           client_can_view_presentations?: boolean
           client_can_view_spec_book?: boolean
           client_spec_show_links?: boolean
           client_spec_show_pricing?: boolean
+          contractor_can_view_construction_docs?: boolean
           contractor_can_view_design_boards?: boolean
           contractor_can_view_presentations?: boolean
           contractor_can_view_spec_book?: boolean
@@ -565,11 +569,13 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name?: string
+          client_can_view_construction_docs?: boolean
           client_can_view_design_boards?: boolean
           client_can_view_presentations?: boolean
           client_can_view_spec_book?: boolean
           client_spec_show_links?: boolean
           client_spec_show_pricing?: boolean
+          contractor_can_view_construction_docs?: boolean
           contractor_can_view_design_boards?: boolean
           contractor_can_view_presentations?: boolean
           contractor_can_view_spec_book?: boolean

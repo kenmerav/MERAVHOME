@@ -50,7 +50,7 @@ export function canViewProductCatalog(profile?: Pick<UserProfile, "is_active" | 
   return !!profile?.is_active && isStudioTeamRole(profile.role);
 }
 
-export type ProjectSurface = "specBook" | "presentations" | "designBoards";
+export type ProjectSurface = "specBook" | "presentations" | "designBoards" | "constructionDocs";
 
 export function canViewProjectSurface(
   profile: Pick<UserProfile, "is_active" | "role"> | null | undefined,
@@ -59,9 +59,11 @@ export function canViewProjectSurface(
     | "client_can_view_spec_book"
     | "client_can_view_presentations"
     | "client_can_view_design_boards"
+    | "client_can_view_construction_docs"
     | "contractor_can_view_spec_book"
     | "contractor_can_view_presentations"
     | "contractor_can_view_design_boards"
+    | "contractor_can_view_construction_docs"
   > | null | undefined,
   surface: ProjectSurface,
 ) {
@@ -70,11 +72,13 @@ export function canViewProjectSurface(
   if (isClientRole(profile.role)) {
     if (surface === "specBook") return project.client_can_view_spec_book;
     if (surface === "presentations") return project.client_can_view_presentations;
+    if (surface === "constructionDocs") return project.client_can_view_construction_docs;
     return project.client_can_view_design_boards;
   }
   if (isContractorRole(profile.role)) {
     if (surface === "specBook") return project.contractor_can_view_spec_book;
     if (surface === "presentations") return project.contractor_can_view_presentations;
+    if (surface === "constructionDocs") return project.contractor_can_view_construction_docs;
     return project.contractor_can_view_design_boards;
   }
   return false;
