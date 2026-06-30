@@ -20,6 +20,7 @@ import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { materialImageUrl } from "@/lib/materialImages";
 import { canViewProjectSurface } from "@/lib/permissions";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
@@ -115,6 +116,7 @@ const DEFAULT_PRESENTATION_SECTION_LABELS = {
 function hasMeaningfulMaterialInput(material: MaterialItem) {
   const product = material.product;
   const hasProductDetails = [
+    material.image_url,
     product?.image_url,
     product?.name,
     product?.vendor,
@@ -1820,7 +1822,7 @@ function SpreadSidebar({
 }) {
   const editing = !!onPick;
   const paletteItems = data.paletteMaterials
-    .filter((material) => material.product?.image_url)
+    .filter((material) => materialImageUrl(material))
     .slice(0, 4);
   const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
   const hasCounter = !!data.counter;
@@ -1882,9 +1884,9 @@ function SpreadSidebar({
           <div className="grid grid-cols-2 gap-1.5">
             {paletteItems.map((m) => (
               <div key={m.id} className="aspect-square bg-bone overflow-hidden">
-                {m.product?.image_url && (
+                {materialImageUrl(m) && (
                   <img
-                    src={normalizeSupabaseImageUrl(m.product.image_url)}
+                    src={normalizeSupabaseImageUrl(materialImageUrl(m)!)}
                     alt={clientProductName(m, { name: "" })}
                     className="w-full h-full object-contain p-1"
                   />
@@ -1923,7 +1925,7 @@ function SpreadSidebar({
           >
             <Detail
               product={data.cabinetMaterial ? undefined : data.cabinetProduct?.product}
-              fallbackImage={data.cabinetMaterial?.product?.image_url}
+              fallbackImage={materialImageUrl(data.cabinetMaterial)}
               fallbackName={
                 data.cabinetMaterial
                   ? clientProductName(data.cabinetMaterial, { name: "" })
@@ -1957,9 +1959,9 @@ function SpreadSidebar({
             >
               <div className="flex gap-3">
                 <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-                  {data.counter?.product?.image_url && (
+                  {materialImageUrl(data.counter) && (
                     <img
-                      src={normalizeSupabaseImageUrl(data.counter.product.image_url)}
+                      src={normalizeSupabaseImageUrl(materialImageUrl(data.counter)!)}
                       alt=""
                       className="w-full h-full object-contain p-1"
                     />
@@ -2006,7 +2008,7 @@ function SpreadSidebar({
             >
               <Detail
                 product={data.faucet?.product}
-                fallbackImage={data.faucet?.product?.image_url}
+                fallbackImage={materialImageUrl(data.faucet)}
                 fallbackName={
                   data.faucet?.item_label
                     ? clientProductName(data.faucet, { name: "" })

@@ -48,6 +48,7 @@ import {
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { materialImageUrl } from "@/lib/materialImages";
 import {
   ALL_CATEGORIES,
   inferMaterialCategory,
@@ -1447,15 +1448,26 @@ function ProjectDesignBoardsPage() {
       linkedProduct &&
       normalizeMaterialIdentityText(linkedProduct.name) ===
         normalizeMaterialIdentityText(actualProductName);
+    const productFinishMatches = (candidate?: Product | null) => {
+      if (!candidate || !finish) return true;
+      if (!candidate.finish) return true;
+      return (
+        normalizeMaterialIdentityText(candidate.finish) ===
+        normalizeMaterialIdentityText(finish)
+      );
+    };
 
     let product =
       linkedProduct &&
       linkedProductNameMatches &&
-      (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl)
+      (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl) &&
+      productFinishMatches(linkedProduct)
         ? linkedProduct
         : null;
     if (productUrl && !product) {
-      product = await db.findProductByUrlAndName(productUrl, actualProductName);
+      const productCandidates =
+        (await db.findProductsByUrlAndName(productUrl, actualProductName)) ?? [];
+      product = productCandidates.find(productFinishMatches) ?? null;
     }
 
     if (!product) {
@@ -1470,9 +1482,6 @@ function ProjectDesignBoardsPage() {
     } else {
       category = product.category || category;
       const productPatch: Partial<Product> = {};
-      if (productImageUrl && product.image_url !== productImageUrl) {
-        productPatch.image_url = productImageUrl;
-      }
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
       if (!product.finish && finish) productPatch.finish = finish;
       if (dimensions && product.dimensions !== dimensions) productPatch.dimensions = dimensions;
@@ -1529,6 +1538,7 @@ function ProjectDesignBoardsPage() {
       product_url: productUrl,
       quantity,
       color: finish,
+      image_url: productImageUrl,
       notes: element.notes || null,
       not_needed: false,
       product_id: product.id,
@@ -1548,11 +1558,19 @@ function ProjectDesignBoardsPage() {
         product,
       } as MaterialItem;
     } else {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("material_items")
         .insert(materialPatch)
         .select("*, product:products(*)")
         .single();
+      if (error?.code === "42703" && error.message?.includes("image_url")) {
+        const { image_url: _imageUrl, ...legacyMaterialPatch } = materialPatch;
+        ({ data, error } = await supabase
+          .from("material_items")
+          .insert(legacyMaterialPatch)
+          .select("*, product:products(*)")
+          .single());
+      }
       if (error) throw error;
       materialItem = data as MaterialItem | null;
     }
@@ -4996,7 +5014,7 @@ function ProductTrayItem({ product }: { product: Product }) {
 }
 
 function MaterialTrayItem({ item }: { item: BoardMaterialTrayItem }) {
-  const imageUrl = item.product?.image_url ?? null;
+  const imageUrl = materialImageUrl(item);
   const label = materialTrayLabel(item);
   const category = normalizedMaterialItemCategory(item);
   return (
@@ -5201,7 +5219,7 @@ function materialItemToBoardElement(
 ): Omit<BoardElement, "id" | "zIndex"> {
   const label = materialTrayLabel(item);
   const product = item.product ?? null;
-  const src = product?.image_url || undefined;
+  const src = materialImageUrl(item) || undefined;
   const link = item.product_url || product?.product_url || "";
   const materialCategory = normalizedMaterialItemCategory(item);
   return {

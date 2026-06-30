@@ -9,6 +9,7 @@ import { formatMoney, moneyValue } from "@/lib/money";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { materialImageUrl } from "@/lib/materialImages";
 
 export const Route = createFileRoute("/client/approvals/$projectId")({
   head: () => ({ meta: [{ title: "Client Approvals — MERAV Interiors" }] }),
@@ -359,7 +360,7 @@ function OverviewGrid({ rooms, items, onSelectRoom }: { rooms: Room[]; items: Ap
     <section className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
       {rooms.map((room) => {
         const roomItems = items.filter((item) => item.room_id === room.id);
-        const firstImage = roomItems.find((item) => item.product?.image_url)?.product?.image_url;
+        const firstImage = materialImageUrl(roomItems.find((item) => materialImageUrl(item.material))?.material);
         const counts = countStatuses(roomItems);
         return (
           <button
@@ -752,7 +753,7 @@ function getDisplayDetails(item: ApprovalItem) {
 
   return {
     name: material?.client_product_name || product?.name || `${item.room.name} Selection`,
-    image: product?.image_url,
+    image: materialImageUrl(material) || product?.image_url,
     vendor: product?.vendor,
     price,
     quantity,

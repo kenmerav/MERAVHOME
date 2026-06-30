@@ -158,6 +158,10 @@ function isSafeColorFinish(value: unknown) {
   return /[a-z]/i.test(text);
 }
 
+function normalizeProductIdentity(value: unknown) {
+  return cleanText(value).toLowerCase();
+}
+
 function normalizeUrl(value: unknown) {
   const text = cleanText(value);
   if (!text) return "";
@@ -474,11 +478,20 @@ export const Route = createFileRoute("/api/extension/import-product")({
 
           const imageForProduct = backgroundRemovedUrl || originalUpload.publicUrl;
 
-          const { data: existingProduct } = await supabaseAdmin
+          const { data: existingProducts } = await supabaseAdmin
             .from("products")
             .select("*")
             .eq("product_url", sourcePageUrl)
-            .maybeSingle();
+            .limit(25);
+          const normalizedProductName = normalizeProductIdentity(productName);
+          const normalizedFinish = normalizeProductIdentity(finish);
+          const existingProduct =
+            (existingProducts ?? []).find((candidate: any) => {
+              if (normalizeProductIdentity(candidate.name) !== normalizedProductName) return false;
+              const candidateFinish = normalizeProductIdentity(candidate.finish);
+              if (!normalizedFinish) return true;
+              return !candidateFinish || candidateFinish === normalizedFinish;
+            }) ?? null;
 
           const productInsert = {
             name: productName,
@@ -498,7 +511,6 @@ export const Route = createFileRoute("/api/extension/import-product")({
             name: productName,
             vendor,
             product_url: sourcePageUrl,
-            image_url: imageForProduct,
             finish,
             sku,
             dimensions,

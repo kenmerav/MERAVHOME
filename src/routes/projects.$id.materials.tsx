@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { materialImageUrl } from "@/lib/materialImages";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/projects/$id/materials")({
@@ -513,8 +514,8 @@ function RoomMaterialsSection({
                           params={{ productId: linkedProductId }}
                           className="mt-2 flex items-center gap-2 pl-3.5 group/product"
                         >
-                          {it.product.image_url ? (
-                            <img src={normalizeSupabaseImageUrl(it.product.image_url)} alt="" className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink" />
+                          {materialImageUrl(it) ? (
+                            <img src={normalizeSupabaseImageUrl(materialImageUrl(it)!)} alt="" className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           ) : (
                             <div className="w-10 h-10 bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           )}

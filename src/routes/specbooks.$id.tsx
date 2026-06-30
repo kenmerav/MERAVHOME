@@ -22,6 +22,7 @@ import { normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 import { canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { materialImageUrl } from "@/lib/materialImages";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -628,6 +629,7 @@ function SpecCard({
 }) {
   const p = item.product;
   const displayName = clientProductName(item, room);
+  const imageUrl = materialImageUrl(item);
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -640,9 +642,9 @@ function SpecCard({
       }}
     >
       <div className="aspect-square bg-bone overflow-hidden print:self-start print:max-w-[170px]">
-        {p?.image_url ? (
+        {imageUrl ? (
           <img
-            src={normalizeSupabaseImageUrl(p.image_url)}
+            src={normalizeSupabaseImageUrl(imageUrl)}
             alt={p?.name ?? displayName}
             className="w-full h-full object-contain p-4 print:p-2"
             loading="lazy"
@@ -746,7 +748,7 @@ function SpecProductEditDialog({
     subcategory: product.subcategory,
     vendor: product.vendor,
     product_url: product.product_url,
-    image_url: product.image_url,
+    image_url: item.image_url || product.image_url,
     finish: product.finish,
     sku: product.sku,
     dimensions: product.dimensions,
@@ -772,7 +774,6 @@ function SpecProductEditDialog({
         vendor: clean(form.vendor),
         subcategory: clean(form.subcategory),
         product_url: clean(form.product_url),
-        image_url: clean(form.image_url),
         finish: clean(form.finish),
         sku: clean(form.sku),
         dimensions: clean(form.dimensions),
@@ -783,6 +784,7 @@ function SpecProductEditDialog({
       });
       await db.updateMaterialItem(item.id, {
         category: materialCategory,
+        image_url: clean(form.image_url),
         notes: clean(materialNotes),
       });
       await Promise.all([

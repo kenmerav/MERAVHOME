@@ -266,6 +266,7 @@ export interface MaterialItem {
   product_url: string | null;
   quantity: number | null;
   color: string | null;
+  image_url: string | null;
   notes: string | null;
   not_needed: boolean;
   product_id: string | null;
@@ -293,6 +294,11 @@ export interface UserProfile {
 }
 
 export type FinancialPaymentStatus = "not_due" | "due" | "paid" | "waived";
+
+function isMissingColumnError(error: unknown, column: string) {
+  const candidate = error as { code?: string; message?: string } | null;
+  return candidate?.code === "42703" && Boolean(candidate.message?.includes(column));
+}
 
 export interface FinancialInvoice {
   id: string;
@@ -692,11 +698,20 @@ export const db = {
   bulkInsertMaterialItems: async (
     items: Array<Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product">>,
   ) => supabase.from("material_items").insert(items as any),
-  updateMaterialItem: async (id: string, patch: Partial<MaterialItem>) =>
-    supabase
+  updateMaterialItem: async (id: string, patch: Partial<MaterialItem>) => {
+    const result = await supabase
       .from("material_items")
       .update(patch as any)
-      .eq("id", id),
+      .eq("id", id);
+    if (result.error && isMissingColumnError(result.error, "image_url") && "image_url" in patch) {
+      const { image_url: _imageUrl, ...legacyPatch } = patch;
+      return supabase
+        .from("material_items")
+        .update(legacyPatch as any)
+        .eq("id", id);
+    }
+    return result;
+  },
   updateMaterialItemsByProduct: async (productId: string, patch: Partial<MaterialItem>) =>
     supabase
       .from("material_items")
@@ -706,6 +721,15 @@ export const db = {
   findProductByUrl: async (url: string) =>
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle())
       .data as Product | null,
+  findProductsByUrlAndName: async (url: string, name: string) =>
+    (
+      await supabase
+        .from("products")
+        .select("*")
+        .eq("product_url", url)
+        .eq("name", name)
+        .limit(25)
+    ).data as Product[] | null,
   findProductByUrlAndName: async (url: string, name: string) =>
     (
       await supabase
@@ -713,8 +737,8 @@ export const db = {
         .select("*")
         .eq("product_url", url)
         .eq("name", name)
-        .maybeSingle()
-    ).data as Product | null,
+        .limit(1)
+    ).data?.[0] as Product | null,
 
   /* FINANCIALS */
   listAllFinancialInvoices: async () =>
