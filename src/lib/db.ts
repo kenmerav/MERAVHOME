@@ -313,6 +313,10 @@ export interface FinancialInvoice {
   balance_due: number | null;
   raw_text: string | null;
   client_visible: boolean;
+  quickbooks_invoice_id?: string | null;
+  quickbooks_sync_status?: "not_sent" | "sent" | "failed" | null;
+  quickbooks_synced_at?: string | null;
+  quickbooks_sync_error?: string | null;
   created_at: string;
   updated_at: string;
   payments?: FinancialInvoicePayment[];
@@ -332,6 +336,9 @@ export interface FinancialInvoicePayment {
   stripe_checkout_session_id?: string | null;
   stripe_payment_intent_id?: string | null;
   paid_at?: string | null;
+  quickbooks_payment_id?: string | null;
+  quickbooks_synced_at?: string | null;
+  quickbooks_sync_error?: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;

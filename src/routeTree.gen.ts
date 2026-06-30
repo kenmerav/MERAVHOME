@@ -54,6 +54,11 @@ import { Route as ProjectsIdConstructionDocsRouteImport } from './routes/project
 import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
 import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
+import { Route as ApiQuickbooksSyncInvoiceRouteImport } from './routes/api/quickbooks/sync-invoice'
+import { Route as ApiQuickbooksStatusRouteImport } from './routes/api/quickbooks/status'
+import { Route as ApiQuickbooksProjectLinkRouteImport } from './routes/api/quickbooks/project-link'
+import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
+import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
 import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
 import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
 import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/extension/connect-token'
@@ -292,6 +297,33 @@ const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
   path: '/api/stripe/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiQuickbooksSyncInvoiceRoute =
+  ApiQuickbooksSyncInvoiceRouteImport.update({
+    id: '/api/quickbooks/sync-invoice',
+    path: '/api/quickbooks/sync-invoice',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiQuickbooksStatusRoute = ApiQuickbooksStatusRouteImport.update({
+  id: '/api/quickbooks/status',
+  path: '/api/quickbooks/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiQuickbooksProjectLinkRoute =
+  ApiQuickbooksProjectLinkRouteImport.update({
+    id: '/api/quickbooks/project-link',
+    path: '/api/quickbooks/project-link',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiQuickbooksConnectUrlRoute = ApiQuickbooksConnectUrlRouteImport.update({
+  id: '/api/quickbooks/connect-url',
+  path: '/api/quickbooks/connect-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiQuickbooksCallbackRoute = ApiQuickbooksCallbackRouteImport.update({
+  id: '/api/quickbooks/callback',
+  path: '/api/quickbooks/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiExtensionProjectsRoute = ApiExtensionProjectsRouteImport.update({
   id: '/api/extension/projects',
   path: '/api/extension/projects',
@@ -359,6 +391,11 @@ export interface FileRoutesByFullPath {
   '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
+  '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
+  '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
+  '/api/quickbooks/project-link': typeof ApiQuickbooksProjectLinkRoute
+  '/api/quickbooks/status': typeof ApiQuickbooksStatusRoute
+  '/api/quickbooks/sync-invoice': typeof ApiQuickbooksSyncInvoiceRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
@@ -411,6 +448,11 @@ export interface FileRoutesByTo {
   '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
+  '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
+  '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
+  '/api/quickbooks/project-link': typeof ApiQuickbooksProjectLinkRoute
+  '/api/quickbooks/status': typeof ApiQuickbooksStatusRoute
+  '/api/quickbooks/sync-invoice': typeof ApiQuickbooksSyncInvoiceRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
@@ -464,6 +506,11 @@ export interface FileRoutesById {
   '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
+  '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
+  '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
+  '/api/quickbooks/project-link': typeof ApiQuickbooksProjectLinkRoute
+  '/api/quickbooks/status': typeof ApiQuickbooksStatusRoute
+  '/api/quickbooks/sync-invoice': typeof ApiQuickbooksSyncInvoiceRoute
   '/api/stripe/webhook': typeof ApiStripeWebhookRoute
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
@@ -518,6 +565,11 @@ export interface FileRouteTypes {
     | '/api/extension/connect-token'
     | '/api/extension/import-product'
     | '/api/extension/projects'
+    | '/api/quickbooks/callback'
+    | '/api/quickbooks/connect-url'
+    | '/api/quickbooks/project-link'
+    | '/api/quickbooks/status'
+    | '/api/quickbooks/sync-invoice'
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
@@ -570,6 +622,11 @@ export interface FileRouteTypes {
     | '/api/extension/connect-token'
     | '/api/extension/import-product'
     | '/api/extension/projects'
+    | '/api/quickbooks/callback'
+    | '/api/quickbooks/connect-url'
+    | '/api/quickbooks/project-link'
+    | '/api/quickbooks/status'
+    | '/api/quickbooks/sync-invoice'
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
@@ -622,6 +679,11 @@ export interface FileRouteTypes {
     | '/api/extension/connect-token'
     | '/api/extension/import-product'
     | '/api/extension/projects'
+    | '/api/quickbooks/callback'
+    | '/api/quickbooks/connect-url'
+    | '/api/quickbooks/project-link'
+    | '/api/quickbooks/status'
+    | '/api/quickbooks/sync-invoice'
     | '/api/stripe/webhook'
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
@@ -675,6 +737,11 @@ export interface RootRouteChildren {
   ApiExtensionConnectTokenRoute: typeof ApiExtensionConnectTokenRoute
   ApiExtensionImportProductRoute: typeof ApiExtensionImportProductRoute
   ApiExtensionProjectsRoute: typeof ApiExtensionProjectsRoute
+  ApiQuickbooksCallbackRoute: typeof ApiQuickbooksCallbackRoute
+  ApiQuickbooksConnectUrlRoute: typeof ApiQuickbooksConnectUrlRoute
+  ApiQuickbooksProjectLinkRoute: typeof ApiQuickbooksProjectLinkRoute
+  ApiQuickbooksStatusRoute: typeof ApiQuickbooksStatusRoute
+  ApiQuickbooksSyncInvoiceRoute: typeof ApiQuickbooksSyncInvoiceRoute
   ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
   ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
@@ -1006,6 +1073,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStripeWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/quickbooks/sync-invoice': {
+      id: '/api/quickbooks/sync-invoice'
+      path: '/api/quickbooks/sync-invoice'
+      fullPath: '/api/quickbooks/sync-invoice'
+      preLoaderRoute: typeof ApiQuickbooksSyncInvoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/status': {
+      id: '/api/quickbooks/status'
+      path: '/api/quickbooks/status'
+      fullPath: '/api/quickbooks/status'
+      preLoaderRoute: typeof ApiQuickbooksStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/project-link': {
+      id: '/api/quickbooks/project-link'
+      path: '/api/quickbooks/project-link'
+      fullPath: '/api/quickbooks/project-link'
+      preLoaderRoute: typeof ApiQuickbooksProjectLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/connect-url': {
+      id: '/api/quickbooks/connect-url'
+      path: '/api/quickbooks/connect-url'
+      fullPath: '/api/quickbooks/connect-url'
+      preLoaderRoute: typeof ApiQuickbooksConnectUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/callback': {
+      id: '/api/quickbooks/callback'
+      path: '/api/quickbooks/callback'
+      fullPath: '/api/quickbooks/callback'
+      preLoaderRoute: typeof ApiQuickbooksCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/extension/projects': {
       id: '/api/extension/projects'
       path: '/api/extension/projects'
@@ -1083,6 +1185,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiExtensionConnectTokenRoute: ApiExtensionConnectTokenRoute,
   ApiExtensionImportProductRoute: ApiExtensionImportProductRoute,
   ApiExtensionProjectsRoute: ApiExtensionProjectsRoute,
+  ApiQuickbooksCallbackRoute: ApiQuickbooksCallbackRoute,
+  ApiQuickbooksConnectUrlRoute: ApiQuickbooksConnectUrlRoute,
+  ApiQuickbooksProjectLinkRoute: ApiQuickbooksProjectLinkRoute,
+  ApiQuickbooksStatusRoute: ApiQuickbooksStatusRoute,
+  ApiQuickbooksSyncInvoiceRoute: ApiQuickbooksSyncInvoiceRoute,
   ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
   ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,

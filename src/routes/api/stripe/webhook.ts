@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { syncFinancialInvoiceToQuickBooks } from "@/lib/quickbooks.server";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -84,8 +85,20 @@ async function markPaymentLinkPaid({
   const { data: updated = [], error } = await query;
   if (error) throw error;
 
-  await Promise.all([...new Set(updated.map((payment) => payment.invoice_id))].map(syncInvoiceTotals));
-  return { updated: updated.length };
+  const invoiceIds = [...new Set(updated.map((payment) => payment.invoice_id).filter(Boolean))];
+  await Promise.all(invoiceIds.map(syncInvoiceTotals));
+  return { updated: updated.length, invoiceIds };
+}
+
+async function syncPaidInvoicesToQuickBooks(invoiceIds: string[]) {
+  await Promise.all(invoiceIds.map(async (invoiceId) => {
+    try {
+      await syncFinancialInvoiceToQuickBooks(invoiceId);
+    } catch (error) {
+      // QuickBooks sync should never block Stripe from marking Studio payments paid.
+      console.warn("QuickBooks auto-sync skipped", invoiceId, error);
+    }
+  }));
 }
 
 export const Route = createFileRoute("/api/stripe/webhook")({
@@ -110,6 +123,7 @@ export const Route = createFileRoute("/api/stripe/webhook")({
               checkoutSessionId: session.id ?? null,
               paymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
             });
+            await syncPaidInvoicesToQuickBooks(result.invoiceIds);
             return json({ received: true, ...result });
           }
 
@@ -119,6 +133,7 @@ export const Route = createFileRoute("/api/stripe/webhook")({
               paymentId: typeof intent.metadata?.payment_id === "string" ? intent.metadata.payment_id : null,
               paymentIntentId: intent.id ?? null,
             });
+            await syncPaidInvoicesToQuickBooks(result.invoiceIds);
             return json({ received: true, ...result });
           }
 

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Trash2, Upload, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowLeft, FileText, Send, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice, type FinancialInvoicePayment } from "@/lib/db";
@@ -32,6 +32,18 @@ type ReviewInvoice = {
 };
 
 type ReviewPayment = Pick<FinancialInvoicePayment, "label" | "amount" | "due_date" | "status" | "notes" | "sort_order">;
+type QuickBooksStatus = {
+  configured: boolean;
+  connected: boolean;
+  environment: "sandbox" | "production";
+  realmId: string | null;
+  projectLink: {
+    quickbooks_customer_id: string | null;
+    quickbooks_customer_name: string | null;
+    quickbooks_project_id: string | null;
+    quickbooks_project_name: string | null;
+  } | null;
+};
 type ServiceType = "Full Service" | "Virtual";
 type InvoicePhaseName = "Project Start" | "Design Presentation" | "Design Document Delivery" | "Project Completion";
 
@@ -111,6 +123,10 @@ function FinancialsPage() {
   const [serviceDraft, setServiceDraft] = useState<ServiceInvoiceDraft | null>(null);
   const [savingServiceInvoice, setSavingServiceInvoice] = useState(false);
   const [creatingStripeLink, setCreatingStripeLink] = useState(false);
+  const [quickBooksCustomerId, setQuickBooksCustomerId] = useState("");
+  const [quickBooksCustomerName, setQuickBooksCustomerName] = useState("");
+  const [savingQuickBooksLink, setSavingQuickBooksLink] = useState(false);
+  const [syncingQuickBooksInvoiceId, setSyncingQuickBooksInvoiceId] = useState<string | null>(null);
   const [taxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -137,6 +153,26 @@ function FinancialsPage() {
     queryFn: async () => (await db.listProcurement()) ?? [],
     enabled: allowed,
   });
+  const { data: quickBooksStatus, refetch: refetchQuickBooksStatus } = useQuery({
+    queryKey: ["quickBooksStatus", id],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to use QuickBooks.");
+      const res = await fetch(`/api/quickbooks/status?projectId=${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Could not load QuickBooks status.");
+      return body as QuickBooksStatus;
+    },
+    enabled: allowed,
+  });
+
+  useEffect(() => {
+    setQuickBooksCustomerId(quickBooksStatus?.projectLink?.quickbooks_customer_id ?? "");
+    setQuickBooksCustomerName(quickBooksStatus?.projectLink?.quickbooks_customer_name ?? "");
+  }, [quickBooksStatus?.projectLink?.quickbooks_customer_id, quickBooksStatus?.projectLink?.quickbooks_customer_name]);
 
   const totals = useMemo(() => {
     const payments = invoices.flatMap((invoice) => invoice.payments ?? []);
@@ -461,6 +497,77 @@ function FinancialsPage() {
     }
   };
 
+  const connectQuickBooks = async () => {
+    if (!allowed) return toast.error("Only Ken and Katie can connect QuickBooks.");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to connect QuickBooks.");
+      const res = await fetch("/api/quickbooks/connect-url", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json();
+      if (!res.ok || !body?.url) throw new Error(body?.error || "Could not start QuickBooks connection.");
+      window.open(body.url, "_blank", "noopener,noreferrer");
+      toast.message("Finish the QuickBooks connection in the new tab, then refresh this status.");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not connect QuickBooks.");
+    }
+  };
+
+  const saveQuickBooksLink = async () => {
+    if (!allowed) return toast.error("Only Ken and Katie can edit QuickBooks links.");
+    setSavingQuickBooksLink(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to save QuickBooks links.");
+      const res = await fetch("/api/quickbooks/project-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          projectId: id,
+          quickbooksCustomerId,
+          quickbooksCustomerName,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Could not save QuickBooks link.");
+      toast.success("QuickBooks customer link saved");
+      refetchQuickBooksStatus();
+    } catch (error: any) {
+      toast.error(error?.message || "Could not save QuickBooks link.");
+    } finally {
+      setSavingQuickBooksLink(false);
+    }
+  };
+
+  const syncInvoiceToQuickBooks = async (invoice: FinancialInvoice) => {
+    if (!allowed) return toast.error("Only Ken and Katie can send invoices to QuickBooks.");
+    setSyncingQuickBooksInvoiceId(invoice.id);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to sync QuickBooks.");
+      const res = await fetch("/api/quickbooks/sync-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ invoiceId: invoice.id }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Could not send invoice to QuickBooks.");
+      toast.success(`Sent to QuickBooks${body.syncedPaymentCount ? ` with ${body.syncedPaymentCount} payment(s)` : ""}`);
+      qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+      refetchQuickBooksStatus();
+    } catch (error: any) {
+      toast.error(error?.message || "Could not send invoice to QuickBooks.");
+    } finally {
+      setSyncingQuickBooksInvoiceId(null);
+    }
+  };
+
   if (loadingProfile || !project) return <AppShell><div className="p-16 text-muted-foreground">Loading...</div></AppShell>;
 
   if (!allowed) {
@@ -508,6 +615,18 @@ function FinancialsPage() {
           <Stat label="Total Project Profit" value={formatMoney(totalProjectProfit)} />
           <Stat label="Payment Lines" value={String(totals.count)} />
         </div>
+
+        <QuickBooksPanel
+          status={quickBooksStatus}
+          customerId={quickBooksCustomerId}
+          customerName={quickBooksCustomerName}
+          saving={savingQuickBooksLink}
+          onConnect={connectQuickBooks}
+          onRefresh={() => refetchQuickBooksStatus()}
+          onCustomerId={setQuickBooksCustomerId}
+          onCustomerName={setQuickBooksCustomerName}
+          onSave={saveQuickBooksLink}
+        />
 
         {review && (
           <section className="border border-border p-6 mb-10 bg-bone/20">
@@ -740,6 +859,8 @@ function FinancialsPage() {
               savingPaymentId={savingPaymentId}
               onDelete={deleteInvoice}
               onClientVisible={toggleClientVisible}
+              onQuickBooksSync={syncInvoiceToQuickBooks}
+              quickBooksSyncing={syncingQuickBooksInvoiceId === invoice.id}
               deleting={deletingInvoiceId === invoice.id}
             />
           ))}
@@ -756,6 +877,8 @@ function InvoiceCard({
   savingPaymentId,
   onDelete,
   onClientVisible,
+  onQuickBooksSync,
+  quickBooksSyncing,
   deleting,
 }: {
   invoice: FinancialInvoice;
@@ -764,10 +887,13 @@ function InvoiceCard({
   savingPaymentId?: string | null;
   onDelete: (invoice: FinancialInvoice) => void;
   onClientVisible: (invoice: FinancialInvoice) => void;
+  onQuickBooksSync: (invoice: FinancialInvoice) => void;
+  quickBooksSyncing?: boolean;
   deleting?: boolean;
 }) {
   const payments = [...(invoice.payments ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   const printableDataUrl = printableInvoiceDataUrl(invoice);
+  const quickBooksStatus = invoice.quickbooks_sync_status ?? "not_sent";
   return (
     <section className="border border-border">
       <div className="p-6 border-b border-border flex items-start justify-between gap-4">
@@ -777,8 +903,13 @@ function InvoiceCard({
           <p className="text-sm text-muted-foreground mt-2">
             {[invoice.client_name, invoice.provider_name, invoice.balance_due != null && `Balance ${formatMoney(invoice.balance_due)}`].filter(Boolean).join(" - ")}
           </p>
+          {quickBooksStatus !== "not_sent" && (
+            <p className={`text-xs mt-2 ${quickBooksStatus === "failed" ? "text-destructive" : "text-emerald-800"}`}>
+              QuickBooks: {quickBooksStatus === "failed" ? invoice.quickbooks_sync_error || "Sync failed" : `sent${invoice.quickbooks_synced_at ? ` ${new Date(invoice.quickbooks_synced_at).toLocaleString()}` : ""}`}
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={() => onClientVisible(invoice)}
@@ -796,12 +927,79 @@ function InvoiceCard({
               <FileText className="w-4 h-4" /> Download PDF
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => onQuickBooksSync(invoice)}
+            disabled={quickBooksSyncing}
+            className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink disabled:opacity-50"
+          >
+            <Send className="w-4 h-4" /> {quickBooksSyncing ? "Sending..." : invoice.quickbooks_invoice_id ? "Resend QB" : "Send QB"}
+          </button>
           <button type="button" onClick={() => onDelete(invoice)} disabled={deleting} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border text-muted-foreground hover:border-destructive hover:text-destructive disabled:opacity-50">
             <Trash2 className="w-4 h-4" /> {deleting ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>
       <PaymentTable payments={payments} onStatus={onStatus} onSavedPaymentChange={onPaymentUpdate} savingPaymentId={savingPaymentId} />
+    </section>
+  );
+}
+
+function QuickBooksPanel({
+  status,
+  customerId,
+  customerName,
+  saving,
+  onConnect,
+  onRefresh,
+  onCustomerId,
+  onCustomerName,
+  onSave,
+}: {
+  status?: QuickBooksStatus;
+  customerId: string;
+  customerName: string;
+  saving: boolean;
+  onConnect: () => void;
+  onRefresh: () => void;
+  onCustomerId: (value: string) => void;
+  onCustomerName: (value: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="border border-border bg-bone/20 p-5 mb-10">
+      <div className="flex flex-col xl:flex-row xl:items-end gap-5 justify-between">
+        <div className="max-w-2xl">
+          <div className="eyebrow mb-2">QuickBooks</div>
+          <h2 className="font-display text-3xl">QuickBooks Sync</h2>
+          <p className="text-sm text-muted-foreground mt-2">
+            Connect QuickBooks, link this Studio project to a QuickBooks customer, then send paid Studio invoices when ready.
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Status: {status?.configured ? status.connected ? `Connected (${status.environment})` : `Configured, not connected (${status.environment})` : "Missing Vercel env vars"}
+          </p>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-end w-full xl:w-auto">
+          <div className="min-w-[220px]">
+            <Label className="eyebrow">QB Customer ID</Label>
+            <Input value={customerId} onChange={(event) => onCustomerId(event.target.value)} placeholder="Optional" />
+          </div>
+          <div className="min-w-[260px]">
+            <Label className="eyebrow">QB Customer Name</Label>
+            <Input value={customerName} onChange={(event) => onCustomerName(event.target.value)} placeholder="Auto-create if blank" />
+          </div>
+          <button type="button" onClick={onSave} disabled={!status?.connected || saving} className="px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-50">
+            {saving ? "Saving..." : "Save Match"}
+          </button>
+          <button type="button" onClick={onConnect} disabled={!status?.configured} className="px-4 py-2 bg-ink text-primary-foreground text-sm disabled:opacity-50">
+            {status?.connected ? "Reconnect" : "Connect"}
+          </button>
+          <button type="button" onClick={onRefresh} className="px-4 py-2 border border-border text-sm hover:border-ink">
+            Refresh
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
