@@ -811,7 +811,10 @@ async function generateRendering(
     const revisionContext = options.revisionNotes
       ? [
           "REVISION REQUEST",
-          "Create a new version that corrects only the requested issues. Keep unchanged areas as close as possible to the previous rendering and the original SketchUp reference.",
+          "Create a new version that corrects only the requested issues.",
+          "The original SketchUp reference remains the architectural source of truth for camera angle, crop, wall openings, cabinetry, ceiling beams, windows, doors, arches, fireplace, and all fixed elements.",
+          "Do not use the previous AI rendering as permission to keep architectural mistakes. If the previous rendering drifted from SketchUp, correct it back to the SketchUp layout.",
+          "Keep unchanged materials and styling from the previous rendering only where they do not conflict with the SketchUp architecture.",
           options.revisionNotes,
           options.revisionReferenceUrl ? "An additional uploaded reference image is included for the specific material, finish, tile, wallpaper, fabric, or detail described in the notes." : "",
         ].join("\n")

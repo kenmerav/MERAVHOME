@@ -5,6 +5,18 @@ import { uploadRoomImageFromDataUrl } from "@/lib/roomImageStorage.server";
 
 const RENDERING_PROMPT = `Use the uploaded SketchUp rendering as the exact architectural and design reference.
 
+CRITICAL SOURCE-OF-TRUTH RULE:
+The uploaded SketchUp rendering is not inspiration. It is the measured architectural source of truth.
+Before making the image photorealistic, mentally trace the uploaded image from left to right and preserve every visible architectural element in the same location.
+
+Do not crop in tighter than the SketchUp view.
+Do not zoom in unless explicitly requested.
+Do not zoom out by inventing new architecture.
+Do not remove, relocate, resize, simplify, or replace any cabinetry, island, wall opening, arch, doorway, window, fireplace, ceiling beam, appliance wall, niche, shelving, or built-in.
+Do not add matching cabinets, balanced decor, chandeliers, or architectural symmetry unless those elements already exist in the SketchUp reference.
+If a cabinet or architectural feature appears partially at the left or right edge, preserve it at that edge instead of replacing or omitting it.
+If a requested revision says to zoom out, keep all existing architectural elements and reveal only plausible continuation of the same room without changing the layout.
+
 The final image must preserve:
 
 * exact room proportions
