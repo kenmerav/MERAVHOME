@@ -117,6 +117,15 @@ export async function getQuickBooksStatus(projectId?: string | null) {
   };
 }
 
+export async function disconnectQuickBooks() {
+  const { error } = await supabaseAdmin
+    .from("quickbooks_connections" as any)
+    .update({ is_active: false })
+    .eq("is_active", true);
+
+  if (error) throw error;
+}
+
 export async function saveQuickBooksProjectLink({
   projectId,
   quickbooksCustomerId,

@@ -9,7 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ProcurementRouteImport } from './routes/procurement'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FinancialsRouteImport } from './routes/financials'
 import { Route as CatalogRouteImport } from './routes/catalog'
@@ -57,6 +59,7 @@ import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhoo
 import { Route as ApiQuickbooksSyncInvoiceRouteImport } from './routes/api/quickbooks/sync-invoice'
 import { Route as ApiQuickbooksStatusRouteImport } from './routes/api/quickbooks/status'
 import { Route as ApiQuickbooksProjectLinkRouteImport } from './routes/api/quickbooks/project-link'
+import { Route as ApiQuickbooksDisconnectRouteImport } from './routes/api/quickbooks/disconnect'
 import { Route as ApiQuickbooksCustomersRouteImport } from './routes/api/quickbooks/customers'
 import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
 import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
@@ -66,9 +69,19 @@ import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/exten
 import { Route as ApiExtensionBoardPagesRouteImport } from './routes/api/extension/board-pages'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProcurementRoute = ProcurementRouteImport.update({
   id: '/procurement',
   path: '/procurement',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -315,6 +328,11 @@ const ApiQuickbooksProjectLinkRoute =
     path: '/api/quickbooks/project-link',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiQuickbooksDisconnectRoute = ApiQuickbooksDisconnectRouteImport.update({
+  id: '/api/quickbooks/disconnect',
+  path: '/api/quickbooks/disconnect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiQuickbooksCustomersRoute = ApiQuickbooksCustomersRouteImport.update({
   id: '/api/quickbooks/customers',
   path: '/api/quickbooks/customers',
@@ -363,7 +381,9 @@ export interface FileRoutesByFullPath {
   '/catalog': typeof CatalogRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
+  '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -400,6 +420,7 @@ export interface FileRoutesByFullPath {
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
+  '/api/quickbooks/disconnect': typeof ApiQuickbooksDisconnectRoute
   '/api/quickbooks/project-link': typeof ApiQuickbooksProjectLinkRoute
   '/api/quickbooks/status': typeof ApiQuickbooksStatusRoute
   '/api/quickbooks/sync-invoice': typeof ApiQuickbooksSyncInvoiceRoute
@@ -421,7 +442,9 @@ export interface FileRoutesByTo {
   '/catalog': typeof CatalogRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
+  '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -458,6 +481,7 @@ export interface FileRoutesByTo {
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
+  '/api/quickbooks/disconnect': typeof ApiQuickbooksDisconnectRoute
   '/api/quickbooks/project-link': typeof ApiQuickbooksProjectLinkRoute
   '/api/quickbooks/status': typeof ApiQuickbooksStatusRoute
   '/api/quickbooks/sync-invoice': typeof ApiQuickbooksSyncInvoiceRoute
@@ -480,7 +504,9 @@ export interface FileRoutesById {
   '/catalog': typeof CatalogRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
+  '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -517,6 +543,7 @@ export interface FileRoutesById {
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
+  '/api/quickbooks/disconnect': typeof ApiQuickbooksDisconnectRoute
   '/api/quickbooks/project-link': typeof ApiQuickbooksProjectLinkRoute
   '/api/quickbooks/status': typeof ApiQuickbooksStatusRoute
   '/api/quickbooks/sync-invoice': typeof ApiQuickbooksSyncInvoiceRoute
@@ -540,7 +567,9 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/financials'
     | '/login'
+    | '/privacy'
     | '/procurement'
+    | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-question'
@@ -577,6 +606,7 @@ export interface FileRouteTypes {
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
+    | '/api/quickbooks/disconnect'
     | '/api/quickbooks/project-link'
     | '/api/quickbooks/status'
     | '/api/quickbooks/sync-invoice'
@@ -598,7 +628,9 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/financials'
     | '/login'
+    | '/privacy'
     | '/procurement'
+    | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-question'
@@ -635,6 +667,7 @@ export interface FileRouteTypes {
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
+    | '/api/quickbooks/disconnect'
     | '/api/quickbooks/project-link'
     | '/api/quickbooks/status'
     | '/api/quickbooks/sync-invoice'
@@ -656,7 +689,9 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/financials'
     | '/login'
+    | '/privacy'
     | '/procurement'
+    | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-question'
@@ -693,6 +728,7 @@ export interface FileRouteTypes {
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
+    | '/api/quickbooks/disconnect'
     | '/api/quickbooks/project-link'
     | '/api/quickbooks/status'
     | '/api/quickbooks/sync-invoice'
@@ -715,7 +751,9 @@ export interface RootRouteChildren {
   CatalogRoute: typeof CatalogRoute
   FinancialsRoute: typeof FinancialsRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProcurementRoute: typeof ProcurementRoute
+  TermsRoute: typeof TermsRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
@@ -752,6 +790,7 @@ export interface RootRouteChildren {
   ApiQuickbooksCallbackRoute: typeof ApiQuickbooksCallbackRoute
   ApiQuickbooksConnectUrlRoute: typeof ApiQuickbooksConnectUrlRoute
   ApiQuickbooksCustomersRoute: typeof ApiQuickbooksCustomersRoute
+  ApiQuickbooksDisconnectRoute: typeof ApiQuickbooksDisconnectRoute
   ApiQuickbooksProjectLinkRoute: typeof ApiQuickbooksProjectLinkRoute
   ApiQuickbooksStatusRoute: typeof ApiQuickbooksStatusRoute
   ApiQuickbooksSyncInvoiceRoute: typeof ApiQuickbooksSyncInvoiceRoute
@@ -771,11 +810,25 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/procurement': {
       id: '/procurement'
       path: '/procurement'
       fullPath: '/procurement'
       preLoaderRoute: typeof ProcurementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1107,6 +1160,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiQuickbooksProjectLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/quickbooks/disconnect': {
+      id: '/api/quickbooks/disconnect'
+      path: '/api/quickbooks/disconnect'
+      fullPath: '/api/quickbooks/disconnect'
+      preLoaderRoute: typeof ApiQuickbooksDisconnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/quickbooks/customers': {
       id: '/api/quickbooks/customers'
       path: '/api/quickbooks/customers'
@@ -1171,7 +1231,9 @@ const rootRouteChildren: RootRouteChildren = {
   CatalogRoute: CatalogRoute,
   FinancialsRoute: FinancialsRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   ProcurementRoute: ProcurementRoute,
+  TermsRoute: TermsRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
@@ -1208,6 +1270,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiQuickbooksCallbackRoute: ApiQuickbooksCallbackRoute,
   ApiQuickbooksConnectUrlRoute: ApiQuickbooksConnectUrlRoute,
   ApiQuickbooksCustomersRoute: ApiQuickbooksCustomersRoute,
+  ApiQuickbooksDisconnectRoute: ApiQuickbooksDisconnectRoute,
   ApiQuickbooksProjectLinkRoute: ApiQuickbooksProjectLinkRoute,
   ApiQuickbooksStatusRoute: ApiQuickbooksStatusRoute,
   ApiQuickbooksSyncInvoiceRoute: ApiQuickbooksSyncInvoiceRoute,
