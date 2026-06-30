@@ -465,8 +465,30 @@ function FinancialsPage() {
         if (body?.warning) toast.warning(body.warning);
         else toast.success("Payment marked due and Stripe link updated");
       } else {
-        await db.updateFinancialPayment(payment.id, { status });
-        toast.success("Payment status updated");
+        await db.updateFinancialPayment(payment.id, {
+          status,
+          paid_at: status === "paid" ? payment.paid_at ?? new Date().toISOString() : null,
+        });
+        if (status === "paid" && payment.invoice_id) {
+          try {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token;
+            if (!token) throw new Error("Sign in as Ken or Katie to sync QuickBooks.");
+            const res = await fetch("/api/quickbooks/sync-invoice", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ invoiceId: payment.invoice_id }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body?.error || "Payment marked paid, but QuickBooks did not sync.");
+            toast.success(`Payment marked paid and sent to QuickBooks${body.syncedPaymentCount ? ` with ${body.syncedPaymentCount} payment(s)` : ""}`);
+            refetchQuickBooksStatus();
+          } catch (quickBooksError: any) {
+            toast.warning(quickBooksError?.message || "Payment marked paid, but QuickBooks sync needs attention.");
+          }
+        } else {
+          toast.success("Payment status updated");
+        }
       }
       qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
       qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
@@ -929,6 +951,7 @@ function InvoiceCard({
   const payments = [...(invoice.payments ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   const printableDataUrl = printableInvoiceDataUrl(invoice);
   const quickBooksStatus = invoice.quickbooks_sync_status ?? "not_sent";
+  const paidTotal = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   return (
     <section className="border border-border">
       <div className="p-6 border-b border-border flex items-start justify-between gap-4">
@@ -965,10 +988,11 @@ function InvoiceCard({
           <button
             type="button"
             onClick={() => onQuickBooksSync(invoice)}
-            disabled={quickBooksSyncing}
+            disabled={quickBooksSyncing || paidTotal <= 0}
+            title={paidTotal <= 0 ? "Mark at least one payment paid before sending to QuickBooks." : undefined}
             className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink disabled:opacity-50"
           >
-            <Send className="w-4 h-4" /> {quickBooksSyncing ? "Sending..." : invoice.quickbooks_invoice_id ? "Resend QB" : "Send QB"}
+            <Send className="w-4 h-4" /> {quickBooksSyncing ? "Sending..." : invoice.quickbooks_invoice_id ? "Resend Paid QB" : "Send Paid QB"}
           </button>
           <button type="button" onClick={() => onDelete(invoice)} disabled={deleting} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border text-muted-foreground hover:border-destructive hover:text-destructive disabled:opacity-50">
             <Trash2 className="w-4 h-4" /> {deleting ? "Deleting..." : "Delete"}
