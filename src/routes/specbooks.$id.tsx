@@ -599,7 +599,6 @@ type ProductForm = Pick<
   | "price"
   | "unit_cost"
   | "shipping"
-  | "notes"
   | "description"
 >;
 
@@ -731,6 +730,7 @@ function SpecProductEditDialog({
 }) {
   const qc = useQueryClient();
   const [materialCategory, setMaterialCategory] = useState(normalizeItemCategory(item.category) || "Other");
+  const [materialNotes, setMaterialNotes] = useState(item.notes ?? "");
   const [form, setForm] = useState<ProductForm>({
     name: product.name,
     category: product.category,
@@ -744,7 +744,6 @@ function SpecProductEditDialog({
     price: product.price,
     unit_cost: product.unit_cost,
     shipping: product.shipping,
-    notes: product.notes,
     description: product.description,
   });
   const [saving, setSaving] = useState(false);
@@ -771,11 +770,11 @@ function SpecProductEditDialog({
         price: normalizeMoneyInput(form.price),
         unit_cost: normalizeMoneyInput(form.unit_cost),
         shipping: normalizeMoneyInput(form.shipping),
-        notes: clean(form.notes),
         description: clean(form.description),
       });
       await db.updateMaterialItem(item.id, {
         category: materialCategory,
+        notes: clean(materialNotes),
       });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["product", product.id] }),
@@ -844,7 +843,7 @@ function SpecProductEditDialog({
           <Field label="SKU" value={form.sku ?? ""} onChange={(value) => update({ sku: value })} />
           <Field label="Product URL" value={form.product_url ?? ""} onChange={(value) => update({ product_url: value })} className="md:col-span-2" />
           <Field label="Image URL" value={form.image_url ?? ""} onChange={(value) => update({ image_url: value })} className="md:col-span-2" />
-          <LongField label="Notes" value={form.notes ?? ""} onChange={(value) => update({ notes: value })} />
+          <LongField label="Spec Notes" value={materialNotes} onChange={setMaterialNotes} />
           <LongField label="Description" value={form.description ?? ""} onChange={(value) => update({ description: value })} />
         </div>
         <div className="flex justify-end pt-4">

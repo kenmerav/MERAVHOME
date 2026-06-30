@@ -1466,7 +1466,6 @@ function ProjectDesignBoardsPage() {
         image_url: productImageUrl,
         finish,
         dimensions,
-        notes: element.notes || null,
       });
     } else {
       category = product.category || category;
@@ -5215,7 +5214,7 @@ function materialItemToBoardElement(
     vendor: product?.vendor ?? null,
     price: product?.price ?? null,
     finish: item.color ?? product?.finish ?? null,
-    notes: item.notes ?? product?.notes ?? "",
+    notes: item.notes ?? "",
     materialItemId: item.id,
     materialRoomId: item.room_id,
     materialCategory,
