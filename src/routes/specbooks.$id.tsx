@@ -36,13 +36,15 @@ type Section = { label: string; sources: string[] };
 const KITCHEN_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
-  { label: "Countertops + Tile", sources: ["Countertops", "Tile & Stone"] },
+  { label: "Countertops", sources: ["Countertops"] },
+  { label: "Tile + Stone", sources: ["Tile & Stone"] },
   { label: "Cabinetry", sources: ["Cabinetry", "Cabinetry & Hardware"] },
   { label: "Hardware", sources: ["Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
 ];
 const BATHROOM_SECTIONS: Section[] = [
-  { label: "Tile + Stone", sources: ["Tile & Stone", "Countertops"] },
+  { label: "Countertops", sources: ["Countertops"] },
+  { label: "Tile + Stone", sources: ["Tile & Stone"] },
   { label: "Plumbing", sources: ["Plumbing"] },
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Cabinetry", sources: ["Cabinetry", "Cabinetry & Hardware"] },
@@ -56,14 +58,16 @@ const BEDROOM_SECTIONS: Section[] = [
 ];
 const LIVING_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
-  { label: "Tile", sources: ["Tile & Stone"] },
+  { label: "Countertops", sources: ["Countertops"] },
+  { label: "Tile + Stone", sources: ["Tile & Stone"] },
   { label: "Hardware", sources: ["Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
 ];
 const DEFAULT_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
-  { label: "Tile + Stone", sources: ["Tile & Stone", "Countertops"] },
+  { label: "Countertops", sources: ["Countertops"] },
+  { label: "Tile + Stone", sources: ["Tile & Stone"] },
   { label: "Cabinetry", sources: ["Cabinetry", "Cabinetry & Hardware"] },
   { label: "Hardware", sources: ["Hardware"] },
   { label: "Flooring + Paint", sources: ["Flooring", "Paint", "Flooring & Paint"] },
