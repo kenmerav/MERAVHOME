@@ -23,6 +23,7 @@ import { clientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
 import { canViewProjectSurface } from "@/lib/permissions";
+import type { CSSProperties } from "react";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 
@@ -1138,9 +1139,27 @@ function BrandCover({
   );
 }
 
-function PresentationFooter() {
+function PresentationFooter({
+  align = "center",
+  sidePaddingPx = 48,
+}: {
+  align?: "center" | "mainColumn";
+  sidePaddingPx?: number;
+}) {
+  const style =
+    align === "mainColumn"
+      ? ({
+          "--presentation-footer-left": `calc(${sidePaddingPx}px + (((100% - ${sidePaddingPx * 2}px - 24px) * 1.6 / 2.6) / 2))`,
+        } as CSSProperties)
+      : undefined;
+
   return (
-    <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2 text-center pointer-events-none print:bottom-4">
+    <div
+      style={style}
+      className={`absolute bottom-5 z-10 -translate-x-1/2 text-center pointer-events-none print:bottom-4 ${
+        align === "mainColumn" ? "left-1/2 lg:left-[var(--presentation-footer-left)]" : "left-1/2"
+      }`}
+    >
       <div className="font-display text-ink uppercase leading-none tracking-[-0.07em] text-[clamp(2rem,4vw,4.25rem)] whitespace-nowrap">
         MERAV INTERIORS
       </div>
@@ -1208,7 +1227,7 @@ function RoomSlide({
         </div>
       </div>
       <SpreadSidebar data={data} room={room} view={view} />
-      <PresentationFooter />
+      <PresentationFooter align="mainColumn" sidePaddingPx={48} />
     </div>
   );
 }
@@ -1798,7 +1817,7 @@ function RoomSpread({
           onUpdateViewSketch={onUpdateViewSketch}
         />
       </div>
-      <PresentationFooter />
+      <PresentationFooter align="mainColumn" sidePaddingPx={56} />
     </section>
   );
 }
