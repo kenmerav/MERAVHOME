@@ -432,9 +432,26 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
             <DialogTrigger asChild>
               <button title="View" className="bg-background/95 p-1.5"><Eye className="w-3 h-3" /></button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
+            <DialogContent className="max-w-7xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
-              <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full" />
+              {sketchup ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="eyebrow">AI Rendering</div>
+                    <div className="bg-bone border border-border overflow-hidden">
+                      <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full h-auto" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="eyebrow">SketchUp Reference</div>
+                    <div className="bg-bone border border-border overflow-hidden">
+                      <img src={normalizeSupabaseImageUrl(sketchup.url)} alt={sketchup.caption || "SketchUp reference"} className="w-full h-auto" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full" />
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                 <div>
                   <Label className="eyebrow">Review Status</Label>
