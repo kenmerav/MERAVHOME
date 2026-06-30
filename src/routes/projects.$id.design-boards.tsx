@@ -292,6 +292,7 @@ type OptimizedBoardImageProps = {
 
 const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
+const BOARD_EXPORT_PIXEL_RATIO = 2;
 const MAIN_PAGE_GAP = 40;
 const ACTIVE_PAGE_PRELOAD_RADIUS = 1;
 const PAGE_STRIP_VIRTUALIZE_AFTER = 40;
@@ -796,8 +797,11 @@ function ProjectDesignBoardsPage() {
 
       for (let index = 0; index < exportPages.length; index += 1) {
         if (index > 0) pdf.addPage([BOARD_WIDTH, BOARD_HEIGHT], "landscape");
-        const pageDataUrl = await renderDesignBoardPageToDataUrl(exportPages[index]);
-        pdf.addImage(pageDataUrl, "JPEG", 0, 0, BOARD_WIDTH, BOARD_HEIGHT, undefined, "FAST");
+        const pageDataUrl = await renderDesignBoardPageToDataUrl(
+          exportPages[index],
+          BOARD_EXPORT_PIXEL_RATIO,
+        );
+        pdf.addImage(pageDataUrl, "PNG", 0, 0, BOARD_WIDTH, BOARD_HEIGHT, undefined, "SLOW");
       }
 
       pdf.save(`${sanitizeFileName(project?.name || "design-board")}-design-boards.pdf`);
@@ -5341,12 +5345,16 @@ async function imageSourceForCanvas(src: string) {
   return body.image as string;
 }
 
-async function renderDesignBoardPageToDataUrl(page: BoardPage) {
+async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1) {
   const canvas = document.createElement("canvas");
-  canvas.width = BOARD_WIDTH;
-  canvas.height = BOARD_HEIGHT;
+  const scale = Math.max(1, pixelRatio);
+  canvas.width = BOARD_WIDTH * scale;
+  canvas.height = BOARD_HEIGHT * scale;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not prepare PDF canvas.");
+  ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   ctx.fillStyle = "#fbfaf7";
   ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
@@ -5356,7 +5364,7 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage) {
     await drawBoardElementForExport(ctx, element);
   }
 
-  return canvas.toDataURL("image/jpeg", 0.92);
+  return canvas.toDataURL("image/png");
 }
 
 async function drawBoardElementForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
