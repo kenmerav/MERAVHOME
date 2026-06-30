@@ -485,12 +485,25 @@ export const Route = createFileRoute("/api/extension/import-product")({
             .limit(25);
           const normalizedProductName = normalizeProductIdentity(productName);
           const normalizedFinish = normalizeProductIdentity(finish);
+          const normalizedDimensions = normalizeProductIdentity(dimensions);
           const existingProduct =
             (existingProducts ?? []).find((candidate: any) => {
               if (normalizeProductIdentity(candidate.name) !== normalizedProductName) return false;
               const candidateFinish = normalizeProductIdentity(candidate.finish);
-              if (!normalizedFinish) return true;
-              return !candidateFinish || candidateFinish === normalizedFinish;
+              if (normalizedFinish && candidateFinish && candidateFinish !== normalizedFinish) {
+                return false;
+              }
+
+              const candidateDimensions = normalizeProductIdentity(candidate.dimensions);
+              if (
+                normalizedDimensions &&
+                candidateDimensions &&
+                candidateDimensions !== normalizedDimensions
+              ) {
+                return false;
+              }
+
+              return true;
             }) ?? null;
 
           const productInsert = {

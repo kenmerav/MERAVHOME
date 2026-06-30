@@ -1444,26 +1444,32 @@ function ProjectDesignBoardsPage() {
       linkedProduct &&
       normalizeMaterialIdentityText(linkedProduct.name) ===
         normalizeMaterialIdentityText(actualProductName);
-    const productFinishMatches = (candidate?: Product | null) => {
-      if (!candidate || !finish) return true;
-      if (!candidate.finish) return true;
-      return (
-        normalizeMaterialIdentityText(candidate.finish) ===
-        normalizeMaterialIdentityText(finish)
-      );
+    const productVariantMatches = (candidate?: Product | null) => {
+      if (!candidate) return false;
+      const candidateFinish = normalizeMaterialIdentityText(candidate.finish);
+      const nextFinish = normalizeMaterialIdentityText(finish);
+      if (nextFinish && candidateFinish && candidateFinish !== nextFinish) return false;
+
+      const candidateDimensions = normalizeMaterialIdentityText(candidate.dimensions);
+      const nextDimensions = normalizeMaterialIdentityText(dimensions);
+      if (nextDimensions && candidateDimensions && candidateDimensions !== nextDimensions) {
+        return false;
+      }
+
+      return true;
     };
 
     let product =
       linkedProduct &&
       linkedProductNameMatches &&
       (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl) &&
-      productFinishMatches(linkedProduct)
+      productVariantMatches(linkedProduct)
         ? linkedProduct
         : null;
     if (productUrl && !product) {
       const productCandidates =
         (await db.findProductsByUrlAndName(productUrl, actualProductName)) ?? [];
-      product = productCandidates.find(productFinishMatches) ?? null;
+      product = productCandidates.find(productVariantMatches) ?? null;
     }
 
     if (!product) {
@@ -1492,6 +1498,7 @@ function ProjectDesignBoardsPage() {
       label: itemLabel,
       productUrl,
       color: finish,
+      dimensions,
     });
     const materialMatchesIdentity = (item: MaterialItem) =>
       buildBoardMaterialIdentity({
@@ -1499,6 +1506,7 @@ function ProjectDesignBoardsPage() {
         label: item.item_label,
         productUrl: item.product_url,
         color: item.color,
+        dimensions: item.product?.dimensions,
       }) === materialIdentity;
     const materialFromElementId = element.materialItemId
       ? materialItems.find((item) => item.id === element.materialItemId) ?? null
@@ -1689,11 +1697,17 @@ function ProjectDesignBoardsPage() {
             : null;
           const productUrl = boardElementProductUrl(element, linkedProduct) ?? "";
           const finish = (element.materialFinish || element.finish || "").trim();
+          const dimensions = (
+            element.materialDimensions ||
+            linkedProduct?.dimensions ||
+            ""
+          ).trim();
           const key = [
             room.id,
             normalizeMaterialIdentityText(itemLabel),
             normalizeMaterialIdentityUrl(productUrl),
             normalizeMaterialIdentityText(finish),
+            normalizeMaterialIdentityText(dimensions),
           ].join("::");
           const quantity =
             element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
@@ -6570,17 +6584,20 @@ function buildBoardMaterialIdentity({
   label,
   productUrl,
   color,
+  dimensions,
 }: {
   roomId: string;
   label?: string | null;
   productUrl?: string | null;
   color?: string | null;
+  dimensions?: string | null;
 }) {
   return [
     roomId,
     normalizeMaterialIdentityText(label),
     normalizeMaterialIdentityUrl(productUrl),
     normalizeMaterialIdentityText(color),
+    normalizeMaterialIdentityText(dimensions),
   ].join("::");
 }
 
