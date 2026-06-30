@@ -56,7 +56,7 @@ import {
   toProductCategory,
   type ItemCategory,
 } from "@/lib/roomTemplates";
-import { canViewProjectSurface } from "@/lib/permissions";
+import { canViewProjectSurface, isContractorRole, isStudioTeamRole } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -460,7 +460,7 @@ function ProjectDesignBoardsPage() {
     queryFn: () => db.getCurrentUserProfile(),
   });
   const canEditDesignBoards =
-    profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
+    profile?.is_active === true && isStudioTeamRole(profile.role);
   const canRestoreDesignBoards = profile?.is_active === true && profile.role === "Admin";
   const { data: project } = useQuery({
     queryKey: ["project", id],
@@ -470,7 +470,8 @@ function ProjectDesignBoardsPage() {
     profile?.is_active === true &&
     project != null &&
     canViewProjectSurface(profile, project, "designBoards");
-  const canAskDesignBoardQuestion = profile?.is_active === true && profile.role === "Contractor" && canViewDesignBoards;
+  const canAskDesignBoardQuestion =
+    profile?.is_active === true && isContractorRole(profile.role) && canViewDesignBoards;
   const {
     data: sharedBoard,
     isLoading: loadingSharedBoard,
@@ -1198,7 +1199,7 @@ function ProjectDesignBoardsPage() {
   }, [activeUsers]);
 
   useEffect(() => {
-    if (!canEditDesignBoards || loadingProfile) return;
+    if (!canViewDesignBoards || loadingProfile) return;
 
     const refetchLatestBoard = () => {
       if (pendingSaveJsonRef.current) return;
@@ -1223,7 +1224,7 @@ function ProjectDesignBoardsPage() {
       window.removeEventListener("pageshow", handlePageActive);
       document.removeEventListener("visibilitychange", handlePageActive);
     };
-  }, [canEditDesignBoards, id, loadingProfile, queryClient, refetchSharedBoard]);
+  }, [canViewDesignBoards, id, loadingProfile, queryClient, refetchSharedBoard]);
 
   useEffect(() => {
     boardStateRef.current = boardState;
@@ -1231,11 +1232,6 @@ function ProjectDesignBoardsPage() {
 
   useEffect(() => {
     if (loadingProfile || loadingSharedBoard) return;
-    if (!canEditDesignBoards) {
-      remoteLoadedRef.current = false;
-      setSaveStatus("local");
-      return;
-    }
     if (sharedBoard?.board_state) {
       const remoteUpdatedAt = sharedBoard.updated_at ?? "";
       const hasNewerRemoteBoard =
@@ -1262,7 +1258,7 @@ function ProjectDesignBoardsPage() {
     setSaveStatus("ready");
   }, [
     applySharedBoardSnapshot,
-    canEditDesignBoards,
+    canViewDesignBoards,
     loadingProfile,
     loadingSharedBoard,
     sharedBoard,
@@ -2264,6 +2260,7 @@ function ProjectDesignBoardsPage() {
   }, [clearSelection, pushUndo, selectedId, selectedIds, setElements]);
 
   useEffect(() => {
+    if (!canEditDesignBoards) return;
     const onPaste = (event: ClipboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditingText =
@@ -2296,9 +2293,10 @@ function ProjectDesignBoardsPage() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [addFile, elements, pushUndo, selectMany, setElements]);
+  }, [addFile, canEditDesignBoards, elements, pushUndo, selectMany, setElements]);
 
   useEffect(() => {
+    if (!canEditDesignBoards) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditingText =
@@ -2344,6 +2342,7 @@ function ProjectDesignBoardsPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    canEditDesignBoards,
     pushUndo,
     removeSelected,
     elements,
@@ -3201,6 +3200,7 @@ function ProjectDesignBoardsPage() {
                           <BoardObject
                             key={element.id}
                             element={element}
+                            editable={canEditDesignBoards}
                             linkedProduct={
                               element.productId ? productById.get(element.productId) ?? null : null
                             }
@@ -3378,38 +3378,40 @@ function ProjectDesignBoardsPage() {
                           renderImages={!virtualizeThumbnails || isNearSelected}
                         />
                       </button>
-                      <div className="pointer-events-none absolute right-1 top-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => movePage(page.id, "left")}
-                          disabled={!pageCanMoveLeft}
-                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
-                          aria-label={`Move ${page.title || `Board ${index + 1}`} left`}
-                          title="Move page left"
-                        >
-                          <ArrowLeft className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => movePage(page.id, "right")}
-                          disabled={!pageCanMoveRight}
-                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
-                          aria-label={`Move ${page.title || `Board ${index + 1}`} right`}
-                          title="Move page right"
-                        >
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deletePage(page.id)}
-                          disabled={!pageCanDelete}
-                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-red-200 bg-white/95 text-red-600 shadow-sm transition hover:border-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-35"
-                          aria-label={`Delete ${page.title || `Board ${index + 1}`}`}
-                          title="Delete page"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      {canEditDesignBoards && (
+                        <div className="pointer-events-none absolute right-1 top-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => movePage(page.id, "left")}
+                            disabled={!pageCanMoveLeft}
+                            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label={`Move ${page.title || `Board ${index + 1}`} left`}
+                            title="Move page left"
+                          >
+                            <ArrowLeft className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => movePage(page.id, "right")}
+                            disabled={!pageCanMoveRight}
+                            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label={`Move ${page.title || `Board ${index + 1}`} right`}
+                            title="Move page right"
+                          >
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deletePage(page.id)}
+                            disabled={!pageCanDelete}
+                            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-red-200 bg-white/95 text-red-600 shadow-sm transition hover:border-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label={`Delete ${page.title || `Board ${index + 1}`}`}
+                            title="Delete page"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3420,14 +3422,16 @@ function ProjectDesignBoardsPage() {
                     style={{ width: thumbnailWindow.after }}
                   />
                 )}
-                <button
-                  type="button"
-                  onClick={() => addPage(selectedPageId)}
-                  title="Add page after current page"
-                  className="flex h-[64px] w-[112px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-ink transition hover:border-ink"
-                >
-                  <Plus className="h-3.5 w-3.5" /> New Page
-                </button>
+                {canEditDesignBoards && (
+                  <button
+                    type="button"
+                    onClick={() => addPage(selectedPageId)}
+                    title="Add page after current page"
+                    className="flex h-[64px] w-[112px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-ink transition hover:border-ink"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> New Page
+                  </button>
+                )}
               </div>
 
               <div className="hidden shrink-0 items-center gap-2 md:flex">
@@ -4032,6 +4036,7 @@ function PageThumbnail({
 
 function BoardObject({
   element,
+  editable,
   linkedProduct,
   selected,
   showResizeHandle,
@@ -4048,6 +4053,7 @@ function BoardObject({
   onStartResize,
 }: {
   element: BoardElement;
+  editable: boolean;
   linkedProduct?: Product | null;
   selected: boolean;
   showResizeHandle: boolean;
@@ -4076,7 +4082,7 @@ function BoardObject({
         "absolute select-none",
         selected && "outline outline-2 outline-offset-2 outline-[#1f4e5f]",
         remoteUser && !selected && "outline outline-2 outline-offset-2",
-        element.type !== "text" && !isLocked && "cursor-move",
+        editable && element.type !== "text" && !isLocked && "cursor-move",
         isLocked && "cursor-default",
       )}
       style={{
@@ -4090,6 +4096,7 @@ function BoardObject({
         outlineColor: remoteUser?.color,
       }}
       onPointerDown={(event) => {
+        if (!editable) return;
         if (isLocked) return;
         onStartMove(event);
       }}
@@ -4120,7 +4127,7 @@ function BoardObject({
           )}
         </div>
       )}
-      {selected && showResizeHandle && (
+      {editable && selected && showResizeHandle && (
         <div
           className="absolute left-1/2 top-0 z-50 flex -translate-x-1/2 -translate-y-[calc(100%+14px)] items-center gap-1 rounded-full border border-stone-200 bg-white px-2 py-2 shadow-[0_10px_30px_rgba(31,29,27,0.18)]"
           onPointerDown={(event) => event.stopPropagation()}
