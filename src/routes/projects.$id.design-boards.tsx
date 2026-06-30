@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { jsPDF } from "jspdf";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
@@ -786,7 +787,6 @@ function ProjectDesignBoardsPage() {
     if (exportingPdf) return;
     setExportingPdf(true);
     try {
-      const { jsPDF } = await import("jspdf");
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "px",

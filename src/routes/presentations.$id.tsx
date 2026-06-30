@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { jsPDF } from "jspdf";
 import {
   ArrowLeft,
   Check,
@@ -722,10 +723,7 @@ function PresentationPage() {
           .map((item) => exportSlideRefs.current.get(item.slideKey))
           .filter((node): node is HTMLDivElement => Boolean(node)),
       );
-      const [{ toPng }, { jsPDF }] = await Promise.all([
-        import("html-to-image"),
-        import("jspdf"),
-      ]);
+      const { toPng } = await import("html-to-image");
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "px",
