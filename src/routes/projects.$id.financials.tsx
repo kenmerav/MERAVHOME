@@ -551,8 +551,8 @@ function FinancialsPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           projectId: id,
-          quickbooksCustomerId,
-          quickbooksCustomerName,
+          quickbooksCustomerId: quickBooksCustomerId,
+          quickbooksCustomerName: quickBooksCustomerName,
         }),
       });
       const body = await res.json();
