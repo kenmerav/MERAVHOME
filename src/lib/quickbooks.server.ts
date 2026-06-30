@@ -30,6 +30,12 @@ type QuickBooksTokenResponse = {
   x_refresh_token_expires_in?: number;
 };
 
+export type QuickBooksCustomerOption = {
+  id: string;
+  name: string;
+  companyName: string | null;
+};
+
 const QUICKBOOKS_ACCOUNTING_SCOPE = "com.intuit.quickbooks.accounting";
 
 export function getQuickBooksConfig() {
@@ -140,6 +146,26 @@ export async function saveQuickBooksProjectLink({
 
   if (error) throw error;
   return data as QuickBooksProjectLink;
+}
+
+export async function listQuickBooksCustomers(search?: string | null): Promise<QuickBooksCustomerOption[]> {
+  const connection = await requireActiveQuickBooksConnection();
+  const cleanSearch = search?.trim();
+  const where = cleanSearch
+    ? ` where DisplayName like '%${escapeQuickBooksQuery(cleanSearch)}%'`
+    : "";
+  const result = await quickBooksQuery<{
+    Customer?: Array<{ Id: string; DisplayName: string; CompanyName?: string | null }>;
+  }>(
+    connection,
+    `select * from Customer${where} order by DisplayName maxresults 100`,
+  );
+
+  return (result.Customer ?? []).map((customer) => ({
+    id: customer.Id,
+    name: customer.DisplayName,
+    companyName: customer.CompanyName ?? null,
+  }));
 }
 
 export async function syncFinancialInvoiceToQuickBooks(invoiceId: string) {

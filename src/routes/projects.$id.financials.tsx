@@ -44,6 +44,11 @@ type QuickBooksStatus = {
     quickbooks_project_name: string | null;
   } | null;
 };
+type QuickBooksCustomerOption = {
+  id: string;
+  name: string;
+  companyName: string | null;
+};
 type ServiceType = "Full Service" | "Virtual";
 type InvoicePhaseName = "Project Start" | "Design Presentation" | "Design Document Delivery" | "Project Completion";
 
@@ -125,6 +130,7 @@ function FinancialsPage() {
   const [creatingStripeLink, setCreatingStripeLink] = useState(false);
   const [quickBooksCustomerId, setQuickBooksCustomerId] = useState("");
   const [quickBooksCustomerName, setQuickBooksCustomerName] = useState("");
+  const [quickBooksCustomerSearch, setQuickBooksCustomerSearch] = useState("");
   const [savingQuickBooksLink, setSavingQuickBooksLink] = useState(false);
   const [syncingQuickBooksInvoiceId, setSyncingQuickBooksInvoiceId] = useState<string | null>(null);
   const [taxRate] = useState(() => {
@@ -167,6 +173,23 @@ function FinancialsPage() {
       return body as QuickBooksStatus;
     },
     enabled: allowed,
+  });
+  const { data: quickBooksCustomers = [], isFetching: loadingQuickBooksCustomers, refetch: refetchQuickBooksCustomers } = useQuery({
+    queryKey: ["quickBooksCustomers", quickBooksCustomerSearch],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in as Ken or Katie to load QuickBooks customers.");
+      const params = new URLSearchParams();
+      if (quickBooksCustomerSearch.trim()) params.set("search", quickBooksCustomerSearch.trim());
+      const res = await fetch(`/api/quickbooks/customers${params.toString() ? `?${params.toString()}` : ""}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Could not load QuickBooks customers.");
+      return (body.customers ?? []) as QuickBooksCustomerOption[];
+    },
+    enabled: allowed && Boolean(quickBooksStatus?.connected),
   });
 
   useEffect(() => {
@@ -620,11 +643,23 @@ function FinancialsPage() {
           status={quickBooksStatus}
           customerId={quickBooksCustomerId}
           customerName={quickBooksCustomerName}
+          customerSearch={quickBooksCustomerSearch}
+          customers={quickBooksCustomers}
+          loadingCustomers={loadingQuickBooksCustomers}
           saving={savingQuickBooksLink}
           onConnect={connectQuickBooks}
-          onRefresh={() => refetchQuickBooksStatus()}
+          onRefresh={() => {
+            refetchQuickBooksStatus();
+            refetchQuickBooksCustomers();
+          }}
           onCustomerId={setQuickBooksCustomerId}
           onCustomerName={setQuickBooksCustomerName}
+          onCustomerSearch={setQuickBooksCustomerSearch}
+          onSelectCustomer={(customer) => {
+            setQuickBooksCustomerId(customer.id);
+            setQuickBooksCustomerName(customer.name);
+            setQuickBooksCustomerSearch(customer.name);
+          }}
           onSave={saveQuickBooksLink}
         />
 
@@ -949,23 +984,34 @@ function QuickBooksPanel({
   status,
   customerId,
   customerName,
+  customerSearch,
+  customers,
+  loadingCustomers,
   saving,
   onConnect,
   onRefresh,
   onCustomerId,
   onCustomerName,
+  onCustomerSearch,
+  onSelectCustomer,
   onSave,
 }: {
   status?: QuickBooksStatus;
   customerId: string;
   customerName: string;
+  customerSearch: string;
+  customers: QuickBooksCustomerOption[];
+  loadingCustomers: boolean;
   saving: boolean;
   onConnect: () => void;
   onRefresh: () => void;
   onCustomerId: (value: string) => void;
   onCustomerName: (value: string) => void;
+  onCustomerSearch: (value: string) => void;
+  onSelectCustomer: (customer: QuickBooksCustomerOption) => void;
   onSave: () => void;
 }) {
+  const selectedValue = customerId ? `${customerId}::${customerName}` : "";
   return (
     <section className="border border-border bg-bone/20 p-5 mb-10">
       <div className="flex flex-col xl:flex-row xl:items-end gap-5 justify-between">
@@ -980,24 +1026,65 @@ function QuickBooksPanel({
           </p>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-end w-full xl:w-auto">
-          <div className="min-w-[220px]">
-            <Label className="eyebrow">QB Customer ID</Label>
-            <Input value={customerId} onChange={(event) => onCustomerId(event.target.value)} placeholder="Optional" />
+        <div className="flex flex-col gap-3 w-full xl:max-w-[760px]">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-3 lg:items-end">
+            <div>
+              <Label className="eyebrow">QuickBooks Customer</Label>
+              <Input
+                value={customerSearch}
+                onChange={(event) => onCustomerSearch(event.target.value)}
+                placeholder={status?.connected ? "Search QuickBooks customers" : "Connect QuickBooks first"}
+                disabled={!status?.connected}
+              />
+            </div>
+            <button type="button" onClick={onRefresh} className="px-4 py-2 border border-border text-sm hover:border-ink">
+              Refresh Customers
+            </button>
           </div>
-          <div className="min-w-[260px]">
-            <Label className="eyebrow">QB Customer Name</Label>
-            <Input value={customerName} onChange={(event) => onCustomerName(event.target.value)} placeholder="Auto-create if blank" />
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-3 lg:items-end">
+            <div>
+              <Label className="eyebrow">Choose From QuickBooks</Label>
+              <select
+                value={selectedValue}
+                onChange={(event) => {
+                  const customer = customers.find((option) => `${option.id}::${option.name}` === event.target.value);
+                  if (customer) onSelectCustomer(customer);
+                }}
+                disabled={!status?.connected || loadingCustomers}
+                className="h-10 w-full border border-input bg-background px-3 text-sm disabled:opacity-50"
+              >
+                <option value="">
+                  {loadingCustomers ? "Loading customers..." : customers.length ? "Select a QuickBooks customer" : "No customers found"}
+                </option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={`${customer.id}::${customer.name}`}>
+                    {customer.name}{customer.companyName ? ` - ${customer.companyName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="button" onClick={onSave} disabled={!status?.connected || saving} className="px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-50">
+              {saving ? "Saving..." : "Save Match"}
+            </button>
+            <button type="button" onClick={onConnect} disabled={!status?.configured} className="px-4 py-2 bg-ink text-primary-foreground text-sm disabled:opacity-50">
+              {status?.connected ? "Reconnect" : "Connect"}
+            </button>
           </div>
-          <button type="button" onClick={onSave} disabled={!status?.connected || saving} className="px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-50">
-            {saving ? "Saving..." : "Save Match"}
-          </button>
-          <button type="button" onClick={onConnect} disabled={!status?.configured} className="px-4 py-2 bg-ink text-primary-foreground text-sm disabled:opacity-50">
-            {status?.connected ? "Reconnect" : "Connect"}
-          </button>
-          <button type="button" onClick={onRefresh} className="px-4 py-2 border border-border text-sm hover:border-ink">
-            Refresh
-          </button>
+
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer hover:text-ink">Manual customer ID fallback</summary>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+              <div>
+                <Label className="eyebrow">QB Customer ID</Label>
+                <Input value={customerId} onChange={(event) => onCustomerId(event.target.value)} placeholder="Optional" />
+              </div>
+              <div>
+                <Label className="eyebrow">QB Customer Name</Label>
+                <Input value={customerName} onChange={(event) => onCustomerName(event.target.value)} placeholder="Auto-create if blank" />
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </section>
