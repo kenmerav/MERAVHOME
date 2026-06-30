@@ -711,7 +711,14 @@ function ProjectDesignBoardsPage() {
   const imageElements = elements.filter((element) => element.type === "image");
   const resolveMaterialRoom = useCallback(
     (element: BoardElement, page: BoardPage) => {
-      const assignedRoomId = element.materialRoomId || page.roomId;
+      const hasStaleCopiedMaterialRoom =
+        Boolean(page.roomId) &&
+        Boolean(element.materialItemId) &&
+        Boolean(element.materialRoomId) &&
+        element.materialRoomId !== page.roomId;
+      const assignedRoomId = hasStaleCopiedMaterialRoom
+        ? page.roomId
+        : element.materialRoomId || page.roomId;
       if (assignedRoomId) {
         return rooms.find((candidate) => candidate.id === assignedRoomId) ?? null;
       }
@@ -2175,6 +2182,8 @@ function ProjectDesignBoardsPage() {
       x: target.x + 32,
       y: target.y + 32,
       zIndex: nextZ++,
+      materialItemId: null,
+      materialRoomId: null,
     }));
     pushUndo();
     setElements((current) => [...current, ...copies]);
@@ -2262,6 +2271,8 @@ function ProjectDesignBoardsPage() {
         x: copiedElement.x + 32,
         y: copiedElement.y + 32,
         zIndex: nextZ++,
+        materialItemId: null,
+        materialRoomId: null,
       }));
       setElements((current) => [...current, ...copyItems]);
       selectMany(copyItems.map((copyItem) => copyItem.id));
@@ -2293,6 +2304,8 @@ function ProjectDesignBoardsPage() {
           x: copiedElement.x + 32,
           y: copiedElement.y + 32,
           zIndex: nextZ++,
+          materialItemId: null,
+          materialRoomId: null,
         }));
         setElements((current) => [...current, ...copyItems]);
         selectMany(copyItems.map((copyItem) => copyItem.id));
