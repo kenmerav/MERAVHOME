@@ -423,6 +423,13 @@ async function getOrCreateServiceItem(connection: QuickBooksConnection) {
 }
 
 async function getIncomeAccount(connection: QuickBooksConnection) {
+  const servicesAccount = await quickBooksQuery<{ Account?: Array<{ Id: string; Name: string }> }>(
+    connection,
+    "select * from Account where Name = 'Services' and AccountType = 'Income' maxresults 1",
+  );
+  const preferredAccount = servicesAccount.Account?.[0];
+  if (preferredAccount) return preferredAccount;
+
   const existing = await quickBooksQuery<{ Account?: Array<{ Id: string; Name: string }> }>(
     connection,
     "select * from Account where AccountType = 'Income' maxresults 1",
