@@ -706,6 +706,15 @@ export const db = {
   findProductByUrl: async (url: string) =>
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle())
       .data as Product | null,
+  findProductByUrlAndName: async (url: string, name: string) =>
+    (
+      await supabase
+        .from("products")
+        .select("*")
+        .eq("product_url", url)
+        .eq("name", name)
+        .maybeSingle()
+    ).data as Product | null,
 
   /* FINANCIALS */
   listAllFinancialInvoices: async () =>

@@ -1435,14 +1435,21 @@ function ProjectDesignBoardsPage() {
           ? element.materialQuantity
           : 1;
 
+    const actualProductName = element.productName?.trim() || itemLabel;
+    const linkedProductNameMatches =
+      linkedProduct &&
+      normalizeMaterialIdentityText(linkedProduct.name) ===
+        normalizeMaterialIdentityText(actualProductName);
+
     let product =
-      linkedProduct && (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl)
+      linkedProduct &&
+      linkedProductNameMatches &&
+      (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl)
         ? linkedProduct
         : null;
-    if (productUrl && (!product || linkedProductUrl !== productUrl)) {
-      product = await db.findProductByUrl(productUrl);
+    if (productUrl && !product) {
+      product = await db.findProductByUrlAndName(productUrl, actualProductName);
     }
-    const actualProductName = element.productName?.trim() || itemLabel;
 
     if (!product) {
       product = await db.createProduct({
