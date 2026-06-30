@@ -206,6 +206,12 @@ export function SpecBookDocument({
 
   return (
       <div className={`page-pad print:p-0 bg-white text-ink ${publicView ? "max-w-[1500px] mx-auto" : ""}`}>
+        <a
+          href="#table-of-contents"
+          className="print:hidden fixed bottom-6 right-6 z-40 inline-flex items-center border border-border bg-white/95 px-4 py-3 text-xs uppercase tracking-[0.18em] text-ink shadow-lg backdrop-blur transition-colors hover:bg-bone"
+        >
+          Back to Table of Contents
+        </a>
         <div className="flex items-center justify-between mb-8 print:hidden">
           {publicView ? (
             <div className="eyebrow">MERAV Studio · Public Spec Book</div>
@@ -293,7 +299,10 @@ export function SpecBookDocument({
         </section>
 
         {/* TABLE OF CONTENTS */}
-        <section className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page">
+        <section
+          id="table-of-contents"
+          className="scroll-mt-8 border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page"
+        >
           <div className="eyebrow mb-3">Contents</div>
           <h2 className="font-display text-4xl mb-10">Table of Contents</h2>
           <ol className="space-y-3 text-lg max-w-xl">
