@@ -97,6 +97,12 @@ export async function exchangeQuickBooksCode(code: string, realmId: string) {
     .single();
 
   if (error) throw error;
+
+  await supabaseAdmin
+    .from("quickbooks_connections" as any)
+    .update({ is_active: false })
+    .neq("id", data.id);
+
   return data as QuickBooksConnection;
 }
 
@@ -192,13 +198,21 @@ export async function syncFinancialInvoiceToQuickBooks(invoiceId: string) {
   try {
     const customer = await getOrCreateCustomer(connection, invoice);
     const serviceItemId = await getOrCreateServiceItem(connection);
-    const quickBooksInvoiceId =
-      invoice.quickbooks_invoice_id ||
-      (await createQuickBooksInvoice(connection, invoice, customer, serviceItemId));
+    const quickBooksInvoiceId = await ensureQuickBooksInvoice(connection, invoice, customer, serviceItemId);
 
-    const paidPayments = [...(invoice.payments ?? [])]
+    const paidRows = [...(invoice.payments ?? [])]
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-      .filter((payment) => payment.status === "paid" && Number(payment.amount || 0) > 0 && !payment.quickbooks_payment_id);
+      .filter((payment) => payment.status === "paid" && Number(payment.amount || 0) > 0);
+    const paidTotal = paidRows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const quickBooksInvoice = await getQuickBooksInvoice(connection, quickBooksInvoiceId);
+    const expectedBalance = Math.max(0, roundMoney(Number(invoice.total_amount || 0) - paidTotal));
+    let paymentGap = Math.max(0, roundMoney(Number(quickBooksInvoice?.Balance ?? invoice.total_amount ?? 0) - expectedBalance));
+    const paidPayments = paidRows.filter((payment) => {
+      if (!payment.quickbooks_payment_id) return true;
+      if (paymentGap <= 0) return false;
+      paymentGap = Math.max(0, roundMoney(paymentGap - Number(payment.amount || 0)));
+      return true;
+    });
 
     const syncedPayments = [];
     for (const payment of paidPayments) {
@@ -265,10 +279,12 @@ async function quickBooksTokenRequest(body: URLSearchParams): Promise<QuickBooks
 }
 
 async function getActiveQuickBooksConnection() {
+  const { environment } = getQuickBooksConfig();
   const { data, error } = await supabaseAdmin
     .from("quickbooks_connections" as any)
     .select("*")
     .eq("is_active", true)
+    .eq("environment", environment)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -414,6 +430,78 @@ async function getIncomeAccount(connection: QuickBooksConnection) {
   const account = existing.Account?.[0];
   if (!account) throw new Error("QuickBooks needs an Income account before Studio can create a service item.");
   return account;
+}
+
+async function ensureQuickBooksInvoice(
+  connection: QuickBooksConnection,
+  invoice: any,
+  customer: { id: string; name: string },
+  itemId: string,
+) {
+  if (!invoice.quickbooks_invoice_id) {
+    return createQuickBooksInvoice(connection, invoice, customer, itemId);
+  }
+
+  const existing = await getQuickBooksInvoice(connection, invoice.quickbooks_invoice_id);
+  if (!existing) {
+    return createQuickBooksInvoice(connection, invoice, customer, itemId);
+  }
+
+  const studioTotal = roundMoney(Number(invoice.total_amount || 0));
+  const salesLine = existing.Line?.find((line: any) => line.DetailType === "SalesItemLineDetail");
+  const customerChanged = existing.CustomerRef?.value !== customer.id;
+  const amountChanged = roundMoney(Number(salesLine?.Amount ?? existing.TotalAmt ?? 0)) !== studioTotal;
+  const descriptionChanged = Boolean(salesLine) && salesLine.Description !== (invoice.file_name || "MERAV Studio invoice");
+
+  if (customerChanged || amountChanged || descriptionChanged) {
+    await updateQuickBooksInvoice(connection, existing, invoice, customer, itemId, salesLine);
+  }
+
+  return existing.Id;
+}
+
+async function getQuickBooksInvoice(connection: QuickBooksConnection, quickBooksInvoiceId: string) {
+  const existing = await quickBooksQuery<{ Invoice?: Array<any> }>(
+    connection,
+    `select * from Invoice where Id = '${escapeQuickBooksQuery(quickBooksInvoiceId)}' maxresults 1`,
+  );
+  return existing.Invoice?.[0] ?? null;
+}
+
+async function updateQuickBooksInvoice(
+  connection: QuickBooksConnection,
+  existingInvoice: any,
+  studioInvoice: any,
+  customer: { id: string; name: string },
+  itemId: string,
+  salesLine: any,
+) {
+  const totalAmount = Number(studioInvoice.total_amount || 0);
+  if (totalAmount <= 0) throw new Error("Invoice total must be greater than $0 before it can be sent to QuickBooks.");
+
+  const line = {
+    ...(salesLine?.Id ? { Id: salesLine.Id } : {}),
+    Description: studioInvoice.file_name || "MERAV Studio invoice",
+    Amount: roundMoney(totalAmount),
+    DetailType: "SalesItemLineDetail",
+    SalesItemLineDetail: {
+      ItemRef: { value: itemId },
+      Qty: 1,
+      UnitPrice: roundMoney(totalAmount),
+    },
+  };
+
+  await quickBooksApi<{ Invoice: { Id: string } }>(connection, "invoice?operation=update", {
+    method: "POST",
+    body: JSON.stringify({
+      Id: existingInvoice.Id,
+      SyncToken: existingInvoice.SyncToken,
+      sparse: true,
+      CustomerRef: { value: customer.id, name: customer.name },
+      PrivateNote: `Created from MERAV Studio invoice ${studioInvoice.id}`,
+      Line: [line],
+    }),
+  });
 }
 
 async function createQuickBooksInvoice(connection: QuickBooksConnection, invoice: any, customer: { id: string; name: string }, itemId: string) {
