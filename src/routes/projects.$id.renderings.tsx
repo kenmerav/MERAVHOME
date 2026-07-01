@@ -310,6 +310,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const [open, setOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
   const [revisionReferenceUrl, setRevisionReferenceUrl] = useState("");
   const [revisionReferenceName, setRevisionReferenceName] = useState("");
@@ -428,10 +429,26 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
       )}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
         <div className="flex items-center gap-1">
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
             <DialogTrigger asChild>
               <button title="View" className="bg-background/95 p-1.5"><Eye className="w-3 h-3" /></button>
             </DialogTrigger>
+            <DialogContent className="max-w-[96vw] max-h-[92vh] overflow-auto p-4">
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl font-normal">
+                  Rendering Version {version}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex min-h-[60vh] items-center justify-center bg-bone">
+                <img
+                  src={normalizeSupabaseImageUrl(rendering.url)}
+                  alt={rendering.caption || `Rendering Version ${version}`}
+                  className="max-h-[82vh] w-auto max-w-full object-contain"
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-w-7xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
               {sketchup ? (
