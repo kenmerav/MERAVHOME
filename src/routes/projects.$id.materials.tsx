@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle, ChevronUp } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
@@ -29,6 +29,11 @@ export const Route = createFileRoute("/projects/$id/materials")({
 });
 
 const DIRECT_PDF_UPLOAD_LIMIT = 4 * 1024 * 1024;
+const MATERIALS_TOP_ID = "materials-page-top";
+
+function roomSectionId(roomId: string) {
+  return `materials-room-${roomId}`;
+}
 
 type ScrapedRow = {
   material_item_id: string;
@@ -143,6 +148,20 @@ function MaterialsPage() {
     () => [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     [rooms],
   );
+  const [jumpRoomId, setJumpRoomId] = useState<string>("");
+
+  const scrollToTop = () => {
+    setJumpRoomId("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const jumpToRoom = (roomId: string) => {
+    setJumpRoomId(roomId);
+    document.getElementById(roomSectionId(roomId))?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
   const overall = useMemo(() => {
     const total = items.length;
@@ -253,7 +272,7 @@ function MaterialsPage() {
 
   return (
     <AppShell>
-      <div className="page-pad max-w-[1500px]">
+      <div id={MATERIALS_TOP_ID} className="page-pad max-w-[1500px]">
         <Link to="/projects/$id" params={{ id: projectId }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
           <ArrowLeft className="w-3.5 h-3.5" /> Project
         </Link>
@@ -275,6 +294,12 @@ function MaterialsPage() {
               {overall.done} of {overall.total} items complete
             </div>
             <div className="flex flex-wrap justify-end gap-2">
+              <RoomJumpSelect
+                rooms={sortedRooms}
+                value={jumpRoomId}
+                onJump={jumpToRoom}
+                className="min-w-[220px]"
+              />
               <input
                 ref={pdfInputRef}
                 type="file"
@@ -314,6 +339,26 @@ function MaterialsPage() {
             />
           ))}
         </div>
+
+        {sortedRooms.length > 0 && (
+          <div className="fixed bottom-5 right-5 z-40 hidden items-center gap-2 rounded-full border border-border bg-background/95 p-2 shadow-xl backdrop-blur md:flex">
+            <RoomJumpSelect
+              rooms={sortedRooms}
+              value={jumpRoomId}
+              onJump={jumpToRoom}
+              compact
+              className="w-[210px]"
+            />
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-ink text-primary-foreground hover:bg-ink/90"
+              title="Return to top"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {reviewRows && (
           <ReviewDialog
@@ -434,7 +479,7 @@ function RoomMaterialsSection({
   };
 
   return (
-    <section className="border border-border bg-background">
+    <section id={roomSectionId(room.id)} className="scroll-mt-8 border border-border bg-background">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-bone/30">
         <div className="flex items-baseline gap-4">
           <h2 className="font-display text-2xl">{room.name}</h2>
@@ -612,6 +657,37 @@ function RoomMaterialsSection({
         </div>
       )}
     </section>
+  );
+}
+
+function RoomJumpSelect({
+  rooms,
+  value,
+  onJump,
+  compact = false,
+  className = "",
+}: {
+  rooms: Room[];
+  value: string;
+  onJump: (roomId: string) => void;
+  compact?: boolean;
+  className?: string;
+}) {
+  if (rooms.length === 0) return null;
+
+  return (
+    <Select value={value || undefined} onValueChange={onJump}>
+      <SelectTrigger className={`${compact ? "h-10 rounded-full" : "h-11"} border-border bg-background text-sm ${className}`}>
+        <SelectValue placeholder="Jump to room" />
+      </SelectTrigger>
+      <SelectContent>
+        {rooms.map((room) => (
+          <SelectItem key={room.id} value={room.id}>
+            {room.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
