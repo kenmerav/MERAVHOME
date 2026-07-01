@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Printer, ExternalLink, ChevronDown } from "lucide-react";
+import { ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   db,
@@ -33,6 +33,7 @@ export const Route = createFileRoute("/specbooks/$id")({
 // material_items.category values. Items whose category doesn't match anything
 // fall into a trailing "Other" group.
 type Section = { label: string; sources: string[] };
+type SpecJumpItem = { id: string; label: string };
 
 const KITCHEN_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
@@ -91,6 +92,13 @@ function slug(s: string) {
     .replace(/^-|-$/g, "");
 }
 
+function scrollToSpecSection(sectionId: string) {
+  document.getElementById(sectionId)?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
 function formatLastUpdated(value: string | null | undefined) {
   if (!value) return "Not updated yet";
   const date = new Date(value);
@@ -136,6 +144,7 @@ export function SpecBookDocument({
 }) {
   const [view, setView] = useState<"room" | "category">("room");
   const [overviewOpen, setOverviewOpen] = useState(false);
+  const [jumpTarget, setJumpTarget] = useState("");
   const { data: project } = useQuery({
     queryKey: ["project", id],
     queryFn: () => db.getProject(id),
@@ -186,6 +195,42 @@ export function SpecBookDocument({
     day: "numeric",
   });
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
+  const jumpItems = useMemo<SpecJumpItem[]>(() => {
+    const base = [
+      { id: "table-of-contents", label: "Table of Contents" },
+      { id: "materials-overview", label: "Materials Overview" },
+    ];
+    if (view === "room") {
+      return [
+        ...base,
+        ...populatedRooms.map((room) => ({
+          id: `room-${slug(room.name)}-${room.id.slice(0, 6)}`,
+          label: room.name,
+        })),
+      ];
+    }
+    return [
+      ...base,
+      ...ALL_CATEGORIES.filter((category) =>
+        items.some(
+          (item) =>
+            !item.not_needed &&
+            item.product_id &&
+            item.product &&
+            normalizeItemCategory(item.category) === category,
+        ),
+      ).map((category) => ({ id: `cat-${slug(category)}`, label: category })),
+    ];
+  }, [items, populatedRooms, view]);
+
+  const jumpToSection = (sectionId: string) => {
+    setJumpTarget(sectionId);
+    scrollToSpecSection(sectionId);
+  };
+
+  const returnToTop = () => {
+    jumpToSection("table-of-contents");
+  };
   const canEditProducts =
     !publicView &&
     profile?.is_active === true &&
@@ -207,12 +252,23 @@ export function SpecBookDocument({
 
   return (
       <div className={`page-pad print:p-0 bg-white text-ink ${publicView ? "max-w-[1500px] mx-auto" : ""}`}>
-        <a
-          href="#table-of-contents"
-          className="print:hidden fixed bottom-6 right-6 z-40 inline-flex items-center border border-border bg-white/95 px-4 py-3 text-xs uppercase tracking-[0.18em] text-ink shadow-lg backdrop-blur transition-colors hover:bg-bone"
-        >
-          Back to Table of Contents
-        </a>
+        <div className="print:hidden fixed bottom-6 right-6 z-40 hidden items-center gap-2 rounded-full border border-border bg-white/95 p-2 shadow-lg backdrop-blur md:flex">
+          <SpecJumpSelect
+            items={jumpItems}
+            value={jumpTarget}
+            onJump={jumpToSection}
+            compact
+            className="w-[230px]"
+          />
+          <button
+            type="button"
+            onClick={returnToTop}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-ink text-primary-foreground hover:bg-ink/90"
+            title="Return to top"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+        </div>
         <div className="flex items-center justify-between mb-8 print:hidden">
           {publicView ? (
             <div className="eyebrow">MERAV Studio · Public Spec Book</div>
@@ -226,6 +282,12 @@ export function SpecBookDocument({
             </Link>
           )}
           <div className="flex items-center gap-4">
+            <SpecJumpSelect
+              items={jumpItems}
+              value={jumpTarget}
+              onJump={jumpToSection}
+              className="w-[240px]"
+            />
             <div className="inline-flex border border-border text-xs tracking-[0.18em] uppercase">
               <button
                 onClick={() => setView("room")}
@@ -435,6 +497,37 @@ export function SpecBookDocument({
               });
             })()}
       </div>
+  );
+}
+
+function SpecJumpSelect({
+  items,
+  value,
+  onJump,
+  compact = false,
+  className = "",
+}: {
+  items: SpecJumpItem[];
+  value: string;
+  onJump: (sectionId: string) => void;
+  compact?: boolean;
+  className?: string;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <Select value={value || undefined} onValueChange={onJump}>
+      <SelectTrigger className={`${compact ? "h-10 rounded-full" : "h-10"} border-border bg-white text-sm ${className}`}>
+        <SelectValue placeholder="Jump to" />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((item) => (
+          <SelectItem key={item.id} value={item.id}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
