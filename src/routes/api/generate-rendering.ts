@@ -214,7 +214,7 @@ async function generateRenderingImage({
   const imageField = imageInputs.length > 1 ? "image[]" : "image";
   for (const img of imageInputs) form.append(imageField, img);
   form.append("prompt", userText);
-  form.append("size", "1536x1024");
+  form.append("size", process.env.OPENAI_RENDERING_IMAGE_SIZE || "auto");
   form.append("quality", "high");
 
   const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
