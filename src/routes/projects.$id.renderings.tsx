@@ -218,6 +218,7 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
 }) {
   const status: RenderingStatus = sketchupStatus(sk.id, renderings);
   const [busy, setBusy] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const run = async () => {
     if (busy || disableActions) return;
@@ -247,9 +248,34 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, qc }:
 
   return (
     <div className="border border-border p-3 flex flex-col">
-      <div className="relative aspect-[4/3] bg-bone overflow-hidden mb-3">
+      <div className="group relative aspect-[4/3] bg-bone overflow-hidden mb-3">
         <img src={normalizeSupabaseImageUrl(sk.url)} alt={sk.caption || ""} className="w-full h-full object-cover" loading="lazy" />
         <StatusPill status={status} />
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              title="View SketchUp"
+              className="absolute inset-0 m-auto hidden h-10 w-10 items-center justify-center bg-background/95 shadow-sm group-hover:flex"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-w-[96vw] max-h-[92vh] overflow-auto p-4">
+            <DialogHeader>
+              <DialogTitle className="font-display text-2xl font-normal">
+                {sk.caption || "SketchUp Reference"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex min-h-[60vh] items-center justify-center bg-bone">
+              <img
+                src={normalizeSupabaseImageUrl(sk.url)}
+                alt={sk.caption || "SketchUp Reference"}
+                className="max-h-[82vh] w-auto max-w-full object-contain"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
         <button onClick={removeSk} className="absolute top-2 right-2 bg-background/90 p-1.5 hover:bg-background">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -310,7 +336,6 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const [open, setOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
   const [revisionReferenceUrl, setRevisionReferenceUrl] = useState("");
   const [revisionReferenceName, setRevisionReferenceName] = useState("");
@@ -429,26 +454,10 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
       )}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
         <div className="flex items-center gap-1">
-          <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <button title="View" className="bg-background/95 p-1.5"><Eye className="w-3 h-3" /></button>
             </DialogTrigger>
-            <DialogContent className="max-w-[96vw] max-h-[92vh] overflow-auto p-4">
-              <DialogHeader>
-                <DialogTitle className="font-display text-2xl font-normal">
-                  Rendering Version {version}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="flex min-h-[60vh] items-center justify-center bg-bone">
-                <img
-                  src={normalizeSupabaseImageUrl(rendering.url)}
-                  alt={rendering.caption || `Rendering Version ${version}`}
-                  className="max-h-[82vh] w-auto max-w-full object-contain"
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-w-7xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="font-display text-2xl font-normal">Rendering Version {version}</DialogTitle></DialogHeader>
               {sketchup ? (
