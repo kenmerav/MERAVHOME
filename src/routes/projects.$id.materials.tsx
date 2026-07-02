@@ -459,7 +459,7 @@ function RoomMaterialsSection({
     const product = safeProductId ? products.find((p) => p.id === safeProductId) : null;
     await db.updateMaterialItem(item.id, {
       product_id: product?.id ?? null,
-      product_url: product?.product_url ?? item.product_url ?? null,
+      product_url: product ? product.product_url : (item.product_url ?? null),
       color: product?.finish || item.color || null,
       scrape_status: product ? "scraped" : "pending",
       scrape_error: null,

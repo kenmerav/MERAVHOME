@@ -5834,7 +5834,10 @@ function materialItemToBoardElement(
   const label = materialTrayLabel(item);
   const product = item.product ?? null;
   const src = materialImageUrl(item) || undefined;
-  const link = item.product_url || product?.product_url || "";
+  // A project material can intentionally have no link even when its catalog
+  // product still has one. Keep the material row as the source of truth so
+  // clearing a board link does not resurrect an older catalog URL on reload.
+  const link = item.product_url || "";
   const materialCategory = normalizedMaterialItemCategory(item);
   return {
     type: "image",
