@@ -447,6 +447,10 @@ function ProjectDesignBoardsPage() {
   const [autoBackgroundRemovalPulse, setAutoBackgroundRemovalPulse] = useState(0);
   const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
+  const [pendingMaterialSend, setPendingMaterialSend] = useState<{
+    scope: "page" | "board";
+    pageIds: string[];
+  } | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
@@ -762,10 +766,12 @@ function ProjectDesignBoardsPage() {
       ).length,
     0,
   );
-  const missingMaterialInfoItems = useMemo(
-    () =>
-      pages.flatMap((page, pageIndex) =>
-        page.elements.flatMap((element) => {
+  const materialInfoItemsForPages = useCallback(
+    (targetPages: BoardPage[]) =>
+      targetPages.flatMap((page) => {
+        const pageIndex = pages.findIndex((candidate) => candidate.id === page.id);
+        const pageNumber = pageIndex >= 0 ? pageIndex + 1 : 1;
+        return page.elements.flatMap((element) => {
           if (element.type !== "image") return [];
           const issues = imageMaterialReadinessIssues(element, page);
           if (!issues.length) return [];
@@ -773,17 +779,46 @@ function ProjectDesignBoardsPage() {
           return [
             {
               pageId: page.id,
-              pageTitle: page.title || `Board ${pageIndex + 1}`,
-              pageNumber: pageIndex + 1,
+              pageTitle: page.title || `Board ${pageNumber}`,
+              pageNumber,
               element,
               issues,
               roomName: room?.name ?? "No room assigned",
             },
           ];
-        }),
-      ),
+        });
+      }),
     [imageMaterialReadinessIssues, pages, resolveMaterialRoom],
   );
+  const missingMaterialInfoItems = useMemo(
+    () => materialInfoItemsForPages(pages),
+    [materialInfoItemsForPages, pages],
+  );
+  const pendingMaterialSendPages = useMemo(() => {
+    if (!pendingMaterialSend) return [];
+    const pageIds = new Set(pendingMaterialSend.pageIds);
+    return pages.filter((page) => pageIds.has(page.id));
+  }, [pages, pendingMaterialSend]);
+  const pendingMaterialIssues = useMemo(
+    () => materialInfoItemsForPages(pendingMaterialSendPages),
+    [materialInfoItemsForPages, pendingMaterialSendPages],
+  );
+  const pendingMaterialIssueCounts = useMemo(() => {
+    const counts = { label: 0, link: 0, room: 0, "skip approval": 0 };
+    for (const item of pendingMaterialIssues) {
+      for (const issue of item.issues) {
+        if (
+          issue === "label" ||
+          issue === "link" ||
+          issue === "room" ||
+          issue === "skip approval"
+        ) {
+          counts[issue] += 1;
+        }
+      }
+    }
+    return counts;
+  }, [pendingMaterialIssues]);
   const allBoardDetailsHidden =
     imageElements.length > 0 && imageElements.every((element) => element.hideDetails);
 
@@ -1667,7 +1702,21 @@ function ProjectDesignBoardsPage() {
     }
   };
 
-  const sendMaterialsForPages = async (targetPages: BoardPage[], scope: "page" | "board") => {
+  const sendMaterialsForPages = async (
+    targetPages: BoardPage[],
+    scope: "page" | "board",
+    options: { proceedWithMissing?: boolean } = {},
+  ) => {
+    const unresolvedItems = materialInfoItemsForPages(targetPages);
+    if (unresolvedItems.length && !options.proceedWithMissing) {
+      setPendingMaterialSend({ scope, pageIds: targetPages.map((page) => page.id) });
+      setMissingInfoOpen(true);
+      toast.error(
+        `${unresolvedItems.length} item${unresolvedItems.length === 1 ? "" : "s"} need material review before final specs.`,
+      );
+      return;
+    }
+    setPendingMaterialSend(null);
     setBulkMaterialScope(scope);
     try {
       let sent = 0;
@@ -1865,6 +1914,20 @@ function ProjectDesignBoardsPage() {
 
   const sendFullBoardToMaterials = () => {
     void sendMaterialsForPages(pages, "board");
+  };
+
+  const proceedWithPendingMaterialSend = () => {
+    if (!pendingMaterialSend) return;
+    setPendingMaterialSend(null);
+    void sendMaterialsForPages(pendingMaterialSendPages, pendingMaterialSend.scope, {
+      proceedWithMissing: true,
+    });
+  };
+
+  const reviewPendingMaterialSend = () => {
+    setPendingMaterialSend(null);
+    setMissingInfoOpen(true);
+    setToolsPinned(true);
   };
 
   const toggleBoardDetails = () => {
@@ -3536,6 +3599,101 @@ function ProjectDesignBoardsPage() {
               </div>
             </div>
           </div>
+
+          <Dialog
+            open={pendingMaterialSend !== null}
+            onOpenChange={(open) => {
+              if (!open) setPendingMaterialSend(null);
+            }}
+          >
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="font-display text-3xl font-normal">
+                  Some Items Need Review
+                </DialogTitle>
+                <DialogDescription>
+                  {pendingMaterialIssues.length} item
+                  {pendingMaterialIssues.length === 1 ? "" : "s"} on this{" "}
+                  {pendingMaterialSend?.scope === "board" ? "board" : "page"} are missing material
+                  info or need final skip approval. You can fix them now, or send the ready items
+                  and come back to this list later.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="flex items-center gap-2 font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  Review needed before the final spec is clean
+                </div>
+                <div className="mt-2 text-xs leading-relaxed text-amber-800">
+                  {formatSkippedMaterialReasons(pendingMaterialIssueCounts) ||
+                    "Some images need material info."}
+                </div>
+              </div>
+              <div className="max-h-72 divide-y divide-stone-100 overflow-y-auto border border-stone-200">
+                {pendingMaterialIssues.slice(0, 8).map((item) => (
+                  <div
+                    key={`${item.pageId}:${item.element.id}`}
+                    className="flex items-center gap-3 px-3 py-2"
+                  >
+                    <div className="h-12 w-12 shrink-0 overflow-hidden bg-[#f6f3ee]">
+                      {item.element.src ? (
+                        <OptimizedBoardImage
+                          src={normalizeSupabaseImageUrl(item.element.src)}
+                          alt={imageMaterialLabel(item.element) || "Review item"}
+                          kind="thumbnail"
+                          className="h-full w-full object-contain"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-stone-300">
+                          IMG
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-ink">
+                        {imageMaterialLabel(item.element) || "Unlabeled item"}
+                      </div>
+                      <div className="mt-0.5 text-xs text-stone-500">
+                        Page {item.pageNumber}: {item.pageTitle} · {item.roomName}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                      {item.issues.map((issue) => (
+                        <span
+                          key={issue}
+                          className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
+                        >
+                          {issue === "skip approval" ? "Needs approval" : `Missing ${issue}`}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {pendingMaterialIssues.length > 8 && (
+                  <div className="px-3 py-2 text-xs text-stone-500">
+                    + {pendingMaterialIssues.length - 8} more in the review list
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={reviewPendingMaterialSend}
+                  className="inline-flex items-center justify-center border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink"
+                >
+                  Review Items
+                </button>
+                <button
+                  type="button"
+                  onClick={proceedWithPendingMaterialSend}
+                  className="inline-flex items-center justify-center border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800"
+                >
+                  Send Ready Items Anyway
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
             <DialogContent className="max-w-5xl">
