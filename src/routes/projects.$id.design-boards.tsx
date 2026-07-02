@@ -5022,8 +5022,8 @@ function MissingMaterialInfoDialog({
                         )}
                       >
                         {element.materialInfoNotNeeded
-                          ? "No Label / Link Allowed"
-                          : "Requires Label + Link"}
+                          ? "Require Label / Link"
+                          : "Allow No Label / Link"}
                       </button>
                       {element.materialInfoNotNeeded && !element.materialInfoSkipApproved && (
                         <button
@@ -5260,10 +5260,8 @@ function SelectedPanel({
             )}
           >
             {selected.materialInfoNotNeeded
-              ? selected.materialInfoSkipApproved
-                ? "Approved: No Label / Link Allowed"
-                : "Needs Approval: No Label / Link Allowed"
-              : "Requires Label + Link"}
+              ? "Require Label / Link"
+              : "Allow No Label / Link"}
           </button>
           {selected.materialInfoNotNeeded && (
             <div className="rounded-lg border border-[#c8d9d4] bg-[#f3f7f5] px-3 py-2 text-xs leading-relaxed text-[#1f4e5f]">
