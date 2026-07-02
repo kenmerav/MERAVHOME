@@ -14,7 +14,7 @@ import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canViewFinancials } from "@/lib/permissions";
+import { canViewFinancials, isStudioTeamRole } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
@@ -94,6 +94,23 @@ type StudioReminder = {
   assigned_to: "ken" | "katie" | "studio";
   created_at: string;
   completed_at: string | null;
+};
+
+type AssignedTodo = {
+  id: string;
+  project_id: string;
+  title: string;
+  notes: string | null;
+  due_date: string | null;
+  reminder_date: string | null;
+  status: "open" | "complete";
+  priority: "low" | "normal" | "high";
+  created_at: string;
+  project: {
+    id: string;
+    name: string;
+    client_name: string | null;
+  } | null;
 };
 
 
@@ -205,6 +222,10 @@ function DashboardPage() {
           />
         )}
 
+        {profile?.is_active === true && isStudioTeamRole(profile.role) && !isSharedUser && (
+          <MyAssignedTodosPanel profileId={profile.id} />
+        )}
+
         {canCreateInvoices && !isSharedUser && (
           <StudioRemindersPanel projects={activeProjects} />
         )}
@@ -241,6 +262,133 @@ function DashboardPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function MyAssignedTodosPanel({ profileId }: { profileId: string }) {
+  const qc = useQueryClient();
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ["myAssignedTodos", profileId],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in to view assigned to-dos.");
+      const res = await fetch("/api/my-todos", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not load assigned to-dos.");
+      return body as { todos: AssignedTodo[]; setupNeeded?: boolean };
+    },
+    refetchOnWindowFocus: true,
+  });
+
+  const todos = data?.todos ?? [];
+
+  const completeTodo = async (todoId: string) => {
+    setCompletingId(todoId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch("/api/project-todos", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ id: todoId, status: "complete" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not complete to-do.");
+      toast.success("To-do completed");
+      qc.invalidateQueries({ queryKey: ["myAssignedTodos", profileId] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not complete to-do.");
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
+  if (data?.setupNeeded) {
+    return (
+      <section className="border border-dashed border-border bg-bone/20 p-5 mb-8 text-sm text-muted-foreground">
+        Assigned to-dos are ready in Studio, but the Supabase to-do table still needs to be applied.
+      </section>
+    );
+  }
+
+  if (!isLoading && todos.length === 0) return null;
+
+  return (
+    <section className="border border-border bg-background p-6 mb-8">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="eyebrow mb-2">Assigned To You</div>
+            <h2 className="font-display text-3xl">To-do list</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Design board comments that tag you will appear here.
+            </p>
+          </div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+            {isLoading ? "Loading" : `${todos.length} open`}
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="border border-border bg-bone/20 p-4 text-sm text-muted-foreground">
+            Loading assigned to-dos…
+          </div>
+        ) : (
+          <div className="divide-y divide-border border border-border">
+            {todos.map((todo) => {
+              const href = todoBoardHref(todo);
+              const note = todoPrimaryNote(todo);
+              return (
+                <div key={todo.id} className="p-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${todoTone(todo).className}`}>
+                          {todoTone(todo).label}
+                        </span>
+                        {todo.priority === "high" && (
+                          <span className="rounded-full bg-[#f8e6df] px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[#8b2b15]">
+                            High
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 font-medium">{todo.title}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {todo.project?.name || "Project"}
+                        {todo.due_date ? ` - Due ${formatDashboardDate(todo.due_date)}` : ""}
+                        {todo.reminder_date ? ` - Reminder ${formatDashboardDate(todo.reminder_date)}` : ""}
+                      </div>
+                      {note && <p className="mt-2 text-sm text-muted-foreground">{note}</p>}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Link to={href as any} className="inline-flex items-center justify-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
+                        Open Board <ArrowRight className="h-4 w-4" />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => completeTodo(todo.id)}
+                        disabled={completingId === todo.id}
+                        className="inline-flex items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {completingId === todo.id ? "Saving..." : "Mark Done"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -792,6 +940,31 @@ function ClientInvoiceActions({ documentUrl, fileName }: { documentUrl: string |
       </button>
     </div>
   );
+}
+
+function todoBoardHref(todo: AssignedTodo) {
+  const boardLine = todo.notes
+    ?.split("\n")
+    .find((line) => line.trim().toLowerCase().startsWith("open board:"));
+  return boardLine?.replace(/open board:/i, "").trim() || `/projects/${todo.project_id}/design-boards`;
+}
+
+function todoPrimaryNote(todo: AssignedTodo) {
+  return todo.notes?.split("\n").find((line) => line.trim().length > 0) ?? null;
+}
+
+function todoTone(todo: AssignedTodo) {
+  const today = todayString();
+  if (todo.due_date && todo.due_date < today) {
+    return { label: "Overdue", className: "bg-[#f8e6df] text-[#8b2b15]" };
+  }
+  if (todo.due_date === today) {
+    return { label: "Due Today", className: "bg-[#f1e3c8] text-ink" };
+  }
+  if (todo.reminder_date && todo.reminder_date <= today) {
+    return { label: "Reminder", className: "bg-[#e8efe6] text-ink" };
+  }
+  return { label: "Open", className: "bg-bone text-muted-foreground" };
 }
 
 function formatDashboardDate(value: string) {

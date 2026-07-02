@@ -1863,6 +1863,37 @@ function ProjectDesignBoardsPage() {
     );
   };
 
+  const createCommentTodos = async (comment: BoardComment, targetLabel: string) => {
+    if (comment.taggedUserIds.length === 0) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in to assign comment to-dos.");
+
+      const res = await fetch("/api/design-board-comment-todos", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: id,
+          commentId: comment.id,
+          pageTitle: activePage.title,
+          targetLabel,
+          comment: comment.body,
+          taggedUserIds: comment.taggedUserIds,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not assign comment to-do.");
+      queryClient.invalidateQueries({ queryKey: ["myAssignedTodos"] });
+    } catch (error) {
+      console.error("Assign design board comment to-do failed", error);
+      toast.error("Comment saved, but the dashboard to-do could not be assigned.");
+    }
+  };
+
   const addComment = () => {
     if (!selected) {
       toast.error("Select an image or text box before adding a comment.");
@@ -1894,6 +1925,7 @@ function ProjectDesignBoardsPage() {
     setCommentDraft("");
     setCommentTagIds([]);
     toast.success("Comment added.");
+    void createCommentTodos(comment, commentTarget.label);
   };
 
   const deleteComment = (commentId: string) => {

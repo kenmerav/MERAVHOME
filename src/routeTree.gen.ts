@@ -38,11 +38,13 @@ import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
+import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
 import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
 import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
+import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
@@ -217,6 +219,11 @@ const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
   path: '/api/parse-invoice-pdf',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMyTodosRoute = ApiMyTodosRouteImport.update({
+  id: '/api/my-todos',
+  path: '/api/my-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMarkFinancialPaymentDueRoute =
   ApiMarkFinancialPaymentDueRouteImport.update({
     id: '/api/mark-financial-payment-due',
@@ -243,6 +250,12 @@ const ApiDesignBoardQuestionRoute = ApiDesignBoardQuestionRouteImport.update({
   path: '/api/design-board-question',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDesignBoardCommentTodosRoute =
+  ApiDesignBoardCommentTodosRouteImport.update({
+    id: '/api/design-board-comment-todos',
+    path: '/api/design-board-comment-todos',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCreateStripePaymentLinkRoute =
   ApiCreateStripePaymentLinkRouteImport.update({
     id: '/api/create-stripe-payment-link',
@@ -386,11 +399,13 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
+  '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -447,11 +462,13 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
+  '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -509,11 +526,13 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
+  '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
@@ -572,11 +591,13 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
+    | '/api/design-board-comment-todos'
     | '/api/design-board-question'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
+    | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/project-todos'
     | '/api/projects'
@@ -633,11 +654,13 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
+    | '/api/design-board-comment-todos'
     | '/api/design-board-question'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
+    | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/project-todos'
     | '/api/projects'
@@ -694,11 +717,13 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
+    | '/api/design-board-comment-todos'
     | '/api/design-board-question'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
+    | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/project-todos'
     | '/api/projects'
@@ -756,11 +781,13 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
+  ApiDesignBoardCommentTodosRoute: typeof ApiDesignBoardCommentTodosRoute
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
   ApiMarkFinancialPaymentDueRoute: typeof ApiMarkFinancialPaymentDueRoute
+  ApiMyTodosRoute: typeof ApiMyTodosRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
@@ -1013,6 +1040,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiParseInvoicePdfRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/my-todos': {
+      id: '/api/my-todos'
+      path: '/api/my-todos'
+      fullPath: '/api/my-todos'
+      preLoaderRoute: typeof ApiMyTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mark-financial-payment-due': {
       id: '/api/mark-financial-payment-due'
       path: '/api/mark-financial-payment-due'
@@ -1046,6 +1080,13 @@ declare module '@tanstack/react-router' {
       path: '/api/design-board-question'
       fullPath: '/api/design-board-question'
       preLoaderRoute: typeof ApiDesignBoardQuestionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/design-board-comment-todos': {
+      id: '/api/design-board-comment-todos'
+      path: '/api/design-board-comment-todos'
+      fullPath: '/api/design-board-comment-todos'
+      preLoaderRoute: typeof ApiDesignBoardCommentTodosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/create-stripe-payment-link': {
@@ -1236,11 +1277,13 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
+  ApiDesignBoardCommentTodosRoute: ApiDesignBoardCommentTodosRoute,
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
   ApiMarkFinancialPaymentDueRoute: ApiMarkFinancialPaymentDueRoute,
+  ApiMyTodosRoute: ApiMyTodosRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiProjectTodosRoute: ApiProjectTodosRoute,
   ApiProjectsRoute: ApiProjectsRoute,
