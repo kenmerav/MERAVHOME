@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { normalizeMoneyInput } from "@/lib/money";
+import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 import { canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -248,7 +248,7 @@ export function SpecBookDocument({
   const isSharedSpecView =
     publicView || profile?.role === "Client" || profile?.role === "Contractor";
   const visibility = publicView
-    ? { showPricing: true, showLinks: true }
+    ? { showPricing: true, showLinks: true, showOrdering: true }
     : specBookVisibilityForRole(profile, project);
   const specBookUrl = `https://studio.meravinteriors.com/specbooks/public/${id}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=svg&data=${encodeURIComponent(
@@ -479,6 +479,8 @@ export function SpecBookDocument({
                 projectId={id}
                 canEditProducts={canEditProducts}
                 showLinks={visibility.showLinks}
+                showPricing={visibility.showPricing}
+                showOrdering={visibility.showOrdering}
                 hideInternalProductDetails={isSharedSpecView}
               />
             ))
@@ -501,6 +503,8 @@ export function SpecBookDocument({
                     projectId={id}
                     canEditProducts={canEditProducts}
                     showLinks={visibility.showLinks}
+                    showPricing={visibility.showPricing}
+                    showOrdering={visibility.showOrdering}
                     hideInternalProductDetails={isSharedSpecView}
                   />
                 );
@@ -561,6 +565,8 @@ function CategorySpec({
   projectId,
   canEditProducts,
   showLinks,
+  showPricing,
+  showOrdering,
   hideInternalProductDetails,
 }: {
   category: string;
@@ -570,6 +576,8 @@ function CategorySpec({
   projectId: string;
   canEditProducts: boolean;
   showLinks: boolean;
+  showPricing: boolean;
+  showOrdering: boolean;
   hideInternalProductDetails: boolean;
 }) {
   const byRoom = useMemo(() => {
@@ -612,6 +620,8 @@ function CategorySpec({
                   projectId={projectId}
                   canEditProducts={canEditProducts}
                   showLinks={showLinks}
+                  showPricing={showPricing}
+                  showOrdering={showOrdering}
                   hideInternalProductDetails={hideInternalProductDetails}
                 />
               ))}
@@ -631,6 +641,8 @@ function RoomSpec({
   projectId,
   canEditProducts,
   showLinks,
+  showPricing,
+  showOrdering,
   hideInternalProductDetails,
 }: {
   num: string;
@@ -640,6 +652,8 @@ function RoomSpec({
   projectId: string;
   canEditProducts: boolean;
   showLinks: boolean;
+  showPricing: boolean;
+  showOrdering: boolean;
   hideInternalProductDetails: boolean;
 }) {
   const sections = sectionsForRoom(room.name);
@@ -687,6 +701,8 @@ function RoomSpec({
                   projectId={projectId}
                   canEditProducts={canEditProducts}
                   showLinks={showLinks}
+                  showPricing={showPricing}
+                  showOrdering={showOrdering}
                   hideInternalProductDetails={hideInternalProductDetails}
                 />
               ))}
@@ -721,6 +737,8 @@ function SpecCard({
   projectId,
   canEditProducts,
   showLinks,
+  showPricing,
+  showOrdering,
   hideInternalProductDetails,
 }: {
   item: MaterialItem;
@@ -728,6 +746,8 @@ function SpecCard({
   projectId: string;
   canEditProducts: boolean;
   showLinks: boolean;
+  showPricing: boolean;
+  showOrdering: boolean;
   hideInternalProductDetails: boolean;
 }) {
   const p = item.product;
@@ -780,10 +800,13 @@ function SpecCard({
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-4 print:gap-x-6 print:gap-y-2 print:text-[12px]">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
+          {showPricing && <Detail label="Client Price" value={priceLabel(p?.price)} />}
           {!hideInternalProductDetails && <Detail label="SKU" value={p?.sku} />}
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />
           <Detail label="Quantity" value={item.quantity != null ? String(item.quantity) : null} />
+          {showOrdering && <Detail label="Ordered By" value={item.ordered_by} />}
+          {showOrdering && <Detail label="Ordered" value={item.ordered ? "Yes" : "No"} />}
         </dl>
 
         {showLinks && p?.product_url && (
@@ -978,6 +1001,11 @@ function SpecProductEditDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function priceLabel(value: string | number | null | undefined) {
+  const amount = moneyValue(value);
+  return amount > 0 ? formatMoney(amount) : null;
 }
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {

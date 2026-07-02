@@ -110,12 +110,14 @@ export interface Project {
   client_can_view_construction_docs: boolean;
   client_spec_show_pricing: boolean;
   client_spec_show_links: boolean;
+  client_spec_show_ordering: boolean;
   contractor_can_view_spec_book: boolean;
   contractor_can_view_presentations: boolean;
   contractor_can_view_design_boards: boolean;
   contractor_can_view_construction_docs: boolean;
   contractor_spec_show_pricing: boolean;
   contractor_spec_show_links: boolean;
+  contractor_spec_show_ordering: boolean;
   is_pinned: boolean;
   last_opened_at: string | null;
   created_at: string;
@@ -270,6 +272,8 @@ export interface MaterialItem {
   image_url: string | null;
   notes: string | null;
   not_needed: boolean;
+  ordered_by?: "Contractor" | "Merav" | "Client" | null;
+  ordered?: boolean;
   product_id: string | null;
   source_board_id: string | null;
   source_board_page_id: string | null;

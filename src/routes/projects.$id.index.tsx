@@ -1059,12 +1059,14 @@ function ProjectAccessDialog({
     client_can_view_construction_docs: project.client_can_view_construction_docs,
     client_spec_show_pricing: project.client_spec_show_pricing,
     client_spec_show_links: project.client_spec_show_links,
+    client_spec_show_ordering: project.client_spec_show_ordering ?? false,
     contractor_can_view_spec_book: project.contractor_can_view_spec_book,
     contractor_can_view_presentations: project.contractor_can_view_presentations,
     contractor_can_view_design_boards: project.contractor_can_view_design_boards,
     contractor_can_view_construction_docs: project.contractor_can_view_construction_docs,
     contractor_spec_show_pricing: project.contractor_spec_show_pricing,
     contractor_spec_show_links: project.contractor_spec_show_links,
+    contractor_spec_show_ordering: project.contractor_spec_show_ordering ?? true,
   });
 
   const resetForm = () => {
@@ -1075,12 +1077,14 @@ function ProjectAccessDialog({
       client_can_view_construction_docs: project.client_can_view_construction_docs,
       client_spec_show_pricing: project.client_spec_show_pricing,
       client_spec_show_links: project.client_spec_show_links,
+      client_spec_show_ordering: project.client_spec_show_ordering ?? false,
       contractor_can_view_spec_book: project.contractor_can_view_spec_book,
       contractor_can_view_presentations: project.contractor_can_view_presentations,
       contractor_can_view_design_boards: project.contractor_can_view_design_boards,
       contractor_can_view_construction_docs: project.contractor_can_view_construction_docs,
       contractor_spec_show_pricing: project.contractor_spec_show_pricing,
       contractor_spec_show_links: project.contractor_spec_show_links,
+      contractor_spec_show_ordering: project.contractor_spec_show_ordering ?? true,
     });
   };
 
@@ -1130,6 +1134,7 @@ function ProjectAccessDialog({
               ["Construction Docs Ready", form.client_can_view_construction_docs, () => toggle("client_can_view_construction_docs")],
               ["Spec Shows Pricing", form.client_spec_show_pricing, () => toggle("client_spec_show_pricing")],
               ["Spec Shows Product Links", form.client_spec_show_links, () => toggle("client_spec_show_links")],
+              ["Spec Shows Ordering", form.client_spec_show_ordering, () => toggle("client_spec_show_ordering")],
             ]}
           />
           <AccessRolePanel
@@ -1142,6 +1147,7 @@ function ProjectAccessDialog({
               ["Construction Docs Ready", form.contractor_can_view_construction_docs, () => toggle("contractor_can_view_construction_docs")],
               ["Spec Shows Pricing", form.contractor_spec_show_pricing, () => toggle("contractor_spec_show_pricing")],
               ["Spec Shows Product Links", form.contractor_spec_show_links, () => toggle("contractor_spec_show_links")],
+              ["Spec Shows Ordering", form.contractor_spec_show_ordering, () => toggle("contractor_spec_show_ordering")],
             ]}
           />
         </div>

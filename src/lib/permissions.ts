@@ -90,22 +90,26 @@ export function specBookVisibilityForRole(
     Project,
     | "client_spec_show_pricing"
     | "client_spec_show_links"
+    | "client_spec_show_ordering"
     | "contractor_spec_show_pricing"
     | "contractor_spec_show_links"
+    | "contractor_spec_show_ordering"
   > | null | undefined,
 ) {
-  if (!profile?.is_active || !project) return { showPricing: false, showLinks: false };
+  if (!profile?.is_active || !project) return { showPricing: false, showLinks: false, showOrdering: false };
   if (isStudioTeamRole(profile.role)) {
-    return { showPricing: true, showLinks: true };
+    return { showPricing: true, showLinks: true, showOrdering: true };
   }
   if (isContractorRole(profile.role)) {
     return {
       showPricing: project.contractor_spec_show_pricing !== false,
       showLinks: project.contractor_spec_show_links !== false,
+      showOrdering: project.contractor_spec_show_ordering !== false,
     };
   }
   return {
     showPricing: project.client_spec_show_pricing === true,
     showLinks: project.client_spec_show_links === true,
+    showOrdering: project.client_spec_show_ordering === true,
   };
 }

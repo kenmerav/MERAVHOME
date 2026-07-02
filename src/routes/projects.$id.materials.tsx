@@ -30,6 +30,7 @@ export const Route = createFileRoute("/projects/$id/materials")({
 
 const DIRECT_PDF_UPLOAD_LIMIT = 4 * 1024 * 1024;
 const MATERIALS_TOP_ID = "materials-page-top";
+const ORDERED_BY_OPTIONS = ["Contractor", "Merav", "Client"] as const;
 
 function roomSectionId(roomId: string) {
   return `materials-room-${roomId}`;
@@ -506,6 +507,8 @@ function RoomMaterialsSection({
                 <th className="py-3 w-[120px]">CAD Label</th>
                 <th className="py-3">Product Link</th>
                 <th className="py-3 w-[72px]">Qty</th>
+                <th className="py-3 w-[130px]">Ordered By</th>
+                <th className="py-3 w-[88px]">Ordered</th>
                 <th className="py-3 w-[140px]">Color / Finish</th>
                 <th className="py-3 w-[60px]">Notes</th>
                 <th className="px-4 py-3 w-[40px]"></th>
@@ -630,6 +633,39 @@ function RoomMaterialsSection({
                         value={it.quantity?.toString() ?? ""}
                         onSave={(v) => update(it.id, { quantity: v ? parseInt(v, 10) : null })}
                       />
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Select
+                        value={it.ordered_by ?? "none"}
+                        onValueChange={(v) =>
+                          update(it.id, {
+                            ordered_by: v === "none" ? null : (v as MaterialItem["ordered_by"]),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 border-transparent hover:border-input focus:border-input bg-transparent text-xs">
+                          <SelectValue placeholder="Choose" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Not set</SelectItem>
+                          {ORDERED_BY_OPTIONS.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={it.ordered === true}
+                          onChange={(event) => update(it.id, { ordered: event.target.checked })}
+                          className="h-4 w-4 accent-ink"
+                        />
+                        Yes
+                      </label>
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput
