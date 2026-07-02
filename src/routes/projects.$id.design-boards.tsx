@@ -1730,7 +1730,6 @@ function ProjectDesignBoardsPage() {
     const unresolvedItems = materialInfoItemsForPages(targetPages);
     if (unresolvedItems.length && !options.proceedWithMissing) {
       setPendingMaterialSend({ scope, pageIds: targetPages.map((page) => page.id) });
-      setMissingInfoOpen(true);
       toast.error(
         `${unresolvedItems.length} item${unresolvedItems.length === 1 ? "" : "s"} need material review before final specs.`,
       );
