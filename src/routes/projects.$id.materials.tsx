@@ -386,11 +386,20 @@ function RoomMaterialsSection({
   projectId: string;
 }) {
   const qc = useQueryClient();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkOrderedBy, setBulkOrderedBy] = useState<MaterialItem["ordered_by"] | "none">("none");
   const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" })),
     [items],
   );
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const validSelectedIds = useMemo(
+    () => selectedIds.filter((id) => sortedItems.some((item) => item.id === id)),
+    [selectedIds, sortedItems],
+  );
+  const allSelected = sortedItems.length > 0 && validSelectedIds.length === sortedItems.length;
+  const someSelected = validSelectedIds.length > 0;
   const roomInitial = (room.name.trim().charAt(0) || "R").toUpperCase();
   const cadOptions = sortedItems.map((it, index) => ({
     itemId: it.id,
@@ -409,6 +418,12 @@ function RoomMaterialsSection({
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
+  useEffect(() => {
+    setSelectedIds((current) =>
+      current.filter((id) => sortedItems.some((item) => item.id === id)),
+    );
+  }, [sortedItems]);
+
   const update = async (id: string, patch: Partial<MaterialItem>) => {
     if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
     const currentItem = items.find((item) => item.id === id);
@@ -423,6 +438,32 @@ function RoomMaterialsSection({
       qc.invalidateQueries({ queryKey: ["product", currentItem.product_id] });
     }
     invalidate();
+  };
+
+  const toggleSelected = (itemId: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      if (checked) return current.includes(itemId) ? current : [...current, itemId];
+      return current.filter((id) => id !== itemId);
+    });
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedIds(checked ? sortedItems.map((item) => item.id) : []);
+  };
+
+  const bulkUpdate = async (patch: Partial<MaterialItem>, successMessage: string) => {
+    const ids = validSelectedIds.filter(isUuid);
+    if (ids.length === 0) return toast.error("Select at least one item first.");
+    await Promise.all(ids.map((id) => db.updateMaterialItem(id, patch)));
+    invalidate();
+    toast.success(successMessage);
+  };
+
+  const applyBulkOrderedBy = async () => {
+    await bulkUpdate(
+      { ordered_by: bulkOrderedBy === "none" ? null : bulkOrderedBy },
+      `Updated ${validSelectedIds.length} item${validSelectedIds.length === 1 ? "" : "s"}.`,
+    );
   };
 
   const renameRoom = async (nextName: string) => {
@@ -498,9 +539,83 @@ function RoomMaterialsSection({
         </div>
       ) : (
         <div className="mobile-card-scroll">
+          <div className="flex flex-wrap items-end gap-3 border-b border-border bg-background px-6 py-3">
+            <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              {validSelectedIds.length} selected
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleSelectAll(!allSelected)}
+              className="h-9 border border-border px-3 text-xs tracking-wide hover:border-ink"
+            >
+              {allSelected ? "Clear Selection" : "Select All Room"}
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ordered By</span>
+              <Select
+                value={bulkOrderedBy ?? "none"}
+                onValueChange={(value) => setBulkOrderedBy(value === "none" ? "none" : (value as MaterialItem["ordered_by"]))}
+              >
+                <SelectTrigger className="h-9 w-[150px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not set</SelectItem>
+                  {ORDERED_BY_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                disabled={!someSelected}
+                onClick={applyBulkOrderedBy}
+                className="h-9 bg-ink px-3 text-xs text-primary-foreground disabled:opacity-40"
+              >
+                Apply
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={!someSelected}
+              onClick={() =>
+                bulkUpdate(
+                  { ordered: true },
+                  `Marked ${validSelectedIds.length} item${validSelectedIds.length === 1 ? "" : "s"} ordered.`,
+                )
+              }
+              className="h-9 border border-border px-3 text-xs tracking-wide hover:border-ink disabled:opacity-40"
+            >
+              Mark Ordered
+            </button>
+            <button
+              type="button"
+              disabled={!someSelected}
+              onClick={() =>
+                bulkUpdate(
+                  { ordered: false },
+                  `Marked ${validSelectedIds.length} item${validSelectedIds.length === 1 ? "" : "s"} not ordered.`,
+                )
+              }
+              className="h-9 border border-border px-3 text-xs tracking-wide hover:border-ink disabled:opacity-40"
+            >
+              Mark Not Ordered
+            </button>
+          </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] tracking-[0.15em] uppercase text-muted-foreground">
+                <th className="px-6 py-3 w-[52px]">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(event) => toggleSelectAll(event.target.checked)}
+                    className="h-4 w-4 accent-ink"
+                    aria-label={`Select all ${room.name} materials`}
+                  />
+                </th>
                 <th className="px-6 py-3 w-[180px]">Item</th>
                 <th className="py-3 w-[220px]">Client Product Name</th>
                 <th className="py-3 w-[140px]">Category</th>
@@ -521,6 +636,15 @@ function RoomMaterialsSection({
                 const linkedProductId = cleanUuid(it.product?.id);
                 return (
                   <tr key={it.id} className="border-t border-border align-middle">
+                    <td className="px-6 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(it.id)}
+                        onChange={(event) => toggleSelected(it.id, event.target.checked)}
+                        className="h-4 w-4 accent-ink"
+                        aria-label={`Select ${it.item_label}`}
+                      />
+                    </td>
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-2">
                         <span
