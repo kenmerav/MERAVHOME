@@ -462,6 +462,8 @@ function ProjectDesignBoardsPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [missingInfoOpen, setMissingInfoOpen] = useState(false);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+  const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
+  const deepLinkedCommentKeyRef = useRef("");
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -1146,6 +1148,8 @@ function ProjectDesignBoardsPage() {
     setHistoryOpen(false);
     setMissingInfoOpen(false);
     setPreviewVersionId(null);
+    setFocusedCommentId(null);
+    deepLinkedCommentKeyRef.current = "";
   }, [id]);
 
   useEffect(() => {
@@ -1957,6 +1961,9 @@ function ProjectDesignBoardsPage() {
         body: JSON.stringify({
           projectId: id,
           commentId: comment.id,
+          pageId: comment.pageId,
+          targetType: comment.targetType,
+          targetId: comment.targetId,
           pageTitle: activePage.title,
           targetLabel,
           comment: comment.body,
@@ -2216,6 +2223,45 @@ function ProjectDesignBoardsPage() {
       });
     }
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !canViewDesignBoards || loadingProfile) return;
+    const params = new URLSearchParams(window.location.search);
+    const pageId = params.get("page")?.trim();
+    const elementId = params.get("element")?.trim();
+    const commentId = params.get("comment")?.trim();
+    if (!pageId || !commentId) return;
+    const key = `${pageId}:${elementId ?? ""}:${commentId}`;
+    if (deepLinkedCommentKeyRef.current === key) return;
+    const targetPage = pages.find((page) => page.id === pageId);
+    if (!targetPage) return;
+
+    deepLinkedCommentKeyRef.current = key;
+    setFocusedCommentId(commentId);
+    setToolsPinned(true);
+    setMissingInfoOpen(false);
+    selectPage(pageId, true, false);
+
+    const targetElement = elementId
+      ? targetPage.elements.find((element) => element.id === elementId)
+      : null;
+    if (targetElement) {
+      selectOnly(targetElement.id);
+    } else {
+      clearSelection();
+    }
+
+    window.setTimeout(() => {
+      if (elementId) {
+        document
+          .querySelector(`[data-board-element-id="${CSS.escape(elementId)}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      }
+      document
+        .getElementById(`board-comment-${commentId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+  }, [canViewDesignBoards, clearSelection, loadingProfile, pages, selectOnly, selectedPageId]);
 
   const reviewMissingMaterialInfoItem = (pageId: string, elementId: string) => {
     selectPage(pageId, true, false);
@@ -4007,6 +4053,7 @@ function ProjectDesignBoardsPage() {
               <CommentsPanel
                 comments={activePageComments}
                 selectedComments={selectedTargetComments}
+                focusedCommentId={focusedCommentId}
                 target={commentTarget}
                 selected={selected}
                 users={taggableUsers}
@@ -4363,6 +4410,7 @@ function BoardObject({
   return (
     <div
       data-board-object="editable"
+      data-board-element-id={element.id}
       className={cn(
         "absolute select-none",
         selected && "outline outline-2 outline-offset-2 outline-[#1f4e5f]",
@@ -4647,6 +4695,7 @@ function imageAdjustmentStyle(element: BoardElement): CSSProperties | undefined 
 function CommentsPanel({
   comments,
   selectedComments,
+  focusedCommentId,
   target,
   selected,
   users,
@@ -4660,6 +4709,7 @@ function CommentsPanel({
 }: {
   comments: BoardComment[];
   selectedComments: BoardComment[];
+  focusedCommentId: string | null;
   target: {
     targetType: BoardCommentTargetType;
     targetId: string;
@@ -4685,6 +4735,7 @@ function CommentsPanel({
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
   const selectedCommentIds = new Set(selectedComments.map((comment) => comment.id));
+  if (focusedCommentId) selectedCommentIds.add(focusedCommentId);
 
   return (
     <div className="border-t border-stone-200 pt-4">
@@ -4769,9 +4820,12 @@ function CommentsPanel({
           return (
             <div
               key={comment.id}
+              id={`board-comment-${comment.id}`}
               className={cn(
                 "rounded-lg border bg-white p-3 text-sm",
-                selectedCommentIds.has(comment.id) ? "border-[#1f4e5f]" : "border-stone-200",
+                selectedCommentIds.has(comment.id)
+                  ? "border-[#1f4e5f] ring-2 ring-[#1f4e5f]/15"
+                  : "border-stone-200",
               )}
             >
               <div className="flex items-start justify-between gap-3">

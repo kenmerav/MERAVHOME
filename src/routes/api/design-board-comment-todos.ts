@@ -49,6 +49,9 @@ export const Route = createFileRoute("/api/design-board-comment-todos")({
           const body = await request.json();
           const projectId = cleanText(body.projectId);
           const commentId = cleanText(body.commentId);
+          const pageId = cleanText(body.pageId);
+          const targetType = cleanText(body.targetType);
+          const targetId = cleanText(body.targetId);
           const pageTitle = cleanText(body.pageTitle) || "Design Board";
           const targetLabel = cleanText(body.targetLabel) || "Board item";
           const comment = cleanText(body.comment);
@@ -76,6 +79,10 @@ export const Route = createFileRoute("/api/design-board-comment-todos")({
           if (taggedUsersError) return json({ error: taggedUsersError.message }, 500);
 
           const validUserIds = new Set((taggedUsers ?? []).map((user: any) => user.id));
+          const openCommentPath =
+            pageId && targetId && commentId
+              ? `/projects/${projectId}/design-boards?page=${encodeURIComponent(pageId)}&${targetType === "element" ? `element=${encodeURIComponent(targetId)}&` : ""}comment=${encodeURIComponent(commentId)}`
+              : `/projects/${projectId}/design-boards`;
           const rows = taggedUserIds
             .filter((userId) => validUserIds.has(userId))
             .map((userId) => ({
@@ -89,6 +96,7 @@ export const Route = createFileRoute("/api/design-board-comment-todos")({
                 `Page: ${pageTitle}`,
                 `Item: ${targetLabel}`,
                 `From: ${profile.full_name || profile.email || "MERAV teammate"}`,
+                `Open comment: ${openCommentPath}`,
                 `Open board: /projects/${projectId}/design-boards`,
                 commentId ? `Comment ID: ${commentId}` : "",
               ]

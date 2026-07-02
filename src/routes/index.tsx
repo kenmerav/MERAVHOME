@@ -369,7 +369,7 @@ function MyAssignedTodosPanel({ profileId }: { profileId: string }) {
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Link to={href as any} className="inline-flex items-center justify-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
-                        Open Board <ArrowRight className="h-4 w-4" />
+                        {todoIsDesignBoardComment(todo) ? "Open Comment" : "Open Board"} <ArrowRight className="h-4 w-4" />
                       </Link>
                       <button
                         type="button"
@@ -943,6 +943,10 @@ function ClientInvoiceActions({ documentUrl, fileName }: { documentUrl: string |
 }
 
 function todoBoardHref(todo: AssignedTodo) {
+  const commentLine = todo.notes
+    ?.split("\n")
+    .find((line) => line.trim().toLowerCase().startsWith("open comment:"));
+  if (commentLine) return commentLine.replace(/open comment:/i, "").trim();
   const boardLine = todo.notes
     ?.split("\n")
     .find((line) => line.trim().toLowerCase().startsWith("open board:"));
@@ -951,6 +955,13 @@ function todoBoardHref(todo: AssignedTodo) {
 
 function todoPrimaryNote(todo: AssignedTodo) {
   return todo.notes?.split("\n").find((line) => line.trim().length > 0) ?? null;
+}
+
+function todoIsDesignBoardComment(todo: AssignedTodo) {
+  return (
+    todo.title.toLowerCase().startsWith("design board comment:") ||
+    Boolean(todo.notes?.toLowerCase().includes("open comment:"))
+  );
 }
 
 function todoTone(todo: AssignedTodo) {
