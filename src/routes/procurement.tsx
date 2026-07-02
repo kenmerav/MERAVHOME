@@ -31,6 +31,16 @@ type ProductInvoiceSummary = {
   sourceIds: Set<string>;
 };
 
+function externalHref(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (!/\s/.test(trimmed) && /^[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return null;
+}
+
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
   validateSearch: (search: Record<string, unknown>) => ({
@@ -401,6 +411,7 @@ function ProcurementPage() {
                 const m = (item as typeof item & { material?: ProcurementMaterialDetails | null })
                   .material;
                 const link = m?.product_url || p?.product_url || null;
+                const linkHref = externalHref(link);
                 const clientName =
                   m?.client_product_name ||
                   [r?.name, p?.category].filter(Boolean).join(" ") ||
@@ -437,15 +448,17 @@ function ProcurementPage() {
                     </td>
                     <td className="px-3 py-3 text-xs">{p?.vendor || "—"}</td>
                     <td className="px-3 py-3 text-xs">
-                      {link ? (
+                      {linkHref ? (
                         <a
-                          href={link}
+                          href={linkHref}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-ink hover:underline"
                         >
                           Order <ExternalLink className="w-3 h-3" />
                         </a>
+                      ) : link ? (
+                        <span className="text-muted-foreground">{link}</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

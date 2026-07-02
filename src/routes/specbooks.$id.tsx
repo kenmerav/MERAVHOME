@@ -35,6 +35,16 @@ export const Route = createFileRoute("/specbooks/$id")({
 type Section = { label: string; sources: string[] };
 type SpecJumpItem = { id: string; label: string };
 
+function externalHref(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (!/\s/.test(trimmed) && /^[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return null;
+}
+
 const KITCHEN_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
   { label: "Plumbing", sources: ["Plumbing"] },
@@ -779,15 +789,21 @@ function SpecCard({
         {showLinks && p?.product_url && (
           <div className="mt-5 print:mt-3">
             <dt className="eyebrow mb-1">Product URL</dt>
-            <a
-              href={p.product_url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(event) => event.stopPropagation()}
-              className="text-xs break-all underline inline-flex items-start gap-1 print:text-[10px] print:leading-tight"
-            >
-              {p.product_url} <ExternalLink className="w-3 h-3 mt-0.5 shrink-0" />
-            </a>
+            {externalHref(p.product_url) ? (
+              <a
+                href={externalHref(p.product_url) ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                className="text-xs break-all underline inline-flex items-start gap-1 print:text-[10px] print:leading-tight"
+              >
+                {p.product_url} <ExternalLink className="w-3 h-3 mt-0.5 shrink-0" />
+              </a>
+            ) : (
+              <div className="text-xs break-all print:text-[10px] print:leading-tight">
+                {p.product_url}
+              </div>
+            )}
           </div>
         )}
 

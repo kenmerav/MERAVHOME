@@ -37,6 +37,16 @@ const isItemCategory = (value: unknown): value is ItemCategory =>
 const isSampleFilter = (value: unknown): value is SampleFilter =>
   value === "Sample" || value === "No sample";
 
+function externalHref(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (!/\s/.test(trimmed) && /^[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return null;
+}
+
 export const Route = createFileRoute("/catalog")({
   head: () => ({ meta: [{ title: "Product Catalog — MERAV Studio" }] }),
   validateSearch: (search: Record<string, unknown>): CatalogSearch => ({
@@ -212,11 +222,13 @@ function CatalogCard({ p, catalogSearch }: { p: Product; catalogSearch: CatalogS
         )}
         {p.sku && <p className="text-[11px] text-muted-foreground mt-0.5">SKU: {p.sku}</p>}
       </Link>
-      {p.product_url && (
-        <a href={p.product_url} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-2 hover:text-ink">
+      {p.product_url && externalHref(p.product_url) ? (
+        <a href={externalHref(p.product_url) ?? undefined} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-2 hover:text-ink">
           View <ExternalLink className="w-2.5 h-2.5" />
         </a>
-      )}
+      ) : p.product_url ? (
+        <p className="text-xs text-muted-foreground mt-2 break-words">{p.product_url}</p>
+      ) : null}
     </div>
   );
 }
