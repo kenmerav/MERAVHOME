@@ -470,6 +470,7 @@ function ProjectDesignBoardsPage() {
   const [thumbnailViewport, setThumbnailViewport] = useState({ scrollLeft: 0, width: 0 });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [missingInfoOpen, setMissingInfoOpen] = useState(false);
+  const [materialInfoReviewPageIds, setMaterialInfoReviewPageIds] = useState<string[] | null>(null);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
   const deepLinkedCommentKeyRef = useRef("");
@@ -820,6 +821,11 @@ function ProjectDesignBoardsPage() {
     () => materialInfoItemsForPages(pendingMaterialSendPages),
     [materialInfoItemsForPages, pendingMaterialSendPages],
   );
+  const materialInfoReviewItems = useMemo(() => {
+    if (!materialInfoReviewPageIds) return missingMaterialInfoItems;
+    const pageIds = new Set(materialInfoReviewPageIds);
+    return materialInfoItemsForPages(pages.filter((page) => pageIds.has(page.id)));
+  }, [materialInfoItemsForPages, materialInfoReviewPageIds, missingMaterialInfoItems, pages]);
   const pendingMaterialIssueCounts = useMemo(() => {
     const counts = { label: 0, link: 0, room: 0, "skip approval": 0 };
     for (const item of pendingMaterialIssues) {
@@ -1156,6 +1162,7 @@ function ProjectDesignBoardsPage() {
     setSaveStatus("loading");
     setHistoryOpen(false);
     setMissingInfoOpen(false);
+    setMaterialInfoReviewPageIds(null);
     setPreviewVersionId(null);
     setFocusedCommentId(null);
     deepLinkedCommentKeyRef.current = "";
@@ -1939,6 +1946,7 @@ function ProjectDesignBoardsPage() {
   };
 
   const reviewPendingMaterialSend = () => {
+    setMaterialInfoReviewPageIds(pendingMaterialSend?.pageIds ?? null);
     setPendingMaterialSend(null);
     setMissingInfoOpen(true);
   };
@@ -3048,7 +3056,10 @@ function ProjectDesignBoardsPage() {
                 {canEditDesignBoards && boardMissingInfoCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => setMissingInfoOpen(true)}
+                    onClick={() => {
+                      setMaterialInfoReviewPageIds(null);
+                      setMissingInfoOpen(true);
+                    }}
                     className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-100"
                   >
                     <AlertTriangle className="h-3.5 w-3.5" />
@@ -3773,10 +3784,13 @@ function ProjectDesignBoardsPage() {
           </Dialog>
 
           <MissingMaterialInfoDialog
-            open={missingInfoOpen && missingMaterialInfoItems.length > 0}
-            items={missingMaterialInfoItems}
+            open={missingInfoOpen && materialInfoReviewItems.length > 0}
+            items={materialInfoReviewItems}
             rooms={sortedRooms}
-            onOpenChange={setMissingInfoOpen}
+            onOpenChange={(open) => {
+              setMissingInfoOpen(open);
+              if (!open) setMaterialInfoReviewPageIds(null);
+            }}
             onUpdateItem={(pageId, elementId, patch) => updateElement(elementId, patch, pageId)}
             onShowOnBoard={reviewMissingMaterialInfoItem}
             onApproveNoLabelLink={approveSkippedMaterialInfoItem}
@@ -3950,7 +3964,10 @@ function ProjectDesignBoardsPage() {
                     </p>
                     <button
                       type="button"
-                      onClick={() => setMissingInfoOpen(true)}
+                      onClick={() => {
+                        setMaterialInfoReviewPageIds([activePage.id]);
+                        setMissingInfoOpen(true);
+                      }}
                       className="mt-2 text-xs font-medium underline-offset-4 hover:underline"
                     >
                       Review missing items
