@@ -148,6 +148,15 @@ type BoardPage = {
   elements: BoardElement[];
 };
 
+type MissingMaterialInfoItem = {
+  pageId: string;
+  pageTitle: string;
+  pageNumber: number;
+  element: BoardElement;
+  issues: string[];
+  roomName: string;
+};
+
 type PresentationExtraPageSlot = {
   id: string;
   afterSlideKey: string;
@@ -1932,7 +1941,6 @@ function ProjectDesignBoardsPage() {
   const reviewPendingMaterialSend = () => {
     setPendingMaterialSend(null);
     setMissingInfoOpen(true);
-    setToolsPinned(true);
   };
 
   const toggleBoardDetails = () => {
@@ -2266,8 +2274,7 @@ function ProjectDesignBoardsPage() {
   const reviewMissingMaterialInfoItem = (pageId: string, elementId: string) => {
     selectPage(pageId, true, false);
     selectOnly(elementId);
-    setToolsPinned(true);
-    setMissingInfoOpen(true);
+    setMissingInfoOpen(false);
   };
 
   const approveSkippedMaterialInfoItem = (pageId: string, elementId: string) => {
@@ -3041,10 +3048,7 @@ function ProjectDesignBoardsPage() {
                 {canEditDesignBoards && boardMissingInfoCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setMissingInfoOpen(true);
-                      setToolsPinned(true);
-                    }}
+                    onClick={() => setMissingInfoOpen(true)}
                     className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-100"
                   >
                     <AlertTriangle className="h-3.5 w-3.5" />
@@ -3768,6 +3772,16 @@ function ProjectDesignBoardsPage() {
             </DialogContent>
           </Dialog>
 
+          <MissingMaterialInfoDialog
+            open={missingInfoOpen && missingMaterialInfoItems.length > 0}
+            items={missingMaterialInfoItems}
+            rooms={sortedRooms}
+            onOpenChange={setMissingInfoOpen}
+            onUpdateItem={(pageId, elementId, patch) => updateElement(elementId, patch, pageId)}
+            onShowOnBoard={reviewMissingMaterialInfoItem}
+            onApproveNoLabelLink={approveSkippedMaterialInfoItem}
+          />
+
           <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
             <DialogContent className="max-w-5xl">
               <DialogHeader>
@@ -3936,102 +3950,11 @@ function ProjectDesignBoardsPage() {
                     </p>
                     <button
                       type="button"
-                      onClick={() => setMissingInfoOpen((current) => !current)}
+                      onClick={() => setMissingInfoOpen(true)}
                       className="mt-2 text-xs font-medium underline-offset-4 hover:underline"
                     >
-                      {missingInfoOpen ? "Hide review list" : "Review missing items"}
+                      Review missing items
                     </button>
-                  </div>
-                )}
-                {missingInfoOpen && missingMaterialInfoItems.length > 0 && (
-                  <div className="mt-3 border border-amber-300 bg-white">
-                    <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3 py-2">
-                      <div>
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-amber-900">
-                          Missing Material Info
-                        </div>
-                        <div className="mt-0.5 text-xs text-amber-800">
-                          Review items so Materials and Specs stay clean.
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setMissingInfoOpen(false)}
-                        className="text-xs text-amber-900 underline-offset-4 hover:underline"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="max-h-80 divide-y divide-stone-100 overflow-y-auto">
-                      {missingMaterialInfoItems.map((item) => (
-                        <div key={`${item.pageId}:${item.element.id}`} className="p-3">
-                          <div className="flex gap-3">
-                            <div className="h-14 w-14 shrink-0 overflow-hidden bg-[#f6f3ee]">
-                              {item.element.src ? (
-                                <OptimizedBoardImage
-                                  src={normalizeSupabaseImageUrl(item.element.src)}
-                                  alt={imageMaterialLabel(item.element) || "Missing item"}
-                                  kind="thumbnail"
-                                  className="h-full w-full object-contain"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-xs text-stone-300">
-                                  IMG
-                                </div>
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium text-ink">
-                                {imageMaterialLabel(item.element) || "Unlabeled item"}
-                              </div>
-                              <div className="mt-1 text-xs text-stone-500">
-                                Page {item.pageNumber}: {item.pageTitle}
-                              </div>
-                              <div className="mt-1 text-xs text-stone-500">{item.roomName}</div>
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {item.issues.map((issue) => (
-                                  <span
-                                    key={issue}
-                                    className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
-                                  >
-                                    {issue === "skip approval" ? "Needs approval" : `Missing ${issue}`}
-                                  </span>
-                                ))}
-                              </div>
-                              {item.element.materialInfoNotNeeded && (
-                                <p className="mt-2 text-xs leading-relaxed text-amber-800">
-                                  This item is marked as no label/link needed. Approve it if it
-                                  should be allowed into Materials without a label or link.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                reviewMissingMaterialInfoItem(item.pageId, item.element.id)
-                              }
-                              className="inline-flex flex-1 items-center justify-center border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-50"
-                            >
-                              Review item
-                            </button>
-                            {item.element.materialInfoNotNeeded && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  approveSkippedMaterialInfoItem(item.pageId, item.element.id)
-                                }
-                                className="inline-flex flex-1 items-center justify-center border border-ink bg-ink px-3 py-2 text-xs font-medium text-white transition hover:bg-stone-800"
-                              >
-                                Approve
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
                 <button
@@ -4871,6 +4794,273 @@ function CommentsPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function MissingMaterialInfoDialog({
+  open,
+  items,
+  rooms,
+  onOpenChange,
+  onUpdateItem,
+  onShowOnBoard,
+  onApproveNoLabelLink,
+}: {
+  open: boolean;
+  items: MissingMaterialInfoItem[];
+  rooms: Room[];
+  onOpenChange: (open: boolean) => void;
+  onUpdateItem: (pageId: string, elementId: string, patch: Partial<BoardElement>) => void;
+  onShowOnBoard: (pageId: string, elementId: string) => void;
+  onApproveNoLabelLink: (pageId: string, elementId: string) => void;
+}) {
+  const sortedCategories = useMemo(
+    () =>
+      [...ALL_CATEGORIES].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+      ),
+    [],
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[86vh] max-w-6xl overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="font-display text-3xl font-normal">
+            Review Material Info
+          </DialogTitle>
+          <DialogDescription>
+            Fix labels, links, rooms, quantities, finishes, and dimensions before sending board
+            items into Materials and Spec Books.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4" />
+            {items.length} item{items.length === 1 ? "" : "s"} need a quick check
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+            Items marked “No Label / Link Needed” can still be approved here, or you can mark an
+            image as “Not needed on Materials” if it should stay only on the board.
+          </p>
+        </div>
+        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+          {items.map((item) => {
+            const element = item.element;
+            const quantityValue =
+              element.materialQuantity == null ? "" : String(element.materialQuantity);
+            return (
+              <div
+                key={`${item.pageId}:${element.id}`}
+                className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm"
+              >
+                <div className="grid gap-4 lg:grid-cols-[96px_minmax(0,1fr)]">
+                  <div>
+                    <div className="h-24 w-24 overflow-hidden bg-[#f6f3ee]">
+                      {element.src ? (
+                        <OptimizedBoardImage
+                          src={normalizeSupabaseImageUrl(element.src)}
+                          alt={imageMaterialLabel(element) || "Missing material item"}
+                          kind="thumbnail"
+                          className="h-full w-full object-contain"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-stone-300">
+                          IMG
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onShowOnBoard(item.pageId, element.id)}
+                      className="mt-2 w-24 border border-stone-300 px-2 py-1.5 text-xs transition hover:border-ink"
+                    >
+                      Show
+                    </button>
+                  </div>
+                  <div className="min-w-0 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-ink">
+                          {imageMaterialLabel(element) || "Unlabeled item"}
+                        </div>
+                        <div className="mt-1 text-xs text-stone-500">
+                          Page {item.pageNumber}: {item.pageTitle} · {item.roomName}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {item.issues.map((issue) => (
+                          <span
+                            key={issue}
+                            className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
+                          >
+                            {issue === "skip approval" ? "Needs approval" : `Missing ${issue}`}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Label
+                        <input
+                          value={element.label ?? ""}
+                          onChange={(event) =>
+                            onUpdateItem(item.pageId, element.id, { label: event.target.value })
+                          }
+                          placeholder="ex. Pantry Sink"
+                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                        />
+                      </label>
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Product link / note
+                        <input
+                          value={element.link ?? ""}
+                          onChange={(event) =>
+                            onUpdateItem(item.pageId, element.id, { link: event.target.value })
+                          }
+                          placeholder="https://... or see cabinet vendor"
+                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                        />
+                      </label>
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Room
+                        <select
+                          value={element.materialRoomId ?? ""}
+                          onChange={(event) =>
+                            onUpdateItem(item.pageId, element.id, {
+                              materialRoomId: event.target.value || null,
+                            })
+                          }
+                          className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+                        >
+                          <option value="">Use page room / no room</option>
+                          {rooms.map((room) => (
+                            <option key={room.id} value={room.id}>
+                              {room.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Category
+                        <select
+                          value={element.materialCategory ?? ""}
+                          onChange={(event) =>
+                            onUpdateItem(item.pageId, element.id, {
+                              materialCategory: event.target.value || null,
+                            })
+                          }
+                          className="mt-1 w-full border border-stone-200 bg-white px-3 py-2 text-sm normal-case tracking-normal"
+                        >
+                          <option value="">Auto category</option>
+                          {sortedCategories.map((category) => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Color / Finish
+                        <input
+                          value={element.materialFinish ?? element.finish ?? ""}
+                          onChange={(event) =>
+                            onUpdateItem(item.pageId, element.id, {
+                              materialFinish: event.target.value,
+                            })
+                          }
+                          placeholder="ex. Aged Brass"
+                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                        />
+                      </label>
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Dimensions / Notes
+                        <input
+                          value={element.materialDimensions ?? ""}
+                          onChange={(event) =>
+                            onUpdateItem(item.pageId, element.id, {
+                              materialDimensions: event.target.value,
+                            })
+                          }
+                          placeholder="ex. 30 in W x 18 in D"
+                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                        />
+                      </label>
+                      <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                        Qty
+                        <input
+                          value={quantityValue}
+                          onChange={(event) => {
+                            const value = event.target.value.trim();
+                            onUpdateItem(item.pageId, element.id, {
+                              materialQuantity: value ? Math.max(1, Number(value) || 1) : null,
+                            });
+                          }}
+                          inputMode="numeric"
+                          placeholder="Auto"
+                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateItem(item.pageId, element.id, {
+                            materialInfoNotNeeded: !element.materialInfoNotNeeded,
+                            materialInfoSkipApproved: false,
+                          })
+                        }
+                        className={cn(
+                          "border px-3 py-2 text-xs transition",
+                          element.materialInfoNotNeeded
+                            ? "border-[#1f4e5f] bg-[#e9f1ef] text-[#1f4e5f]"
+                            : "border-stone-300 bg-white hover:border-ink",
+                        )}
+                      >
+                        {element.materialInfoNotNeeded
+                          ? "No Label / Link Needed"
+                          : "Requires Label + Link"}
+                      </button>
+                      {element.materialInfoNotNeeded && !element.materialInfoSkipApproved && (
+                        <button
+                          type="button"
+                          onClick={() => onApproveNoLabelLink(item.pageId, element.id)}
+                          className="border border-ink bg-ink px-3 py-2 text-xs text-white transition hover:bg-stone-800"
+                        >
+                          Approve No Label / Link
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateItem(item.pageId, element.id, {
+                            materialExcludeFromMaterials: !element.materialExcludeFromMaterials,
+                          })
+                        }
+                        className={cn(
+                          "border px-3 py-2 text-xs transition",
+                          element.materialExcludeFromMaterials
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-stone-300 bg-white hover:border-ink",
+                        )}
+                      >
+                        {element.materialExcludeFromMaterials
+                          ? "Not Needed on Materials"
+                          : "Needed on Materials"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
