@@ -15,6 +15,7 @@ import { normalizeSupabaseImageUrl, resolveImage } from "@/lib/local-assets";
 import { compressImageSource, fileToCompressedDataUrl } from "@/lib/imagePayload";
 import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
+import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
 
 async function persistRoomImageUrl(roomId: string, kind: "sketchup" | "rendering", value: string, fileName?: string) {
   if (!value.startsWith("data:image/")) return value.trim();
@@ -508,6 +509,10 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, qc 
                   <p className="text-muted-foreground whitespace-pre-wrap">{rendering.revision_notes || "Revision created from an earlier rendering."}</p>
                 </div>
               )}
+              <RenderingTeamNotes
+                notes={rendering.team_notes}
+                onSave={(notes) => update({ team_notes: notes })}
+              />
               <div className="border border-border p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <GitBranch className="w-4 h-4" />

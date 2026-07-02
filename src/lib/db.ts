@@ -188,6 +188,7 @@ export interface RoomImage {
   presentation_visible: boolean;
   review_status: RenderingReviewStatus;
   revision_notes: string | null;
+  team_notes: string | null;
   revision_parent_id: string | null;
   revision_number: number;
   error_message: string | null;
