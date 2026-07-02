@@ -185,25 +185,6 @@ export function SpecBookDocument({
     return map;
   }, [items]);
 
-  if (!project) return <div className="p-16 text-muted-foreground">Loading…</div>;
-
-  if (!publicView && profile && !canViewProjectSurface(profile, project, "specBook")) {
-    return (
-      <div className="p-16">
-        <div className="eyebrow">Spec Book</div>
-        <h1 className="mt-3 font-display text-5xl">Not ready to view yet</h1>
-        <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
-          This spec book is not currently shared for your role on this project.
-        </p>
-      </div>
-    );
-  }
-
-  const today = new Date().toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
   const jumpItems = useMemo<SpecJumpItem[]>(() => {
     const base = [
@@ -241,6 +222,26 @@ export function SpecBookDocument({
   const returnToTop = () => {
     jumpToSection("table-of-contents");
   };
+
+  if (!project) return <div className="p-16 text-muted-foreground">Loading…</div>;
+
+  if (!publicView && profile && !canViewProjectSurface(profile, project, "specBook")) {
+    return (
+      <div className="p-16">
+        <div className="eyebrow">Spec Book</div>
+        <h1 className="mt-3 font-display text-5xl">Not ready to view yet</h1>
+        <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+          This spec book is not currently shared for your role on this project.
+        </p>
+      </div>
+    );
+  }
+
+  const today = new Date().toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
   const canEditProducts =
     !publicView &&
     profile?.is_active === true &&
