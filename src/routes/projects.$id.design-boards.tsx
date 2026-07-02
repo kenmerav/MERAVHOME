@@ -629,9 +629,6 @@ function ProjectDesignBoardsPage() {
     : selected?.type === "image"
       ? [selected]
       : [];
-  const selectedImagesMarkedNoMaterialInfo =
-    selectedImageTargets.length > 0 &&
-    selectedImageTargets.every((element) => element.materialInfoNotNeeded);
   const selectedImagesExcludedFromMaterials =
     selectedImageTargets.length > 0 &&
     selectedImageTargets.every((element) => element.materialExcludeFromMaterials);
@@ -755,15 +752,10 @@ function ProjectDesignBoardsPage() {
   const imageMaterialReadinessIssues = useCallback(
     (element: BoardElement, page: BoardPage) => {
       if (element.type === "image" && element.materialExcludeFromMaterials) return [];
-      const issues =
-        element.type === "image" && element.materialInfoNotNeeded
-          ? element.materialInfoSkipApproved
-            ? []
-            : ["skip approval"]
-          : imageMaterialIssues(
-              element,
-              element.productId ? productById.get(element.productId) : null,
-            );
+      const issues = imageMaterialIssues(
+        element,
+        element.productId ? productById.get(element.productId) : null,
+      );
       if (
         element.type === "image" &&
         !resolveMaterialRoom(element, page)
@@ -828,15 +820,10 @@ function ProjectDesignBoardsPage() {
     return materialInfoItemsForPages(pages.filter((page) => pageIds.has(page.id)));
   }, [materialInfoItemsForPages, materialInfoReviewPageIds, missingMaterialInfoItems, pages]);
   const pendingMaterialIssueCounts = useMemo(() => {
-    const counts = { label: 0, link: 0, room: 0, "skip approval": 0 };
+    const counts = { label: 0, link: 0, room: 0 };
     for (const item of pendingMaterialIssues) {
       for (const issue of item.issues) {
-        if (
-          issue === "label" ||
-          issue === "link" ||
-          issue === "room" ||
-          issue === "skip approval"
-        ) {
+        if (issue === "label" || issue === "link" || issue === "room") {
           counts[issue] += 1;
         }
       }
@@ -1752,7 +1739,7 @@ function ProjectDesignBoardsPage() {
       let sent = 0;
       let removed = 0;
       let skipped = 0;
-      const skippedReasons = { label: 0, link: 0, room: 0, "skip approval": 0 };
+      const skippedReasons = { label: 0, link: 0, room: 0 };
       const nextSortOrderByRoom = new Map<string, number>();
       const syncedMaterialIds = new Set<string>();
       const protectedMaterialIds = new Set<string>();
@@ -1776,12 +1763,7 @@ function ProjectDesignBoardsPage() {
           const missingInfo = imageMaterialReadinessIssues(element, page);
           if (!room || (missingInfo.length && !options.proceedWithMissing)) {
             for (const issue of missingInfo) {
-              if (
-                issue === "label" ||
-                issue === "link" ||
-                issue === "room" ||
-                issue === "skip approval"
-              ) {
+              if (issue === "label" || issue === "link" || issue === "room") {
                 skippedReasons[issue] += 1;
               }
             }
@@ -2296,22 +2278,6 @@ function ProjectDesignBoardsPage() {
     setMissingInfoOpen(false);
   };
 
-  const approveSkippedMaterialInfoItem = (pageId: string, elementId: string) => {
-    pushUndo();
-    setElementsForPage(pageId, (current) =>
-      current.map((element) =>
-        element.id === elementId
-          ? {
-              ...element,
-              materialInfoNotNeeded: true,
-              materialInfoSkipApproved: true,
-            }
-          : element,
-      ),
-    );
-    toast.success("Approved this item to send without label/link.");
-  };
-
   useEffect(() => {
     const pageId = pendingPageFocusRef.current;
     if (!pageId || selectedPageId !== pageId) return;
@@ -2445,25 +2411,6 @@ function ProjectDesignBoardsPage() {
     if (!selected || selectedCount !== 1 || selected.type !== "image") return;
     const nextRotation = ((selected.rotation ?? 0) + 90) % 360;
     updateElement(selected.id, { rotation: nextRotation });
-  };
-
-  const toggleSelectedMaterialInfoRequirement = () => {
-    if (!selectedImageTargets.length) return;
-    const targetIds = new Set(selectedImageTargets.map((element) => element.id));
-    const nextValue = !selectedImagesMarkedNoMaterialInfo;
-    pushUndo();
-    setElements((current) =>
-      current.map((element) =>
-        targetIds.has(element.id)
-          ? { ...element, materialInfoNotNeeded: nextValue, materialInfoSkipApproved: false }
-          : element,
-      ),
-    );
-    toast.success(
-      nextValue
-        ? `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} can be sent without label/link.`
-        : `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} now require material info.`,
-    );
   };
 
   const toggleSelectedMaterialExclusion = () => {
@@ -3302,13 +3249,6 @@ function ProjectDesignBoardsPage() {
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
               </ToolbarButton>
               <ToolbarButton
-                onClick={toggleSelectedMaterialInfoRequirement}
-                disabled={!selectedImageTargets.length}
-                title="Allow selected image items to send without label/link"
-              >
-                {selectedImagesMarkedNoMaterialInfo ? "Require Label / Link" : "Allow No Label / Link"}
-              </ToolbarButton>
-              <ToolbarButton
                 onClick={toggleSelectedMaterialExclusion}
                 disabled={!selectedImageTargets.length}
                 title="Keep selected image items out of Materials and Spec"
@@ -3763,7 +3703,7 @@ function ProjectDesignBoardsPage() {
                           key={issue}
                           className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
                         >
-                          {issue === "skip approval" ? "Needs approval" : `Missing ${issue}`}
+                          Missing {issue}
                         </span>
                       ))}
                     </div>
@@ -3804,7 +3744,6 @@ function ProjectDesignBoardsPage() {
             }}
             onUpdateItem={(pageId, elementId, patch) => updateElement(elementId, patch, pageId)}
             onShowOnBoard={reviewMissingMaterialInfoItem}
-            onApproveNoLabelLink={approveSkippedMaterialInfoItem}
           />
 
           <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
@@ -4832,7 +4771,6 @@ function MissingMaterialInfoDialog({
   onOpenChange,
   onUpdateItem,
   onShowOnBoard,
-  onApproveNoLabelLink,
 }: {
   open: boolean;
   items: MissingMaterialInfoItem[];
@@ -4840,7 +4778,6 @@ function MissingMaterialInfoDialog({
   onOpenChange: (open: boolean) => void;
   onUpdateItem: (pageId: string, elementId: string, patch: Partial<BoardElement>) => void;
   onShowOnBoard: (pageId: string, elementId: string) => void;
-  onApproveNoLabelLink: (pageId: string, elementId: string) => void;
 }) {
   const sortedCategories = useMemo(
     () =>
@@ -4868,8 +4805,8 @@ function MissingMaterialInfoDialog({
             {items.length} item{items.length === 1 ? "" : "s"} need a quick check
           </div>
           <p className="mt-1 text-xs leading-relaxed text-amber-800">
-            Items marked “Allow No Label / Link” can still be approved here, or you can exclude an
-            image from Materials if it should stay only on the board.
+            Add the missing info, send the item anyway, or exclude it from Materials if it should
+            stay only on the board.
           </p>
         </div>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
@@ -4923,7 +4860,7 @@ function MissingMaterialInfoDialog({
                             key={issue}
                             className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
                           >
-                            {issue === "skip approval" ? "Needs approval" : `Missing ${issue}`}
+                            Missing {issue}
                           </span>
                         ))}
                       </div>
@@ -5037,34 +4974,6 @@ function MissingMaterialInfoDialog({
                     </div>
 
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateItem(item.pageId, element.id, {
-                            materialInfoNotNeeded: !element.materialInfoNotNeeded,
-                            materialInfoSkipApproved: false,
-                          })
-                        }
-                        className={cn(
-                          "border px-3 py-2 text-xs transition",
-                          element.materialInfoNotNeeded
-                            ? "border-[#1f4e5f] bg-[#e9f1ef] text-[#1f4e5f]"
-                            : "border-stone-300 bg-white hover:border-ink",
-                        )}
-                      >
-                        {element.materialInfoNotNeeded
-                          ? "Require Label / Link"
-                          : "Allow No Label / Link"}
-                      </button>
-                      {element.materialInfoNotNeeded && !element.materialInfoSkipApproved && (
-                        <button
-                          type="button"
-                          onClick={() => onApproveNoLabelLink(item.pageId, element.id)}
-                          className="border border-ink bg-ink px-3 py-2 text-xs text-white transition hover:bg-stone-800"
-                        >
-                          Approve No Label / Link
-                        </button>
-                      )}
                       <button
                         type="button"
                         onClick={() =>
@@ -5275,32 +5184,6 @@ function SelectedPanel({
       )}
       {selected.type === "image" && (
         <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() =>
-              onUpdate({
-                materialInfoNotNeeded: !selected.materialInfoNotNeeded,
-                materialInfoSkipApproved: false,
-              })
-            }
-            className={cn(
-              "inline-flex w-full items-center justify-center gap-2 border px-4 py-2 text-sm transition",
-              selected.materialInfoNotNeeded
-                ? "border-[#1f4e5f] bg-[#e9f1ef] text-[#1f4e5f]"
-                : "border-stone-300 bg-white hover:border-ink",
-            )}
-          >
-            {selected.materialInfoNotNeeded
-              ? "Require Label / Link"
-              : "Allow No Label / Link"}
-          </button>
-          {selected.materialInfoNotNeeded && (
-            <div className="rounded-lg border border-[#c8d9d4] bg-[#f3f7f5] px-3 py-2 text-xs leading-relaxed text-[#1f4e5f]">
-              {selected.materialInfoSkipApproved
-                ? "This image is approved to send to Materials without a label or link."
-                : "This image still needs final approval before sending without a label or link."}
-            </div>
-          )}
           <button
             type="button"
             onClick={() =>
@@ -5890,7 +5773,7 @@ function boardElementProductUrlForMaterialSync(
 }
 
 function imageMaterialIssues(element: BoardElement, linkedProduct?: Product | null) {
-  if (element.type !== "image" || element.materialInfoNotNeeded || element.materialExcludeFromMaterials) {
+  if (element.type !== "image" || element.materialExcludeFromMaterials) {
     return [];
   }
   const issues: string[] = [];
@@ -5928,22 +5811,16 @@ function normalizeRoomLookupText(value: string) {
 }
 
 function formatSkippedMaterialReasons(
-  reasons: Record<"label" | "link" | "room" | "skip approval", number>,
+  reasons: Record<"label" | "link" | "room", number>,
 ) {
-  const parts = (["label", "link", "room", "skip approval"] as const)
+  const parts = (["label", "link", "room"] as const)
     .filter((key) => reasons[key] > 0)
-    .map((key) =>
-      key === "skip approval"
-        ? `${reasons[key]} needing no-label/link approval`
-        : `${reasons[key]} missing ${key}`,
-    );
+    .map((key) => `${reasons[key]} missing ${key}`);
   return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
 function joinMissingInfo(issues: string[]) {
-  const readableIssues = issues.map((issue) =>
-    issue === "skip approval" ? "approval to send without label/link" : issue,
-  );
+  const readableIssues = issues;
   if (readableIssues.length <= 1) return readableIssues[0] ?? "required info";
   return `${readableIssues.slice(0, -1).join(", ")} and ${readableIssues.at(-1)}`;
 }
