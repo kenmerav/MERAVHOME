@@ -117,6 +117,7 @@ type BoardElement = {
   fontFamily?: string;
   letterSpacing?: number;
   link?: string;
+  materialLinkCleared?: boolean;
   locked?: boolean;
   visible?: boolean;
   hideDetails?: boolean;
@@ -1488,7 +1489,7 @@ function ProjectDesignBoardsPage() {
     const itemLabel = imageMaterialLabelForSend(element);
 
     const linkedProductUrl = linkedProduct?.product_url?.trim() || null;
-    const productUrl = boardElementProductUrl(element, linkedProduct);
+    const productUrl = boardElementProductUrlForMaterialSync(element, linkedProduct);
     const inferredMaterialCategory = inferMaterialCategory(itemLabel, productUrl);
     const materialCategory = element.materialCategory || inferredMaterialCategory;
     let category: ProductCategory =
@@ -1576,6 +1577,13 @@ function ProjectDesignBoardsPage() {
         color: item.color,
         dimensions: item.product?.dimensions,
       }) === materialIdentity;
+    const materialMatchesIdentityIgnoringUrl = (item: MaterialItem) =>
+      item.room_id === room.id &&
+      normalizeMaterialIdentityText(item.item_label) ===
+        normalizeMaterialIdentityText(itemLabel) &&
+      normalizeMaterialIdentityText(item.color) === normalizeMaterialIdentityText(finish) &&
+      normalizeMaterialIdentityText(item.product?.dimensions) ===
+        normalizeMaterialIdentityText(dimensions);
     const materialFromElementId = element.materialItemId
       ? materialItems.find((item) => item.id === element.materialItemId) ?? null
       : null;
@@ -1584,7 +1592,9 @@ function ProjectDesignBoardsPage() {
     // whose label/link/color no longer matches, ignore that stale id so a sink
     // cannot overwrite a countertop row (or vice versa).
     const existingMaterialId =
-      materialFromElementId && materialMatchesIdentity(materialFromElementId)
+      materialFromElementId &&
+      (materialMatchesIdentity(materialFromElementId) ||
+        (element.materialLinkCleared && materialMatchesIdentityIgnoringUrl(materialFromElementId)))
         ? materialFromElementId.id
         : matchingMaterial?.id || null;
     const existingMaterial = existingMaterialId
@@ -1666,7 +1676,8 @@ function ProjectDesignBoardsPage() {
               vendor: product.vendor,
               price: product.price,
               finish: product.finish,
-              link: product.product_url || element.link || "",
+              link: element.materialLinkCleared ? "" : product.product_url || element.link || "",
+              materialLinkCleared: element.materialLinkCleared,
               materialItemId: materialItem?.id ?? element.materialItemId ?? null,
               materialRoomId: room.id,
               materialCategory: finalMaterialCategory,
@@ -1781,7 +1792,7 @@ function ProjectDesignBoardsPage() {
           const linkedProduct = element.productId
             ? productById.get(element.productId) ?? null
             : null;
-          const productUrl = boardElementProductUrl(element, linkedProduct) ?? "";
+          const productUrl = boardElementProductUrlForMaterialSync(element, linkedProduct) ?? "";
           const finish = (element.materialFinish || element.finish || "").trim();
           const dimensions = (
             element.materialDimensions ||
@@ -2059,7 +2070,8 @@ function ProjectDesignBoardsPage() {
       boardElementProductUrl(element, linkedProduct) || "",
     );
     if (nextLink === null) return;
-    updateElement(element.id, { link: nextLink.trim() }, pageId);
+    const trimmedLink = nextLink.trim();
+    updateElement(element.id, { link: trimmedLink, materialLinkCleared: trimmedLink === "" }, pageId);
   };
 
   const quickEditElementFinish = (element: BoardElement, pageId: string) => {
@@ -4934,7 +4946,10 @@ function MissingMaterialInfoDialog({
                         <input
                           value={element.link ?? ""}
                           onChange={(event) =>
-                            onUpdateItem(item.pageId, element.id, { link: event.target.value })
+                            onUpdateItem(item.pageId, element.id, {
+                              link: event.target.value,
+                              materialLinkCleared: event.target.value.trim() === "",
+                            })
                           }
                           placeholder="https://... or see cabinet vendor"
                           className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
@@ -5444,7 +5459,12 @@ function SelectedPanel({
             Link
             <input
               value={selected.link ?? ""}
-              onChange={(event) => onUpdate({ link: event.target.value })}
+              onChange={(event) =>
+                onUpdate({
+                  link: event.target.value,
+                  materialLinkCleared: event.target.value.trim() === "",
+                })
+              }
               placeholder="https://..."
               className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
             />
@@ -5858,13 +5878,21 @@ function boardElementProductUrl(element: BoardElement, linkedProduct?: Product |
   return null;
 }
 
+function boardElementProductUrlForMaterialSync(
+  element: BoardElement,
+  linkedProduct?: Product | null,
+) {
+  if (element.materialLinkCleared) return null;
+  return boardElementProductUrl(element, linkedProduct);
+}
+
 function imageMaterialIssues(element: BoardElement, linkedProduct?: Product | null) {
   if (element.type !== "image" || element.materialInfoNotNeeded || element.materialExcludeFromMaterials) {
     return [];
   }
   const issues: string[] = [];
   if (!imageMaterialLabel(element)) issues.push("label");
-  if (!boardElementProductUrl(element, linkedProduct)) issues.push("link");
+  if (!boardElementProductUrlForMaterialSync(element, linkedProduct)) issues.push("link");
   return issues;
 }
 
@@ -6907,6 +6935,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "fontFamily",
     "letterSpacing",
     "link",
+    "materialLinkCleared",
     "locked",
     "visible",
     "hideDetails",
