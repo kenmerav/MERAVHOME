@@ -132,6 +132,7 @@ type BoardElement = {
   materialFinish?: string | null;
   materialDimensions?: string | null;
   materialInfoNotNeeded?: boolean;
+  materialInfoSkipApproved?: boolean;
   imageBrightness?: number | null;
   imageContrast?: number | null;
   imageSaturation?: number | null;
@@ -732,6 +733,9 @@ function ProjectDesignBoardsPage() {
   );
   const imageMaterialReadinessIssues = useCallback(
     (element: BoardElement, page: BoardPage) => {
+      if (element.type === "image" && element.materialInfoNotNeeded) {
+        return element.materialInfoSkipApproved ? [] : ["skip approval"];
+      }
       const issues = imageMaterialIssues(
         element,
         element.productId ? productById.get(element.productId) : null,
@@ -1630,7 +1634,12 @@ function ProjectDesignBoardsPage() {
   const sendSelectedToMaterials = async () => {
     if (!selected || selected.type !== "image") return;
     if (selected.materialInfoNotNeeded) {
-      toast.error("This image is marked as not needing material info.");
+      if (!selected.materialInfoSkipApproved) {
+        setMissingInfoOpen(true);
+        toast.error("Approve this image as not needed before leaving it out of Materials.");
+        return;
+      }
+      toast.error("This image is approved as not needed for Materials.");
       return;
     }
     const room = resolveMaterialRoom(selected, activePage);
@@ -1664,7 +1673,7 @@ function ProjectDesignBoardsPage() {
       let sent = 0;
       let removed = 0;
       let skipped = 0;
-      const skippedReasons = { label: 0, link: 0, room: 0 };
+      const skippedReasons = { label: 0, link: 0, room: 0, "skip approval": 0 };
       const nextSortOrderByRoom = new Map<string, number>();
       const syncedMaterialIds = new Set<string>();
       const protectedMaterialIds = new Set<string>();
@@ -1683,12 +1692,17 @@ function ProjectDesignBoardsPage() {
         for (const element of page.elements) {
           if (element.materialItemId) protectedMaterialIds.add(element.materialItemId);
           if (element.type !== "image") continue;
-          if (element.materialInfoNotNeeded) continue;
+          if (element.materialInfoNotNeeded && element.materialInfoSkipApproved) continue;
           const room = resolveMaterialRoom(element, page);
           const missingInfo = imageMaterialReadinessIssues(element, page);
           if (!room || missingInfo.length) {
             for (const issue of missingInfo) {
-              if (issue === "label" || issue === "link" || issue === "room") {
+              if (
+                issue === "label" ||
+                issue === "link" ||
+                issue === "room" ||
+                issue === "skip approval"
+              ) {
                 skippedReasons[issue] += 1;
               }
             }
@@ -2146,6 +2160,22 @@ function ProjectDesignBoardsPage() {
     setMissingInfoOpen(true);
   };
 
+  const approveSkippedMaterialInfoItem = (pageId: string, elementId: string) => {
+    pushUndo();
+    setElementsForPage(pageId, (current) =>
+      current.map((element) =>
+        element.id === elementId
+          ? {
+              ...element,
+              materialInfoNotNeeded: true,
+              materialInfoSkipApproved: true,
+            }
+          : element,
+      ),
+    );
+    toast.success("Approved this item to stay out of Materials and Spec.");
+  };
+
   useEffect(() => {
     const pageId = pendingPageFocusRef.current;
     if (!pageId || selectedPageId !== pageId) return;
@@ -2289,7 +2319,7 @@ function ProjectDesignBoardsPage() {
     setElements((current) =>
       current.map((element) =>
         targetIds.has(element.id)
-          ? { ...element, materialInfoNotNeeded: nextValue }
+          ? { ...element, materialInfoNotNeeded: nextValue, materialInfoSkipApproved: false }
           : element,
       ),
     );
@@ -3670,8 +3700,8 @@ function ProjectDesignBoardsPage() {
                       {activePageMissingInfoCount === 1 ? " needs" : "s need"} material info
                     </div>
                     <p className="mt-1 text-amber-800">
-                      Add label, link, and room before sending to Materials so specs and
-                      presentations stay clean.
+                      Add label, link, and room before sending to Materials, or approve items that
+                      truly do not belong in Materials and Spec.
                     </p>
                     <button
                       type="button"
@@ -3734,21 +3764,40 @@ function ProjectDesignBoardsPage() {
                                     key={issue}
                                     className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-900"
                                   >
-                                    Missing {issue}
+                                    {issue === "skip approval" ? "Needs skip approval" : `Missing ${issue}`}
                                   </span>
                                 ))}
                               </div>
+                              {item.element.materialInfoNotNeeded && (
+                                <p className="mt-2 text-xs leading-relaxed text-amber-800">
+                                  This item is marked as no label/link needed. Approve it again if
+                                  it should stay out of Materials and Spec.
+                                </p>
+                              )}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              reviewMissingMaterialInfoItem(item.pageId, item.element.id)
-                            }
-                            className="mt-3 inline-flex w-full items-center justify-center border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-50"
-                          >
-                            Review item
-                          </button>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                reviewMissingMaterialInfoItem(item.pageId, item.element.id)
+                              }
+                              className="inline-flex flex-1 items-center justify-center border border-amber-300 px-3 py-2 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-50"
+                            >
+                              Review item
+                            </button>
+                            {item.element.materialInfoNotNeeded && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  approveSkippedMaterialInfoItem(item.pageId, item.element.id)
+                                }
+                                className="inline-flex flex-1 items-center justify-center border border-ink bg-ink px-3 py-2 text-xs font-medium text-white transition hover:bg-stone-800"
+                              >
+                                Approve Skip
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -4759,7 +4808,12 @@ function SelectedPanel({
         <div className="space-y-3">
           <button
             type="button"
-            onClick={() => onUpdate({ materialInfoNotNeeded: !selected.materialInfoNotNeeded })}
+            onClick={() =>
+              onUpdate({
+                materialInfoNotNeeded: !selected.materialInfoNotNeeded,
+                materialInfoSkipApproved: false,
+              })
+            }
             className={cn(
               "inline-flex w-full items-center justify-center gap-2 border px-4 py-2 text-sm transition",
               selected.materialInfoNotNeeded
@@ -4767,11 +4821,17 @@ function SelectedPanel({
                 : "border-stone-300 bg-white hover:border-ink",
             )}
           >
-            {selected.materialInfoNotNeeded ? "No Label / Link Needed" : "Requires Label + Link"}
+            {selected.materialInfoNotNeeded
+              ? selected.materialInfoSkipApproved
+                ? "Approved: No Label / Link Needed"
+                : "Needs Approval: No Label / Link Needed"
+              : "Requires Label + Link"}
           </button>
           {selected.materialInfoNotNeeded && (
             <div className="rounded-lg border border-[#c8d9d4] bg-[#f3f7f5] px-3 py-2 text-xs leading-relaxed text-[#1f4e5f]">
-              This image will not be flagged and will be skipped when sending items to Materials.
+              {selected.materialInfoSkipApproved
+                ? "This image is approved to stay out of Materials and Spec."
+                : "This image still needs final approval before it is ignored for Materials and Spec."}
             </div>
           )}
           {selectedMaterialIssues.length > 0 && (
@@ -5353,16 +5413,25 @@ function normalizeRoomLookupText(value: string) {
     .trim();
 }
 
-function formatSkippedMaterialReasons(reasons: Record<"label" | "link" | "room", number>) {
-  const parts = (["label", "link", "room"] as const)
+function formatSkippedMaterialReasons(
+  reasons: Record<"label" | "link" | "room" | "skip approval", number>,
+) {
+  const parts = (["label", "link", "room", "skip approval"] as const)
     .filter((key) => reasons[key] > 0)
-    .map((key) => `${reasons[key]} missing ${key}`);
+    .map((key) =>
+      key === "skip approval"
+        ? `${reasons[key]} needing skip approval`
+        : `${reasons[key]} missing ${key}`,
+    );
   return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
 function joinMissingInfo(issues: string[]) {
-  if (issues.length <= 1) return issues[0] ?? "required info";
-  return `${issues.slice(0, -1).join(", ")} and ${issues.at(-1)}`;
+  const readableIssues = issues.map((issue) =>
+    issue === "skip approval" ? "approval to skip Materials/Spec" : issue,
+  );
+  if (readableIssues.length <= 1) return readableIssues[0] ?? "required info";
+  return `${readableIssues.slice(0, -1).join(", ")} and ${readableIssues.at(-1)}`;
 }
 
 async function imageSourceForCanvas(src: string) {
@@ -6370,6 +6439,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "materialFinish",
     "materialDimensions",
     "materialInfoNotNeeded",
+    "materialInfoSkipApproved",
     "imageBrightness",
     "imageContrast",
     "imageSaturation",
