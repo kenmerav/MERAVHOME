@@ -1687,7 +1687,7 @@ function ProjectDesignBoardsPage() {
   const sendSelectedToMaterials = async () => {
     if (!selected || selected.type !== "image") return;
     if (selected.materialExcludeFromMaterials) {
-      toast.error("This image is marked as not needed on Materials.");
+      toast.error("This image is excluded from Materials.");
       return;
     }
     const room = resolveMaterialRoom(selected, activePage);
@@ -2461,8 +2461,8 @@ function ProjectDesignBoardsPage() {
     );
     toast.success(
       nextValue
-        ? `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} marked not needed on Materials.`
-        : `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} will send to Materials again.`,
+        ? `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} excluded from Materials.`
+        : `${selectedImageTargets.length} image${selectedImageTargets.length === 1 ? "" : "s"} included in Materials again.`,
     );
   };
 
@@ -3284,14 +3284,14 @@ function ProjectDesignBoardsPage() {
                 disabled={!selectedImageTargets.length}
                 title="Allow selected image items to send without label/link"
               >
-                {selectedImagesMarkedNoMaterialInfo ? "Require Label / Link" : "No Label / Link Needed"}
+                {selectedImagesMarkedNoMaterialInfo ? "Require Label / Link" : "Allow No Label / Link"}
               </ToolbarButton>
               <ToolbarButton
                 onClick={toggleSelectedMaterialExclusion}
                 disabled={!selectedImageTargets.length}
                 title="Keep selected image items out of Materials and Spec"
               >
-                {selectedImagesExcludedFromMaterials ? "Send to Materials" : "Not Needed on Materials"}
+                {selectedImagesExcludedFromMaterials ? "Include in Materials" : "Exclude from Materials"}
               </ToolbarButton>
               <ToolbarButton
                 onClick={() => {
@@ -3946,7 +3946,7 @@ function ProjectDesignBoardsPage() {
                     </div>
                     <p className="mt-1 text-amber-800">
                       Add label, link, and room for clean specs, approve no-label/no-link items, or
-                      mark items not needed on Materials.
+                      exclude items from Materials.
                     </p>
                     <button
                       type="button"
@@ -4840,8 +4840,8 @@ function MissingMaterialInfoDialog({
             {items.length} item{items.length === 1 ? "" : "s"} need a quick check
           </div>
           <p className="mt-1 text-xs leading-relaxed text-amber-800">
-            Items marked “No Label / Link Needed” can still be approved here, or you can mark an
-            image as “Not needed on Materials” if it should stay only on the board.
+            Items marked “Allow No Label / Link” can still be approved here, or you can exclude an
+            image from Materials if it should stay only on the board.
           </p>
         </div>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
@@ -5022,7 +5022,7 @@ function MissingMaterialInfoDialog({
                         )}
                       >
                         {element.materialInfoNotNeeded
-                          ? "No Label / Link Needed"
+                          ? "No Label / Link Allowed"
                           : "Requires Label + Link"}
                       </button>
                       {element.materialInfoNotNeeded && !element.materialInfoSkipApproved && (
@@ -5049,8 +5049,8 @@ function MissingMaterialInfoDialog({
                         )}
                       >
                         {element.materialExcludeFromMaterials
-                          ? "Not Needed on Materials"
-                          : "Needed on Materials"}
+                          ? "Include in Materials"
+                          : "Exclude from Materials"}
                       </button>
                     </div>
                   </div>
@@ -5261,8 +5261,8 @@ function SelectedPanel({
           >
             {selected.materialInfoNotNeeded
               ? selected.materialInfoSkipApproved
-                ? "Approved: No Label / Link Needed"
-                : "Needs Approval: No Label / Link Needed"
+                ? "Approved: No Label / Link Allowed"
+                : "Needs Approval: No Label / Link Allowed"
               : "Requires Label + Link"}
           </button>
           {selected.materialInfoNotNeeded && (
@@ -5287,8 +5287,8 @@ function SelectedPanel({
             )}
           >
             {selected.materialExcludeFromMaterials
-              ? "Not Needed on Materials"
-              : "Needed on Materials"}
+              ? "Include in Materials"
+              : "Exclude from Materials"}
           </button>
           {selected.materialExcludeFromMaterials && (
             <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
