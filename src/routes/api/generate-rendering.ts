@@ -149,6 +149,7 @@ type EnqueueRenderingPayload = {
 };
 
 const MAX_OPENAI_REFERENCE_BYTES = 50 * 1024 * 1024;
+const OPENAI_TRANSIENT_STATUS_CODES = new Set([502, 503, 504]);
 
 function extensionForContentType(contentType: string) {
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
@@ -238,17 +239,11 @@ async function generateRenderingImage({
     ),
   );
   const userText = extraContext
-    ? `${RENDERING_PROMPT}\n\nIf additional images are included, use them only as references for the requested revision details such as tile, wallpaper, fabric, color, finish, or styling direction. The first uploaded SketchUp image remains the exact architectural source of truth.\n\nAdditional design context:\n${extraContext}`
+    ? `${RENDERING_PROMPT}\n\nIf additional images are included, use them only as references for the requested revision details or room material details such as tile, wallpaper, fabric, color, finish, lighting, plumbing, hardware, or styling direction. The first uploaded SketchUp image remains the exact architectural source of truth. Materials page item labels and CAD labels indicate where materials belong, and materials from other rooms must not be used.\n\nAdditional design context:\n${extraContext}`
     : RENDERING_PROMPT;
 
-  const form = new FormData();
-  form.append("model", model);
   const imageInputs = [image, referenceImage, ...additionalReferenceImages].filter(Boolean) as File[];
   const imageField = imageInputs.length > 1 ? "image[]" : "image";
-  for (const img of imageInputs) form.append(imageField, img);
-  form.append("prompt", userText);
-  form.append("size", size);
-  form.append("quality", quality);
   console.info("[rendering] OpenAI image edit request", {
     model,
     quality,
@@ -258,23 +253,64 @@ async function generateRenderingImage({
     referenceMetadata,
   });
 
-  const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: form,
-  });
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const attemptForm = new FormData();
+    attemptForm.append("model", model);
+    for (const img of imageInputs) attemptForm.append(imageField, img);
+    attemptForm.append("prompt", userText);
+    attemptForm.append("size", size);
+    attemptForm.append("quality", quality);
 
-  if (!imageRes.ok) {
+    const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: attemptForm,
+    });
+
+    if (imageRes.ok) {
+      const json = (await imageRes.json()) as { data?: Array<{ b64_json?: string }> };
+      const b64 = json.data?.[0]?.b64_json;
+      if (!b64) throw new Error("No image returned by model");
+      return `data:image/png;base64,${b64}`;
+    }
+
     const errText = await imageRes.text();
-    throw new Error(`OpenAI image error: ${errText}`);
+    lastError = new Error(formatOpenAIImageError(imageRes.status, errText));
+    if (!OPENAI_TRANSIENT_STATUS_CODES.has(imageRes.status) || attempt === 3) break;
+    await delay(attempt * 1200);
   }
 
-  const json = (await imageRes.json()) as { data?: Array<{ b64_json?: string }> };
-  const b64 = json.data?.[0]?.b64_json;
-  if (!b64) throw new Error("No image returned by model");
-  return `data:image/png;base64,${b64}`;
+  throw lastError ?? new Error("OpenAI image generation failed");
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatOpenAIImageError(status: number, body: string) {
+  if (OPENAI_TRANSIENT_STATUS_CODES.has(status)) {
+    return `OpenAI image generation is temporarily unavailable (${status}). Please try this rendering again in a few minutes.`;
+  }
+
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string } | string };
+    const message = typeof parsed.error === "string" ? parsed.error : parsed.error?.message;
+    if (message) return `OpenAI image error (${status}): ${message}`;
+  } catch {
+    // Fall through to the plain-text sanitizer below.
+  }
+
+  const plainText = body
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  return `OpenAI image error (${status}): ${plainText || "Request failed"}`;
 }
 
 async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPayload, "roomId" | "sketchupId" | "sketchupUrl">> & EnqueueRenderingPayload & { placeholderId: string; origin: string }) {

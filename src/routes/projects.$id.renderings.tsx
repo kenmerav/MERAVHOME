@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type Material } from "@/lib/db";
+import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type MaterialItem } from "@/lib/db";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { normalizeSupabaseImageUrl, resolveImage } from "@/lib/local-assets";
 import { fileToCompressedDataUrl, prepareRenderingImageSource, type PreparedRenderingImage, type RenderingFidelityMode } from "@/lib/imagePayload";
+import { materialImageUrl } from "@/lib/materialImages";
 import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
@@ -856,6 +857,8 @@ function buildReferenceMetadata(mode: RenderingFidelityMode, references: Array<P
   };
 }
 
+const MAX_ADDITIONAL_REFERENCE_IMAGES = 3;
+
 type GenerateOptions = {
   baseRendering?: RoomImage;
   revisionNotes?: string;
@@ -875,13 +878,14 @@ async function generateRendering(
   const renderingMode = options.renderingMode ?? "standard";
   try {
     // Build minimal context (room-level data) — fetch fresh
-    const [room, selections, materials, project] = await Promise.all([
+    const [room, selections, projectMaterials, project] = await Promise.all([
       db.getRoom(roomId),
       db.listRoomProducts(roomId),
-      db.listMaterials(roomId),
+      db.listMaterialItemsByProject(projectId),
       db.getProject(projectId),
     ]);
-    const ctx = buildContext(room, project, selections ?? [], materials ?? []);
+    const roomMaterials = (projectMaterials ?? []).filter((material) => material.room_id === roomId && !material.not_needed);
+    const ctx = buildContext(room, project, selections ?? [], roomMaterials);
     const resolvedUrl = resolveImage(sk.url);
     let sketchupReference = await prepareRenderingImageSource(resolvedUrl || sk.url, renderingMode);
     if (sk.url?.startsWith("/src-assets/") && resolvedUrl) {
@@ -900,6 +904,10 @@ async function generateRendering(
     const revisionReference = options.revisionReferenceUrl
       ? await prepareRenderingImageSource(options.revisionReferenceUrl, renderingMode)
       : undefined;
+    const maxMaterialReferences = Math.max(0, MAX_ADDITIONAL_REFERENCE_IMAGES - (revisionReference ? 1 : 0));
+    const materialReferences = renderingMode === "high_fidelity"
+      ? await prepareMaterialReferenceImages(roomMaterials, maxMaterialReferences)
+      : [];
     const revisionContext = options.revisionNotes
       ? [
           "REVISION REQUEST",
@@ -912,6 +920,7 @@ async function generateRendering(
         ].join("\n")
       : "";
     const extraContext = [sk.caption, ctx, revisionContext].filter(Boolean).join("\n\n");
+    const additionalReferences = [revisionReference, ...materialReferences].filter(Boolean) as PreparedRenderingImage[];
     const res = await fetch("/api/generate-rendering", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -922,9 +931,9 @@ async function generateRendering(
         placeholderUrl: sk.url,
         sketchupUrl: sketchupReference.url,
         referenceImageUrl: previousReference?.url,
-        referenceImageUrls: revisionReference ? [revisionReference.url] : [],
+        referenceImageUrls: additionalReferences.map((reference) => reference.url),
         renderingMode,
-        referenceMetadata: buildReferenceMetadata(renderingMode, [sketchupReference, previousReference, revisionReference]),
+        referenceMetadata: buildReferenceMetadata(renderingMode, [sketchupReference, previousReference, ...additionalReferences]),
         extraContext,
         revisionParentId: options.baseRendering?.id ?? null,
         revisionNumber: options.revisionNumber || 1,
@@ -948,6 +957,52 @@ async function generateRendering(
     qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   }
+}
+
+async function prepareMaterialReferenceImages(materials: MaterialItem[], limit: number) {
+  if (limit <= 0) return [];
+  const references = materials
+    .map((material) => {
+      const url = materialImageUrl(material);
+      return url ? { material, url } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => materialReferencePriority(b!.material) - materialReferencePriority(a!.material))
+    .slice(0, limit);
+
+  const prepared: PreparedRenderingImage[] = [];
+  for (const reference of references) {
+    if (!reference) continue;
+    try {
+      const url = resolveImage(reference.url) || reference.url;
+      prepared.push(await prepareRenderingImageSource(url, "high_fidelity"));
+    } catch {
+      // A broken product image should not block rendering generation.
+    }
+  }
+  return prepared;
+}
+
+function materialReferencePriority(material: MaterialItem) {
+  const text = [
+    material.item_label,
+    material.cad_label,
+    material.category,
+    material.client_product_name,
+    material.color,
+    material.notes,
+    material.product?.name,
+    material.product?.category,
+    material.product?.subcategory,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  let score = 0;
+  if (materialImageUrl(material)) score += 10;
+  if (material.cad_label) score += 4;
+  if (material.item_label) score += 3;
+  if (material.color || material.product?.finish) score += 2;
+  if (/\b(tile|stone|slab|marble|quartz|backsplash|floor|flooring|wallpaper|fabric|textile|sconce|lighting|fixture|plumbing|hardware|cabinet|vanity|countertop|shower)\b/.test(text)) score += 6;
+  return score;
 }
 
 function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
@@ -997,21 +1052,33 @@ function RevisionReferenceDropzone({ imageUrl, fileName, onChange }: {
   );
 }
 
-function buildContext(room: any, project: any, selections: RoomProduct[], materials: Material[]) {
+function buildContext(room: any, project: any, selections: RoomProduct[], materials: MaterialItem[]) {
   if (!room || !project) return "";
   const lines: string[] = ["PROJECT SELECTIONS", "", `Room: ${room.name}`, `Project: ${project.name}`];
   if (project.client_name) lines.push(`Client: ${project.client_name}`);
   lines.push("");
   if (materials.length) {
-    lines.push("MATERIALS");
+    lines.push(
+      "ROOM MATERIALS",
+      "Use only these Materials page items for this room. SketchUp controls architecture, camera, crop, geometry, and placement. These room materials control finish, product appearance, and styling. Item labels and CAD labels indicate where each material belongs.",
+    );
     for (const m of materials) {
-      const bits = [`${m.category}: ${m.name}`];
-      if (m.vendor) bits.push(`Vendor: ${m.vendor}`);
-      if (m.sku) bits.push(`SKU: ${m.sku}`);
+      const bits = [`Label: ${m.item_label}`];
+      if (m.cad_label) bits.push(`CAD label: ${m.cad_label}`);
+      if (m.client_product_name) bits.push(`Client product name: ${m.client_product_name}`);
+      if (m.category) bits.push(`Category: ${m.category}`);
+      if (m.color) bits.push(`Color/Finish: ${m.color}`);
+      if (m.quantity) bits.push(`Quantity: ${m.quantity}`);
       if (m.notes) bits.push(`Notes: ${m.notes}`);
+      if (m.product?.name) bits.push(`Product: ${m.product.name}`);
+      if (m.product?.vendor) bits.push(`Vendor: ${m.product.vendor}`);
+      if (m.product?.sku) bits.push(`SKU: ${m.product.sku}`);
+      if (m.product?.finish) bits.push(`Product finish: ${m.product.finish}`);
+      const imageUrl = materialImageUrl(m);
+      if (imageUrl) bits.push(`Reference image: ${imageUrl}`);
       lines.push("- " + bits.join(" | "));
     }
-    lines.push("");
+    lines.push("Do not borrow material references from other rooms.", "");
   }
   if (selections.length) {
     lines.push("PRODUCT SELECTIONS");
