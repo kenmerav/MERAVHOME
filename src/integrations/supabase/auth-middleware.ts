@@ -3,6 +3,7 @@ import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
+import { realtimeTransport } from "./realtimeTransport.server";
 
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
@@ -50,6 +51,9 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
         storage: undefined,
         persistSession: false,
         autoRefreshToken: false,
+      },
+      realtime: {
+        transport: realtimeTransport,
       },
     });
 

@@ -117,6 +117,20 @@ OUTPUT:
 
 class ImageInputError extends Error {}
 
+type RenderingFidelityMode = "standard" | "high_fidelity";
+
+type ReferenceMetadata = {
+  mode?: RenderingFidelityMode;
+  references?: Array<{
+    index: number;
+    compressed: boolean;
+    width?: number;
+    height?: number;
+    originalBytes?: number;
+    preparedBytes?: number;
+  }>;
+};
+
 type EnqueueRenderingPayload = {
   mode?: "enqueue" | "sync";
   roomId?: string;
@@ -127,10 +141,14 @@ type EnqueueRenderingPayload = {
   referenceImageUrl?: string;
   referenceImageUrls?: string[];
   extraContext?: string;
+  renderingMode?: RenderingFidelityMode;
+  referenceMetadata?: ReferenceMetadata;
   revisionParentId?: string | null;
   revisionNumber?: number;
   revisionNotes?: string | null;
 };
+
+const MAX_OPENAI_REFERENCE_BYTES = 50 * 1024 * 1024;
 
 function extensionForContentType(contentType: string) {
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
@@ -146,9 +164,16 @@ function dataUrlToImageFile(dataUrl: string, fallbackName = "sketchup") {
 
   const contentType = match[1];
   const bytes = Buffer.from(match[2], "base64");
+  assertReferenceSize(bytes.byteLength);
   return new File([bytes], `${fallbackName}.${extensionForContentType(contentType)}`, {
     type: contentType,
   });
+}
+
+function assertReferenceSize(size: number) {
+  if (size > MAX_OPENAI_REFERENCE_BYTES) {
+    throw new ImageInputError("Reference image is too large for AI rendering. Use a smaller image or Standard mode.");
+  }
 }
 
 async function urlToImageFile(url: string, origin: string, fallbackName = "sketchup"): Promise<File> {
@@ -176,6 +201,7 @@ async function urlToImageFile(url: string, origin: string, fallbackName = "sketc
     throw new ImageInputError("SketchUp source must be a PNG, JPG, or WebP image.");
   }
   const buf = await res.arrayBuffer();
+  assertReferenceSize(buf.byteLength);
   return new File([buf], `${fallbackName}.${extensionForContentType(contentType)}`, { type: contentType });
 }
 
@@ -185,15 +211,22 @@ async function generateRenderingImage({
   referenceImageUrl,
   referenceImageUrls,
   extraContext,
+  renderingMode = "standard",
+  referenceMetadata,
 }: {
   origin: string;
   sketchupUrl: string;
   referenceImageUrl?: string;
   referenceImageUrls?: string[];
   extraContext?: string;
+  renderingMode?: RenderingFidelityMode;
+  referenceMetadata?: ReferenceMetadata;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
+  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
+  const size = process.env.OPENAI_RENDERING_IMAGE_SIZE || "auto";
+  const quality = "high";
 
   const image = await urlToImageFile(sketchupUrl, origin, "sketchup-reference");
   const referenceImage = referenceImageUrl
@@ -209,13 +242,21 @@ async function generateRenderingImage({
     : RENDERING_PROMPT;
 
   const form = new FormData();
-  form.append("model", process.env.OPENAI_IMAGE_MODEL || "gpt-image-2");
+  form.append("model", model);
   const imageInputs = [image, referenceImage, ...additionalReferenceImages].filter(Boolean) as File[];
   const imageField = imageInputs.length > 1 ? "image[]" : "image";
   for (const img of imageInputs) form.append(imageField, img);
   form.append("prompt", userText);
-  form.append("size", process.env.OPENAI_RENDERING_IMAGE_SIZE || "auto");
-  form.append("quality", "high");
+  form.append("size", size);
+  form.append("quality", quality);
+  console.info("[rendering] OpenAI image edit request", {
+    model,
+    quality,
+    size,
+    renderingMode,
+    imageCount: imageInputs.length,
+    referenceMetadata,
+  });
 
   const imageRes = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
@@ -237,7 +278,7 @@ async function generateRenderingImage({
 }
 
 async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPayload, "roomId" | "sketchupId" | "sketchupUrl">> & EnqueueRenderingPayload & { placeholderId: string; origin: string }) {
-  const { placeholderId, origin, roomId, sketchupCaption, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext } = payload;
+  const { placeholderId, origin, roomId, sketchupCaption, sketchupUrl, referenceImageUrl, referenceImageUrls, extraContext, renderingMode, referenceMetadata } = payload;
   const startedAt = Date.now();
   try {
     console.info(`[rendering:${placeholderId}] started`);
@@ -262,6 +303,8 @@ async function processQueuedRendering(payload: Required<Pick<EnqueueRenderingPay
       referenceImageUrl,
       referenceImageUrls,
       extraContext,
+      renderingMode,
+      referenceMetadata,
     });
 
     const uploaded = await uploadRoomImageFromDataUrl({
@@ -327,6 +370,8 @@ export const Route = createFileRoute("/api/generate-rendering")({
             referenceImageUrl,
             referenceImageUrls,
             extraContext,
+            renderingMode,
+            referenceMetadata,
             revisionParentId,
             revisionNumber,
             revisionNotes,
@@ -375,6 +420,8 @@ export const Route = createFileRoute("/api/generate-rendering")({
                 referenceImageUrl,
                 referenceImageUrls,
                 extraContext,
+                renderingMode,
+                referenceMetadata,
               }),
             );
 
@@ -387,6 +434,8 @@ export const Route = createFileRoute("/api/generate-rendering")({
             referenceImageUrl,
             referenceImageUrls,
             extraContext,
+            renderingMode,
+            referenceMetadata,
           });
 
           return Response.json({ imageDataUrl });
