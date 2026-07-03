@@ -454,7 +454,7 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, ren
         )}
         <span className="eyebrow text-[9px]">Version {version}</span>
         {rendering.status === "failed" ? (
-          <span className="text-destructive">Failed: {rendering.error_message || "unknown"}</span>
+          <span className="text-destructive">Error</span>
         ) : (
           <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {rendering.status}</span>
         )}
