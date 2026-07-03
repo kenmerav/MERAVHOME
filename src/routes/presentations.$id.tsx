@@ -757,10 +757,13 @@ function PresentationPage() {
   const [editingPicks, setEditingPicks] = useState(false);
   const [editingText, setEditingText] = useState(false);
   const [pdfPickerOpen, setPdfPickerOpen] = useState(false);
+  const [reorderPickerOpen, setReorderPickerOpen] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [selectedPdfSlideKeys, setSelectedPdfSlideKeys] = useState<string[]>([]);
   const [draggingSlideKey, setDraggingSlideKey] = useState<string | null>(null);
   const [dragOverSlideKey, setDragOverSlideKey] = useState<string | null>(null);
+  const [reorderDragSlideKey, setReorderDragSlideKey] = useState<string | null>(null);
+  const [reorderDragOverSlideKey, setReorderDragOverSlideKey] = useState<string | null>(null);
   const exportSlideRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
@@ -967,6 +970,77 @@ function PresentationPage() {
           <div className="flex items-center gap-2">
             {canEditPresentation && (
               <>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setReorderPickerOpen((value) => !value)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
+                    aria-expanded={reorderPickerOpen}
+                  >
+                    <GripVertical className="w-4 h-4" /> Reorder Pages
+                  </button>
+                  {reorderPickerOpen && (
+                    <div className="absolute right-0 top-full z-30 mt-2 w-[360px] border border-border bg-white p-2 shadow-xl">
+                      <div className="max-h-[60vh] overflow-y-auto">
+                        {slides.map((item, index) => {
+                          const isCover = item.kind === "cover";
+                          const canDragRow = !isCover;
+                          const isRowTarget =
+                            reorderDragOverSlideKey === item.slideKey &&
+                            reorderDragSlideKey !== item.slideKey;
+                          return (
+                            <div
+                              key={`reorder-${item.slideKey}`}
+                              draggable={canDragRow}
+                              onDragStart={(event) => {
+                                if (!canDragRow) return;
+                                event.dataTransfer.effectAllowed = "move";
+                                event.dataTransfer.setData("text/plain", item.slideKey);
+                                setReorderDragSlideKey(item.slideKey);
+                              }}
+                              onDragEnd={() => {
+                                setReorderDragSlideKey(null);
+                                setReorderDragOverSlideKey(null);
+                              }}
+                              onDragOver={(event) => {
+                                if (!canDragRow || !reorderDragSlideKey) return;
+                                event.preventDefault();
+                                setReorderDragOverSlideKey(item.slideKey);
+                              }}
+                              onDragLeave={() => {
+                                if (reorderDragOverSlideKey === item.slideKey) {
+                                  setReorderDragOverSlideKey(null);
+                                }
+                              }}
+                              onDrop={(event) => {
+                                if (!canDragRow || !reorderDragSlideKey) return;
+                                event.preventDefault();
+                                const sourceSlideKey =
+                                  event.dataTransfer.getData("text/plain") || reorderDragSlideKey;
+                                setReorderDragSlideKey(null);
+                                setReorderDragOverSlideKey(null);
+                                void reorderPresentationSlide(sourceSlideKey, item.slideKey);
+                              }}
+                              className={`flex items-center gap-3 border px-3 py-2 text-left text-sm transition-colors ${
+                                isRowTarget
+                                  ? "border-ink bg-muted"
+                                  : "border-transparent hover:border-border hover:bg-muted/40"
+                              } ${canDragRow ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-70"}`}
+                            >
+                              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium text-ink">
+                                  {presentationSlideLabel(item)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">Page {index + 1}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => setEditingPicks((value) => !value)}
                   className="inline-flex items-center gap-2 px-5 py-2.5 border border-border text-ink text-sm hover:border-ink transition-colors"
