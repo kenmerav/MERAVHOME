@@ -94,6 +94,7 @@ export function specBookVisibilityForRole(
     | "contractor_spec_show_pricing"
     | "contractor_spec_show_links"
     | "contractor_spec_show_ordering"
+    | "contractor_spec_can_update_ordering"
   > | null | undefined,
 ) {
   if (!profile?.is_active || !project) return { showPricing: false, showLinks: false, showOrdering: false };
@@ -112,4 +113,13 @@ export function specBookVisibilityForRole(
     showLinks: project.client_spec_show_links === true,
     showOrdering: project.client_spec_show_ordering === true,
   };
+}
+
+export function canUpdateSpecOrderingForRole(
+  profile: Pick<UserProfile, "is_active" | "role"> | null | undefined,
+  project: Pick<Project, "contractor_spec_can_update_ordering"> | null | undefined,
+) {
+  if (!profile?.is_active || !project) return false;
+  if (isStudioTeamRole(profile.role)) return true;
+  return isContractorRole(profile.role) && project.contractor_spec_can_update_ordering === true;
 }

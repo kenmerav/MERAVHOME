@@ -118,6 +118,7 @@ export interface Project {
   contractor_spec_show_pricing: boolean;
   contractor_spec_show_links: boolean;
   contractor_spec_show_ordering: boolean;
+  contractor_spec_can_update_ordering: boolean;
   is_pinned: boolean;
   last_opened_at: string | null;
   created_at: string;

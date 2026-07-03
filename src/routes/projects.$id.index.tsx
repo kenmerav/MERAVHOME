@@ -1067,6 +1067,7 @@ function ProjectAccessDialog({
     contractor_spec_show_pricing: project.contractor_spec_show_pricing,
     contractor_spec_show_links: project.contractor_spec_show_links,
     contractor_spec_show_ordering: project.contractor_spec_show_ordering ?? true,
+    contractor_spec_can_update_ordering: project.contractor_spec_can_update_ordering ?? false,
   });
 
   const resetForm = () => {
@@ -1085,6 +1086,7 @@ function ProjectAccessDialog({
       contractor_spec_show_pricing: project.contractor_spec_show_pricing,
       contractor_spec_show_links: project.contractor_spec_show_links,
       contractor_spec_show_ordering: project.contractor_spec_show_ordering ?? true,
+      contractor_spec_can_update_ordering: project.contractor_spec_can_update_ordering ?? false,
     });
   };
 
@@ -1148,6 +1150,7 @@ function ProjectAccessDialog({
               ["Spec Shows Pricing", form.contractor_spec_show_pricing, () => toggle("contractor_spec_show_pricing")],
               ["Spec Shows Product Links", form.contractor_spec_show_links, () => toggle("contractor_spec_show_links")],
               ["Spec Shows Ordering", form.contractor_spec_show_ordering, () => toggle("contractor_spec_show_ordering")],
+              ["Can Update Ordering", form.contractor_spec_can_update_ordering, () => toggle("contractor_spec_can_update_ordering")],
             ]}
           />
         </div>

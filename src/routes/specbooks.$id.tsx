@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
-import { canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
+import { canUpdateSpecOrderingForRole, canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
 
@@ -246,6 +246,9 @@ export function SpecBookDocument({
     !publicView &&
     profile?.is_active === true &&
     (profile.role === "Admin" || profile.role === "Employee");
+  const canEditOrdering =
+    !publicView &&
+    canUpdateSpecOrderingForRole(profile, project);
   const isSharedSpecView =
     publicView || profile?.role === "Client" || profile?.role === "Contractor";
   const visibility = publicView
@@ -479,6 +482,7 @@ export function SpecBookDocument({
                 projectName={project.name}
                 projectId={id}
                 canEditProducts={canEditProducts}
+                canEditOrdering={canEditOrdering}
                 showLinks={visibility.showLinks}
                 showPricing={visibility.showPricing}
                 showOrdering={visibility.showOrdering}
@@ -503,6 +507,7 @@ export function SpecBookDocument({
                     projectName={project.name}
                     projectId={id}
                     canEditProducts={canEditProducts}
+                    canEditOrdering={canEditOrdering}
                     showLinks={visibility.showLinks}
                     showPricing={visibility.showPricing}
                     showOrdering={visibility.showOrdering}
@@ -565,6 +570,7 @@ function CategorySpec({
   projectName,
   projectId,
   canEditProducts,
+  canEditOrdering,
   showLinks,
   showPricing,
   showOrdering,
@@ -576,6 +582,7 @@ function CategorySpec({
   projectName: string;
   projectId: string;
   canEditProducts: boolean;
+  canEditOrdering: boolean;
   showLinks: boolean;
   showPricing: boolean;
   showOrdering: boolean;
@@ -620,6 +627,7 @@ function CategorySpec({
                   room={room!}
                   projectId={projectId}
                   canEditProducts={canEditProducts}
+                  canEditOrdering={canEditOrdering}
                   showLinks={showLinks}
                   showPricing={showPricing}
                   showOrdering={showOrdering}
@@ -641,6 +649,7 @@ function RoomSpec({
   projectName,
   projectId,
   canEditProducts,
+  canEditOrdering,
   showLinks,
   showPricing,
   showOrdering,
@@ -652,6 +661,7 @@ function RoomSpec({
   projectName: string;
   projectId: string;
   canEditProducts: boolean;
+  canEditOrdering: boolean;
   showLinks: boolean;
   showPricing: boolean;
   showOrdering: boolean;
@@ -701,6 +711,7 @@ function RoomSpec({
                   room={room}
                   projectId={projectId}
                   canEditProducts={canEditProducts}
+                  canEditOrdering={canEditOrdering}
                   showLinks={showLinks}
                   showPricing={showPricing}
                   showOrdering={showOrdering}
@@ -737,6 +748,7 @@ function SpecCard({
   room,
   projectId,
   canEditProducts,
+  canEditOrdering,
   showLinks,
   showPricing,
   showOrdering,
@@ -746,6 +758,7 @@ function SpecCard({
   room: Room;
   projectId: string;
   canEditProducts: boolean;
+  canEditOrdering: boolean;
   showLinks: boolean;
   showPricing: boolean;
   showOrdering: boolean;
@@ -806,9 +819,13 @@ function SpecCard({
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />
           <Detail label="Quantity" value={item.quantity != null ? String(item.quantity) : null} />
-          {showOrdering && <Detail label="Ordered By" value={item.ordered_by} />}
+          {showOrdering && <Detail label="Who Is Ordering" value={item.ordered_by} />}
           {showOrdering && <Detail label="Ordered" value={item.ordered ? "Yes" : "No"} />}
         </dl>
+
+        {showOrdering && canEditOrdering && (
+          <SpecOrderingControls item={item} projectId={projectId} />
+        )}
 
         {showLinks && p?.product_url && (
           <div className="mt-5 print:mt-3">
@@ -856,6 +873,66 @@ function SpecCard({
       />
     )}
     </>
+  );
+}
+
+const SPEC_ORDERED_BY_OPTIONS = ["Contractor", "Merav", "Client"] as const;
+
+function SpecOrderingControls({ item, projectId }: { item: MaterialItem; projectId: string }) {
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState(false);
+
+  const save = async (patch: Partial<MaterialItem>) => {
+    setSaving(true);
+    try {
+      await db.updateMaterialItem(item.id, patch);
+      await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+      toast.success("Ordering updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update ordering.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="mt-5 grid gap-3 border border-border bg-bone/25 p-4 print:hidden sm:grid-cols-[minmax(0,220px)_auto]"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div>
+        <Label className="eyebrow">Who Is Ordering</Label>
+        <Select
+          value={item.ordered_by ?? "none"}
+          disabled={saving}
+          onValueChange={(value) =>
+            save({ ordered_by: value === "none" ? null : (value as MaterialItem["ordered_by"]) })
+          }
+        >
+          <SelectTrigger className="mt-1 bg-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Not set</SelectItem>
+            {SPEC_ORDERED_BY_OPTIONS.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <label className="flex items-end gap-3 pb-3 text-sm">
+        <input
+          type="checkbox"
+          checked={item.ordered === true}
+          disabled={saving}
+          onChange={(event) => save({ ordered: event.target.checked })}
+          className="h-4 w-4 accent-ink"
+        />
+        Ordered
+      </label>
+    </div>
   );
 }
 
