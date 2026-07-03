@@ -16,6 +16,7 @@ import {
   Type,
   Plus,
   Trash2,
+  GripVertical,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
@@ -100,6 +101,15 @@ type PresentationSlide =
       page: PresentationBoardPage;
       pageIndex: number;
       pageCount: number;
+    };
+
+type PresentationSlideDraft =
+  | PresentationBaseSlide
+  | {
+      kind: "board-page";
+      slideKey: string;
+      slotId?: string;
+      page: PresentationBoardPage;
     };
 
 const DESIGN_BOARD_PRESENTATION_WIDTH = 1400;
@@ -284,6 +294,42 @@ function normalizePresentationExtraPageSlots(boardState: unknown): PresentationE
     .filter((slot): slot is PresentationExtraPageSlot => Boolean(slot));
 }
 
+function normalizePresentationSlideOrder(boardState: unknown) {
+  if (!boardState || typeof boardState !== "object") return [];
+  const candidate = boardState as { presentationSlideOrder?: unknown[] };
+  if (!Array.isArray(candidate.presentationSlideOrder)) return [];
+  const seen = new Set<string>();
+  return candidate.presentationSlideOrder.filter((value): value is string => {
+    if (typeof value !== "string" || !value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+function applyPresentationSlideOrder(slides: PresentationSlideDraft[], order: string[]) {
+  if (!order.length) return slides;
+  const slideByKey = new Map(slides.map((slide) => [slide.slideKey, slide]));
+  const ordered = order
+    .map((slideKey) => slideByKey.get(slideKey))
+    .filter((slide): slide is PresentationSlideDraft => Boolean(slide));
+  const orderedKeys = new Set(ordered.map((slide) => slide.slideKey));
+  return [...ordered, ...slides.filter((slide) => !orderedKeys.has(slide.slideKey))];
+}
+
+function numberPresentationSlides(slides: PresentationSlideDraft[]) {
+  const boardSlideCount = slides.filter((item) => item.kind === "board-page").length;
+  let boardSlideIndex = 0;
+  return slides.map((item) =>
+    item.kind === "board-page"
+      ? {
+          ...item,
+          pageIndex: boardSlideIndex++,
+          pageCount: boardSlideCount,
+        }
+      : item,
+  ) as PresentationSlide[];
+}
+
 function buildViewSlideKey(roomId: string, view: RoomData["views"][number], viewIndex: number) {
   const imageId = view.hero?.id ?? view.sketch?.id ?? `view-${viewIndex + 1}`;
   return `room:${roomId}:view:${imageId}`;
@@ -392,6 +438,10 @@ function PresentationPage() {
   );
   const presentationExtraPages = useMemo(
     () => normalizePresentationExtraPageSlots(sharedBoard?.board_state),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
+  const presentationSlideOrder = useMemo(
+    () => normalizePresentationSlideOrder(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
   const includedBoardPages = useMemo(
@@ -578,6 +628,35 @@ function PresentationPage() {
     [savePresentationExtraPages],
   );
 
+  const savePresentationSlideOrder = useCallback(
+    async (nextOrder: string[]) => {
+      const latestBoard = await db.getDesignBoard(projectId);
+      const baseState =
+        latestBoard?.board_state && typeof latestBoard.board_state === "object"
+          ? (latestBoard.board_state as Record<string, unknown>)
+          : {};
+      const nextState = {
+        ...baseState,
+        presentationSlideOrder: nextOrder,
+      };
+
+      const saved = latestBoard?.updated_at
+        ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+        : await db.upsertDesignBoard(projectId, nextState);
+
+      if (!saved) {
+        toast.error("Presentation order changed while saving. Please try again.");
+        qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+        return false;
+      }
+
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      toast.success("Presentation order updated");
+      return true;
+    },
+    [projectId, qc],
+  );
+
   const baseSlides = useMemo<PresentationBaseSlide[]>(() => {
     const list: PresentationBaseSlide[] = [{ kind: "cover", slideKey: "cover" }];
     roomData.forEach(({ room, data }) => {
@@ -608,7 +687,7 @@ function PresentationPage() {
     return next;
   }, [presentationExtraPages]);
 
-  const slides = useMemo(() => {
+  const naturalSlides = useMemo<PresentationSlideDraft[]>(() => {
     const pageMap = new Map(designBoardPages.map((page) => [page.id, page] as const));
     const slottedBoardPageIds = new Set(
       presentationExtraPages
@@ -616,10 +695,7 @@ function PresentationPage() {
         .filter((boardPageId): boardPageId is string => Boolean(boardPageId)),
     );
     const legacyIncludedPages = includedBoardPages.filter((page) => !slottedBoardPageIds.has(page.id));
-    const list: Array<
-      | PresentationBaseSlide
-      | { kind: "board-page"; slideKey: string; slotId?: string; page: PresentationBoardPage }
-    > = [];
+    const list: PresentationSlideDraft[] = [];
     const visitedSlotIds = new Set<string>();
 
     const appendExtraSlides = (afterSlideKey: string) => {
@@ -653,18 +729,28 @@ function PresentationPage() {
       });
     });
 
-    const boardSlideCount = list.filter((item) => item.kind === "board-page").length;
-    let boardSlideIndex = 0;
-    return list.map((item) =>
-      item.kind === "board-page"
-        ? {
-            ...item,
-            pageIndex: boardSlideIndex++,
-            pageCount: boardSlideCount,
-          }
-        : item,
-    ) as PresentationSlide[];
+    return list;
   }, [baseSlides, designBoardPages, includedBoardPages, presentationExtraPages, slotsByAfterKey]);
+
+  const slides = useMemo(
+    () => numberPresentationSlides(applyPresentationSlideOrder(naturalSlides, presentationSlideOrder)),
+    [naturalSlides, presentationSlideOrder],
+  );
+
+  const reorderPresentationSlide = useCallback(
+    async (draggedSlideKey: string, targetSlideKey: string) => {
+      if (draggedSlideKey === targetSlideKey) return;
+      const currentIndex = slides.findIndex((item) => item.slideKey === draggedSlideKey);
+      const targetIndex = slides.findIndex((item) => item.slideKey === targetSlideKey);
+      if (currentIndex <= 0 || targetIndex <= 0) return;
+
+      const nextSlides = [...slides];
+      const [moved] = nextSlides.splice(currentIndex, 1);
+      nextSlides.splice(targetIndex, 0, moved);
+      await savePresentationSlideOrder(nextSlides.map((item) => item.slideKey));
+    },
+    [savePresentationSlideOrder, slides],
+  );
 
   const [presenting, setPresenting] = useState(false);
   const [slide, setSlide] = useState(0);
@@ -673,6 +759,8 @@ function PresentationPage() {
   const [pdfPickerOpen, setPdfPickerOpen] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [selectedPdfSlideKeys, setSelectedPdfSlideKeys] = useState<string[]>([]);
+  const [draggingSlideKey, setDraggingSlideKey] = useState<string | null>(null);
+  const [dragOverSlideKey, setDragOverSlideKey] = useState<string | null>(null);
   const exportSlideRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
@@ -1001,60 +1089,107 @@ function PresentationPage() {
             />
           </section>
           {rooms.length === 0 && <div className="text-sm text-muted-foreground">No rooms yet.</div>}
-          {slides.map((current) => (
-            <div key={current.slideKey} className="space-y-4">
-              {current.kind === "cover" ? null : current.kind === "view" ? (
-                <RoomSpread
-                  project={project}
-                  room={current.room}
-                  data={current.data}
-                  view={current.view}
-                  viewIndex={current.viewIndex}
-                  viewCount={current.viewCount}
-                  anchor={current.anchor}
-                  onPick={
-                    editingPicks
-                      ? (patch) => updatePresentationPicks(current.room.id, patch)
-                      : undefined
-                  }
-                  onUpdateViewSketch={
-                    editingPicks && current.view.hero
-                      ? (sketchupId) =>
-                          updateRenderingSketchLink(current.room.id, current.view.hero!.id, sketchupId)
-                      : undefined
-                  }
-                  onToggleViewVisibility={
-                    editingPicks
-                      ? () => {
-                          const image = current.view.hero || current.view.sketch;
-                          if (image)
-                            updateViewVisibility(current.room.id, image.id, !current.view.visible);
-                        }
-                      : undefined
-                  }
-                  onTextChange={
-                    editingText ? (patch) => updateSlideText(current.room.id, patch) : undefined
-                  }
-                />
-              ) : (
-                <DesignBoardSpread
-                  project={project}
-                  page={current.page}
-                  pageIndex={current.pageIndex}
-                  pageCount={current.pageCount}
-                />
-              )}
+          {slides.map((current) => {
+            const isCover = current.kind === "cover";
+            const draggable = canEditPresentation && !isCover;
+            const isDragTarget = dragOverSlideKey === current.slideKey && draggingSlideKey !== current.slideKey;
+            return (
+              <div
+                key={current.slideKey}
+                className={`space-y-4 ${isDragTarget ? "outline outline-2 outline-offset-8 outline-ink" : ""}`}
+                onDragOver={(event) => {
+                  if (!draggable || !draggingSlideKey) return;
+                  event.preventDefault();
+                  setDragOverSlideKey(current.slideKey);
+                }}
+                onDragLeave={() => {
+                  if (dragOverSlideKey === current.slideKey) setDragOverSlideKey(null);
+                }}
+                onDrop={(event) => {
+                  if (!draggable || !draggingSlideKey) return;
+                  event.preventDefault();
+                  const sourceSlideKey = event.dataTransfer.getData("text/plain") || draggingSlideKey;
+                  setDragOverSlideKey(null);
+                  setDraggingSlideKey(null);
+                  void reorderPresentationSlide(sourceSlideKey, current.slideKey);
+                }}
+              >
+                {draggable && (
+                  <div className="print:hidden">
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", current.slideKey);
+                        setDraggingSlideKey(current.slideKey);
+                      }}
+                      onDragEnd={() => {
+                        setDraggingSlideKey(null);
+                        setDragOverSlideKey(null);
+                      }}
+                      className="inline-flex cursor-grab items-center gap-2 border border-border bg-white px-3 py-2 text-xs uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:border-ink hover:text-ink active:cursor-grabbing"
+                      aria-label={`Drag ${presentationSlideLabel(current)} to reorder`}
+                    >
+                      <GripVertical className="h-4 w-4" />
+                      Page {slides.findIndex((item) => item.slideKey === current.slideKey) + 1}
+                    </button>
+                  </div>
+                )}
 
-              <PresentationExtraPageManager
-                afterSlideKey={current.slideKey}
-                slots={slotsByAfterKey.get(current.slideKey) ?? []}
-                pages={designBoardPages}
-                onAdd={() => void addPresentationExtraPage(current.slideKey)}
-                onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
-                onRemove={(slotId) => void removePresentationExtraPage(slotId)}
-              />
-            </div>
-          ))}
+                {isCover ? null : current.kind === "view" ? (
+                  <RoomSpread
+                    project={project}
+                    room={current.room}
+                    data={current.data}
+                    view={current.view}
+                    viewIndex={current.viewIndex}
+                    viewCount={current.viewCount}
+                    anchor={current.anchor}
+                    onPick={
+                      editingPicks
+                        ? (patch) => updatePresentationPicks(current.room.id, patch)
+                        : undefined
+                    }
+                    onUpdateViewSketch={
+                      editingPicks && current.view.hero
+                        ? (sketchupId) =>
+                            updateRenderingSketchLink(current.room.id, current.view.hero!.id, sketchupId)
+                        : undefined
+                    }
+                    onToggleViewVisibility={
+                      editingPicks
+                        ? () => {
+                            const image = current.view.hero || current.view.sketch;
+                            if (image)
+                              updateViewVisibility(current.room.id, image.id, !current.view.visible);
+                          }
+                        : undefined
+                    }
+                    onTextChange={
+                      editingText ? (patch) => updateSlideText(current.room.id, patch) : undefined
+                    }
+                  />
+                ) : (
+                  <DesignBoardSpread
+                    project={project}
+                    page={current.page}
+                    pageIndex={current.pageIndex}
+                    pageCount={current.pageCount}
+                  />
+                )}
+
+                <PresentationExtraPageManager
+                  afterSlideKey={current.slideKey}
+                  slots={slotsByAfterKey.get(current.slideKey) ?? []}
+                  pages={designBoardPages}
+                  onAdd={() => void addPresentationExtraPage(current.slideKey)}
+                  onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
+                  onRemove={(slotId) => void removePresentationExtraPage(slotId)}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </AppShell>
