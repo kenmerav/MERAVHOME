@@ -104,7 +104,13 @@ export function productMatchesItemCategory(product: ProductCategoryShape, catego
 }
 
 export function sampleAppliesToCategory(category: ItemCategory | string | null | undefined) {
-  return category === "Tile & Stone" || category === "Flooring";
+  return (
+    category === "Tile & Stone" ||
+    category === "Countertops" ||
+    category === "Hardware" ||
+    category === "Plumbing" ||
+    category === "Flooring"
+  );
 }
 
 function normalizeCategoryText(value: string) {

@@ -28,6 +28,7 @@ type ProductCatalogSearch = {
   category?: ItemCategory;
   vendor?: string;
   sample?: SampleFilter;
+  project?: string;
 };
 
 const isItemCategory = (value: unknown): value is ItemCategory =>
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/catalog_/$productId")({
     category: isItemCategory(search.category) ? search.category : undefined,
     vendor: typeof search.vendor === "string" && search.vendor.trim() ? search.vendor : undefined,
     sample: isSampleFilter(search.sample) ? search.sample : undefined,
+    project: typeof search.project === "string" && search.project.trim() ? search.project : undefined,
   }),
   component: ProductPage,
 });

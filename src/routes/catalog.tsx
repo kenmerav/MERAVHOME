@@ -29,6 +29,7 @@ type CatalogSearch = {
   category?: ItemCategory;
   vendor?: string;
   sample?: SampleFilter;
+  project?: string;
 };
 
 const isItemCategory = (value: unknown): value is ItemCategory =>
@@ -54,6 +55,7 @@ export const Route = createFileRoute("/catalog")({
     category: isItemCategory(search.category) ? search.category : undefined,
     vendor: typeof search.vendor === "string" && search.vendor.trim() ? search.vendor : undefined,
     sample: isSampleFilter(search.sample) ? search.sample : undefined,
+    project: typeof search.project === "string" && search.project.trim() ? search.project : undefined,
   }),
   component: CatalogPage,
 });
@@ -64,16 +66,29 @@ function CatalogPage() {
   const [cat, setCat] = useState<ItemCategory | "All">(routeSearch.category ?? "All");
   const [vendor, setVendor] = useState(routeSearch.vendor ?? "All");
   const [sampleFilter, setSampleFilter] = useState<SampleFilter>(routeSearch.sample ?? "All");
+  const [projectFilter, setProjectFilter] = useState(routeSearch.project ?? "All");
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
     queryFn: () => db.getCurrentUserProfile(),
+  });
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await db.listProjects()) ?? [],
   });
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
     queryFn: async () => (await db.listCatalog(search)) ?? [],
   });
+  const { data: projectProductIds = [], isFetching: loadingProjectProducts } = useQuery({
+    queryKey: ["catalogProjectProductIds", projectFilter],
+    queryFn: async () => (await db.listProjectCatalogProductIds(projectFilter)) ?? [],
+    enabled: projectFilter !== "All",
+  });
+  const projectProductIdSet = useMemo(() => new Set(projectProductIds), [projectProductIds]);
   const showSampleFilter = cat !== "All" && sampleAppliesToCategory(cat);
-  const categoryFiltered = cat === "All" ? products : products.filter(p => productMatchesItemCategory(p, cat));
+  const projectFiltered =
+    projectFilter === "All" ? products : products.filter((p) => projectProductIdSet.has(p.id));
+  const categoryFiltered = cat === "All" ? projectFiltered : projectFiltered.filter(p => productMatchesItemCategory(p, cat));
   const sampleFiltered =
     showSampleFilter && sampleFilter !== "All"
       ? categoryFiltered.filter((p) => sampleFilter === "Sample" ? p.has_sample : !p.has_sample)
@@ -87,14 +102,19 @@ function CatalogPage() {
     setVendor("All");
     setSampleFilter("All");
   };
+  const setProject = (projectId: string) => {
+    setProjectFilter(projectId);
+    setVendor("All");
+  };
   const catalogSearch = useMemo(
     () => ({
       q: search.trim() || undefined,
       category: cat === "All" ? undefined : cat,
       vendor: vendor === "All" ? undefined : vendor,
       sample: sampleFilter === "All" ? undefined : sampleFilter,
+      project: projectFilter === "All" ? undefined : projectFilter,
     }),
-    [cat, sampleFilter, search, vendor],
+    [cat, projectFilter, sampleFilter, search, vendor],
   );
 
   useEffect(() => {
@@ -139,6 +159,19 @@ function CatalogPage() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products" className="pl-9" />
           </div>
+          <Select value={projectFilter} onValueChange={setProject}>
+            <SelectTrigger className="w-full sm:w-64">
+              <SelectValue placeholder="Project" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Projects</SelectItem>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex gap-1 flex-wrap">
             {(["All", ...ALL_CATEGORIES] as const).map(c => (
               <button key={c} onClick={() => setCategory(c)}
@@ -173,7 +206,9 @@ function CatalogPage() {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="border border-dashed border-border py-20 text-center text-sm text-muted-foreground">No products yet.</div>
+          <div className="border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+            {loadingProjectProducts ? "Loading project products..." : "No products found."}
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
             {filtered.map(p => <CatalogCard key={p.id} p={p} catalogSearch={catalogSearch} />)}

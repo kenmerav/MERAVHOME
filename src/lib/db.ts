@@ -597,6 +597,34 @@ export const db = {
     if (search?.trim()) q = q.ilike("name", `%${search.trim()}%`);
     return (await q).data as Product[] | null;
   },
+  listProjectCatalogProductIds: async (projectId: string) => {
+    const ids = new Set<string>();
+
+    const { data: materialItems } = await supabase
+      .from("material_items")
+      .select("product_id")
+      .eq("project_id", projectId)
+      .not("product_id", "is", null);
+    (materialItems ?? []).forEach((item: any) => {
+      if (typeof item.product_id === "string") ids.add(item.product_id);
+    });
+
+    const { data: rooms } = await supabase.from("rooms").select("id").eq("project_id", projectId);
+    const roomIds = (rooms ?? [])
+      .map((room: any) => room.id)
+      .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+    if (roomIds.length) {
+      const { data: roomProducts } = await supabase
+        .from("room_products")
+        .select("product_id")
+        .in("room_id", roomIds);
+      (roomProducts ?? []).forEach((item: any) => {
+        if (typeof item.product_id === "string") ids.add(item.product_id);
+      });
+    }
+
+    return Array.from(ids);
+  },
   getProduct: async (id: string) =>
     (await supabase.from("products").select("*").eq("id", id).maybeSingle()).data as Product | null,
   createProduct: async (
