@@ -1962,11 +1962,6 @@ function RoomSlide({
         <div className="mb-4">
           <div className="eyebrow text-[11px]">
             {project.name} · {project.client_name}
-            {viewCount > 1 && (
-              <span className="ml-2 opacity-60">
-                · View {viewIndex + 1} of {viewCount}
-              </span>
-            )}
           </div>
           <h2 className="font-display text-4xl lg:text-6xl text-ink mt-2 leading-tight">
             {room.name}
@@ -2480,11 +2475,6 @@ function RoomSpread({
           <div>
             <div className="eyebrow text-[11px]">
               {project.name} · {project.client_name}
-              {viewCount > 1 && (
-                <span className="ml-2 opacity-60">
-                  · View {viewIndex + 1} of {viewCount}
-                </span>
-              )}
               {!view.visible && <span className="ml-2 text-destructive">· Hidden</span>}
             </div>
             {editingText ? (
