@@ -79,6 +79,8 @@ type PresentationExtraPageSlot = {
   boardPageId: string | null;
 };
 
+type PresentationSidebarSection = "palette" | "cabinet" | "counter" | "faucet";
+
 type PresentationBaseSlide =
   | { kind: "cover"; slideKey: string }
   | {
@@ -337,6 +339,26 @@ function normalizePresentationRenderingOverrides(boardState: unknown) {
   );
 }
 
+function isPresentationSidebarSection(value: unknown): value is PresentationSidebarSection {
+  return value === "palette" || value === "cabinet" || value === "counter" || value === "faucet";
+}
+
+function normalizePresentationHiddenSections(boardState: unknown) {
+  if (!boardState || typeof boardState !== "object") return {};
+  const candidate = boardState as { presentationHiddenSections?: unknown };
+  if (!candidate.presentationHiddenSections || typeof candidate.presentationHiddenSections !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(candidate.presentationHiddenSections as Record<string, unknown>)
+      .map(([slideKey, value]) => [
+        slideKey,
+        Array.isArray(value) ? value.filter(isPresentationSidebarSection) : [],
+      ])
+      .filter(([slideKey, sections]) => Boolean(slideKey) && sections.length > 0),
+  ) as Record<string, PresentationSidebarSection[]>;
+}
+
 function applyPresentationRenderingOverrides(
   slides: PresentationSlideDraft[],
   overrides: Record<string, string>,
@@ -557,6 +579,10 @@ function PresentationPage() {
     () => normalizePresentationRenderingOverrides(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
+  const presentationHiddenSections = useMemo(
+    () => normalizePresentationHiddenSections(sharedBoard?.board_state),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
   const includedBoardPages = useMemo(
     () => designBoardPages.filter((page) => page.presentationVisible),
     [designBoardPages],
@@ -601,6 +627,41 @@ function PresentationPage() {
 
     if (!saved) {
       toast.error("Presentation image changed while saving. Please try again.");
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+  };
+
+  const updatePresentationHiddenSection = async (
+    slideKey: string,
+    section: PresentationSidebarSection,
+    hidden: boolean,
+  ) => {
+    const latestBoard = await db.getDesignBoard(projectId);
+    const baseState =
+      latestBoard?.board_state && typeof latestBoard.board_state === "object"
+        ? (latestBoard.board_state as Record<string, unknown>)
+        : {};
+    const currentHidden = normalizePresentationHiddenSections(baseState);
+    const currentSections = new Set(currentHidden[slideKey] ?? []);
+    if (hidden) currentSections.add(section);
+    else currentSections.delete(section);
+    const nextHidden = { ...currentHidden };
+    const nextSections = Array.from(currentSections);
+    if (nextSections.length) nextHidden[slideKey] = nextSections;
+    else delete nextHidden[slideKey];
+    const nextState = {
+      ...baseState,
+      presentationHiddenSections: nextHidden,
+    };
+
+    const saved = latestBoard?.updated_at
+      ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+      : await db.upsertDesignBoard(projectId, nextState);
+
+    if (!saved) {
+      toast.error("Presentation section changed while saving. Please try again.");
       qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
       return;
     }
@@ -1081,6 +1142,7 @@ function PresentationPage() {
               view={current.view}
               viewIndex={current.viewIndex}
               viewCount={current.viewCount}
+              hiddenSections={presentationHiddenSections[current.slideKey] ?? []}
             />
           )}
         </div>
@@ -1283,6 +1345,7 @@ function PresentationPage() {
                   view={current.view}
                   viewIndex={current.viewIndex}
                   viewCount={current.viewCount}
+                  hiddenSections={presentationHiddenSections[current.slideKey] ?? []}
                 />
               )}
             </div>
@@ -1375,6 +1438,13 @@ function PresentationPage() {
                     view={current.view}
                     viewIndex={current.viewIndex}
                     viewCount={current.viewCount}
+                    hiddenSections={presentationHiddenSections[current.slideKey] ?? []}
+                    onToggleSidebarSection={
+                      editingPicks
+                        ? (section, hidden) =>
+                            updatePresentationHiddenSection(current.slideKey, section, hidden)
+                        : undefined
+                    }
                     anchor={current.anchor}
                     onPick={
                       editingPicks
@@ -1570,6 +1640,7 @@ function RoomSlide({
   view,
   viewIndex,
   viewCount,
+  hiddenSections = [],
 }: {
   project: any;
   room: any;
@@ -1577,6 +1648,7 @@ function RoomSlide({
   view: RoomData["views"][number];
   viewIndex: number;
   viewCount: number;
+  hiddenSections?: PresentationSidebarSection[];
 }) {
   const primaryImage = primaryPresentationImage(view);
   return (
@@ -1605,7 +1677,7 @@ function RoomSlide({
           )}
         </div>
       </div>
-      <SpreadSidebar data={data} room={room} view={view} />
+      <SpreadSidebar data={data} room={room} view={view} hiddenSections={hiddenSections} />
       <PresentationFooter align="mainColumn" sidePaddingPx={48} />
     </div>
   );
@@ -2048,10 +2120,12 @@ function RoomSpread({
   view,
   viewIndex,
   viewCount,
+  hiddenSections = [],
   anchor,
   onPick,
   onUpdateViewSketch,
   onUpdateViewRendering,
+  onToggleSidebarSection,
   onToggleViewVisibility,
   onChangeImageLayout,
   onTextChange,
@@ -2062,10 +2136,12 @@ function RoomSpread({
   view: RoomData["views"][number];
   viewIndex: number;
   viewCount: number;
+  hiddenSections?: PresentationSidebarSection[];
   anchor?: string;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
   onUpdateViewRendering?: (renderingId: string) => void;
+  onToggleSidebarSection?: (section: PresentationSidebarSection, hidden: boolean) => void;
   onToggleViewVisibility?: () => void;
   onChangeImageLayout?: (layout: PresentationImageLayout) => void;
   onTextChange?: (patch: Record<string, string | null>) => void;
@@ -2238,9 +2314,11 @@ function RoomSpread({
           room={room}
           view={view}
           comparisonImage={comparisonImage}
+          hiddenSections={hiddenSections}
           onPick={onPick}
           onUpdateViewSketch={onUpdateViewSketch}
           onUpdateViewRendering={onUpdateViewRendering}
+          onToggleSidebarSection={onToggleSidebarSection}
         />
       </div>
       <PresentationFooter align="mainColumn" sidePaddingPx={56} />
@@ -2253,19 +2331,28 @@ function SpreadSidebar({
   room,
   view,
   comparisonImage,
+  hiddenSections = [],
   onPick,
   onUpdateViewSketch,
   onUpdateViewRendering,
+  onToggleSidebarSection,
 }: {
   data: RoomData;
   room?: any;
   view: RoomData["views"][number];
   comparisonImage?: ReturnType<typeof comparisonPresentationImage>;
+  hiddenSections?: PresentationSidebarSection[];
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
   onUpdateViewRendering?: (renderingId: string) => void;
+  onToggleSidebarSection?: (section: PresentationSidebarSection, hidden: boolean) => void;
 }) {
   const editing = !!onPick;
+  const hiddenSectionSet = new Set(hiddenSections);
+  const showPalette = !hiddenSectionSet.has("palette");
+  const showCabinet = !hiddenSectionSet.has("cabinet");
+  const showCounter = !hiddenSectionSet.has("counter");
+  const showFaucet = !hiddenSectionSet.has("faucet");
   const activeComparisonImage = comparisonImage === undefined ? comparisonPresentationImage(view) : comparisonImage;
   const paletteItems = data.paletteMaterials
     .filter((material) => materialImageUrl(material))
@@ -2329,7 +2416,39 @@ function SpreadSidebar({
         </Card>
       )}
 
+      {onPick && onToggleSidebarSection && (
+        <Card label="Section Visibility">
+          <div className="grid grid-cols-2 gap-2 print:hidden">
+            {([
+              ["palette", DEFAULT_PRESENTATION_SECTION_LABELS.palette],
+              ["cabinet", DEFAULT_PRESENTATION_SECTION_LABELS.cabinet],
+              ["counter", DEFAULT_PRESENTATION_SECTION_LABELS.counter],
+              ["faucet", DEFAULT_PRESENTATION_SECTION_LABELS.faucet],
+            ] as Array<[PresentationSidebarSection, string]>).map(([section, label]) => {
+              const hidden = hiddenSectionSet.has(section);
+              return (
+                <button
+                  key={section}
+                  type="button"
+                  onClick={() => onToggleSidebarSection(section, !hidden)}
+                  className={`border px-2 py-2 text-[10px] uppercase tracking-[0.12em] transition-colors ${
+                    hidden
+                      ? "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
+                      : "border-ink bg-ink text-primary-foreground"
+                  }`}
+                  aria-pressed={!hidden}
+                >
+                  {hidden ? `Show ${label}` : `Hide ${label}`}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {(showPalette || (showCabinet && (editing || hasCabinetry))) && (
       <div className="grid grid-cols-2 gap-6 print:gap-3">
+        {showPalette && (
         <Card
           label={
             <EditableSectionLabel
@@ -2371,7 +2490,8 @@ function SpreadSidebar({
             </div>
           )}
         </Card>
-        {(editing || hasCabinetry) && (
+        )}
+        {showCabinet && (editing || hasCabinetry) && (
           <Card
             label={
               <EditableSectionLabel
@@ -2402,10 +2522,11 @@ function SpreadSidebar({
           </Card>
         )}
       </div>
+      )}
 
-      {(editing || hasCounter || hasFaucet) && (
+      {((showCounter && (editing || hasCounter)) || (showFaucet && (editing || hasFaucet))) && (
         <div className="grid grid-cols-2 gap-6 print:gap-3">
-          {(editing || hasCounter) && (
+          {showCounter && (editing || hasCounter) && (
             <Card
               label={
                 <EditableSectionLabel
@@ -2454,7 +2575,7 @@ function SpreadSidebar({
               )}
             </Card>
           )}
-          {(editing || hasFaucet) && (
+          {showFaucet && (editing || hasFaucet) && (
             <Card
               label={
                 <EditableSectionLabel
