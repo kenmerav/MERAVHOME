@@ -154,7 +154,10 @@ function buildRoomData(
   materials: MaterialItem[],
 ): RoomData {
   const approvedRenders = images.filter(
-    (i) => i.kind === "rendering" && i.status === "complete" && i.is_approved !== false,
+    (i) =>
+      i.kind === "rendering" &&
+      i.status === "complete" &&
+      (i.is_approved === true || i.review_status === "approved"),
   );
   approvedRenders.sort((a, b) => {
     const score = (x: any) => (x.is_favorite ? 0 : 0.1);
