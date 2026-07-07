@@ -183,6 +183,11 @@ type BoardState = {
   pages: BoardPage[];
   selectedPageId: string;
   presentationExtraPages?: PresentationExtraPageSlot[];
+  presentationSlideOrder?: string[];
+  presentationHiddenSlideKeys?: string[];
+  presentationRenderingOverrides?: Record<string, string>;
+  presentationHiddenSections?: Record<string, string[]>;
+  presentationSlidePicks?: Record<string, unknown>;
   comments?: BoardComment[];
   versions?: BoardVersion[];
 };
@@ -6857,6 +6862,11 @@ function prepareBoardStateForSave(state: BoardState): BoardState {
       elements: page.elements.map((element) => stripLargeInlineImageData(element)),
     })),
     presentationExtraPages: normalized.presentationExtraPages ?? [],
+    presentationSlideOrder: normalized.presentationSlideOrder ?? [],
+    presentationHiddenSlideKeys: normalized.presentationHiddenSlideKeys ?? [],
+    presentationRenderingOverrides: normalized.presentationRenderingOverrides ?? {},
+    presentationHiddenSections: normalized.presentationHiddenSections ?? {},
+    presentationSlidePicks: normalized.presentationSlidePicks ?? {},
     comments: normalized.comments ?? [],
     versions: [],
   };
@@ -6877,6 +6887,11 @@ function stripVersionsFromState(state: BoardState): BoardState {
     pages: normalized.pages,
     selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
     presentationExtraPages: normalized.presentationExtraPages ?? [],
+    presentationSlideOrder: normalized.presentationSlideOrder ?? [],
+    presentationHiddenSlideKeys: normalized.presentationHiddenSlideKeys ?? [],
+    presentationRenderingOverrides: normalized.presentationRenderingOverrides ?? {},
+    presentationHiddenSections: normalized.presentationHiddenSections ?? {},
+    presentationSlidePicks: normalized.presentationSlidePicks ?? {},
     comments: normalized.comments ?? [],
   };
 }
@@ -6945,7 +6960,62 @@ function normalizeBoardState(value: unknown): BoardState {
         .filter((slot): slot is PresentationExtraPageSlot => Boolean(slot))
     : [];
 
-  return { pages, selectedPageId, presentationExtraPages, comments, versions };
+  return {
+    pages,
+    selectedPageId,
+    presentationExtraPages,
+    presentationSlideOrder: normalizeUniqueStringArray(candidate.presentationSlideOrder),
+    presentationHiddenSlideKeys: normalizeUniqueStringArray(candidate.presentationHiddenSlideKeys),
+    presentationRenderingOverrides: normalizeStringRecord(candidate.presentationRenderingOverrides),
+    presentationHiddenSections: normalizeStringArrayRecord(candidate.presentationHiddenSections),
+    presentationSlidePicks: normalizePlainObjectRecord(candidate.presentationSlidePicks),
+    comments,
+    versions,
+  };
+}
+
+function normalizeUniqueStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.filter((item): item is string => {
+    if (typeof item !== "string" || !item || seen.has(item)) return false;
+    seen.add(item);
+    return true;
+  });
+}
+
+function normalizeStringRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, string] =>
+        Boolean(entry[0]) && typeof entry[1] === "string" && Boolean(entry[1]),
+    ),
+  );
+}
+
+function normalizeStringArrayRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([key, entryValue]) => [
+        key,
+        Array.isArray(entryValue)
+          ? entryValue.filter((item): item is string => typeof item === "string" && Boolean(item))
+          : [],
+      ])
+      .filter(([key, entryValue]) => Boolean(key) && entryValue.length > 0),
+  ) as Record<string, string[]>;
+}
+
+function normalizePlainObjectRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      ([key, entryValue]) =>
+        Boolean(key) && Boolean(entryValue) && typeof entryValue === "object" && !Array.isArray(entryValue),
+    ),
+  );
 }
 
 function normalizePresentationExtraPageSlot(value: unknown): PresentationExtraPageSlot | null {
