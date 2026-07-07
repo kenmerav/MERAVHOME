@@ -153,30 +153,36 @@ function buildRoomData(
   selections: any[],
   materials: MaterialItem[],
 ): RoomData {
-  const approvedRenders = images.filter(
-    (i) =>
-      i.kind === "rendering" &&
-      i.status === "complete" &&
-      (i.is_approved === true || i.review_status === "approved"),
-  );
-  approvedRenders.sort((a, b) => {
-    const score = (x: any) => (x.is_favorite ? 0 : 0.1);
-    return score(a) - score(b) || (a.sort_order ?? 0) - (b.sort_order ?? 0);
-  });
+  const approvedRenders = images
+    .filter(
+      (i) =>
+        i.kind === "rendering" &&
+        i.status === "complete" &&
+        (i.is_approved === true || i.review_status === "approved"),
+    )
+    .sort(compareRenderingPageOrder);
   const sketchups = images.filter((i) => i.kind === "sketchup");
-  const linkedSketchIds = new Set(approvedRenders.map((r) => r.linked_sketchup_id).filter(Boolean));
   const fallbackSketch = room.presentation_sketchup_image_id
     ? sketchups.find((image) => image.id === room.presentation_sketchup_image_id) || sketchups[0]
     : sketchups[0];
 
   const views: RoomData["views"] = [];
+  const renderedIds = new Set<string>();
+  for (const s of sketchups) {
+    const linked = approvedRenders.filter((rendering) => rendering.linked_sketchup_id === s.id);
+    for (const r of linked) {
+      renderedIds.add(r.id);
+      views.push({ hero: r, sketch: s, label: r.caption, visible: r.presentation_visible !== false });
+    }
+  }
   for (const r of approvedRenders) {
-    const sketch = sketchups.find((s) => s.id === r.linked_sketchup_id) || fallbackSketch;
-    views.push({ hero: r, sketch, label: r.caption, visible: r.presentation_visible !== false });
+    if (!renderedIds.has(r.id)) {
+      views.push({ hero: r, sketch: fallbackSketch, label: r.caption, visible: r.presentation_visible !== false });
+    }
   }
   // Sketchups not linked to any rendering — show on their own page
   for (const s of sketchups) {
-    if (!linkedSketchIds.has(s.id) && !views.some((v) => v.sketch?.id === s.id && !v.hero)) {
+    if (!approvedRenders.some((r) => r.linked_sketchup_id === s.id) && !views.some((v) => v.sketch?.id === s.id && !v.hero)) {
       // only add as standalone if there are no renderings (so we don't duplicate the fallback)
       if (approvedRenders.length === 0)
         views.push({ sketch: s, visible: s.presentation_visible !== false });
@@ -184,6 +190,9 @@ function buildRoomData(
   }
   if (views.length === 0)
     views.push({ sketch: fallbackSketch, visible: fallbackSketch?.presentation_visible !== false });
+  const orderedApprovedRenders = views
+    .map((view) => view.hero)
+    .filter((rendering): rendering is RoomImage => Boolean(rendering));
 
   const key = selections.filter((s) => s.is_key_selection);
   const pickProduct = (cat: string) =>
@@ -209,7 +218,7 @@ function buildRoomData(
 
   return {
     views,
-    renderingOptions: approvedRenders,
+    renderingOptions: orderedApprovedRenders,
     sketchupOptions: sketchups,
     materials: presentationMaterials,
     paletteMaterials,
@@ -227,6 +236,12 @@ function buildRoomData(
       pickMaterialItem("Faucet") ||
       pickProduct("Plumbing"),
   };
+}
+
+function compareRenderingPageOrder(a: RoomImage, b: RoomImage) {
+  const versionDiff = (b.revision_number || 1) - (a.revision_number || 1);
+  if (versionDiff !== 0) return versionDiff;
+  return b.id.localeCompare(a.id);
 }
 
 function normalizePresentationBoardElement(value: unknown): PresentationBoardElement | null {
