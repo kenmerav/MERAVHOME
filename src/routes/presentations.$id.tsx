@@ -335,8 +335,35 @@ function buildViewSlideKey(roomId: string, view: RoomData["views"][number], view
   return `room:${roomId}:view:${imageId}`;
 }
 
+type PresentationImageLayout =
+  | "ai-with-sketchup"
+  | "sketchup-with-ai"
+  | "ai-only"
+  | "sketchup-only";
+
+function presentationImageLayout(view: RoomData["views"][number]): PresentationImageLayout {
+  if (!view.hero || !view.sketch) return "ai-with-sketchup";
+  if (view.hero.role === "sketchup_single_hero") return "sketchup-only";
+  if (view.hero.role === "single_hero") return "ai-only";
+  if (view.hero.role === "sketchup_hero") return "sketchup-with-ai";
+  return "ai-with-sketchup";
+}
+
+function roleForPresentationImageLayout(layout: PresentationImageLayout) {
+  if (layout === "sketchup-with-ai") return "sketchup_hero";
+  if (layout === "ai-only") return "single_hero";
+  if (layout === "sketchup-only") return "sketchup_single_hero";
+  return null;
+}
+
 function viewUsesSketchupAsHero(view: RoomData["views"][number]) {
-  return Boolean(view.hero && view.sketch && view.hero.role === "sketchup_hero");
+  const layout = presentationImageLayout(view);
+  return layout === "sketchup-with-ai" || layout === "sketchup-only";
+}
+
+function viewHidesComparisonImage(view: RoomData["views"][number]) {
+  const layout = presentationImageLayout(view);
+  return layout === "ai-only" || layout === "sketchup-only";
 }
 
 function primaryPresentationImage(view: RoomData["views"][number]) {
@@ -346,6 +373,7 @@ function primaryPresentationImage(view: RoomData["views"][number]) {
 
 function comparisonPresentationImage(view: RoomData["views"][number]) {
   if (!view.hero || !view.sketch) return null;
+  if (viewHidesComparisonImage(view)) return null;
   return viewUsesSketchupAsHero(view)
     ? {
         image: view.hero,
@@ -498,9 +526,9 @@ function PresentationPage() {
   const updateViewImageLayout = async (
     roomId: string,
     renderingId: string,
-    sketchupHero: boolean,
+    layout: PresentationImageLayout,
   ) => {
-    await db.updateRoomImage(renderingId, { role: sketchupHero ? "sketchup_hero" : null });
+    await db.updateRoomImage(renderingId, { role: roleForPresentationImageLayout(layout) });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
@@ -1273,13 +1301,13 @@ function PresentationPage() {
                           }
                         : undefined
                     }
-                    onToggleImageLayout={
+                    onChangeImageLayout={
                       editingPicks && current.view.hero && current.view.sketch
-                        ? () =>
+                        ? (layout) =>
                             updateViewImageLayout(
                               current.room.id,
                               current.view.hero!.id,
-                              !viewUsesSketchupAsHero(current.view),
+                              layout,
                             )
                         : undefined
                     }
@@ -1924,7 +1952,7 @@ function RoomSpread({
   onPick,
   onUpdateViewSketch,
   onToggleViewVisibility,
-  onToggleImageLayout,
+  onChangeImageLayout,
   onTextChange,
 }: {
   project: any;
@@ -1937,12 +1965,27 @@ function RoomSpread({
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
   onToggleViewVisibility?: () => void;
-  onToggleImageLayout?: () => void;
+  onChangeImageLayout?: (layout: PresentationImageLayout) => void;
   onTextChange?: (patch: Record<string, string | null>) => void;
 }) {
   const primaryImage = primaryPresentationImage(view);
   const comparisonImage = comparisonPresentationImage(view);
   const sketchupHero = viewUsesSketchupAsHero(view);
+  const comparisonHidden = viewHidesComparisonImage(view);
+  const nextLargeLayout: PresentationImageLayout = sketchupHero
+    ? comparisonHidden
+      ? "ai-only"
+      : "ai-with-sketchup"
+    : comparisonHidden
+      ? "sketchup-only"
+      : "sketchup-with-ai";
+  const nextComparisonLayout: PresentationImageLayout = comparisonHidden
+    ? sketchupHero
+      ? "sketchup-with-ai"
+      : "ai-with-sketchup"
+    : sketchupHero
+      ? "sketchup-only"
+      : "ai-only";
   const editingText = !!onTextChange;
   return (
     <section
@@ -1978,16 +2021,30 @@ function RoomSpread({
               </h2>
             )}
           </div>
-          {(onToggleImageLayout || onToggleViewVisibility) && (
+          {(onChangeImageLayout || onToggleViewVisibility) && (
             <div className="print:hidden flex items-center gap-2">
-              {onToggleImageLayout && (
-                <button
-                  type="button"
-                  onClick={onToggleImageLayout}
-                  className="inline-flex h-10 items-center border border-border bg-background px-3 text-xs uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-ink hover:text-ink"
-                >
-                  {sketchupHero ? "AI Large" : "SketchUp Large"}
-                </button>
+              {onChangeImageLayout && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onChangeImageLayout(nextLargeLayout)}
+                    className="inline-flex h-10 items-center border border-border bg-background px-3 text-xs uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-ink hover:text-ink"
+                  >
+                    {sketchupHero ? "AI Large" : "SketchUp Large"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeImageLayout(nextComparisonLayout)}
+                    className={`inline-flex h-10 items-center border px-3 text-xs uppercase tracking-[0.14em] transition-colors ${
+                      comparisonHidden
+                        ? "border-ink bg-ink text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
+                    }`}
+                    aria-pressed={comparisonHidden}
+                  >
+                    {comparisonHidden ? "Show Corner" : "Hide Corner"}
+                  </button>
+                </>
               )}
               {onToggleViewVisibility && (
                 <button

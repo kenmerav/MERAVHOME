@@ -173,7 +173,13 @@ export interface Room {
 }
 
 export type RenderingStatus = "not_generated" | "queued" | "processing" | "complete" | "failed";
-export type RenderingRole = "hero" | "secondary" | "detail" | "sketchup_hero";
+export type RenderingRole =
+  | "hero"
+  | "secondary"
+  | "detail"
+  | "sketchup_hero"
+  | "single_hero"
+  | "sketchup_single_hero";
 export type RenderingReviewStatus = "draft" | "needs_revision" | "approved" | "rejected";
 
 export interface RoomImage {
