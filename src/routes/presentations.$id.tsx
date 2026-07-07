@@ -19,7 +19,7 @@ import {
   GripVertical,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem, type RenderingRole, type RoomImage } from "@/lib/db";
+import { db, type MaterialItem, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
@@ -324,6 +324,45 @@ function normalizePresentationSlideOrder(boardState: unknown) {
   });
 }
 
+function normalizePresentationRenderingOverrides(boardState: unknown) {
+  if (!boardState || typeof boardState !== "object") return {};
+  const candidate = boardState as { presentationRenderingOverrides?: unknown };
+  if (!candidate.presentationRenderingOverrides || typeof candidate.presentationRenderingOverrides !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(candidate.presentationRenderingOverrides as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => Boolean(entry[0]) && typeof entry[1] === "string" && Boolean(entry[1]),
+    ),
+  );
+}
+
+function applyPresentationRenderingOverrides(
+  slides: PresentationSlideDraft[],
+  overrides: Record<string, string>,
+) {
+  if (!Object.keys(overrides).length) return slides;
+  return slides.map((slide) => {
+    if (slide.kind !== "view") return slide;
+    const overrideId = overrides[slide.slideKey];
+    if (!overrideId || overrideId === slide.view.hero?.id) return slide;
+    const overrideHero = slide.data.renderingOptions.find((rendering) => rendering.id === overrideId);
+    if (!overrideHero) return slide;
+    const overrideSketch =
+      slide.data.sketchupOptions.find((sketchup) => sketchup.id === overrideHero.linked_sketchup_id) ||
+      slide.view.sketch;
+    return {
+      ...slide,
+      view: {
+        ...slide.view,
+        hero: overrideHero,
+        sketch: overrideSketch,
+        label: overrideHero.caption,
+      },
+    };
+  });
+}
+
 function applyPresentationSlideOrder(slides: PresentationSlideDraft[], order: string[]) {
   if (!order.length) return slides;
   const slideByKey = new Map(slides.map((slide) => [slide.slideKey, slide]));
@@ -514,6 +553,10 @@ function PresentationPage() {
     () => normalizePresentationSlideOrder(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
+  const presentationRenderingOverrides = useMemo(
+    () => normalizePresentationRenderingOverrides(sharedBoard?.board_state),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
   const includedBoardPages = useMemo(
     () => designBoardPages.filter((page) => page.presentationVisible),
     [designBoardPages],
@@ -536,15 +579,32 @@ function PresentationPage() {
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
-  const updateViewRendering = async (
-    roomId: string,
-    currentRenderingId: string,
-    nextRenderingId: string,
-    currentRole: RenderingRole | null,
-  ) => {
-    if (!nextRenderingId || nextRenderingId === currentRenderingId) return;
-    await db.updateRoomImage(nextRenderingId, { presentation_visible: true, role: currentRole });
-    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+  const updateViewRendering = async (slideKey: string, renderingId: string) => {
+    if (!renderingId) return;
+    const latestBoard = await db.getDesignBoard(projectId);
+    const baseState =
+      latestBoard?.board_state && typeof latestBoard.board_state === "object"
+        ? (latestBoard.board_state as Record<string, unknown>)
+        : {};
+    const currentOverrides = normalizePresentationRenderingOverrides(baseState);
+    const nextState = {
+      ...baseState,
+      presentationRenderingOverrides: {
+        ...currentOverrides,
+        [slideKey]: renderingId,
+      },
+    };
+
+    const saved = latestBoard?.updated_at
+      ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+      : await db.upsertDesignBoard(projectId, nextState);
+
+    if (!saved) {
+      toast.error("Presentation image changed while saving. Please try again.");
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
   };
 
   const updateViewVisibility = async (roomId: string, imageId: string, visible: boolean) => {
@@ -823,8 +883,14 @@ function PresentationPage() {
   }, [baseSlides, designBoardPages, includedBoardPages, presentationExtraPages, slotsByAfterKey]);
 
   const slides = useMemo(
-    () => numberPresentationSlides(applyPresentationSlideOrder(naturalSlides, presentationSlideOrder)),
-    [naturalSlides, presentationSlideOrder],
+    () =>
+      numberPresentationSlides(
+        applyPresentationSlideOrder(
+          applyPresentationRenderingOverrides(naturalSlides, presentationRenderingOverrides),
+          presentationSlideOrder,
+        ),
+      ),
+    [naturalSlides, presentationRenderingOverrides, presentationSlideOrder],
   );
 
   const reorderPresentationSlide = useCallback(
@@ -1323,13 +1389,7 @@ function PresentationPage() {
                     }
                     onUpdateViewRendering={
                       editingPicks && current.view.hero
-                        ? (renderingId) =>
-                            updateViewRendering(
-                              current.room.id,
-                              current.view.hero!.id,
-                              renderingId,
-                              current.view.hero!.role,
-                            )
+                        ? (renderingId) => updateViewRendering(current.slideKey, renderingId)
                         : undefined
                     }
                     onToggleViewVisibility={
