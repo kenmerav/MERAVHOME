@@ -335,6 +335,30 @@ function buildViewSlideKey(roomId: string, view: RoomData["views"][number], view
   return `room:${roomId}:view:${imageId}`;
 }
 
+function viewUsesSketchupAsHero(view: RoomData["views"][number]) {
+  return Boolean(view.hero && view.sketch && view.hero.role === "sketchup_hero");
+}
+
+function primaryPresentationImage(view: RoomData["views"][number]) {
+  if (viewUsesSketchupAsHero(view)) return view.sketch;
+  return view.hero ?? view.sketch;
+}
+
+function comparisonPresentationImage(view: RoomData["views"][number]) {
+  if (!view.hero || !view.sketch) return null;
+  return viewUsesSketchupAsHero(view)
+    ? {
+        image: view.hero,
+        label: "AI Rendering",
+        emptyLabel: "No AI rendering yet",
+      }
+    : {
+        image: view.sketch,
+        label: "Design Model",
+        emptyLabel: "No SketchUp yet",
+      };
+}
+
 function boardElementIsMeaningful(element: PresentationBoardElement) {
   if (element.visible === false) return false;
   if (element.type === "image") return Boolean(element.backgroundRemovedUrl || element.src);
@@ -468,6 +492,15 @@ function PresentationPage() {
 
   const updateViewVisibility = async (roomId: string, imageId: string, visible: boolean) => {
     await db.updateRoomImage(imageId, { presentation_visible: visible });
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+  };
+
+  const updateViewImageLayout = async (
+    roomId: string,
+    renderingId: string,
+    sketchupHero: boolean,
+  ) => {
+    await db.updateRoomImage(renderingId, { role: sketchupHero ? "sketchup_hero" : null });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
@@ -1240,6 +1273,16 @@ function PresentationPage() {
                           }
                         : undefined
                     }
+                    onToggleImageLayout={
+                      editingPicks && current.view.hero && current.view.sketch
+                        ? () =>
+                            updateViewImageLayout(
+                              current.room.id,
+                              current.view.hero!.id,
+                              !viewUsesSketchupAsHero(current.view),
+                            )
+                        : undefined
+                    }
                     onTextChange={
                       editingText ? (patch) => updateSlideText(current.room.id, patch) : undefined
                     }
@@ -1407,6 +1450,7 @@ function RoomSlide({
   viewIndex: number;
   viewCount: number;
 }) {
+  const primaryImage = primaryPresentationImage(view);
   return (
     <div className="relative w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone px-8 pt-8 pb-24 lg:px-12 lg:pt-12 lg:pb-28">
       <div className="flex flex-col min-h-0">
@@ -1424,10 +1468,8 @@ function RoomSlide({
           </h2>
         </div>
         <div className="relative overflow-hidden flex-1 min-h-0">
-          {view.hero ? (
-            <img src={normalizeSupabaseImageUrl(view.hero.url)} alt={room.name} className="w-full h-full object-contain" />
-          ) : view.sketch ? (
-            <img src={normalizeSupabaseImageUrl(view.sketch.url)} alt={room.name} className="w-full h-full object-contain" />
+          {primaryImage ? (
+            <img src={normalizeSupabaseImageUrl(primaryImage.url)} alt={room.name} className="w-full h-full object-contain" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
               No image yet
@@ -1882,6 +1924,7 @@ function RoomSpread({
   onPick,
   onUpdateViewSketch,
   onToggleViewVisibility,
+  onToggleImageLayout,
   onTextChange,
 }: {
   project: any;
@@ -1894,9 +1937,12 @@ function RoomSpread({
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
   onToggleViewVisibility?: () => void;
+  onToggleImageLayout?: () => void;
   onTextChange?: (patch: Record<string, string | null>) => void;
 }) {
-  const showSketchInCard = view.hero && view.sketch; // only when hero exists; otherwise sketch is the hero
+  const primaryImage = primaryPresentationImage(view);
+  const comparisonImage = comparisonPresentationImage(view);
+  const sketchupHero = viewUsesSketchupAsHero(view);
   const editingText = !!onTextChange;
   return (
     <section
@@ -1932,30 +1978,41 @@ function RoomSpread({
               </h2>
             )}
           </div>
-          {onToggleViewVisibility && (
-            <button
-              type="button"
-              title={view.visible ? "Hide view" : "Show view"}
-              aria-label={view.visible ? "Hide presentation view" : "Show presentation view"}
-              onClick={onToggleViewVisibility}
-              className={`print:hidden inline-flex h-10 w-10 items-center justify-center border transition-colors ${
-                view.visible
-                  ? "border-ink bg-ink text-primary-foreground"
-                  : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
-              }`}
-            >
-              {view.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-            </button>
+          {(onToggleImageLayout || onToggleViewVisibility) && (
+            <div className="print:hidden flex items-center gap-2">
+              {onToggleImageLayout && (
+                <button
+                  type="button"
+                  onClick={onToggleImageLayout}
+                  className="inline-flex h-10 items-center border border-border bg-background px-3 text-xs uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-ink hover:text-ink"
+                >
+                  {sketchupHero ? "AI Large" : "SketchUp Large"}
+                </button>
+              )}
+              {onToggleViewVisibility && (
+                <button
+                  type="button"
+                  title={view.visible ? "Hide view" : "Show view"}
+                  aria-label={view.visible ? "Hide presentation view" : "Show presentation view"}
+                  onClick={onToggleViewVisibility}
+                  className={`inline-flex h-10 w-10 items-center justify-center border transition-colors ${
+                    view.visible
+                      ? "border-ink bg-ink text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
+                  }`}
+                >
+                  {view.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
 
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-28 print:pb-24">
         <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
-          {view.hero ? (
-            <img src={normalizeSupabaseImageUrl(view.hero.url)} alt={room.name} className="w-full h-full object-contain" />
-          ) : view.sketch ? (
-            <img src={normalizeSupabaseImageUrl(view.sketch.url)} alt={room.name} className="w-full h-full object-contain" />
+          {primaryImage ? (
+            <img src={normalizeSupabaseImageUrl(primaryImage.url)} alt={room.name} className="w-full h-full object-contain" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
               No image yet
@@ -2021,7 +2078,7 @@ function RoomSpread({
           data={data}
           room={room}
           view={view}
-          showSketch={showSketchInCard}
+          comparisonImage={comparisonImage}
           onPick={onPick}
           onUpdateViewSketch={onUpdateViewSketch}
         />
@@ -2035,18 +2092,19 @@ function SpreadSidebar({
   data,
   room,
   view,
-  showSketch = true,
+  comparisonImage,
   onPick,
   onUpdateViewSketch,
 }: {
   data: RoomData;
   room?: any;
   view: RoomData["views"][number];
-  showSketch?: boolean;
+  comparisonImage?: ReturnType<typeof comparisonPresentationImage>;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
 }) {
   const editing = !!onPick;
+  const activeComparisonImage = comparisonImage === undefined ? comparisonPresentationImage(view) : comparisonImage;
   const paletteItems = data.paletteMaterials
     .filter((material) => materialImageUrl(material))
     .slice(0, 4);
@@ -2065,18 +2123,18 @@ function SpreadSidebar({
 
   return (
     <div className="flex flex-col gap-6 print:gap-3">
-      {showSketch && (
-        <Card label="Design Model">
+      {activeComparisonImage && (
+        <Card label={activeComparisonImage.label}>
           <div className="aspect-[4/3] bg-bone overflow-hidden">
-            {view.sketch ? (
-              <img src={normalizeSupabaseImageUrl(view.sketch.url)} alt="" className="w-full h-full object-contain" />
+            {activeComparisonImage.image ? (
+              <img src={normalizeSupabaseImageUrl(activeComparisonImage.image.url)} alt="" className="w-full h-full object-contain" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-[11px] text-muted-foreground">
-                No SketchUp yet
+                {activeComparisonImage.emptyLabel}
               </div>
             )}
           </div>
-          {onPick && (
+          {onPick && activeComparisonImage.image?.kind === "sketchup" && (
             <div className="mt-3 print:hidden">
               <ImagePickSelect
                 label="Design Model"
