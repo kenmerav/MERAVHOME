@@ -81,6 +81,21 @@ type PresentationExtraPageSlot = {
 
 type PresentationSidebarSection = "palette" | "cabinet" | "counter" | "faucet";
 
+type PresentationSlidePicks = {
+  presentation_palette_item_ids?: string[];
+  presentation_cabinet_item_id?: string | null;
+  presentation_counter_item_id?: string | null;
+  presentation_faucet_item_id?: string | null;
+  presentation_palette_label?: string | null;
+  presentation_cabinet_label?: string | null;
+  presentation_counter_label?: string | null;
+  presentation_faucet_label?: string | null;
+};
+
+type PresentationPickPatch = {
+  [K in keyof PresentationSlidePicks]?: PresentationSlidePicks[K] | null;
+};
+
 type PresentationBaseSlide =
   | { kind: "cover"; slideKey: string }
   | {
@@ -351,6 +366,43 @@ function normalizePresentationRenderingOverrides(boardState: unknown) {
   );
 }
 
+function normalizePresentationSlidePicks(boardState: unknown) {
+  if (!boardState || typeof boardState !== "object") return {};
+  const candidate = boardState as { presentationSlidePicks?: unknown };
+  if (!candidate.presentationSlidePicks || typeof candidate.presentationSlidePicks !== "object") {
+    return {};
+  }
+
+  const normalized: Record<string, PresentationSlidePicks> = {};
+  Object.entries(candidate.presentationSlidePicks as Record<string, unknown>).forEach(
+    ([slideKey, value]) => {
+      if (!slideKey || !value || typeof value !== "object") return;
+      const current = value as Record<string, unknown>;
+      const next: PresentationSlidePicks = {};
+      if (Array.isArray(current.presentation_palette_item_ids)) {
+        const ids = current.presentation_palette_item_ids.filter(
+          (id): id is string => typeof id === "string" && Boolean(id),
+        );
+        if (ids.length) next.presentation_palette_item_ids = ids;
+      }
+      ([
+        "presentation_cabinet_item_id",
+        "presentation_counter_item_id",
+        "presentation_faucet_item_id",
+        "presentation_palette_label",
+        "presentation_cabinet_label",
+        "presentation_counter_label",
+        "presentation_faucet_label",
+      ] as const).forEach((field) => {
+        const fieldValue = current[field];
+        if (typeof fieldValue === "string" && fieldValue.trim()) next[field] = fieldValue.trim();
+      });
+      if (Object.keys(next).length) normalized[slideKey] = next;
+    },
+  );
+  return normalized;
+}
+
 function isPresentationSidebarSection(value: unknown): value is PresentationSidebarSection {
   return value === "palette" || value === "cabinet" || value === "counter" || value === "faucet";
 }
@@ -395,6 +447,48 @@ function applyPresentationRenderingOverrides(
       },
     };
   });
+}
+
+function applyPresentationSlidePicks(data: RoomData, picks?: PresentationSlidePicks): RoomData {
+  if (!picks) return data;
+  const materialById = new Map(data.materials.map((material) => [material.id, material]));
+  const pickById = (id?: string | null) => (id ? (materialById.get(id) ?? null) : null);
+  return {
+    ...data,
+    paletteMaterials: picks.presentation_palette_item_ids?.length
+      ? picks.presentation_palette_item_ids
+          .map((id) => materialById.get(id))
+          .filter((material): material is MaterialItem => Boolean(material))
+          .slice(0, 4)
+      : data.paletteMaterials,
+    cabinetMaterial:
+      "presentation_cabinet_item_id" in picks
+        ? pickById(picks.presentation_cabinet_item_id)
+        : data.cabinetMaterial,
+    counter:
+      "presentation_counter_item_id" in picks
+        ? pickById(picks.presentation_counter_item_id)
+        : data.counter,
+    faucet:
+      "presentation_faucet_item_id" in picks
+        ? pickById(picks.presentation_faucet_item_id)
+        : data.faucet,
+  };
+}
+
+function applyPresentationSlidePickLabels(room: any, picks?: PresentationSlidePicks) {
+  if (!picks) return room;
+  return {
+    ...room,
+    presentation_palette_label:
+      picks.presentation_palette_label ?? room?.presentation_palette_label,
+    presentation_cabinet_label:
+      picks.presentation_cabinet_label ?? room?.presentation_cabinet_label,
+    presentation_counter_label:
+      picks.presentation_counter_label ?? room?.presentation_counter_label,
+    presentation_faucet_label:
+      picks.presentation_faucet_label ?? room?.presentation_faucet_label,
+  };
 }
 
 function applyPresentationSlideOrder(slides: PresentationSlideDraft[], order: string[]) {
@@ -599,6 +693,10 @@ function PresentationPage() {
     () => normalizePresentationRenderingOverrides(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
+  const presentationSlidePicks = useMemo(
+    () => normalizePresentationSlidePicks(sharedBoard?.board_state),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
   const presentationHiddenSections = useMemo(
     () => normalizePresentationHiddenSections(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
@@ -614,6 +712,56 @@ function PresentationPage() {
   ) => {
     await db.updateRoom(roomId, patch as any);
     qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+  };
+
+  const updatePresentationSlidePicks = async (
+    slideKey: string,
+    patch: PresentationPickPatch,
+  ) => {
+    const latestBoard = await db.getDesignBoard(projectId);
+    const baseState =
+      latestBoard?.board_state && typeof latestBoard.board_state === "object"
+        ? (latestBoard.board_state as Record<string, unknown>)
+        : {};
+    const currentPicks = normalizePresentationSlidePicks(baseState);
+    const nextSlidePicks = {
+      ...(currentPicks[slideKey] ?? {}),
+    };
+
+    Object.entries(patch).forEach(([field, value]) => {
+      const key = field as keyof PresentationSlidePicks;
+      if (Array.isArray(value)) {
+        const ids = value.filter((id): id is string => typeof id === "string" && Boolean(id));
+        if (ids.length) nextSlidePicks.presentation_palette_item_ids = ids;
+        else delete nextSlidePicks.presentation_palette_item_ids;
+        return;
+      }
+      if (typeof value === "string" && value.trim()) {
+        (nextSlidePicks as Record<string, unknown>)[key] = value.trim();
+      } else {
+        delete nextSlidePicks[key];
+      }
+    });
+
+    const nextPicks = { ...currentPicks };
+    if (Object.keys(nextSlidePicks).length) nextPicks[slideKey] = nextSlidePicks;
+    else delete nextPicks[slideKey];
+
+    const nextState = {
+      ...baseState,
+      presentationSlidePicks: nextPicks,
+    };
+
+    const saved = latestBoard?.updated_at
+      ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+      : await db.upsertDesignBoard(projectId, nextState);
+
+    if (!saved) {
+      toast.error("Presentation material picks changed while saving. Please try again.");
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
   };
 
   const updateRenderingSketchLink = async (
@@ -1218,8 +1366,14 @@ function PresentationPage() {
           ) : (
             <RoomSlide
               project={project}
-              room={current.room}
-              data={current.data}
+              room={applyPresentationSlidePickLabels(
+                current.room,
+                presentationSlidePicks[current.slideKey],
+              )}
+              data={applyPresentationSlidePicks(
+                current.data,
+                presentationSlidePicks[current.slideKey],
+              )}
               view={current.view}
               viewIndex={current.viewIndex}
               viewCount={current.viewCount}
@@ -1455,8 +1609,14 @@ function PresentationPage() {
               ) : (
                 <RoomSlide
                   project={project}
-                  room={current.room}
-                  data={current.data}
+                  room={applyPresentationSlidePickLabels(
+                    current.room,
+                    presentationSlidePicks[current.slideKey],
+                  )}
+                  data={applyPresentationSlidePicks(
+                    current.data,
+                    presentationSlidePicks[current.slideKey],
+                  )}
                   view={current.view}
                   viewIndex={current.viewIndex}
                   viewCount={current.viewCount}
@@ -1566,8 +1726,14 @@ function PresentationPage() {
                 {isCover ? null : current.kind === "view" ? (
                   <RoomSpread
                     project={project}
-                    room={current.room}
-                    data={current.data}
+                    room={applyPresentationSlidePickLabels(
+                      current.room,
+                      presentationSlidePicks[current.slideKey],
+                    )}
+                    data={applyPresentationSlidePicks(
+                      current.data,
+                      presentationSlidePicks[current.slideKey],
+                    )}
                     view={current.view}
                     viewIndex={current.viewIndex}
                     viewCount={current.viewCount}
@@ -1581,7 +1747,13 @@ function PresentationPage() {
                     anchor={current.anchor}
                     onPick={
                       editingPicks
-                        ? (patch) => updatePresentationPicks(current.room.id, patch)
+                        ? (patch) => {
+                            if ("presentation_sketchup_image_id" in patch) {
+                              updatePresentationPicks(current.room.id, patch);
+                              return;
+                            }
+                            updatePresentationSlidePicks(current.slideKey, patch as PresentationPickPatch);
+                          }
                         : undefined
                     }
                     onUpdateViewSketch={
