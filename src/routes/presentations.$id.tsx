@@ -19,7 +19,7 @@ import {
   GripVertical,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem, type RoomImage } from "@/lib/db";
+import { db, type MaterialItem, type RenderingRole, type RoomImage } from "@/lib/db";
 import { clientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
@@ -533,6 +533,18 @@ function PresentationPage() {
     linkedSketchupId: string | null,
   ) => {
     await db.updateRoomImage(renderingId, { linked_sketchup_id: linkedSketchupId });
+    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
+  };
+
+  const updateViewRendering = async (
+    roomId: string,
+    currentRenderingId: string,
+    nextRenderingId: string,
+    currentRole: RenderingRole | null,
+  ) => {
+    if (!nextRenderingId || nextRenderingId === currentRenderingId) return;
+    await db.updateRoomImage(currentRenderingId, { presentation_visible: false });
+    await db.updateRoomImage(nextRenderingId, { presentation_visible: true, role: currentRole });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
 
@@ -1310,6 +1322,17 @@ function PresentationPage() {
                             updateRenderingSketchLink(current.room.id, current.view.hero!.id, sketchupId)
                         : undefined
                     }
+                    onUpdateViewRendering={
+                      editingPicks && current.view.hero
+                        ? (renderingId) =>
+                            updateViewRendering(
+                              current.room.id,
+                              current.view.hero!.id,
+                              renderingId,
+                              current.view.hero!.role,
+                            )
+                        : undefined
+                    }
                     onToggleViewVisibility={
                       editingPicks
                         ? () => {
@@ -1969,6 +1992,7 @@ function RoomSpread({
   anchor,
   onPick,
   onUpdateViewSketch,
+  onUpdateViewRendering,
   onToggleViewVisibility,
   onChangeImageLayout,
   onTextChange,
@@ -1982,6 +2006,7 @@ function RoomSpread({
   anchor?: string;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
+  onUpdateViewRendering?: (renderingId: string) => void;
   onToggleViewVisibility?: () => void;
   onChangeImageLayout?: (layout: PresentationImageLayout) => void;
   onTextChange?: (patch: Record<string, string | null>) => void;
@@ -2156,6 +2181,7 @@ function RoomSpread({
           comparisonImage={comparisonImage}
           onPick={onPick}
           onUpdateViewSketch={onUpdateViewSketch}
+          onUpdateViewRendering={onUpdateViewRendering}
         />
       </div>
       <PresentationFooter align="mainColumn" sidePaddingPx={56} />
@@ -2170,6 +2196,7 @@ function SpreadSidebar({
   comparisonImage,
   onPick,
   onUpdateViewSketch,
+  onUpdateViewRendering,
 }: {
   data: RoomData;
   room?: any;
@@ -2177,6 +2204,7 @@ function SpreadSidebar({
   comparisonImage?: ReturnType<typeof comparisonPresentationImage>;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
+  onUpdateViewRendering?: (renderingId: string) => void;
 }) {
   const editing = !!onPick;
   const activeComparisonImage = comparisonImage === undefined ? comparisonPresentationImage(view) : comparisonImage;
@@ -2198,6 +2226,19 @@ function SpreadSidebar({
 
   return (
     <div className="flex flex-col gap-6 print:gap-3">
+      {onPick && view.hero && onUpdateViewRendering && (
+        <Card label="Presentation Image">
+          <div className="print:hidden">
+            <ImagePickSelect
+              label="AI Rendering"
+              value={view.hero.id}
+              options={data.renderingOptions}
+              emptyLabel="Select rendering"
+              onChange={onUpdateViewRendering}
+            />
+          </div>
+        </Card>
+      )}
       {activeComparisonImage && (
         <Card label={activeComparisonImage.label}>
           <div className="aspect-[4/3] bg-bone overflow-hidden">
