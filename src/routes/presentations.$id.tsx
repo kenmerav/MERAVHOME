@@ -172,12 +172,12 @@ function buildRoomData(
     const linked = approvedRenders.filter((rendering) => rendering.linked_sketchup_id === s.id);
     for (const r of linked) {
       renderedIds.add(r.id);
-      views.push({ hero: r, sketch: s, label: r.caption, visible: r.presentation_visible !== false });
+      views.push({ hero: r, sketch: s, label: r.caption, visible: true });
     }
   }
   for (const r of approvedRenders) {
     if (!renderedIds.has(r.id)) {
-      views.push({ hero: r, sketch: fallbackSketch, label: r.caption, visible: r.presentation_visible !== false });
+      views.push({ hero: r, sketch: fallbackSketch, label: r.caption, visible: true });
     }
   }
   // Sketchups not linked to any rendering — show on their own page
@@ -543,7 +543,6 @@ function PresentationPage() {
     currentRole: RenderingRole | null,
   ) => {
     if (!nextRenderingId || nextRenderingId === currentRenderingId) return;
-    await db.updateRoomImage(currentRenderingId, { presentation_visible: false });
     await db.updateRoomImage(nextRenderingId, { presentation_visible: true, role: currentRole });
     qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
   };
@@ -1334,7 +1333,7 @@ function PresentationPage() {
                         : undefined
                     }
                     onToggleViewVisibility={
-                      editingPicks
+                      editingPicks && !current.view.hero
                         ? () => {
                             const image = current.view.hero || current.view.sketch;
                             if (image)
