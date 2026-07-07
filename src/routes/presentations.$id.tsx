@@ -326,6 +326,18 @@ function normalizePresentationSlideOrder(boardState: unknown) {
   });
 }
 
+function normalizePresentationHiddenSlideKeys(boardState: unknown) {
+  if (!boardState || typeof boardState !== "object") return [];
+  const candidate = boardState as { presentationHiddenSlideKeys?: unknown[] };
+  if (!Array.isArray(candidate.presentationHiddenSlideKeys)) return [];
+  const seen = new Set<string>();
+  return candidate.presentationHiddenSlideKeys.filter((value): value is string => {
+    if (typeof value !== "string" || !value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
 function normalizePresentationRenderingOverrides(boardState: unknown) {
   if (!boardState || typeof boardState !== "object") return {};
   const candidate = boardState as { presentationRenderingOverrides?: unknown };
@@ -574,6 +586,14 @@ function PresentationPage() {
   const presentationSlideOrder = useMemo(
     () => normalizePresentationSlideOrder(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
+  const presentationHiddenSlideKeys = useMemo(
+    () => normalizePresentationHiddenSlideKeys(sharedBoard?.board_state),
+    [sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
+  const presentationHiddenSlideKeySet = useMemo(
+    () => new Set(presentationHiddenSlideKeys),
+    [presentationHiddenSlideKeys],
   );
   const presentationRenderingOverrides = useMemo(
     () => normalizePresentationRenderingOverrides(sharedBoard?.board_state),
@@ -868,6 +888,55 @@ function PresentationPage() {
     [projectId, qc],
   );
 
+  const updatePresentationSlideHidden = useCallback(
+    async (slideKey: string, hidden: boolean) => {
+      if (slideKey === "cover") return false;
+      const latestBoard = await db.getDesignBoard(projectId);
+      const baseState =
+        latestBoard?.board_state && typeof latestBoard.board_state === "object"
+          ? (latestBoard.board_state as Record<string, unknown>)
+          : {};
+      const currentHidden = new Set(normalizePresentationHiddenSlideKeys(baseState));
+      if (hidden) currentHidden.add(slideKey);
+      else currentHidden.delete(slideKey);
+      const nextState = {
+        ...baseState,
+        presentationHiddenSlideKeys: Array.from(currentHidden),
+      };
+
+      const saved = latestBoard?.updated_at
+        ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+        : await db.upsertDesignBoard(projectId, nextState);
+
+      if (!saved) {
+        toast.error("Presentation pages changed while saving. Please try again.");
+        qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+        return false;
+      }
+
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      toast.success(hidden ? "Presentation page hidden" : "Presentation page shown");
+      return true;
+    },
+    [projectId, qc],
+  );
+
+  const deletePresentationSlide = useCallback(
+    async (item: PresentationSlide) => {
+      if (item.kind === "cover") return;
+      if (item.kind === "board-page") {
+        if (item.slotId) {
+          await removePresentationExtraPage(item.slotId);
+          return;
+        }
+        await updateBoardPageVisibility(item.page.id, false);
+        return;
+      }
+      await updatePresentationSlideHidden(item.slideKey, true);
+    },
+    [removePresentationExtraPage, updateBoardPageVisibility, updatePresentationSlideHidden],
+  );
+
   const baseSlides = useMemo<PresentationBaseSlide[]>(() => {
     const list: PresentationBaseSlide[] = [{ kind: "cover", slideKey: "cover" }];
     roomData.forEach(({ room, data }) => {
@@ -943,7 +1012,7 @@ function PresentationPage() {
     return list;
   }, [baseSlides, designBoardPages, includedBoardPages, presentationExtraPages, slotsByAfterKey]);
 
-  const slides = useMemo(
+  const allSlides = useMemo(
     () =>
       numberPresentationSlides(
         applyPresentationSlideOrder(
@@ -952,6 +1021,14 @@ function PresentationPage() {
         ),
       ),
     [naturalSlides, presentationRenderingOverrides, presentationSlideOrder],
+  );
+
+  const slides = useMemo(
+    () =>
+      allSlides.filter(
+        (item) => item.kind === "cover" || !presentationHiddenSlideKeySet.has(item.slideKey),
+      ),
+    [allSlides, presentationHiddenSlideKeySet],
   );
 
   const reorderPresentationSlide = useCallback(
@@ -1000,6 +1077,10 @@ function PresentationPage() {
       return existingSelection.length ? existingSelection : availableKeys;
     });
   }, [slides]);
+
+  useEffect(() => {
+    setSlide((current) => Math.min(current, Math.max(slides.length - 1, 0)));
+  }, [slides.length]);
 
   const enterPresent = useCallback(async () => {
     setSlide(0);
@@ -1200,9 +1281,10 @@ function PresentationPage() {
                   {reorderPickerOpen && (
                     <div className="absolute right-0 top-full z-30 mt-2 w-[360px] border border-border bg-white p-2 shadow-xl">
                       <div className="max-h-[60vh] overflow-y-auto">
-                        {slides.map((item, index) => {
+                        {allSlides.map((item, index) => {
                           const isCover = item.kind === "cover";
-                          const canDragRow = !isCover;
+                          const isHidden = presentationHiddenSlideKeySet.has(item.slideKey);
+                          const canDragRow = !isCover && !isHidden;
                           const isRowTarget =
                             reorderDragOverSlideKey === item.slideKey &&
                             reorderDragSlideKey !== item.slideKey;
@@ -1243,15 +1325,48 @@ function PresentationPage() {
                                 isRowTarget
                                   ? "border-ink bg-muted"
                                   : "border-transparent hover:border-border hover:bg-muted/40"
-                              } ${canDragRow ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-70"}`}
+                              } ${canDragRow ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${
+                                isHidden ? "opacity-55" : isCover ? "opacity-70" : ""
+                              }`}
                             >
                               <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
                               <div className="min-w-0 flex-1">
                                 <div className="truncate font-medium text-ink">
                                   {presentationSlideLabel(item)}
+                                  {isHidden && (
+                                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                      Hidden
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">Page {index + 1}</div>
                               </div>
+                              {!isCover && (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void updatePresentationSlideHidden(item.slideKey, !isHidden);
+                                    }}
+                                    className="border border-border bg-white px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground hover:border-ink hover:text-ink"
+                                  >
+                                    {isHidden ? "Show" : "Hide"}
+                                  </button>
+                                  {item.kind === "board-page" && (
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void deletePresentationSlide(item);
+                                      }}
+                                      className="border border-red-200 bg-white px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-red-600 hover:border-red-300 hover:bg-red-50"
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1408,7 +1523,7 @@ function PresentationPage() {
                 }}
               >
                 {draggable && (
-                  <div className="print:hidden">
+                  <div className="print:hidden flex flex-wrap items-center justify-between gap-3">
                     <button
                       type="button"
                       draggable
@@ -1427,6 +1542,24 @@ function PresentationPage() {
                       <GripVertical className="h-4 w-4" />
                       Page {slides.findIndex((item) => item.slideKey === current.slideKey) + 1}
                     </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void updatePresentationSlideHidden(current.slideKey, true)}
+                        className="inline-flex h-9 items-center gap-2 border border-border bg-white px-3 text-xs uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-ink hover:text-ink"
+                      >
+                        <EyeOff className="h-4 w-4" /> Hide Page
+                      </button>
+                      {current.kind === "board-page" && (
+                        <button
+                          type="button"
+                          onClick={() => void deletePresentationSlide(current)}
+                          className="inline-flex h-9 items-center gap-2 border border-red-200 bg-white px-3 text-xs uppercase tracking-[0.14em] text-red-600 transition-colors hover:border-red-300 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" /> Delete Page
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
