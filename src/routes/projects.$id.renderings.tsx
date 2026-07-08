@@ -615,7 +615,7 @@ function RenderingTile({
         <div className="absolute top-9 left-1 bg-brass text-ink p-1"><Star className="w-2.5 h-2.5" fill="currentColor" /></div>
       )}
       {presentationOrderControl && (
-        <div className="absolute top-1 left-1 w-[4.75rem]">
+        <div className="absolute top-1 left-1 z-20 w-[4.75rem]">
           <Select
             value={String(presentationOrderControl.pageNumber)}
             onValueChange={setPresentationPage}
@@ -638,8 +638,8 @@ function RenderingTile({
           {reviewLabel(reviewStatus)}
         </div>
       )}
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-        <div className="flex items-center gap-1">
+      <div className="pointer-events-none absolute inset-0 z-10 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+        <div className="pointer-events-auto flex items-center gap-1">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <button title="View" className="bg-background/95 p-1.5"><Eye className="w-3 h-3" /></button>
