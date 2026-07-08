@@ -199,11 +199,12 @@ function MaterialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId }),
       });
-      const body = await readApiJson<{ rows?: ScrapedRow[]; skipped_count?: number; error?: string }>(res);
+      const body = await readApiJson<{ rows?: ScrapedRow[]; skipped_count?: number; remaining_count?: number; error?: string }>(res);
       if (!res.ok) throw new Error(body?.error || "Scrape failed");
       const rows = (body?.rows ?? []) as ScrapedRow[];
+      const skippedCount = body?.skipped_count ?? 0;
+      const remainingCount = body?.remaining_count ?? 0;
       if (rows.length === 0) {
-        const skippedCount = body?.skipped_count ?? 0;
         toast.info(
           skippedCount > 0
             ? `Nothing new to scrape. Skipped ${skippedCount} item${skippedCount === 1 ? "" : "s"} without a valid link.`
@@ -211,6 +212,11 @@ function MaterialsPage() {
         );
       } else {
         setReviewRows(rows);
+        if (remainingCount > 0) {
+          toast.info(
+            `Opened ${rows.length} item${rows.length === 1 ? "" : "s"} for review. Run scrape again after saving to process ${remainingCount} more.`,
+          );
+        }
       }
     } catch (e: any) {
       toast.error(e?.message || "Scrape failed");

@@ -5,6 +5,8 @@ import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
+const MAX_SCRAPE_ROWS_PER_RUN = 3;
+const SCRAPE_TIMEOUT_MS = 8000;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -119,13 +121,17 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       image_url: { type: "string" },
     },
   };
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
+    const controller = new AbortController();
+    timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
     const res = await fetch(FIRECRAWL_API, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${fcKey}`,
       },
+      signal: controller.signal,
       body: JSON.stringify({
         url,
         formats: [{
@@ -136,6 +142,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
         onlyMainContent: true,
       }),
     });
+    if (timeout) clearTimeout(timeout);
+    timeout = null;
     if (!res.ok) {
       return { error: `Scrape failed (${res.status})` };
     }
@@ -156,7 +164,10 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
     };
   } catch (e: any) {
+    if (e?.name === "AbortError") return { error: "Scrape timed out. Try again or enter details manually." };
     return { error: e?.message || "Scrape failed" };
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -181,11 +192,15 @@ export const Route = createFileRoute("/api/scrape-materials")({
           if (error) return json({ error: error.message }, 500);
 
           const linkedItems = items ?? [];
-          const candidates = linkedItems.filter((it) => isScrapeableUrl(it.product_url));
+          const candidates = linkedItems.filter(
+            (it) => isScrapeableUrl(it.product_url) && it.scrape_status !== "scraped",
+          );
           const skipped_count = linkedItems.length - candidates.length;
+          const limitedCandidates = candidates.slice(0, MAX_SCRAPE_ROWS_PER_RUN);
+          const remaining_count = Math.max(0, candidates.length - limitedCandidates.length);
 
           const rows: any[] = [];
-          for (const it of candidates) {
+          for (const it of limitedCandidates) {
             const url = it.product_url!.trim();
             // Catalog dedupe by exact URL
             const { data: existing } = await supabaseAdmin
@@ -236,7 +251,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             });
           }
 
-          return json({ rows, skipped_count });
+          return json({ rows, skipped_count, remaining_count });
         } catch (e: any) {
           return json({ error: e?.message || "Unexpected error" }, 500);
         }
