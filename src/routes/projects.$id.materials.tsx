@@ -199,17 +199,28 @@ function MaterialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId }),
       });
-      const body = await readApiJson<{ rows?: ScrapedRow[]; skipped_count?: number; remaining_count?: number; error?: string }>(res);
+      const body = await readApiJson<{
+        rows?: ScrapedRow[];
+        invalid_link_count?: number;
+        already_scraped_count?: number;
+        remaining_count?: number;
+        error?: string;
+      }>(res);
       if (!res.ok) throw new Error(body?.error || "Scrape failed");
       const rows = (body?.rows ?? []) as ScrapedRow[];
-      const skippedCount = body?.skipped_count ?? 0;
+      const invalidLinkCount = body?.invalid_link_count ?? 0;
+      const alreadyScrapedCount = body?.already_scraped_count ?? 0;
       const remainingCount = body?.remaining_count ?? 0;
       if (rows.length === 0) {
-        toast.info(
-          skippedCount > 0
-            ? `Nothing new to scrape. Skipped ${skippedCount} item${skippedCount === 1 ? "" : "s"} without a valid link.`
-            : "Nothing new to scrape — every row is either empty or already linked.",
-        );
+        const parts = [
+          alreadyScrapedCount > 0
+            ? `${alreadyScrapedCount} already scraped item${alreadyScrapedCount === 1 ? "" : "s"} with pricing`
+            : "",
+          invalidLinkCount > 0
+            ? `${invalidLinkCount} item${invalidLinkCount === 1 ? "" : "s"} without a valid link`
+            : "",
+        ].filter(Boolean);
+        toast.info(parts.length ? `Nothing new to scrape. Skipped ${parts.join(" and ")}.` : "Nothing new to scrape.");
       } else {
         setReviewRows(rows);
         if (remainingCount > 0) {

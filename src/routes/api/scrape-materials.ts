@@ -186,16 +186,20 @@ export const Route = createFileRoute("/api/scrape-materials")({
 
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
-            .select("id, product_url, product_id, scrape_status")
+            .select("id, product_url, product_id, scrape_status, product:products(id, price, unit_cost, shipping)")
             .eq("project_id", projectId)
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
 
           const linkedItems = items ?? [];
-          const candidates = linkedItems.filter(
-            (it) => isScrapeableUrl(it.product_url) && it.scrape_status !== "scraped",
+          const validLinkItems = linkedItems.filter((it) => isScrapeableUrl(it.product_url));
+          const invalid_link_count = linkedItems.length - validLinkItems.length;
+          const candidates = validLinkItems.filter(
+            (it: any) =>
+              it.scrape_status !== "scraped" ||
+              !hasValue(it.product?.price),
           );
-          const skipped_count = linkedItems.length - candidates.length;
+          const already_scraped_count = validLinkItems.length - candidates.length;
           const limitedCandidates = candidates.slice(0, MAX_SCRAPE_ROWS_PER_RUN);
           const remaining_count = Math.max(0, candidates.length - limitedCandidates.length);
 
@@ -251,7 +255,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             });
           }
 
-          return json({ rows, skipped_count, remaining_count });
+          return json({ rows, invalid_link_count, already_scraped_count, remaining_count });
         } catch (e: any) {
           return json({ error: e?.message || "Unexpected error" }, 500);
         }
