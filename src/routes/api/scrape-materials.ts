@@ -203,9 +203,17 @@ export const Route = createFileRoute("/api/scrape-materials")({
       // Phase 1 — fetch + scrape, return for review
       POST: async ({ request }) => {
         try {
-          const { project_id } = (await request.json()) as { project_id?: string };
+          const { project_id, exclude_material_item_ids } = (await request.json()) as {
+            project_id?: string;
+            exclude_material_item_ids?: string[];
+          };
           const projectId = cleanUuid(project_id);
           if (!projectId) return json({ error: "Valid project_id required" }, 400);
+          const excludedIds = new Set(
+            (Array.isArray(exclude_material_item_ids) ? exclude_material_item_ids : [])
+              .map((id) => cleanUuid(id))
+              .filter((id): id is string => !!id),
+          );
 
           const fcKey = process.env.FIRECRAWL_API_KEY;
           if (!fcKey) return json({ error: "Firecrawl is not connected yet." }, 500);
@@ -222,8 +230,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const invalid_link_count = linkedItems.length - validLinkItems.length;
           const candidates = validLinkItems.filter(
             (it: any) =>
-              it.scrape_status !== "scraped" ||
-              !hasValue(it.product?.price),
+              !excludedIds.has(it.id) &&
+              (it.scrape_status !== "scraped" ||
+                !hasValue(it.product?.price)),
           );
           const already_scraped_count = validLinkItems.length - candidates.length;
           const limitedCandidates = candidates.slice(0, MAX_SCRAPE_ROWS_PER_RUN);

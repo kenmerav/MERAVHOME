@@ -139,6 +139,7 @@ function MaterialsPage() {
   });
 
   const [scraping, setScraping] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState("");
   const [importingPdf, setImportingPdf] = useState(false);
   const [reviewRows, setReviewRows] = useState<ScrapedRow[] | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -193,24 +194,57 @@ function MaterialsPage() {
   const runScrape = async () => {
     if (!projectId) return toast.error("Invalid project link.");
     setScraping(true);
+    setScrapeStatus("Starting scrape...");
     try {
-      const res = await fetch("/api/scrape-materials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId }),
-      });
-      const body = await readApiJson<{
-        rows?: ScrapedRow[];
-        invalid_link_count?: number;
-        already_scraped_count?: number;
-        remaining_count?: number;
-        error?: string;
-      }>(res);
-      if (!res.ok) throw new Error(body?.error || "Scrape failed");
-      const rows = (body?.rows ?? []) as ScrapedRow[];
-      const invalidLinkCount = body?.invalid_link_count ?? 0;
-      const alreadyScrapedCount = body?.already_scraped_count ?? 0;
-      const remainingCount = body?.remaining_count ?? 0;
+      const collectedRows: ScrapedRow[] = [];
+      const collectedIds = new Set<string>();
+      let invalidLinkCount = 0;
+      let alreadyScrapedCount = 0;
+      let remainingCount = 0;
+      let batchCount = 0;
+
+      while (true) {
+        setScrapeStatus(
+          collectedRows.length > 0
+            ? `Scraping... ${collectedRows.length} ready for review`
+            : "Finding product details...",
+        );
+        const res = await fetch("/api/scrape-materials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_id: projectId,
+            exclude_material_item_ids: Array.from(collectedIds),
+          }),
+        });
+        const body = await readApiJson<{
+          rows?: ScrapedRow[];
+          invalid_link_count?: number;
+          already_scraped_count?: number;
+          remaining_count?: number;
+          error?: string;
+        }>(res);
+        if (!res.ok) throw new Error(body?.error || "Scrape failed");
+
+        const rows = (body?.rows ?? []) as ScrapedRow[];
+        invalidLinkCount = body?.invalid_link_count ?? invalidLinkCount;
+        alreadyScrapedCount = body?.already_scraped_count ?? alreadyScrapedCount;
+        remainingCount = body?.remaining_count ?? 0;
+
+        rows.forEach((row) => {
+          if (collectedIds.has(row.material_item_id)) return;
+          collectedIds.add(row.material_item_id);
+          collectedRows.push(row);
+        });
+
+        batchCount += 1;
+        if (rows.length === 0 || remainingCount === 0) break;
+        if (batchCount > 100) {
+          throw new Error("Scrape stopped after 100 batches. Save what opened, then run it again.");
+        }
+      }
+
+      const rows = collectedRows;
       if (rows.length === 0) {
         const parts = [
           alreadyScrapedCount > 0
@@ -223,15 +257,12 @@ function MaterialsPage() {
         toast.info(parts.length ? `Nothing new to scrape. Skipped ${parts.join(" and ")}.` : "Nothing new to scrape.");
       } else {
         setReviewRows(rows);
-        if (remainingCount > 0) {
-          toast.info(
-            `Opened ${rows.length} item${rows.length === 1 ? "" : "s"} for review. Run scrape again after saving to process ${remainingCount} more.`,
-          );
-        }
+        toast.info(`Opened ${rows.length} item${rows.length === 1 ? "" : "s"} for review.`);
       }
     } catch (e: any) {
       toast.error(e?.message || "Scrape failed");
     } finally {
+      setScrapeStatus("");
       setScraping(false);
     }
   };
@@ -356,7 +387,7 @@ function MaterialsPage() {
                 className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm tracking-wide disabled:opacity-60"
               >
                 <Sparkles className="w-4 h-4" />
-                {scraping ? "Scraping..." : "Scrape Product Info"}
+                {scraping ? scrapeStatus || "Scraping..." : "Scrape Product Info"}
               </button>
             </div>
           </div>
