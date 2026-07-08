@@ -180,7 +180,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     const pagePrice = priceFromPageText(data?.markdown, data?.html);
     return {
       name: firstString(ex.name, meta.title, meta.ogTitle),
-      vendor: firstString(ex.vendor, meta.ogSiteName, meta["og:site_name"], inferVendorFromUrl(url)),
+      vendor: firstString(inferVendorFromUrl(url), ex.vendor, meta.ogSiteName, meta["og:site_name"]),
       sku: firstString(ex.sku, ex.model, ex.model_number),
       color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
       finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
@@ -267,7 +267,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 existing_product_id: existing.id,
                 scraped: {
                   name: firstString(existing.name, refreshed?.name),
-                  vendor: firstString(existing.vendor, refreshed?.vendor, inferVendorFromUrl(url)),
+                  vendor: firstString(inferVendorFromUrl(url), existing.vendor, refreshed?.vendor),
                   image_url: firstString(existing.image_url, refreshed?.image_url),
                   color: firstString(existing.finish, refreshed?.color),
                   finish: firstString(existing.finish, refreshed?.finish, refreshed?.color),
@@ -351,6 +351,10 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 .eq("id", productId)
                 .maybeSingle();
               const patch = fillBlankProductFields(existingProduct as any, payload);
+              const sourceVendor = firstString(inferVendorFromUrl(row.url), row.scraped.vendor);
+              if (sourceVendor && existingProduct?.vendor !== sourceVendor) {
+                patch.vendor = sourceVendor;
+              }
               if (Object.keys(patch).length) {
                 await supabaseAdmin.from("products").update(patch).eq("id", productId);
               }

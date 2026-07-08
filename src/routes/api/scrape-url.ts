@@ -123,7 +123,7 @@ export const Route = createFileRoute("/api/scrape-url")({
 
           const result = {
             name: firstString(extracted.name, metadata.title, metadata.ogTitle),
-            vendor: firstString(extracted.vendor, metadata.ogSiteName, metadata["og:site_name"], inferVendorFromUrl(url)),
+            vendor: firstString(inferVendorFromUrl(url), extracted.vendor, metadata.ogSiteName, metadata["og:site_name"]),
             sku: firstString(extracted.sku, extracted.model, extracted.model_number),
             finish: firstString(extracted.finish, extracted.color, extracted.selected_color, extracted.selected_variant, extracted.variant),
             price: firstPrice(
