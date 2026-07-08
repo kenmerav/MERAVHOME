@@ -55,6 +55,17 @@ type ScrapedRow = {
   };
 };
 
+async function readApiJson<T = any>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text.trim()) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const message = text.replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(message || `Request failed (${res.status})`);
+  }
+}
+
 function productCategoryPatchForMaterialCategory(category: string): Partial<Product> {
   const normalized = normalizeItemCategory(category) ?? "Other";
   const productCategory = toProductCategory(normalized);
@@ -188,7 +199,7 @@ function MaterialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId }),
       });
-      const body = await res.json();
+      const body = await readApiJson<{ rows?: ScrapedRow[]; error?: string }>(res);
       if (!res.ok) throw new Error(body?.error || "Scrape failed");
       const rows = (body?.rows ?? []) as ScrapedRow[];
       if (rows.length === 0) {
@@ -217,7 +228,7 @@ function MaterialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rows: safeRows }),
       });
-      const body = await res.json();
+      const body = await readApiJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(body?.error || "Could not save");
       toast.success(`Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`);
       setReviewRows(null);
