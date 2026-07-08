@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
 
 type SampleFilter = "Sample" | "No sample";
 type ProductCatalogSearch = {
@@ -108,7 +109,7 @@ function ProductPage() {
     await db.updateProduct(safeProductId, {
       ...form,
       name: form.name.trim(),
-      vendor: clean(form.vendor),
+      vendor: clean(form.vendor) || inferVendorFromUrl(form.product_url) || null,
       subcategory: clean(form.subcategory),
       product_url: clean(form.product_url),
       image_url: clean(form.image_url),

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const MAX_SCRAPE_ROWS_PER_RUN = 3;
@@ -179,7 +180,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     const pagePrice = priceFromPageText(data?.markdown, data?.html);
     return {
       name: firstString(ex.name, meta.title, meta.ogTitle),
-      vendor: firstString(ex.vendor, meta.ogSiteName, meta["og:site_name"]),
+      vendor: firstString(ex.vendor, meta.ogSiteName, meta["og:site_name"], inferVendorFromUrl(url)),
       sku: firstString(ex.sku, ex.model, ex.model_number),
       color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
       finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
@@ -266,7 +267,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 existing_product_id: existing.id,
                 scraped: {
                   name: firstString(existing.name, refreshed?.name),
-                  vendor: firstString(existing.vendor, refreshed?.vendor),
+                  vendor: firstString(existing.vendor, refreshed?.vendor, inferVendorFromUrl(url)),
                   image_url: firstString(existing.image_url, refreshed?.image_url),
                   color: firstString(existing.finish, refreshed?.color),
                   finish: firstString(existing.finish, refreshed?.finish, refreshed?.color),
@@ -332,7 +333,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             const payload = compactPayload({
               name: row.scraped.name || "Untitled product",
               category: toProductCategory(matItem?.category),
-              vendor: row.scraped.vendor || null,
+              vendor: firstString(row.scraped.vendor, inferVendorFromUrl(row.url)) || null,
               product_url: row.url,
               image_url: row.scraped.image_url || null,
               finish: row.scraped.finish || row.scraped.color || null,

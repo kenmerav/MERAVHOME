@@ -50,6 +50,7 @@ import {
 import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
 import {
   ALL_CATEGORIES,
   inferMaterialCategory,
@@ -1510,6 +1511,7 @@ function ProjectDesignBoardsPage() {
       toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = element.materialFinish || element.finish || null;
     const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
+    const vendor = linkedProduct?.vendor || inferVendorFromUrl(productUrl);
     // Use the exact image currently visible on the board. If a user restores the
     // original before sending to materials, the catalog should follow that choice
     // instead of keeping an older background-removed cutout.
@@ -1558,6 +1560,7 @@ function ProjectDesignBoardsPage() {
       product = await db.createProduct({
         name: actualProductName,
         category,
+        vendor: vendor || null,
         product_url: productUrl,
         image_url: productImageUrl,
         finish,
@@ -1567,6 +1570,7 @@ function ProjectDesignBoardsPage() {
       category = product.category || category;
       const productPatch: Partial<Product> = {};
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
+      if (!product.vendor && vendor) productPatch.vendor = vendor;
       if (!product.finish && finish) productPatch.finish = finish;
       if (dimensions && product.dimensions !== dimensions) productPatch.dimensions = dimensions;
       if (Object.keys(productPatch).length) {

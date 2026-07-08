@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { normalizeMoneyInput } from "@/lib/money";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { canViewProductCatalog } from "@/lib/permissions";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { toast } from "sonner";
 
 type SampleFilter = "All" | "Sample" | "No sample";
@@ -278,7 +279,7 @@ function NewProductDialog() {
   const submit = async () => {
     if (!f.name.trim()) return toast.error("Name required");
     await db.createProduct({
-      name: f.name, vendor: f.vendor || null, product_url: f.product_url || null, image_url: f.image_url || null,
+      name: f.name, vendor: f.vendor || inferVendorFromUrl(f.product_url) || null, product_url: f.product_url || null, image_url: f.image_url || null,
       finish: f.finish || null, sku: f.sku || null, dimensions: f.dimensions || null, price: normalizeMoneyInput(f.price),
       unit_cost: normalizeMoneyInput(f.unit_cost), shipping: normalizeMoneyInput(f.shipping), notes: f.notes || null,
       category: strictCategory, subcategory: f.subcategory || null, has_sample: sampleAppliesToCategory(category) ? f.has_sample : false,

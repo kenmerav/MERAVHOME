@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const SCRAPE_TIMEOUT_MS = 15000;
@@ -122,7 +123,7 @@ export const Route = createFileRoute("/api/scrape-url")({
 
           const result = {
             name: firstString(extracted.name, metadata.title, metadata.ogTitle),
-            vendor: firstString(extracted.vendor, metadata.ogSiteName, metadata["og:site_name"]),
+            vendor: firstString(extracted.vendor, metadata.ogSiteName, metadata["og:site_name"], inferVendorFromUrl(url)),
             sku: firstString(extracted.sku, extracted.model, extracted.model_number),
             finish: firstString(extracted.finish, extracted.color, extracted.selected_color, extracted.selected_variant, extracted.variant),
             price: firstPrice(
