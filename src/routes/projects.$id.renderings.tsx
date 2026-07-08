@@ -46,6 +46,10 @@ function ProjectRenderingsPage() {
     queryFn: async () => resolveStaleRenderingJobs((await db.listProjectRoomImages(id)) ?? []),
     refetchInterval: 4000,
   });
+  const { data: sharedBoard } = useQuery({
+    queryKey: ["designBoard", id],
+    queryFn: () => db.getDesignBoard(id),
+  });
 
   const [busy, setBusy] = useState(false);
   const [renderingMode, setRenderingMode] = useState<RenderingFidelityMode>("standard");
@@ -77,6 +81,66 @@ function ProjectRenderingsPage() {
     }
     return { sk, done, pending, failed };
   }, [rooms, byRoom]);
+
+  const approvedPresentationSlideKeys = useMemo(
+    () => buildApprovedRenderingSlideKeys(rooms, byRoom),
+    [rooms, byRoom],
+  );
+  const presentationSlideOrder = useMemo(
+    () =>
+      buildPresentationSlideOrder(
+        normalizePresentationSlideOrder(sharedBoard?.board_state),
+        approvedPresentationSlideKeys,
+      ),
+    [approvedPresentationSlideKeys, sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
+  const presentationPageBySlideKey = useMemo(
+    () =>
+      new Map(
+        presentationSlideOrder.map((slideKey, index) => [slideKey, index + 1] as const),
+      ),
+    [presentationSlideOrder],
+  );
+  const presentationPageOptions = useMemo(
+    () => presentationSlideOrder.map((_, index) => index + 1).filter((pageNumber) => pageNumber > 1),
+    [presentationSlideOrder],
+  );
+
+  const setRenderingPresentationPage = async (slideKey: string, pageNumber: number) => {
+    const latestBoard = await db.getDesignBoard(id);
+    const baseState =
+      latestBoard?.board_state && typeof latestBoard.board_state === "object"
+        ? (latestBoard.board_state as Record<string, unknown>)
+        : {};
+    const latestOrder = buildPresentationSlideOrder(
+      normalizePresentationSlideOrder(baseState),
+      approvedPresentationSlideKeys,
+    );
+    const currentIndex = latestOrder.indexOf(slideKey);
+    const targetIndex = pageNumber - 1;
+    if (currentIndex < 0 || targetIndex <= 0 || targetIndex >= latestOrder.length) return;
+    const nextOrder = [...latestOrder];
+    const [moved] = nextOrder.splice(currentIndex, 1);
+    nextOrder.splice(targetIndex, 0, moved);
+    const nextState = {
+      ...baseState,
+      presentationSlideOrder: nextOrder,
+    };
+
+    const saved = latestBoard?.updated_at
+      ? await db.updateDesignBoardIfFresh(id, nextState, latestBoard.updated_at)
+      : await db.upsertDesignBoard(id, nextState);
+
+    if (!saved) {
+      toast.error("Presentation order changed while saving. Please try again.");
+      qc.invalidateQueries({ queryKey: ["designBoard", id] });
+      return;
+    }
+
+    qc.setQueryData(["designBoard", id], saved);
+    qc.invalidateQueries({ queryKey: ["designBoard", id] });
+    toast.success("Presentation page updated");
+  };
 
   const generateAll = async () => {
     if (busy) return;
@@ -180,6 +244,9 @@ function ProjectRenderingsPage() {
                 renderings={byRoom.get(r.id)?.renderings ?? []}
                 disableActions={busy}
                 renderingMode={renderingMode}
+                presentationPageBySlideKey={presentationPageBySlideKey}
+                presentationPageOptions={presentationPageOptions}
+                onSetPresentationPage={setRenderingPresentationPage}
               />
             ))}
           </div>
@@ -190,8 +257,26 @@ function ProjectRenderingsPage() {
 }
 
 /* ─────────── Per-room section ─────────── */
-function RoomRenderingSection({ room, projectId, sketchups, renderings, disableActions, renderingMode }: {
-  room: { id: string; name: string }; projectId: string; sketchups: RoomImage[]; renderings: RoomImage[]; disableActions: boolean; renderingMode: RenderingFidelityMode;
+function RoomRenderingSection({
+  room,
+  projectId,
+  sketchups,
+  renderings,
+  disableActions,
+  renderingMode,
+  presentationPageBySlideKey,
+  presentationPageOptions,
+  onSetPresentationPage,
+}: {
+  room: { id: string; name: string };
+  projectId: string;
+  sketchups: RoomImage[];
+  renderings: RoomImage[];
+  disableActions: boolean;
+  renderingMode: RenderingFidelityMode;
+  presentationPageBySlideKey: Map<string, number>;
+  presentationPageOptions: number[];
+  onSetPresentationPage: (slideKey: string, pageNumber: number) => void;
 }) {
   const qc = useQueryClient();
   const done = sketchups.filter(s => renderings.some(r => r.linked_sketchup_id === s.id && r.status === "complete")).length;
@@ -225,6 +310,9 @@ function RoomRenderingSection({ room, projectId, sketchups, renderings, disableA
               renderings={sortRenderings(renderings.filter(r => r.linked_sketchup_id === sk.id))}
               disableActions={disableActions}
               renderingMode={renderingMode}
+              presentationPageBySlideKey={presentationPageBySlideKey}
+              presentationPageOptions={presentationPageOptions}
+              onSetPresentationPage={onSetPresentationPage}
               qc={qc}
             />
           ))}
@@ -235,8 +323,28 @@ function RoomRenderingSection({ room, projectId, sketchups, renderings, disableA
 }
 
 /* ─────────── SketchUp + Renderings card ─────────── */
-function SketchupCard({ sk, roomId, projectId, renderings, disableActions, renderingMode, qc }: {
-  sk: RoomImage; roomId: string; projectId: string; renderings: RoomImage[]; disableActions: boolean; renderingMode: RenderingFidelityMode; qc: ReturnType<typeof useQueryClient>;
+function SketchupCard({
+  sk,
+  roomId,
+  projectId,
+  renderings,
+  disableActions,
+  renderingMode,
+  presentationPageBySlideKey,
+  presentationPageOptions,
+  onSetPresentationPage,
+  qc,
+}: {
+  sk: RoomImage;
+  roomId: string;
+  projectId: string;
+  renderings: RoomImage[];
+  disableActions: boolean;
+  renderingMode: RenderingFidelityMode;
+  presentationPageBySlideKey: Map<string, number>;
+  presentationPageOptions: number[];
+  onSetPresentationPage: (slideKey: string, pageNumber: number) => void;
+  qc: ReturnType<typeof useQueryClient>;
 }) {
   const status: RenderingStatus = sketchupStatus(sk.id, renderings);
   const [busy, setBusy] = useState(false);
@@ -341,7 +449,27 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, rende
       {renderings.length > 0 && (
         <div className="grid grid-cols-2 gap-2 pt-3 border-t border-border">
           {renderings.map(r => (
-            <RenderingTile key={r.id} rendering={r} sketchup={sk} renderings={renderings} projectId={projectId} roomId={roomId} renderingMode={renderingMode} qc={qc} />
+            <RenderingTile
+              key={r.id}
+              rendering={r}
+              sketchup={sk}
+              renderings={renderings}
+              projectId={projectId}
+              roomId={roomId}
+              renderingMode={renderingMode}
+              presentationOrderControl={
+                renderingCanShowInPresentation(r)
+                  ? {
+                      slideKey: buildRenderingSlideKey(roomId, r.id),
+                      pageNumber:
+                        presentationPageBySlideKey.get(buildRenderingSlideKey(roomId, r.id)) ?? 2,
+                      pageOptions: presentationPageOptions,
+                      onChange: onSetPresentationPage,
+                    }
+                  : undefined
+              }
+              qc={qc}
+            />
           ))}
         </div>
       )}
@@ -349,13 +477,23 @@ function SketchupCard({ sk, roomId, projectId, renderings, disableActions, rende
   );
 }
 
-function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, renderingMode, qc }: {
+function RenderingTile({
+  rendering,
+  sketchup,
+  renderings,
+  projectId,
+  roomId,
+  renderingMode,
+  presentationOrderControl,
+  qc,
+}: {
   rendering: RoomImage;
   sketchup: RoomImage;
   renderings: RoomImage[];
   projectId: string;
   roomId: string;
   renderingMode: RenderingFidelityMode;
+  presentationOrderControl?: PresentationOrderControl;
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const [open, setOpen] = useState(false);
@@ -416,6 +554,11 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, ren
   const setReviewStatus = async (next: RenderingReviewStatus) => {
     await update({ review_status: next, is_approved: next === "approved" });
   };
+  const setPresentationPage = (value: string) => {
+    const pageNumber = Number(value);
+    if (!presentationOrderControl || !Number.isFinite(pageNumber)) return;
+    presentationOrderControl.onChange(presentationOrderControl.slideKey, pageNumber);
+  };
   const createRevision = async () => {
     if (revising) return;
     const notes = revisionNotes.trim();
@@ -469,7 +612,26 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, ren
         V{version}
       </div>
       {rendering.is_favorite && (
-        <div className="absolute top-1 left-1 bg-brass text-ink p-1"><Star className="w-2.5 h-2.5" fill="currentColor" /></div>
+        <div className="absolute top-9 left-1 bg-brass text-ink p-1"><Star className="w-2.5 h-2.5" fill="currentColor" /></div>
+      )}
+      {presentationOrderControl && (
+        <div className="absolute top-1 left-1 w-[4.75rem]">
+          <Select
+            value={String(presentationOrderControl.pageNumber)}
+            onValueChange={setPresentationPage}
+          >
+            <SelectTrigger className="h-7 border-0 bg-background/95 px-2 text-[10px] shadow-sm">
+              <SelectValue aria-label={`Presentation page ${presentationOrderControl.pageNumber}`} />
+            </SelectTrigger>
+            <SelectContent>
+              {presentationOrderControl.pageOptions.map((pageNumber) => (
+                <SelectItem key={pageNumber} value={String(pageNumber)}>
+                  Page {pageNumber}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )}
       {reviewStatus && (
         <div className="absolute bottom-1 left-1 right-1 text-[9px] uppercase tracking-wider bg-background/85 text-ink px-1.5 py-0.5 text-center truncate">
@@ -515,6 +677,24 @@ function RenderingTile({ rendering, sketchup, renderings, projectId, roomId, ren
                     </SelectContent>
                   </Select>
                 </div>
+                {presentationOrderControl && (
+                  <div>
+                    <Label className="eyebrow">Presentation Page</Label>
+                    <Select
+                      value={String(presentationOrderControl.pageNumber)}
+                      onValueChange={setPresentationPage}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {presentationOrderControl.pageOptions.map((pageNumber) => (
+                          <SelectItem key={pageNumber} value={String(pageNumber)}>
+                            Page {pageNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="flex items-end gap-3 text-xs">
                   <label className="inline-flex items-center gap-2">
                     <input
@@ -829,6 +1009,70 @@ function sortRenderings(renderings: RoomImage[]) {
   });
 }
 
+function renderingCanShowInPresentation(rendering: RoomImage) {
+  return (
+    rendering.kind === "rendering" &&
+    rendering.status === "complete" &&
+    (rendering.is_approved === true || rendering.review_status === "approved")
+  );
+}
+
+function buildRenderingSlideKey(roomId: string, renderingId: string) {
+  return `room:${roomId}:view:${renderingId}`;
+}
+
+function buildApprovedRenderingSlideKeys(
+  rooms: Array<{ id: string }>,
+  byRoom: Map<string, { sketchups: RoomImage[]; renderings: RoomImage[] }>,
+) {
+  const slideKeys: string[] = [];
+  for (const room of rooms) {
+    const entry = byRoom.get(room.id) || { sketchups: [], renderings: [] };
+    const approvedRenderings = sortRenderings(entry.renderings.filter(renderingCanShowInPresentation));
+    const renderedIds = new Set<string>();
+    for (const sketchup of entry.sketchups) {
+      for (const rendering of approvedRenderings.filter((item) => item.linked_sketchup_id === sketchup.id)) {
+        renderedIds.add(rendering.id);
+        slideKeys.push(buildRenderingSlideKey(room.id, rendering.id));
+      }
+    }
+    for (const rendering of approvedRenderings) {
+      if (!renderedIds.has(rendering.id)) {
+        slideKeys.push(buildRenderingSlideKey(room.id, rendering.id));
+      }
+    }
+  }
+  return slideKeys;
+}
+
+function normalizePresentationSlideOrder(boardState: unknown) {
+  if (!boardState || typeof boardState !== "object") return [];
+  const candidate = boardState as { presentationSlideOrder?: unknown[] };
+  if (!Array.isArray(candidate.presentationSlideOrder)) return [];
+  const seen = new Set<string>();
+  return candidate.presentationSlideOrder.filter((value): value is string => {
+    if (typeof value !== "string" || !value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+function buildPresentationSlideOrder(savedOrder: string[], approvedRenderingSlideKeys: string[]) {
+  const approvedSet = new Set(approvedRenderingSlideKeys);
+  const ordered = savedOrder.filter(
+    (slideKey) => slideKey === "cover" || !slideKey.startsWith("room:") || approvedSet.has(slideKey),
+  );
+  const orderedSet = new Set(ordered);
+  if (!orderedSet.has("cover")) ordered.unshift("cover");
+  for (const slideKey of approvedRenderingSlideKeys) {
+    if (!orderedSet.has(slideKey)) {
+      ordered.push(slideKey);
+      orderedSet.add(slideKey);
+    }
+  }
+  return ordered;
+}
+
 function nextRevisionNumber(renderings: RoomImage[]) {
   return Math.max(1, ...renderings.map(r => r.revision_number || 1)) + 1;
 }
@@ -865,6 +1109,13 @@ type GenerateOptions = {
   revisionReferenceUrl?: string;
   revisionNumber?: number;
   renderingMode?: RenderingFidelityMode;
+};
+
+type PresentationOrderControl = {
+  slideKey: string;
+  pageNumber: number;
+  pageOptions: number[];
+  onChange: (slideKey: string, pageNumber: number) => void;
 };
 
 async function generateRendering(
