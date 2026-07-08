@@ -199,11 +199,16 @@ function MaterialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId }),
       });
-      const body = await readApiJson<{ rows?: ScrapedRow[]; error?: string }>(res);
+      const body = await readApiJson<{ rows?: ScrapedRow[]; skipped_count?: number; error?: string }>(res);
       if (!res.ok) throw new Error(body?.error || "Scrape failed");
       const rows = (body?.rows ?? []) as ScrapedRow[];
       if (rows.length === 0) {
-        toast.info("Nothing new to scrape — every row is either empty or already linked.");
+        const skippedCount = body?.skipped_count ?? 0;
+        toast.info(
+          skippedCount > 0
+            ? `Nothing new to scrape. Skipped ${skippedCount} item${skippedCount === 1 ? "" : "s"} without a valid link.`
+            : "Nothing new to scrape — every row is either empty or already linked.",
+        );
       } else {
         setReviewRows(rows);
       }
@@ -632,6 +637,7 @@ function RoomMaterialsSection({
                 <th className="py-3 w-[140px]">Category</th>
                 <th className="py-3 w-[120px]">CAD Label</th>
                 <th className="py-3">Product Link</th>
+                <th className="py-3 w-[100px]">Price</th>
                 <th className="py-3 w-[72px]">Qty</th>
                 <th className="py-3 w-[130px]">Ordered By</th>
                 <th className="py-3 w-[88px]">Ordered</th>
@@ -761,6 +767,9 @@ function RoomMaterialsSection({
                           Add a source link so this item can flow cleanly into scraping, specs, and procurement.
                         </div>
                       )}
+                    </td>
+                    <td className="py-2 pr-3 text-xs text-muted-foreground">
+                      {it.product?.price || "—"}
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput

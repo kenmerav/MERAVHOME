@@ -21,10 +21,24 @@ function hasValue(value: unknown) {
   return typeof value === "string" ? value.trim().length > 0 : value != null;
 }
 
+function isScrapeableUrl(value: string | null | undefined) {
+  if (!value) return false;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function firstPrice(...vals: unknown[]) {
   for (const val of vals) {
-    if (typeof val !== "string") continue;
-    const text = val.replace(/\s+/g, " ").trim();
+    const text =
+      typeof val === "number"
+        ? val.toString()
+        : typeof val === "string"
+          ? val.replace(/\s+/g, " ").trim()
+          : "";
     if (!text) continue;
 
     const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\$?\s*\d+(?:\.\d{2})?/);
@@ -137,8 +151,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
       dimensions: firstString(ex.dimensions, ex.size),
       price: firstPrice(ex.price, ex.current_price, ex.sale_price, ex.regular_price, ex.list_price, ex.price_per_item),
-      unit_cost: firstString(ex.unit_cost),
-      shipping: firstString(ex.shipping),
+      unit_cost: firstPrice(ex.unit_cost),
+      shipping: firstPrice(ex.shipping),
       image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
     };
   } catch (e: any) {
@@ -166,9 +180,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
 
-          const candidates = (items ?? []).filter(
-            (it) => it.product_url && it.product_url.trim().length > 0,
-          );
+          const linkedItems = items ?? [];
+          const candidates = linkedItems.filter((it) => isScrapeableUrl(it.product_url));
+          const skipped_count = linkedItems.length - candidates.length;
 
           const rows: any[] = [];
           for (const it of candidates) {
@@ -222,7 +236,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             });
           }
 
-          return json({ rows });
+          return json({ rows, skipped_count });
         } catch (e: any) {
           return json({ error: e?.message || "Unexpected error" }, 500);
         }
