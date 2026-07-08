@@ -4895,27 +4895,25 @@ function MissingMaterialInfoDialog({
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
                         Label
-                        <input
+                        <MissingMaterialInfoDraftInput
                           value={element.label ?? ""}
-                          onChange={(event) =>
-                            onUpdateItem(item.pageId, element.id, { label: event.target.value })
+                          onCommit={(value) =>
+                            onUpdateItem(item.pageId, element.id, { label: value })
                           }
                           placeholder="ex. Pantry Sink"
-                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                         />
                       </label>
                       <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
                         Product link / note
-                        <input
+                        <MissingMaterialInfoDraftInput
                           value={element.link ?? ""}
-                          onChange={(event) =>
+                          onCommit={(value) =>
                             onUpdateItem(item.pageId, element.id, {
-                              link: event.target.value,
-                              materialLinkCleared: event.target.value.trim() === "",
+                              link: value,
+                              materialLinkCleared: value.trim() === "",
                             })
                           }
                           placeholder="https://... or see cabinet vendor"
-                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                         />
                       </label>
                       <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
@@ -4958,43 +4956,40 @@ function MissingMaterialInfoDialog({
                       </label>
                       <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
                         Color / Finish
-                        <input
+                        <MissingMaterialInfoDraftInput
                           value={element.materialFinish ?? element.finish ?? ""}
-                          onChange={(event) =>
+                          onCommit={(value) =>
                             onUpdateItem(item.pageId, element.id, {
-                              materialFinish: event.target.value,
+                              materialFinish: value,
                             })
                           }
                           placeholder="ex. Aged Brass"
-                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                         />
                       </label>
                       <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
                         Dimensions / Notes
-                        <input
+                        <MissingMaterialInfoDraftInput
                           value={element.materialDimensions ?? ""}
-                          onChange={(event) =>
+                          onCommit={(value) =>
                             onUpdateItem(item.pageId, element.id, {
-                              materialDimensions: event.target.value,
+                              materialDimensions: value,
                             })
                           }
                           placeholder="ex. 30 in W x 18 in D"
-                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                         />
                       </label>
                       <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
                         Qty
-                        <input
+                        <MissingMaterialInfoDraftInput
                           value={quantityValue}
-                          onChange={(event) => {
-                            const value = event.target.value.trim();
+                          onCommit={(draft) => {
+                            const value = draft.trim();
                             onUpdateItem(item.pageId, element.id, {
                               materialQuantity: value ? Math.max(1, Number(value) || 1) : null,
                             });
                           }}
                           inputMode="numeric"
                           placeholder="Auto"
-                          className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
                         />
                       </label>
                     </div>
@@ -5027,6 +5022,43 @@ function MissingMaterialInfoDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function MissingMaterialInfoDraftInput({
+  value,
+  onCommit,
+  placeholder,
+  inputMode,
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  placeholder?: string;
+  inputMode?: "text" | "numeric";
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+
+  return (
+    <input
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.currentTarget.blur();
+      }}
+      inputMode={inputMode}
+      placeholder={placeholder}
+      className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
+    />
   );
 }
 
