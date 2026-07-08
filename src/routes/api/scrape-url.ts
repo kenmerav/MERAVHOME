@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
+const SCRAPE_TIMEOUT_MS = 15000;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -15,18 +16,37 @@ function firstString(...values: unknown[]) {
 
 function firstPrice(...values: unknown[]) {
   for (const value of values) {
-    if (typeof value !== "string") continue;
-    const text = value.replace(/\s+/g, " ").trim();
-    if (!text) continue;
+    const text =
+      typeof value === "number"
+        ? value.toString()
+        : typeof value === "string"
+          ? value.replace(/\s+/g, " ").trim()
+          : "";
+    if (!text || /^(null|undefined|n\/a)$/i.test(text)) continue;
 
-    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\$?\s*\d+(?:\.\d{2})?/);
+    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)?|\$?\s*\d+(?:\.\d{2})?/);
     if (!match) continue;
 
-    const cleaned = match[0].replace(/\s+/g, "");
+    const cleaned = match[0]
+      .replace(/\s+/g, "")
+      .replace(/–|to/i, "-");
     if (!/\d/.test(cleaned)) continue;
     return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
   }
   return "";
+}
+
+function priceFromPageText(markdown?: string, html?: string) {
+  const htmlText = html ?? "";
+  const markdownText = markdown ?? "";
+  const automationPrice = htmlText.match(/data-automation=["']price["'][^>]*>\s*([^<]+)/i);
+  const labeledPrice = `${markdownText}\n${htmlText}`.match(
+    /(?:your total|current price|sale price|regular price|price)\s*:?\s*(\$?\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)/i,
+  );
+  const standaloneMarkdownPrice = markdownText.match(
+    /(?:^|\n)\s*(?:[-*]\s*)?(\$\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)\s*(?:\n|$)/,
+  );
+  return firstPrice(automationPrice?.[1], labeledPrice?.[1], standaloneMarkdownPrice?.[1]);
 }
 
 export const Route = createFileRoute("/api/scrape-url")({
@@ -53,7 +73,7 @@ export const Route = createFileRoute("/api/scrape-url")({
               selected_color: { type: "string", description: "Selected color option when the page shows one" },
               finish: { type: "string", description: "Finish, color, or material variant" },
               selected_variant: { type: "string", description: "Selected variant or option when the page shows one" },
-              price: { type: "string", description: "Current product price shown to the customer" },
+              price: { type: "string", description: "Exact customer-visible price for the selected product variant. If no exact selected variant price is visible, use the product price range." },
               current_price: { type: "string" },
               sale_price: { type: "string" },
               regular_price: { type: "string" },
@@ -63,24 +83,31 @@ export const Route = createFileRoute("/api/scrape-url")({
             },
           };
 
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
           const res = await fetch(FIRECRAWL_API, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${fcKey}`,
             },
+            signal: controller.signal,
             body: JSON.stringify({
               url,
               formats: [
+                "markdown",
+                "html",
                 {
                   type: "json",
                   schema,
-                  prompt: "Extract product details from this page. If the URL or page has a selected color, selected swatch, finish, or variant already chosen, capture that exact selected value. Do not invent a color when only a list of options is visible.",
+                  prompt: "Extract product details from this page. If the URL or page has a selected color, selected swatch, finish, or variant already chosen, capture that exact selected value. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Do not invent a color or price.",
                 },
               ],
-              onlyMainContent: true,
+              onlyMainContent: false,
+              timeout: SCRAPE_TIMEOUT_MS,
             }),
           });
+          clearTimeout(timeout);
 
           if (!res.ok) {
             const txt = await res.text();
@@ -91,6 +118,7 @@ export const Route = createFileRoute("/api/scrape-url")({
           const data = body?.data ?? body;
           const extracted = data?.json ?? data?.extract ?? {};
           const metadata = data?.metadata ?? {};
+          const pagePrice = priceFromPageText(data?.markdown, data?.html);
 
           const result = {
             name: firstString(extracted.name, metadata.title, metadata.ogTitle),
@@ -104,6 +132,7 @@ export const Route = createFileRoute("/api/scrape-url")({
               extracted.regular_price,
               extracted.list_price,
               extracted.price_per_item,
+              pagePrice,
             ),
             image_url: firstString(extracted.image_url, extracted.image, metadata.ogImage, metadata["og:image"]),
           };

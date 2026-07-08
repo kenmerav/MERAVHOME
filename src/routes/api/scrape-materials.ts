@@ -6,7 +6,7 @@ import { cleanUuid } from "@/lib/ids";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const MAX_SCRAPE_ROWS_PER_RUN = 3;
-const SCRAPE_TIMEOUT_MS = 8000;
+const SCRAPE_TIMEOUT_MS = 15000;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -41,16 +41,37 @@ function firstPrice(...vals: unknown[]) {
         : typeof val === "string"
           ? val.replace(/\s+/g, " ").trim()
           : "";
-    if (!text) continue;
+    if (!text || /^(null|undefined|n\/a)$/i.test(text)) continue;
 
-    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\$?\s*\d+(?:\.\d{2})?/);
+    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)?|\$?\s*\d+(?:\.\d{2})?/);
     if (!match) continue;
 
-    const cleaned = match[0].replace(/\s+/g, "");
+    const cleaned = match[0]
+      .replace(/\s+/g, "")
+      .replace(/–|to/i, "-");
     if (!/\d/.test(cleaned)) continue;
     return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
   }
   return "";
+}
+
+function priceFromPageText(markdown?: string, html?: string) {
+  const htmlText = html ?? "";
+  const markdownText = markdown ?? "";
+
+  const automationPrice = htmlText.match(/data-automation=["']price["'][^>]*>\s*([^<]+)/i);
+  const labeledPrice = `${markdownText}\n${htmlText}`.match(
+    /(?:your total|current price|sale price|regular price|price)\s*:?\s*(\$?\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)/i,
+  );
+  const standaloneMarkdownPrice = markdownText.match(
+    /(?:^|\n)\s*(?:[-*]\s*)?(\$\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)\s*(?:\n|$)/,
+  );
+
+  return firstPrice(
+    automationPrice?.[1],
+    labeledPrice?.[1],
+    standaloneMarkdownPrice?.[1],
+  );
 }
 
 function compactPayload<T extends Record<string, unknown>>(payload: T) {
@@ -109,7 +130,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       dimensions: { type: "string" },
       price: {
         type: "string",
-        description: "Current product price shown to the customer, formatted with a dollar sign when available",
+        description: "Exact customer-visible price for the selected product variant. If no exact selected variant price is visible, use the product price range.",
       },
       current_price: { type: "string" },
       sale_price: { type: "string" },
@@ -134,12 +155,16 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       signal: controller.signal,
       body: JSON.stringify({
         url,
-        formats: [{
-          type: "json",
-          schema,
-          prompt: "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, or variant already chosen, capture that exact selected value. Do not invent a color when only a list of options is visible.",
-        }],
-        onlyMainContent: true,
+        formats: [
+          "markdown",
+          "html",
+          {
+            type: "json",
+            schema,
+            prompt: "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, or variant already chosen, capture that exact selected value. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Do not invent a color or price.",
+          },
+        ],
+        onlyMainContent: false,
       }),
     });
     if (timeout) clearTimeout(timeout);
@@ -151,6 +176,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     const data = body?.data ?? body;
     const ex = data?.json ?? data?.extract ?? {};
     const meta = data?.metadata ?? {};
+    const pagePrice = priceFromPageText(data?.markdown, data?.html);
     return {
       name: firstString(ex.name, meta.title, meta.ogTitle),
       vendor: firstString(ex.vendor, meta.ogSiteName, meta["og:site_name"]),
@@ -158,7 +184,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
       finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
       dimensions: firstString(ex.dimensions, ex.size),
-      price: firstPrice(ex.price, ex.current_price, ex.sale_price, ex.regular_price, ex.list_price, ex.price_per_item),
+      price: firstPrice(ex.price, ex.current_price, ex.sale_price, ex.regular_price, ex.list_price, ex.price_per_item, pagePrice),
       unit_cost: firstPrice(ex.unit_cost),
       shipping: firstPrice(ex.shipping),
       image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
@@ -203,8 +229,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const limitedCandidates = candidates.slice(0, MAX_SCRAPE_ROWS_PER_RUN);
           const remaining_count = Math.max(0, candidates.length - limitedCandidates.length);
 
-          const rows: any[] = [];
-          for (const it of limitedCandidates) {
+          const rows = await Promise.all(limitedCandidates.map(async (it) => {
             const url = it.product_url!.trim();
             // Catalog dedupe by exact URL
             const { data: existing } = await supabaseAdmin
@@ -226,7 +251,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 existing.shipping,
               ].some((value) => !hasValue(value));
               const refreshed = needsBackfill ? await scrapeOne(url, fcKey) : null;
-              rows.push({
+              return {
                 material_item_id: it.id,
                 url,
                 existing_product_id: existing.id,
@@ -242,18 +267,17 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   unit_cost: firstPrice(existing.unit_cost, refreshed?.unit_cost),
                   shipping: firstPrice(existing.shipping, refreshed?.shipping),
                 },
-              });
-              continue;
+              };
             }
 
             const scraped = await scrapeOne(url, fcKey);
-            rows.push({
+            return {
               material_item_id: it.id,
               url,
               existing_product_id: null,
               scraped,
-            });
-          }
+            };
+          }));
 
           return json({ rows, invalid_link_count, already_scraped_count, remaining_count });
         } catch (e: any) {
