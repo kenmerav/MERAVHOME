@@ -963,8 +963,29 @@ function ProjectDesignBoardsPage() {
 
       const latestBoard = await db.getDesignBoard(id);
       if (latestBoard?.board_state) {
+        const latestState = normalizeBoardState(latestBoard.board_state);
+        const latestBoardContentJson = JSON.stringify(stripPresentationStateForCompare(latestState));
+        const lastGoodBoardContentJson = JSON.stringify(
+          stripPresentationStateForCompare(lastGoodBoardStateRef.current),
+        );
+        if (latestBoard.updated_at && latestBoardContentJson === lastGoodBoardContentJson) {
+          const mergedState = prepareBoardStateForSave(
+            mergeLatestPresentationState(stateToSave, latestState),
+          );
+          const mergedJson = JSON.stringify(mergedState);
+          const mergedBoard = await db.updateDesignBoardIfFresh(
+            id,
+            mergedState,
+            latestBoard.updated_at,
+            profile?.id,
+          );
+          if (mergedBoard?.updated_at) {
+            lastRemoteUpdatedAtRef.current = mergedBoard.updated_at;
+            return { savedBoard: mergedBoard, savedJson: mergedJson, savedState: mergedState };
+          }
+        }
         const latestJson = JSON.stringify(
-          prepareBoardStateForSave(normalizeBoardState(latestBoard.board_state)),
+          prepareBoardStateForSave(latestState),
         );
         if (latestJson === saveJson) {
           markRemoteBoardApplied(saveJson, latestBoard.updated_at);
@@ -6893,6 +6914,45 @@ function stripVersionsFromState(state: BoardState): BoardState {
     presentationHiddenSections: normalized.presentationHiddenSections ?? {},
     presentationSlidePicks: normalized.presentationSlidePicks ?? {},
     comments: normalized.comments ?? [],
+  };
+}
+
+function mergeLatestPresentationState(state: BoardState, latestState: BoardState): BoardState {
+  const normalized = normalizeBoardState(state);
+  const latest = normalizeBoardState(latestState);
+  const latestPresentationVisibility = new Map(
+    latest.pages.map((page) => [page.id, page.presentationVisible] as const),
+  );
+  return {
+    ...normalized,
+    pages: normalized.pages.map((page) =>
+      latestPresentationVisibility.has(page.id)
+        ? { ...page, presentationVisible: latestPresentationVisibility.get(page.id) }
+        : page,
+    ),
+    presentationExtraPages: latest.presentationExtraPages ?? [],
+    presentationSlideOrder: latest.presentationSlideOrder ?? [],
+    presentationHiddenSlideKeys: latest.presentationHiddenSlideKeys ?? [],
+    presentationRenderingOverrides: latest.presentationRenderingOverrides ?? {},
+    presentationHiddenSections: latest.presentationHiddenSections ?? {},
+    presentationSlidePicks: latest.presentationSlidePicks ?? {},
+  };
+}
+
+function stripPresentationStateForCompare(state: BoardState): BoardState {
+  const normalized = prepareBoardStateForSave(state);
+  return {
+    ...normalized,
+    pages: normalized.pages.map((page) => {
+      const { presentationVisible: _presentationVisible, ...rest } = page;
+      return rest;
+    }),
+    presentationExtraPages: [],
+    presentationSlideOrder: [],
+    presentationHiddenSlideKeys: [],
+    presentationRenderingOverrides: {},
+    presentationHiddenSections: {},
+    presentationSlidePicks: {},
   };
 }
 
