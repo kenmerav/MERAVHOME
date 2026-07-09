@@ -36,6 +36,7 @@ import {
   type ProjectType,
   type Room,
   type RoomImage,
+  type MaterialItem,
   type ProjectTimeline,
 } from "@/lib/db";
 import { StatusBadge } from "./index";
@@ -115,8 +116,14 @@ type RoomCoverBoardPage = {
   roomId: string | null;
   hidden?: boolean;
   roomApprovalStatus?: "approved" | "declined";
+  declinedMaterialItems?: DeclinedBoardMaterialItem[];
   elements: RoomCoverBoardElement[];
 };
+
+type DeclinedBoardMaterialItem = Omit<
+  MaterialItem,
+  "id" | "created_at" | "updated_at" | "product" | "room_product"
+>;
 
 function ProjectDetailPage() {
   const { id } = Route.useParams();
@@ -1344,6 +1351,9 @@ function normalizeRoomCoverBoardPages(boardState: unknown): RoomCoverBoardPage[]
           current.roomApprovalStatus === "approved" || current.roomApprovalStatus === "declined"
             ? current.roomApprovalStatus
             : undefined,
+        declinedMaterialItems: Array.isArray(current.declinedMaterialItems)
+          ? (current.declinedMaterialItems as DeclinedBoardMaterialItem[])
+          : undefined,
         elements,
       } satisfies RoomCoverBoardPage;
     })
@@ -1555,6 +1565,20 @@ function RoomCard({
         throw new Error("No design board page is assigned to this room.");
       }
 
+      const materialItems = (await db.listMaterialItemsByProject(projectId)) ?? [];
+      const staleItems = materialItems.filter(
+        (item) => item.source_board_page_id && affectedPageIds.includes(item.source_board_page_id),
+      );
+      const snapshotsByPageId = new Map<string, DeclinedBoardMaterialItem[]>();
+      for (const item of staleItems) {
+        if (!item.source_board_page_id) continue;
+        const { id: _id, created_at: _createdAt, updated_at: _updatedAt, product: _product, room_product: _roomProduct, ...snapshot } = item;
+        snapshotsByPageId.set(item.source_board_page_id, [
+          ...(snapshotsByPageId.get(item.source_board_page_id) ?? []),
+          snapshot,
+        ]);
+      }
+
       const nextBoardState = {
         ...currentState,
         pages: currentState.pages.map((page) => {
@@ -1565,6 +1589,9 @@ function RoomCard({
             ...page,
             roomApprovalStatus: decision,
             hidden: decision === "declined",
+            ...(decision === "declined"
+              ? { declinedMaterialItems: snapshotsByPageId.get((page as { id?: string }).id ?? "") ?? [] }
+              : {}),
             ...(decision === "declined" ? { presentationVisible: false } : {}),
           };
         }),
@@ -1580,10 +1607,6 @@ function RoomCard({
 
       let removed = 0;
       if (decision === "declined") {
-        const materialItems = (await db.listMaterialItemsByProject(projectId)) ?? [];
-        const staleItems = materialItems.filter(
-          (item) => item.source_board_page_id && affectedPageIds.includes(item.source_board_page_id),
-        );
         const staleMaterialIds = new Set(staleItems.map((item) => item.id));
         const roomProductIdsToRemove = new Set<string>();
         for (const item of staleItems) {
@@ -1603,6 +1626,147 @@ function RoomCard({
         for (const roomProductId of roomProductIdsToRemove) {
           await db.removeRoomProduct(roomProductId);
         }
+      } else {
+        const approvedPages = currentState.pages.filter((page) => {
+          if (!page || typeof page !== "object") return false;
+          return (page as { roomId?: unknown }).roomId === room.id;
+        });
+        const savedSnapshots = approvedPages.flatMap((page) => {
+          const snapshots = (page as { declinedMaterialItems?: unknown }).declinedMaterialItems;
+          return Array.isArray(snapshots) ? (snapshots as DeclinedBoardMaterialItem[]) : [];
+        });
+        const fallbackSnapshots = savedSnapshots.length
+          ? []
+          : (
+              await Promise.all(
+                approvedPages.flatMap((page) => {
+                  const boardPage = page as { id?: unknown; elements?: unknown[] };
+                  if (typeof boardPage.id !== "string" || !Array.isArray(boardPage.elements)) {
+                    return [];
+                  }
+                  return boardPage.elements.map(async (element) => {
+                    if (!element || typeof element !== "object") return null;
+                    const boardElement = element as {
+                      id?: unknown;
+                      type?: unknown;
+                      productId?: unknown;
+                      label?: unknown;
+                      productName?: unknown;
+                      link?: unknown;
+                      materialLinkCleared?: unknown;
+                      materialCategory?: unknown;
+                      materialQuantity?: unknown;
+                      materialFinish?: unknown;
+                      finish?: unknown;
+                      notes?: unknown;
+                      src?: unknown;
+                      backgroundRemovedUrl?: unknown;
+                      materialExcludeFromMaterials?: unknown;
+                    };
+                    if (
+                      boardElement.type !== "image" ||
+                      boardElement.materialExcludeFromMaterials === true ||
+                      typeof boardElement.id !== "string" ||
+                      typeof boardElement.productId !== "string"
+                    ) {
+                      return null;
+                    }
+                    const product = await db.getProduct(boardElement.productId);
+                    if (!product) return null;
+                    const label =
+                      (typeof boardElement.label === "string" && boardElement.label.trim()) ||
+                      (typeof boardElement.productName === "string" && boardElement.productName.trim()) ||
+                      product.name;
+                    const finish =
+                      (typeof boardElement.materialFinish === "string" &&
+                        boardElement.materialFinish.trim()) ||
+                      (typeof boardElement.finish === "string" && boardElement.finish.trim()) ||
+                      product.finish ||
+                      null;
+                    const link =
+                      boardElement.materialLinkCleared === true
+                        ? null
+                        : (typeof boardElement.link === "string" && boardElement.link.trim()) ||
+                          product.product_url ||
+                          null;
+                    const imageUrl =
+                      (typeof boardElement.src === "string" && boardElement.src) ||
+                      (typeof boardElement.backgroundRemovedUrl === "string" &&
+                        boardElement.backgroundRemovedUrl) ||
+                      product.image_url ||
+                      null;
+                    return {
+                      room_id: room.id,
+                      project_id: projectId,
+                      item_label: label,
+                      client_product_name: buildClientProductName(room.name, label),
+                      category:
+                        (typeof boardElement.materialCategory === "string" &&
+                          boardElement.materialCategory) ||
+                        product.category,
+                      is_required: false,
+                      sort_order: 0,
+                      cad_label: null,
+                      product_url: link,
+                      quantity:
+                        typeof boardElement.materialQuantity === "number" &&
+                        boardElement.materialQuantity > 0
+                          ? boardElement.materialQuantity
+                          : 1,
+                      color: finish,
+                      image_url: imageUrl,
+                      notes: typeof boardElement.notes === "string" ? boardElement.notes : null,
+                      not_needed: false,
+                      product_id: product.id,
+                      source_board_id: null,
+                      source_board_page_id: boardPage.id,
+                      source_board_element_id: boardElement.id,
+                      scrape_status: "scraped",
+                      scrape_error: null,
+                    } satisfies DeclinedBoardMaterialItem;
+                  });
+                }),
+              )
+            ).filter((snapshot): snapshot is DeclinedBoardMaterialItem => Boolean(snapshot));
+        let nextSortOrder =
+          Math.max(0, ...materialItems.filter((item) => item.room_id === room.id).map((item) => item.sort_order)) +
+          1;
+        const existingSourceElementIds = new Set(
+          materialItems
+            .map((item) => item.source_board_element_id)
+            .filter((elementId): elementId is string => Boolean(elementId)),
+        );
+        const snapshotsToRestore = [...savedSnapshots, ...fallbackSnapshots]
+          .filter(
+            (snapshot) =>
+              !snapshot.source_board_element_id ||
+              !existingSourceElementIds.has(snapshot.source_board_element_id),
+          )
+          .map((snapshot) => ({
+            ...snapshot,
+            sort_order: snapshot.sort_order > 0 ? snapshot.sort_order : nextSortOrder++,
+          }));
+        const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+        const existingProductIds = new Set(roomProducts.map((roomProduct) => roomProduct.product_id));
+
+        for (const snapshot of snapshotsToRestore) {
+          const restoredItem = { ...snapshot, not_needed: false };
+          let { error } = await supabase.from("material_items").insert(restoredItem as any);
+          if (error?.code === "42703" && error.message?.includes("image_url")) {
+            const { image_url: _imageUrl, ...legacyItem } = restoredItem;
+            ({ error } = await supabase.from("material_items").insert(legacyItem as any));
+          }
+          if (error) throw error;
+          if (restoredItem.product_id && !existingProductIds.has(restoredItem.product_id)) {
+            await db.addRoomProduct({
+              room_id: room.id,
+              product_id: restoredItem.product_id,
+              is_key_selection: false,
+            });
+            existingProductIds.add(restoredItem.product_id);
+          }
+          removed += 1;
+        }
       }
 
       await Promise.all([
@@ -1615,7 +1779,7 @@ function RoomCard({
       ]);
       toast.success(
         decision === "approved"
-          ? `${room.name} approved and its design board page is visible.`
+          ? `${room.name} approved. Its design board page is visible and ${removed ? `${removed} material ${removed === 1 ? "item" : "items"} ${removed === 1 ? "was" : "were"} restored` : "its current materials are ready"}.`
           : `${room.name} declined. Hidden its design board page${removed ? ` and removed ${removed} material ${removed === 1 ? "item" : "items"}` : ""}.`,
       );
     } catch (error) {

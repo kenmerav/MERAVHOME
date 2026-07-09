@@ -151,6 +151,7 @@ type BoardPage = {
   roomId: string | null;
   hidden?: boolean;
   roomApprovalStatus?: "approved" | "declined";
+  declinedMaterialItems?: Array<Record<string, unknown>>;
   presentationVisible?: boolean;
   elements: BoardElement[];
 };
@@ -7352,6 +7353,11 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
     page.roomApprovalStatus === "approved" || page.roomApprovalStatus === "declined"
       ? page.roomApprovalStatus
       : undefined;
+  const declinedMaterialItems = Array.isArray(page.declinedMaterialItems)
+    ? page.declinedMaterialItems.filter(
+        (item): item is Record<string, unknown> => Boolean(item && typeof item === "object"),
+      )
+    : undefined;
   const presentationVisible = page.presentationVisible === true;
   const elements = Array.isArray(page.elements)
     ? page.elements
@@ -7364,6 +7370,7 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
     roomId,
     hidden,
     roomApprovalStatus,
+    declinedMaterialItems,
     presentationVisible: hidden ? false : presentationVisible,
     elements,
   };
