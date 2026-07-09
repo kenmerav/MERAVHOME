@@ -113,6 +113,8 @@ type RoomCoverBoardPage = {
   id: string;
   title: string;
   roomId: string | null;
+  hidden?: boolean;
+  roomApprovalStatus?: "approved" | "declined";
   elements: RoomCoverBoardElement[];
 };
 
@@ -1337,6 +1339,11 @@ function normalizeRoomCoverBoardPages(boardState: unknown): RoomCoverBoardPage[]
             ? current.title
             : `Board ${pageIndex + 1}`,
         roomId: typeof current.roomId === "string" && current.roomId ? current.roomId : null,
+        hidden: current.hidden === true,
+        roomApprovalStatus:
+          current.roomApprovalStatus === "approved" || current.roomApprovalStatus === "declined"
+            ? current.roomApprovalStatus
+            : undefined,
         elements,
       } satisfies RoomCoverBoardPage;
     })
@@ -1346,7 +1353,7 @@ function normalizeRoomCoverBoardPages(boardState: unknown): RoomCoverBoardPage[]
 function getRoomCoverBoardPage(value: string | null | undefined, pages: RoomCoverBoardPage[]) {
   if (!value?.startsWith(DESIGN_BOARD_ROOM_COVER_PREFIX)) return null;
   const pageId = value.slice(DESIGN_BOARD_ROOM_COVER_PREFIX.length);
-  return pages.find((page) => page.id === pageId) ?? null;
+  return pages.find((page) => page.id === pageId && page.hidden !== true) ?? null;
 }
 
 function getAutomaticRoomCoverBoardPage(room: Room, pages: RoomCoverBoardPage[]) {
@@ -1354,8 +1361,13 @@ function getAutomaticRoomCoverBoardPage(room: Room, pages: RoomCoverBoardPage[])
   const visibleElementCount = (page: RoomCoverBoardPage) =>
     page.elements.filter((element) => element.visible !== false).length;
   return (
-    pages.find((page) => page.roomId === room.id && visibleElementCount(page) > 0) ??
-    pages.find((page) => normalize(page.title) === normalize(room.name) && visibleElementCount(page) > 0) ??
+    pages.find((page) => page.hidden !== true && page.roomId === room.id && visibleElementCount(page) > 0) ??
+    pages.find(
+      (page) =>
+        page.hidden !== true &&
+        normalize(page.title) === normalize(room.name) &&
+        visibleElementCount(page) > 0,
+    ) ??
     null
   );
 }
@@ -1450,6 +1462,7 @@ function RoomCard({
   boardPages: RoomCoverBoardPage[];
 }) {
   const qc = useQueryClient();
+  const [savingRoomDecision, setSavingRoomDecision] = useState(false);
   const { data: images = [] } = useQuery({
     queryKey: ["roomImages", room.id],
     queryFn: async () => (await db.listRoomImages(room.id)) ?? [],
@@ -1471,6 +1484,12 @@ function RoomCard({
   const selectedBoardPage = manualBoardPage ?? automaticBoardPage;
   const heroUrl =
     selectedBoardPage ? null : room.cover_image_url || renderingHero?.url || sketchupHero?.url || null;
+  const roomBoardPages = boardPages.filter((page) => page.roomId === room.id);
+  const roomApprovalStatus = roomBoardPages.every((page) => page.roomApprovalStatus === "declined")
+    ? "declined"
+    : roomBoardPages.every((page) => page.roomApprovalStatus === "approved")
+      ? "approved"
+      : null;
 
   const remove = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1501,6 +1520,109 @@ function RoomCard({
     qc.invalidateQueries({ queryKey: ["room", room.id] });
     qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
     toast.success(`Renamed room to ${name}`);
+  };
+
+  const setRoomDecision = async (decision: "approved" | "declined") => {
+    if (!roomBoardPages.length) {
+      toast.error("Assign a design board page to this room before choosing an option.");
+      return;
+    }
+    if (
+      decision === "declined" &&
+      !confirm(
+        `Decline ${room.name}? Its linked design board page will be hidden and its board-sourced materials will be removed from this project. Product Catalog entries will remain.`,
+      )
+    ) {
+      return;
+    }
+
+    setSavingRoomDecision(true);
+    try {
+      const currentBoard = await db.getDesignBoard(projectId);
+      if (!currentBoard || !currentBoard.board_state || typeof currentBoard.board_state !== "object") {
+        throw new Error("Could not find this project's design board.");
+      }
+      const currentState = currentBoard.board_state as { pages?: unknown[] };
+      if (!Array.isArray(currentState.pages)) {
+        throw new Error("Could not find this project's design board pages.");
+      }
+      const affectedPageIds = currentState.pages.flatMap((page) => {
+        if (!page || typeof page !== "object") return [];
+        const candidate = page as { id?: unknown; roomId?: unknown };
+        return candidate.roomId === room.id && typeof candidate.id === "string" ? [candidate.id] : [];
+      });
+      if (!affectedPageIds.length) {
+        throw new Error("No design board page is assigned to this room.");
+      }
+
+      const nextBoardState = {
+        ...currentState,
+        pages: currentState.pages.map((page) => {
+          if (!page || typeof page !== "object") return page;
+          const candidate = page as { roomId?: unknown };
+          if (candidate.roomId !== room.id) return page;
+          return {
+            ...page,
+            roomApprovalStatus: decision,
+            hidden: decision === "declined",
+            ...(decision === "declined" ? { presentationVisible: false } : {}),
+          };
+        }),
+      };
+      const savedBoard = await db.updateDesignBoardIfFresh(
+        projectId,
+        nextBoardState,
+        currentBoard.updated_at,
+      );
+      if (!savedBoard) {
+        throw new Error("The design board changed. Refresh and try again.");
+      }
+
+      let removed = 0;
+      if (decision === "declined") {
+        const materialItems = (await db.listMaterialItemsByProject(projectId)) ?? [];
+        const staleItems = materialItems.filter(
+          (item) => item.source_board_page_id && affectedPageIds.includes(item.source_board_page_id),
+        );
+        const staleMaterialIds = new Set(staleItems.map((item) => item.id));
+        const roomProductIdsToRemove = new Set<string>();
+        for (const item of staleItems) {
+          await db.deleteMaterialItem(item.id);
+          if (item.room_product?.id && item.product_id) {
+            const stillUsed = materialItems.some(
+              (candidate) =>
+                candidate.id !== item.id &&
+                !staleMaterialIds.has(candidate.id) &&
+                candidate.room_id === item.room_id &&
+                candidate.product_id === item.product_id,
+            );
+            if (!stillUsed) roomProductIdsToRemove.add(item.room_product.id);
+          }
+          removed += 1;
+        }
+        for (const roomProductId of roomProductIdsToRemove) {
+          await db.removeRoomProduct(roomProductId);
+        }
+      }
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["designBoard", projectId] }),
+        qc.invalidateQueries({ queryKey: ["rooms", projectId] }),
+        qc.invalidateQueries({ queryKey: ["room", room.id] }),
+        qc.invalidateQueries({ queryKey: ["roomProducts", room.id] }),
+        qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
+        qc.invalidateQueries({ queryKey: ["procurement"] }),
+      ]);
+      toast.success(
+        decision === "approved"
+          ? `${room.name} approved and its design board page is visible.`
+          : `${room.name} declined. Hidden its design board page${removed ? ` and removed ${removed} material ${removed === 1 ? "item" : "items"}` : ""}.`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update this room option.");
+    } finally {
+      setSavingRoomDecision(false);
+    }
   };
 
   return (
@@ -1538,23 +1660,58 @@ function RoomCard({
             {sketchups} SketchUp · {renderings} Renderings · {selections.length} Selections
           </p>
         </Link>
-        {canDelete && (
+        <div className="flex flex-col items-end gap-3">
           <div className="flex items-center gap-2">
-            <EditRoomNameDialog currentName={room.name} onSave={rename} />
-            <RoomCoverImageDialog
-              room={room}
-              images={images}
-              boardPages={boardPages}
-              onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["rooms", projectId] });
-                qc.invalidateQueries({ queryKey: ["room", room.id] });
-              }}
-            />
-            <button onClick={remove} className="text-muted-foreground hover:text-ink">
-              <Trash2 className="w-3.5 h-3.5" />
+            {canDelete && (
+              <>
+                <EditRoomNameDialog currentName={room.name} onSave={rename} />
+                <RoomCoverImageDialog
+                  room={room}
+                  images={images}
+                  boardPages={boardPages}
+                  onSaved={() => {
+                    qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+                    qc.invalidateQueries({ queryKey: ["room", room.id] });
+                  }}
+                />
+                <button onClick={remove} className="text-muted-foreground hover:text-ink">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => void setRoomDecision("approved")}
+              disabled={savingRoomDecision || !roomBoardPages.length}
+              className="inline-flex items-center gap-1 border border-emerald-700 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-45"
+              title={roomBoardPages.length ? "Keep this room option and show its design board" : "Assign a design board page to this room first"}
+            >
+              <CheckCircle2 className="h-3 w-3" /> Approve
+            </button>
+            <button
+              type="button"
+              onClick={() => void setRoomDecision("declined")}
+              disabled={savingRoomDecision || !roomBoardPages.length}
+              className="inline-flex items-center gap-1 border border-rose-700 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45"
+              title={roomBoardPages.length ? "Hide this room option and remove its project materials" : "Assign a design board page to this room first"}
+            >
+              <X className="h-3 w-3" /> Decline
             </button>
           </div>
-        )}
+          {roomApprovalStatus && (
+            <span
+              className={
+                roomApprovalStatus === "approved"
+                  ? "text-[10px] uppercase tracking-[0.12em] text-emerald-800"
+                  : "text-[10px] uppercase tracking-[0.12em] text-rose-800"
+              }
+            >
+              {roomApprovalStatus === "approved" ? "Approved option" : "Declined option"}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

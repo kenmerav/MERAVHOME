@@ -150,6 +150,7 @@ type BoardPage = {
   title: string;
   roomId: string | null;
   hidden?: boolean;
+  roomApprovalStatus?: "approved" | "declined";
   presentationVisible?: boolean;
   elements: BoardElement[];
 };
@@ -7347,13 +7348,25 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
   const title = typeof page.title === "string" ? page.title : `Design Board ${pageIndex + 1}`;
   const roomId = typeof page.roomId === "string" && page.roomId ? page.roomId : null;
   const hidden = page.hidden === true;
+  const roomApprovalStatus =
+    page.roomApprovalStatus === "approved" || page.roomApprovalStatus === "declined"
+      ? page.roomApprovalStatus
+      : undefined;
   const presentationVisible = page.presentationVisible === true;
   const elements = Array.isArray(page.elements)
     ? page.elements
         .map(normalizeBoardElement)
         .filter((element): element is BoardElement => Boolean(element))
     : [];
-  return { id, title, roomId, hidden, presentationVisible: hidden ? false : presentationVisible, elements };
+  return {
+    id,
+    title,
+    roomId,
+    hidden,
+    roomApprovalStatus,
+    presentationVisible: hidden ? false : presentationVisible,
+    elements,
+  };
 }
 
 function normalizeBoardElement(value: unknown): BoardElement | null {
