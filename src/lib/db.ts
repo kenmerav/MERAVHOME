@@ -702,7 +702,7 @@ export const db = {
       const { data: mats } = await supabase
         .from("material_items")
         .select(
-          "room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes",
+          "id, room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes",
         )
         .in("product_id", productIds);
       const matMap = new Map<string, any>();
@@ -720,6 +720,7 @@ export const db = {
         };
         material?: {
           client_product_name: string | null;
+          id: string;
           quantity: number | null;
           color: string | null;
           product_url: string | null;

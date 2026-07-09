@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 type ProcurementMaterialDetails = {
+  id: string;
   client_product_name: string | null;
   quantity: number | null;
   color: string | null;
@@ -202,12 +203,34 @@ function ProcurementPage() {
     qc.invalidateQueries({ queryKey: ["product", productId] });
   };
 
-  const updateProductVendor = async (productId: string, value: string) => {
-    const vendor = value.trim() || null;
-    await db.updateProduct(productId, { vendor });
+  const updateProductText = async (
+    productId: string,
+    key: "name" | "vendor" | "product_url" | "finish" | "dimensions",
+    value: string,
+  ) => {
+    const next = value.trim();
+    if (key === "name" && !next) return;
+    await db.updateProduct(productId, { [key]: next || null });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["product", productId] });
+  };
+
+  const updateMaterialText = async (
+    materialId: string,
+    key: "client_product_name" | "product_url" | "color",
+    value: string,
+  ) => {
+    await db.updateMaterialItem(materialId, { [key]: value.trim() || null });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
+  };
+
+  const updateMaterialQuantity = async (materialId: string, value: string) => {
+    const trimmed = value.trim();
+    const quantity = trimmed === "" ? null : Number(trimmed);
+    if (quantity !== null && !Number.isFinite(quantity)) return;
+    await db.updateMaterialItem(materialId, { quantity });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
   const total = visibleItems.length;
@@ -428,61 +451,112 @@ function ProcurementPage() {
                 return (
                   <tr key={item.id} className="border-b border-border align-top">
                     <td className="px-3 py-3">
-                      <ProductCell productId={p?.id} clientName={clientName}>
+                      <div className="flex items-start gap-3 text-left">
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
-                          {p?.image_url && (
+                          {p?.id ? (
+                            <Link
+                              to="/catalog/$productId"
+                              params={{ productId: p.id }}
+                              title={`Open ${clientName}`}
+                            >
+                              {p.image_url && (
+                                <img
+                                  src={normalizeSupabaseImageUrl(p.image_url)}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              )}
+                            </Link>
+                          ) : p?.image_url ? (
                             <img
                               src={normalizeSupabaseImageUrl(p.image_url)}
                               alt=""
                               className="w-full h-full object-cover"
                               loading="lazy"
                             />
-                          )}
+                          ) : null}
                         </div>
                         <div className="min-w-0">
-                          <div
-                            className="font-display text-base leading-tight truncate max-w-[220px]"
-                            title={clientName}
-                          >
-                            {clientName}
-                          </div>
+                          <EditableTextCell
+                            value={clientName === "—" ? "" : clientName}
+                            disabled={!p?.id && !m?.id}
+                            placeholder="Client product name"
+                            displayClassName="font-display text-base leading-tight max-w-[220px]"
+                            inputClassName="w-56"
+                            onSave={(value) =>
+                              m?.id
+                                ? updateMaterialText(m.id, "client_product_name", value)
+                                : p?.id
+                                  ? updateProductText(p.id, "name", value)
+                                  : Promise.resolve()
+                            }
+                          />
                           <div className="text-[10px] text-muted-foreground truncate max-w-[220px]">
                             {[p?.name, m?.cad_label, p?.sku && `SKU ${p.sku}`]
                               .filter(Boolean)
                               .join(" · ")}
                           </div>
                         </div>
-                      </ProductCell>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-xs">
                       <EditableTextCell
                         value={p?.vendor ?? ""}
                         disabled={!p?.id}
                         placeholder="Vendor"
-                        onSave={(value) => p?.id ? updateProductVendor(p.id, value) : Promise.resolve()}
+                        onSave={(value) =>
+                          p?.id ? updateProductText(p.id, "vendor", value) : Promise.resolve()
+                        }
                       />
                     </td>
                     <td className="px-3 py-3 text-xs">
-                      {linkHref ? (
-                        <a
-                          href={linkHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-ink hover:underline"
-                        >
-                          Order <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : link ? (
-                        <span className="text-muted-foreground">{link}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <EditableLinkCell
+                        value={link ?? ""}
+                        href={linkHref}
+                        disabled={!p?.id && !m?.id}
+                        onSave={(value) =>
+                          m?.id
+                            ? updateMaterialText(m.id, "product_url", value)
+                            : p?.id
+                              ? updateProductText(p.id, "product_url", value)
+                              : Promise.resolve()
+                        }
+                      />
                     </td>
                     <td className="px-3 py-3 text-center font-display text-base">
-                      {m?.quantity ?? "—"}
+                      <EditableNumberCell
+                        value={m?.quantity?.toString() ?? ""}
+                        disabled={!m?.id}
+                        onSave={(value) =>
+                          m?.id ? updateMaterialQuantity(m.id, value) : Promise.resolve()
+                        }
+                      />
                     </td>
-                    <td className="px-3 py-3 text-xs">{m?.color || p?.finish || "—"}</td>
-                    <td className="px-3 py-3 text-xs">{p?.dimensions || "—"}</td>
+                    <td className="px-3 py-3 text-xs">
+                      <EditableTextCell
+                        value={m?.color || p?.finish || ""}
+                        disabled={!p?.id && !m?.id}
+                        placeholder="Color / finish"
+                        onSave={(value) =>
+                          m?.id
+                            ? updateMaterialText(m.id, "color", value)
+                            : p?.id
+                              ? updateProductText(p.id, "finish", value)
+                              : Promise.resolve()
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-xs">
+                      <EditableTextCell
+                        value={p?.dimensions ?? ""}
+                        disabled={!p?.id}
+                        placeholder="Dimensions"
+                        onSave={(value) =>
+                          p?.id ? updateProductText(p.id, "dimensions", value) : Promise.resolve()
+                        }
+                      />
+                    </td>
                     <td className="px-3 py-3 text-right text-xs">
                       <EditableMoneyCell
                         value={p?.price ?? ""}
@@ -533,29 +607,6 @@ function ProcurementPage() {
         </div>
       </div>
     </AppShell>
-  );
-}
-
-function ProductCell({
-  productId,
-  clientName,
-  children,
-}: {
-  productId?: string;
-  clientName: string;
-  children: ReactNode;
-}) {
-  const className = "flex items-start gap-3 text-left group";
-  if (!productId) return <div className={className}>{children}</div>;
-  return (
-    <Link
-      to="/catalog/$productId"
-      params={{ productId }}
-      className={className}
-      title={`Open ${clientName}`}
-    >
-      {children}
-    </Link>
   );
 }
 
@@ -623,11 +674,15 @@ function EditableTextCell({
   value,
   disabled,
   placeholder,
+  displayClassName,
+  inputClassName,
   onSave,
 }: {
   value: string;
   disabled?: boolean;
   placeholder?: string;
+  displayClassName?: string;
+  inputClassName?: string;
   onSave: (value: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -653,6 +708,7 @@ function EditableTextCell({
         onClick={() => !disabled && setEditing(true)}
         className={cn(
           "max-w-[150px] truncate text-left underline-offset-4",
+          displayClassName,
           disabled ? "text-muted-foreground" : "hover:underline hover:text-ink",
         )}
         title={disabled ? undefined : "Click to edit"}
@@ -675,9 +731,107 @@ function EditableTextCell({
           setEditing(false);
         }
       }}
-      className="h-8 w-40 border border-input bg-background px-2 text-xs"
+      className={cn("h-8 w-40 border border-input bg-background px-2 text-xs", inputClassName)}
       placeholder={placeholder}
     />
+  );
+}
+
+function EditableNumberCell({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  disabled?: boolean;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const save = async () => {
+    const next = draft.trim();
+    const current = value.trim();
+    setEditing(false);
+    if (next === current) return;
+    await onSave(next);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setEditing(true)}
+        className={cn(
+          "min-w-10 text-center underline-offset-4",
+          disabled ? "text-muted-foreground" : "hover:underline hover:text-ink",
+        )}
+        title={disabled ? undefined : "Click to edit"}
+      >
+        {value.trim() || "—"}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setDraft(value);
+          setEditing(false);
+        }
+      }}
+      className="h-8 w-16 border border-input bg-background px-2 text-center text-xs"
+      inputMode="decimal"
+      placeholder="Qty"
+    />
+  );
+}
+
+function EditableLinkCell({
+  value,
+  href,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  href: string | null;
+  disabled?: boolean;
+  onSave: (value: string) => Promise<void>;
+}) {
+  return (
+    <div className="flex max-w-[210px] items-center gap-2">
+      <EditableTextCell
+        value={value}
+        disabled={disabled}
+        placeholder="Product link"
+        displayClassName="max-w-[170px]"
+        inputClassName="w-64"
+        onSave={onSave}
+      />
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 text-muted-foreground hover:text-ink"
+          title="Open link"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+    </div>
   );
 }
 
