@@ -36,6 +36,19 @@ function roomSectionId(roomId: string) {
   return `materials-room-${roomId}`;
 }
 
+function isNeedsReselection(item: MaterialItem) {
+  return item.room_product?.approval_status === "declined";
+}
+
+function NeedsReselectionBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-medium tracking-wide text-red-800">
+      <AlertTriangle className="h-3 w-3" />
+      Needs re-selection
+    </span>
+  );
+}
+
 type ScrapedRow = {
   material_item_id: string;
   url: string;
@@ -452,10 +465,15 @@ function RoomMaterialsSection({
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkOrderedBy, setBulkOrderedBy] = useState<MaterialItem["ordered_by"] | "none">("none");
+  const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
   const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
+  const reselectionCount = items.filter((it) => isNeedsReselection(it)).length;
   const sortedItems = useMemo(
-    () => [...items].sort((a, b) => a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" })),
-    [items],
+    () =>
+      [...items]
+        .filter((item) => approvalFilter === "all" || isNeedsReselection(item))
+        .sort((a, b) => a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" })),
+    [approvalFilter, items],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const validSelectedIds = useMemo(
@@ -607,6 +625,23 @@ function RoomMaterialsSection({
             <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
               {validSelectedIds.length} selected
             </div>
+            {reselectionCount > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setApprovalFilter((current) =>
+                    current === "needs_reselection" ? "all" : "needs_reselection",
+                  )
+                }
+                className={`h-9 border px-3 text-xs tracking-wide ${
+                  approvalFilter === "needs_reselection"
+                    ? "border-red-700 bg-red-50 text-red-800"
+                    : "border-border text-red-700 hover:border-red-700"
+                }`}
+              >
+                Needs re-selection ({reselectionCount})
+              </button>
+            )}
             <button
               type="button"
               onClick={() => toggleSelectAll(!allSelected)}
@@ -699,8 +734,9 @@ function RoomMaterialsSection({
                 const hasProductLink = !!(it.product_url && it.product_url.trim().length > 0);
                 const complete = hasProductLink;
                 const linkedProductId = cleanUuid(it.product?.id);
+                const needsReselection = isNeedsReselection(it);
                 return (
-                  <tr key={it.id} className="border-t border-border align-middle">
+                  <tr key={it.id} className={`border-t border-border align-middle ${needsReselection ? "bg-red-50/35" : ""}`}>
                     <td className="px-6 py-3">
                       <input
                         type="checkbox"
@@ -739,6 +775,7 @@ function RoomMaterialsSection({
                             Needs Link
                           </span>
                         )}
+                        {needsReselection && <NeedsReselectionBadge />}
                       </div>
                       <CatalogProductPicker
                         item={it}

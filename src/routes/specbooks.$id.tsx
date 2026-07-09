@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   db,
@@ -58,6 +58,7 @@ type SpecSpreadsheetRow = {
   ordered: string;
   productUrl: string;
   notes: string;
+  status: string;
 };
 type SpreadsheetColumnKey =
   | "image"
@@ -77,7 +78,8 @@ type SpreadsheetColumnKey =
   | "orderedBy"
   | "ordered"
   | "link"
-  | "notes";
+  | "notes"
+  | "status";
 
 const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> = [
   { key: "image", label: "Image" },
@@ -98,7 +100,21 @@ const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> =
   { key: "ordered", label: "Ordered" },
   { key: "link", label: "Link" },
   { key: "notes", label: "Notes" },
+  { key: "status", label: "Status" },
 ];
+
+function materialNeedsReselection(item: MaterialItem) {
+  return item.room_product?.approval_status === "declined";
+}
+
+function NeedsReselectionBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-red-800 print:text-[8px]">
+      <AlertTriangle className="h-3 w-3" />
+      Needs re-selection
+    </span>
+  );
+}
 
 function externalHref(value?: string | null) {
   const trimmed = value?.trim();
@@ -635,6 +651,11 @@ export function SpecBookDocument({
                         <td className="py-3 pr-4 text-muted-foreground">{normalizeItemCategory(it.category) ?? it.category ?? "—"}</td>
                         <td className="py-3 pr-4">
                           <div>{clientProductName(it, room)}</div>
+                          {!isSharedSpecView && materialNeedsReselection(it) && (
+                            <div className="mt-1">
+                              <NeedsReselectionBadge />
+                            </div>
+                          )}
                           {!isSharedSpecView && actualProductName(it, room) && (
                             <div className="mt-1 text-xs text-muted-foreground">
                               {actualProductName(it, room)}
@@ -744,6 +765,7 @@ function SpecSpreadsheetView({
         if (hideInternalProductDetails && (column.key === "productName" || column.key === "sku")) {
           return false;
         }
+        if (hideInternalProductDetails && column.key === "status") return false;
         if (!showPricing && column.key === "clientPrice") return false;
         if (!showOrdering && (column.key === "orderedBy" || column.key === "ordered")) return false;
         if (!showLinks && column.key === "link") return false;
@@ -1236,6 +1258,8 @@ function spreadsheetCellForColumn({
           onSave={(value) => onSaveMaterialText(row, "notes", value)}
         />
       );
+    case "status":
+      return row.status === "Needs re-selection" ? <NeedsReselectionBadge /> : row.status;
     default:
       return null;
   }
@@ -1683,6 +1707,11 @@ function SpecCard({
           )}
         </div>
         <h3 className="font-display text-3xl leading-tight print:text-[22px]">{displayName}</h3>
+        {!hideInternalProductDetails && materialNeedsReselection(item) && (
+          <div className="mt-2">
+            <NeedsReselectionBadge />
+          </div>
+        )}
         {!hideInternalProductDetails && actualProductName(item, room) && (
           <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[10px] print:leading-snug">
             {actualProductName(item, room)}
@@ -2023,6 +2052,7 @@ function buildSpecSpreadsheetRows(
         ordered: item.ordered ? "Yes" : "No",
         productUrl: item.product_url || product?.product_url || "",
         notes: item.notes ?? "",
+        status: materialNeedsReselection(item) ? "Needs re-selection" : "",
       };
     });
 }
@@ -2113,6 +2143,8 @@ function spreadsheetCsvValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey)
       return row.productUrl;
     case "notes":
       return row.notes;
+    case "status":
+      return row.status;
     default:
       return "";
   }

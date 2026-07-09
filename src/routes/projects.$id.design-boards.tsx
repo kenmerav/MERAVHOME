@@ -718,6 +718,10 @@ function ProjectDesignBoardsPage() {
     () => new Map(products.map((product) => [product.id, product] as const)),
     [products],
   );
+  const materialById = useMemo(
+    () => new Map(materialItems.map((item) => [item.id, item] as const)),
+    [materialItems],
+  );
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
   const filteredProjectMaterials = useMemo(
     () =>
@@ -3447,6 +3451,11 @@ function ProjectDesignBoardsPage() {
                             linkedProduct={
                               element.productId ? productById.get(element.productId) ?? null : null
                             }
+                            needsReselection={
+                              element.materialItemId
+                                ? materialById.get(element.materialItemId)?.room_product?.approval_status === "declined"
+                                : false
+                            }
                             selected={selectedIdSet.has(element.id)}
                             showResizeHandle={selectedCount <= 1}
                             remoteUsers={remoteSelections.get(`${page.id}:${element.id}`) ?? []}
@@ -4408,6 +4417,7 @@ function BoardObject({
   element,
   editable,
   linkedProduct,
+  needsReselection,
   selected,
   showResizeHandle,
   remoteUsers,
@@ -4425,6 +4435,7 @@ function BoardObject({
   element: BoardElement;
   editable: boolean;
   linkedProduct?: Product | null;
+  needsReselection: boolean;
   selected: boolean;
   showResizeHandle: boolean;
   remoteUsers: ActiveBoardUser[];
@@ -4497,6 +4508,12 @@ function BoardObject({
               {commentCount}
             </span>
           )}
+        </div>
+      )}
+      {needsReselection && (
+        <div className="pointer-events-none absolute left-2 top-2 z-30 inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-1 font-[var(--font-montserrat)] text-[10px] font-semibold uppercase tracking-[0.12em] text-red-800 shadow-sm">
+          <AlertTriangle className="h-3 w-3" />
+          Needs re-selection
         </div>
       )}
       {editable && selected && showResizeHandle && (
@@ -5695,6 +5712,7 @@ function MaterialTrayItem({ item }: { item: BoardMaterialTrayItem }) {
   const imageUrl = materialImageUrl(item);
   const label = materialTrayLabel(item);
   const category = normalizedMaterialItemCategory(item);
+  const needsReselection = item.room_product?.approval_status === "declined";
   return (
     <div
       draggable
@@ -5725,6 +5743,12 @@ function MaterialTrayItem({ item }: { item: BoardMaterialTrayItem }) {
           {item.color && <div className="text-xs text-stone-500">{item.color}</div>}
           {item.product?.vendor && (
             <div className="text-xs text-stone-500">{item.product.vendor}</div>
+          )}
+          {needsReselection && (
+            <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-800">
+              <AlertTriangle className="h-3 w-3" />
+              Needs re-selection
+            </div>
           )}
         </div>
       </div>

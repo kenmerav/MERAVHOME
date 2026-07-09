@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice } from "@/lib/db";
-import { Check, ChevronDown, ExternalLink } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
@@ -42,6 +42,15 @@ function externalHref(value?: string | null) {
   return null;
 }
 
+function NeedsReselectionBadge() {
+  return (
+    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-red-800">
+      <AlertTriangle className="h-3 w-3" />
+      Needs re-selection
+    </span>
+  );
+}
+
 export const Route = createFileRoute("/procurement")({
   head: () => ({ meta: [{ title: "Procurement — MERAV Studio" }] }),
   validateSearch: (search: Record<string, unknown>) => ({
@@ -58,6 +67,7 @@ function ProcurementPage() {
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [vendorFilters, setVendorFilters] = useState<string[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState("__all");
+  const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
   const [taxRate, setTaxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -106,6 +116,7 @@ function ProcurementPage() {
     setCategoryFilters([]);
     setVendorFilters([]);
     setInvoiceFilter("__all");
+    setApprovalFilter("all");
   }, [search.project]);
 
   const projectItems =
@@ -181,10 +192,13 @@ function ProcurementPage() {
           (!product?.vendor || !vendorFilters.includes(product.vendor))
         )
           return false;
+        if (approvalFilter === "needs_reselection" && item.room_product?.approval_status !== "declined") {
+          return false;
+        }
         if (selectedInvoiceItemIds && !selectedInvoiceItemIds.has(item.id)) return false;
         return true;
       }),
-    [projectItems, roomFilters, categoryFilters, selectedInvoiceItemIds, vendorFilters],
+    [approvalFilter, projectItems, roomFilters, categoryFilters, selectedInvoiceItemIds, vendorFilters],
   );
 
   const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
@@ -240,7 +254,13 @@ function ProcurementPage() {
   const approvedVisibleItems = visibleItems.filter(
     (item) => item.room_product?.approval_status === "approved",
   );
-  const money = procurementTotals(visibleItems, taxRate);
+  const orderableVisibleItems = visibleItems.filter(
+    (item) => item.room_product?.approval_status !== "declined",
+  );
+  const needsReselectionCount = projectItems.filter(
+    (item) => item.room_product?.approval_status === "declined",
+  ).length;
+  const money = procurementTotals(orderableVisibleItems, taxRate);
   const selectedProject =
     projectFilter === "__overall"
       ? null
@@ -371,6 +391,27 @@ function ProcurementPage() {
               ))}
             </select>
           </div>
+          {needsReselectionCount > 0 && (
+            <div className="w-full sm:w-auto">
+              <label className="eyebrow block mb-2">Approval</label>
+              <button
+                type="button"
+                onClick={() =>
+                  setApprovalFilter((current) =>
+                    current === "needs_reselection" ? "all" : "needs_reselection",
+                  )
+                }
+                className={cn(
+                  "h-10 border px-3 text-xs tracking-[0.16em] uppercase",
+                  approvalFilter === "needs_reselection"
+                    ? "border-red-700 bg-red-50 text-red-800"
+                    : "border-border text-red-700 hover:border-red-700",
+                )}
+              >
+                Needs re-selection ({needsReselectionCount})
+              </button>
+            </div>
+          )}
           <div className="w-full sm:w-auto sm:ml-auto">
             <label className="eyebrow block mb-2">Invoice</label>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -378,9 +419,9 @@ function ProcurementPage() {
                 projectId={selectedProject?.id ?? null}
                 projectName={selectedProject?.name ?? ""}
                 clientName={selectedProject?.client_name ?? ""}
-                items={visibleItems}
+                items={orderableVisibleItems}
                 defaultTaxRate={taxRate}
-                disabled={!selectedProject || visibleItems.length === 0}
+                disabled={!selectedProject || orderableVisibleItems.length === 0}
                 onSaved={() => {
                   qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
                   qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
@@ -448,8 +489,9 @@ function ProcurementPage() {
                   [r?.name, p?.category].filter(Boolean).join(" ") ||
                   p?.name ||
                   "—";
+                const needsReselection = item.room_product?.approval_status === "declined";
                 return (
-                  <tr key={item.id} className="border-b border-border align-top">
+                  <tr key={item.id} className={cn("border-b border-border align-top", needsReselection && "bg-red-50/35")}>
                     <td className="px-3 py-3">
                       <div className="flex items-start gap-3 text-left">
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
@@ -497,6 +539,7 @@ function ProcurementPage() {
                               .filter(Boolean)
                               .join(" · ")}
                           </div>
+                          {needsReselection && <NeedsReselectionBadge />}
                         </div>
                       </div>
                     </td>
@@ -586,9 +629,11 @@ function ProcurementPage() {
                       <td key={k} className="px-3 py-3">
                         <div className="flex justify-center">
                           <button
+                            disabled={needsReselection}
                             onClick={() => toggle(item.id, k, !item[k])}
                             className={cn(
                               "w-6 h-6 border flex items-center justify-center transition-colors",
+                              needsReselection && "cursor-not-allowed opacity-40",
                               item[k]
                                 ? "bg-ink border-ink text-primary-foreground"
                                 : "border-border hover:border-ink",

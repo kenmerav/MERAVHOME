@@ -290,6 +290,7 @@ export interface MaterialItem {
   created_at: string;
   updated_at: string;
   product?: Product | null;
+  room_product?: RoomProduct | null;
 }
 
 export interface UserProfile {
@@ -734,15 +735,37 @@ export const db = {
     supabase.from("procurement_items").update(p).eq("id", id),
 
   /* MATERIAL ITEMS (guided checklist) */
-  listMaterialItemsByProject: async (projectId: string) =>
-    (
-      await supabase
-        .from("material_items")
-        .select("*, product:products(*)")
-        .eq("project_id", projectId)
-        .order("sort_order")
-        .order("created_at")
-    ).data as MaterialItem[] | null,
+  listMaterialItemsByProject: async (projectId: string) => {
+    const { data } = await supabase
+      .from("material_items")
+      .select("*, product:products(*)")
+      .eq("project_id", projectId)
+      .order("sort_order")
+      .order("created_at");
+    const items = (data ?? []) as MaterialItem[];
+    const productIds = Array.from(
+      new Set(items.map((item) => item.product_id).filter((id): id is string => Boolean(id))),
+    );
+    if (!productIds.length) return items;
+
+    const roomIds = Array.from(new Set(items.map((item) => item.room_id).filter(Boolean)));
+    const { data: roomProducts } = await supabase
+      .from("room_products")
+      .select("*")
+      .in("room_id", roomIds)
+      .in("product_id", productIds);
+    const roomProductMap = new Map<string, RoomProduct>();
+    (roomProducts ?? []).forEach((roomProduct: RoomProduct) => {
+      roomProductMap.set(`${roomProduct.room_id}::${roomProduct.product_id}`, roomProduct);
+    });
+
+    return items.map((item) => ({
+      ...item,
+      room_product: item.product_id
+        ? roomProductMap.get(`${item.room_id}::${item.product_id}`) ?? null
+        : null,
+    }));
+  },
   bulkInsertMaterialItems: async (
     items: Array<Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product">>,
   ) => supabase.from("material_items").insert(items as any),
