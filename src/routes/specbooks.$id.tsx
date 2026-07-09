@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   db,
@@ -34,6 +35,70 @@ export const Route = createFileRoute("/specbooks/$id")({
 // fall into a trailing "Other" group.
 type Section = { label: string; sources: string[] };
 type SpecJumpItem = { id: string; label: string };
+type SpecLayout = "book" | "spreadsheet";
+type SpecSpreadsheetRow = {
+  id: string;
+  productId: string;
+  roomId: string;
+  room: string;
+  category: string;
+  imageUrl: string;
+  itemLabel: string;
+  cadLabel: string;
+  clientProductName: string;
+  productName: string;
+  vendor: string;
+  finish: string;
+  color: string;
+  quantity: string;
+  dimensions: string;
+  sku: string;
+  clientPrice: string;
+  orderedBy: string;
+  ordered: string;
+  productUrl: string;
+  notes: string;
+};
+type SpreadsheetColumnKey =
+  | "image"
+  | "room"
+  | "category"
+  | "item"
+  | "cad"
+  | "clientProductName"
+  | "productName"
+  | "vendor"
+  | "finish"
+  | "color"
+  | "quantity"
+  | "dimensions"
+  | "sku"
+  | "clientPrice"
+  | "orderedBy"
+  | "ordered"
+  | "link"
+  | "notes";
+
+const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> = [
+  { key: "image", label: "Image" },
+  { key: "room", label: "Room" },
+  { key: "category", label: "Category" },
+  { key: "item", label: "Item" },
+  { key: "cad", label: "CAD" },
+  { key: "clientProductName", label: "Client Product Name" },
+  { key: "productName", label: "Product Name" },
+  { key: "vendor", label: "Vendor" },
+  { key: "finish", label: "Finish" },
+  { key: "color", label: "Color" },
+  { key: "quantity", label: "Qty" },
+  { key: "dimensions", label: "Dimensions" },
+  { key: "sku", label: "SKU" },
+  { key: "clientPrice", label: "Client Price" },
+  { key: "orderedBy", label: "Ordered By" },
+  { key: "ordered", label: "Ordered" },
+  { key: "link", label: "Link" },
+  { key: "notes", label: "Notes" },
+];
 
 function externalHref(value?: string | null) {
   const trimmed = value?.trim();
@@ -136,6 +201,35 @@ function latestTimestamp(values: Array<string | null | undefined>) {
   return latestValue;
 }
 
+async function printSpecBook() {
+  await waitForSpecImages();
+  window.print();
+}
+
+async function waitForSpecImages() {
+  const images = Array.from(document.querySelectorAll<HTMLImageElement>("img[data-spec-image]"));
+  const pending = images.filter((image) => !image.complete || image.naturalWidth === 0);
+  if (pending.length === 0) return;
+
+  await Promise.race([
+    Promise.all(
+      pending.map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            if (image.complete) {
+              resolve();
+              return;
+            }
+            const finish = () => resolve();
+            image.addEventListener("load", finish, { once: true });
+            image.addEventListener("error", finish, { once: true });
+          }),
+      ),
+    ),
+    new Promise<void>((resolve) => window.setTimeout(resolve, 5000)),
+  ]);
+}
+
 function SpecBookPage() {
   const { id } = Route.useParams();
   return (
@@ -152,6 +246,7 @@ export function SpecBookDocument({
   projectId: string;
   publicView?: boolean;
 }) {
+  const [layout, setLayout] = useState<SpecLayout>("book");
   const [view, setView] = useState<"room" | "category">("room");
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [includeOverviewInPdf, setIncludeOverviewInPdf] = useState(true);
@@ -187,6 +282,24 @@ export function SpecBookDocument({
   }, [items]);
 
   const populatedRooms = rooms.filter((r) => (byRoom.get(r.id) ?? []).length > 0);
+  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
+  const spreadsheetRows = useMemo(
+    () => buildSpecSpreadsheetRows(items, populatedRooms, roomById),
+    [items, populatedRooms, roomById],
+  );
+  const spreadsheetJumpItems = useMemo<SpecJumpItem[]>(() => {
+    if (view === "room") {
+      return populatedRooms.map((room) => ({
+        id: spreadsheetGroupId("room", room.name, room.id),
+        label: room.name,
+      }));
+    }
+    const categories = Array.from(new Set(spreadsheetRows.map((row) => row.category || "Other")));
+    return categories.map((category) => ({
+      id: spreadsheetGroupId("category", category),
+      label: category,
+    }));
+  }, [populatedRooms, spreadsheetRows, view]);
   const jumpItems = useMemo<SpecJumpItem[]>(() => {
     const base = [
       { id: "table-of-contents", label: "Table of Contents" },
@@ -267,7 +380,11 @@ export function SpecBookDocument({
 
   return (
       <div className={`page-pad print:p-0 bg-white text-ink ${publicView ? "max-w-[1500px] mx-auto" : ""}`}>
-        <div className="print:hidden fixed bottom-6 right-6 z-40 hidden items-center gap-2 rounded-full border border-border bg-white/95 p-2 shadow-lg backdrop-blur md:flex">
+        <div
+          className={`print:hidden fixed bottom-6 right-6 z-40 hidden items-center gap-2 rounded-full border border-border bg-white/95 p-2 shadow-lg backdrop-blur md:flex ${
+            layout === "book" ? "" : "md:hidden"
+          }`}
+        >
           <SpecJumpSelect
             items={jumpItems}
             value={jumpTarget}
@@ -296,23 +413,52 @@ export function SpecBookDocument({
               <ArrowLeft className="w-3.5 h-3.5" /> Materials
             </Link>
           )}
-          <div className="flex items-center gap-4">
-            <SpecJumpSelect
-              items={jumpItems}
-              value={jumpTarget}
-              onJump={jumpToSection}
-              className="w-[240px]"
-            />
-            <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={includeOverviewInPdf}
-                onChange={(event) => setIncludeOverviewInPdf(event.target.checked)}
-                className="h-4 w-4 accent-ink"
-              />
-              Materials Overview in PDF
-            </label>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="inline-flex border border-border text-xs tracking-[0.18em] uppercase">
+              <button
+                type="button"
+                onClick={() => setLayout("book")}
+                className={`px-4 py-2 ${layout === "book" ? "bg-ink text-primary-foreground" : "text-muted-foreground hover:text-ink"}`}
+              >
+                Book
+              </button>
+              <button
+                type="button"
+                onClick={() => setLayout("spreadsheet")}
+                className={`px-4 py-2 border-l border-border ${layout === "spreadsheet" ? "bg-ink text-primary-foreground" : "text-muted-foreground hover:text-ink"}`}
+              >
+                Spreadsheet
+              </button>
+            </div>
+            {layout === "book" && (
+              <SpecJumpSelect
+                items={jumpItems}
+                value={jumpTarget}
+                onJump={jumpToSection}
+                className="w-[240px]"
+              />
+            )}
+            {layout === "spreadsheet" && (
+              <SpecJumpSelect
+                items={spreadsheetJumpItems}
+                value={jumpTarget}
+                onJump={jumpToSection}
+                className="w-[220px]"
+              />
+            )}
+            {layout === "book" && (
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={includeOverviewInPdf}
+                  onChange={(event) => setIncludeOverviewInPdf(event.target.checked)}
+                  className="h-4 w-4 accent-ink"
+                />
+                Materials Overview in PDF
+              </label>
+            )}
+            {(layout === "book" || layout === "spreadsheet") && (
+              <div className="inline-flex border border-border text-xs tracking-[0.18em] uppercase">
               <button
                 onClick={() => setView("room")}
                 className={`px-4 py-2 ${view === "room" ? "bg-ink text-primary-foreground" : "text-muted-foreground hover:text-ink"}`}
@@ -325,7 +471,8 @@ export function SpecBookDocument({
               >
                 By Category
               </button>
-            </div>
+              </div>
+            )}
             {!publicView && (
               <Link
                 to="/projects/$id/presentation"
@@ -336,7 +483,7 @@ export function SpecBookDocument({
               </Link>
             )}
             <button
-              onClick={() => window.print()}
+              onClick={printSpecBook}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
             >
               <Printer className="w-4 h-4" /> Print / PDF
@@ -344,6 +491,25 @@ export function SpecBookDocument({
           </div>
         </div>
 
+        {layout === "spreadsheet" ? (
+          <SpecSpreadsheetView
+            projectId={id}
+            projectName={project.name}
+            clientName={project.client_name}
+            today={today}
+            specBookUrl={specBookUrl}
+            qrCodeUrl={qrCodeUrl}
+            rows={spreadsheetRows}
+            groupBy={view}
+            canEditProducts={canEditProducts}
+            canEditOrdering={canEditOrdering}
+            showPricing={visibility.showPricing}
+            showLinks={visibility.showLinks}
+            showOrdering={visibility.showOrdering}
+            hideInternalProductDetails={isSharedSpecView}
+          />
+        ) : (
+          <>
         {/* COVER */}
         <section className="border border-border bg-white p-16 lg:p-24 mb-10 print:border-0 print:break-after-page min-h-[85vh] flex flex-col justify-between print:min-h-[95vh] print:px-16 print:py-18">
           <div className="eyebrow">MERAV Studio · Specification Book</div>
@@ -533,7 +699,694 @@ export function SpecBookDocument({
                 );
               });
             })()}
+          </>
+        )}
       </div>
+  );
+}
+
+function SpecSpreadsheetView({
+  projectId,
+  projectName,
+  clientName,
+  today,
+  specBookUrl,
+  qrCodeUrl,
+  rows,
+  groupBy,
+  canEditProducts,
+  canEditOrdering,
+  showPricing,
+  showLinks,
+  showOrdering,
+  hideInternalProductDetails,
+}: {
+  projectId: string;
+  projectName: string;
+  clientName: string;
+  today: string;
+  specBookUrl: string;
+  qrCodeUrl: string;
+  rows: SpecSpreadsheetRow[];
+  groupBy: "room" | "category";
+  canEditProducts: boolean;
+  canEditOrdering: boolean;
+  showPricing: boolean;
+  showLinks: boolean;
+  showOrdering: boolean;
+  hideInternalProductDetails: boolean;
+}) {
+  const qc = useQueryClient();
+  const groups = useMemo(() => groupSpreadsheetRows(rows, groupBy), [groupBy, rows]);
+  const availableColumns = useMemo(
+    () =>
+      SPREADSHEET_COLUMNS.filter((column) => {
+        if (hideInternalProductDetails && (column.key === "productName" || column.key === "sku")) {
+          return false;
+        }
+        if (!showPricing && column.key === "clientPrice") return false;
+        if (!showOrdering && (column.key === "orderedBy" || column.key === "ordered")) return false;
+        if (!showLinks && column.key === "link") return false;
+        return true;
+      }),
+    [hideInternalProductDetails, showLinks, showOrdering, showPricing],
+  );
+  const [hiddenColumns, setHiddenColumns] = useState<Set<SpreadsheetColumnKey>>(new Set());
+  const visibleColumns = useMemo(
+    () => availableColumns.filter((column) => !hiddenColumns.has(column.key)).map((column) => column.key),
+    [availableColumns, hiddenColumns],
+  );
+
+  const refreshSpec = async (productId?: string) => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
+      qc.invalidateQueries({ queryKey: ["catalog"] }),
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+      productId ? qc.invalidateQueries({ queryKey: ["product", productId] }) : Promise.resolve(),
+    ]);
+  };
+
+  const saveProductText = async (
+    row: SpecSpreadsheetRow,
+    key: "name" | "vendor" | "finish" | "dimensions" | "sku" | "product_url",
+    value: string,
+  ) => {
+    const next = value.trim();
+    if (key === "name" && !next) return toast.error("Product name required");
+    await db.updateProduct(row.productId, { [key]: next || null });
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const saveMaterialText = async (
+    row: SpecSpreadsheetRow,
+    key: "item_label" | "cad_label" | "client_product_name" | "color" | "notes" | "product_url",
+    value: string,
+  ) => {
+    const next = value.trim();
+    await db.updateMaterialItem(row.id, { [key]: next || null });
+    if (key === "product_url") await db.updateProduct(row.productId, { product_url: next || null });
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const saveCategory = async (row: SpecSpreadsheetRow, value: string) => {
+    const next = value.trim();
+    if (!next) return;
+    const productCategory = toProductCategory(next);
+    await Promise.all([
+      db.updateMaterialItem(row.id, { category: next }),
+      db.updateProduct(row.productId, {
+        category: productCategory,
+        subcategory: SUBCATEGORIES[productCategory][0],
+      }),
+    ]);
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const saveQuantity = async (row: SpecSpreadsheetRow, value: string) => {
+    const next = value.trim();
+    const quantity = next === "" ? null : Number(next);
+    if (quantity !== null && !Number.isFinite(quantity)) return toast.error("Enter a valid quantity");
+    await db.updateMaterialItem(row.id, { quantity });
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const savePrice = async (row: SpecSpreadsheetRow, value: string) => {
+    await db.updateProduct(row.productId, { price: normalizeMoneyInput(value) });
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const saveOrderedBy = async (row: SpecSpreadsheetRow, value: string) => {
+    await db.updateMaterialItem(row.id, {
+      ordered_by: value === "none" ? null : (value as MaterialItem["ordered_by"]),
+    });
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const saveOrdered = async (row: SpecSpreadsheetRow, value: boolean) => {
+    await db.updateMaterialItem(row.id, { ordered: value });
+    await refreshSpec(row.productId);
+    toast.success("Spec updated");
+  };
+
+  const toggleColumn = (key: SpreadsheetColumnKey) => {
+    setHiddenColumns((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  return (
+    <section className="border border-border bg-white p-8 print:border-0 print:p-0">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5 print:mb-3 print:pb-2">
+        <div>
+          <div className="eyebrow mb-2">MERAV Studio · Spreadsheet Spec Book</div>
+          <h1 className="font-display text-4xl leading-tight print:text-2xl">{projectName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground print:text-[10px]">{clientName}</p>
+        </div>
+        <div className="flex items-end gap-4">
+          <div className="hidden w-28 border border-border bg-bone/35 p-2 print:block">
+            <img
+              src={qrCodeUrl}
+              alt="QR code linking to the online spec book"
+              className="h-auto w-full"
+              loading="eager"
+            />
+            <div className="mt-1 text-center text-[6px] uppercase tracking-[0.18em] text-muted-foreground">
+              View Online
+            </div>
+          </div>
+          <a
+            href={specBookUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="print:hidden flex w-28 flex-col items-center border border-border bg-bone/35 p-2 hover:border-ink"
+          >
+            <img
+              src={qrCodeUrl}
+              alt="QR code linking to the online spec book"
+              className="h-auto w-full"
+              loading="eager"
+            />
+            <span className="mt-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+              View Online
+            </span>
+          </a>
+          <div className="text-right text-xs uppercase tracking-[0.18em] text-muted-foreground print:text-[9px]">
+            {today}
+          </div>
+        </div>
+      </div>
+      <div className="mb-5 flex flex-wrap items-center gap-3 print:hidden">
+        <details className="relative">
+          <summary className="flex h-10 cursor-pointer list-none items-center border border-border bg-white px-3 text-xs uppercase tracking-[0.16em] text-muted-foreground hover:text-ink">
+            Columns
+          </summary>
+          <div className="absolute left-0 z-30 mt-2 grid w-72 gap-2 border border-border bg-white p-3 shadow-lg sm:grid-cols-2">
+            {availableColumns.map((column) => (
+              <label key={column.key} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={!hiddenColumns.has(column.key)}
+                  onChange={() => toggleColumn(column.key)}
+                  className="h-4 w-4 accent-ink"
+                />
+                {column.label}
+              </label>
+            ))}
+            <button
+              type="button"
+              onClick={() => setHiddenColumns(new Set())}
+              className="col-span-full mt-1 border border-border px-3 py-2 text-xs uppercase tracking-[0.14em] hover:border-ink"
+            >
+              Show All
+            </button>
+          </div>
+        </details>
+        <button
+          type="button"
+          onClick={() =>
+            downloadSpecSpreadsheetCsv(
+              projectName,
+              rows,
+              availableColumns.filter((column) => !hiddenColumns.has(column.key)),
+            )
+          }
+          className="inline-flex h-10 items-center gap-2 border border-border px-3 text-sm hover:border-ink"
+        >
+          <Download className="w-4 h-4" /> Download CSV
+        </button>
+        {canEditProducts && (
+          <div className="text-xs text-muted-foreground">
+            Click a cell to edit. Changes save back to the source spec/product.
+          </div>
+        )}
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">No products selected yet.</div>
+      ) : (
+        <div className="space-y-8 print:space-y-4">
+          {groups.map((group) => (
+            <section key={group.id} id={group.id} className="scroll-mt-24 break-inside-avoid">
+              <div className="mb-3 flex items-baseline justify-between border-b border-border pb-2 print:mb-1 print:pb-1">
+                <h2 className="font-display text-2xl print:text-base">{group.label}</h2>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground print:text-[7px]">
+                  {group.rows.length} item{group.rows.length === 1 ? "" : "s"}
+                </div>
+              </div>
+              <div className="overflow-x-auto print:overflow-visible">
+                <SpreadsheetTable
+                  rows={group.rows}
+                  columns={visibleColumns}
+                  canEditProducts={canEditProducts}
+                  canEditOrdering={canEditOrdering}
+                  onSaveProductText={saveProductText}
+                  onSaveMaterialText={saveMaterialText}
+                  onSaveCategory={saveCategory}
+                  onSaveQuantity={saveQuantity}
+                  onSavePrice={savePrice}
+                  onSaveOrderedBy={saveOrderedBy}
+                  onSaveOrdered={saveOrdered}
+                />
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SpreadsheetTable({
+  rows,
+  columns,
+  canEditProducts,
+  canEditOrdering,
+  onSaveProductText,
+  onSaveMaterialText,
+  onSaveCategory,
+  onSaveQuantity,
+  onSavePrice,
+  onSaveOrderedBy,
+  onSaveOrdered,
+}: {
+  rows: SpecSpreadsheetRow[];
+  columns: SpreadsheetColumnKey[];
+  canEditProducts: boolean;
+  canEditOrdering: boolean;
+  onSaveProductText: (
+    row: SpecSpreadsheetRow,
+    key: "name" | "vendor" | "finish" | "dimensions" | "sku" | "product_url",
+    value: string,
+  ) => Promise<void>;
+  onSaveMaterialText: (
+    row: SpecSpreadsheetRow,
+    key: "item_label" | "cad_label" | "client_product_name" | "color" | "notes" | "product_url",
+    value: string,
+  ) => Promise<void>;
+  onSaveCategory: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveQuantity: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSavePrice: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveOrderedBy: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveOrdered: (row: SpecSpreadsheetRow, value: boolean) => Promise<void>;
+}) {
+  return (
+    <table className="w-full min-w-[1450px] border-collapse text-left text-xs print:min-w-0 print:text-[8px] print:leading-tight">
+      <thead>
+        <tr className="border-y border-border bg-bone/35">
+          {columns.map((column) => (
+            <SpreadsheetTh key={column}>
+              {SPREADSHEET_COLUMNS.find((candidate) => candidate.key === column)?.label ?? column}
+            </SpreadsheetTh>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.id} className="break-inside-avoid border-b border-border/70 align-top">
+            {columns.map((column) => (
+              <SpreadsheetTd key={column} className={column === "room" ? "font-display text-sm print:text-[9px]" : ""}>
+                {spreadsheetCellForColumn({
+                  column,
+                  row,
+                  canEditProducts,
+                  canEditOrdering,
+                  onSaveProductText,
+                  onSaveMaterialText,
+                  onSaveCategory,
+                  onSaveQuantity,
+                  onSavePrice,
+                  onSaveOrderedBy,
+                  onSaveOrdered,
+                })}
+              </SpreadsheetTd>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function spreadsheetCellForColumn({
+  column,
+  row,
+  canEditProducts,
+  canEditOrdering,
+  onSaveProductText,
+  onSaveMaterialText,
+  onSaveCategory,
+  onSaveQuantity,
+  onSavePrice,
+  onSaveOrderedBy,
+  onSaveOrdered,
+}: {
+  column: SpreadsheetColumnKey;
+  row: SpecSpreadsheetRow;
+  canEditProducts: boolean;
+  canEditOrdering: boolean;
+  onSaveProductText: (
+    row: SpecSpreadsheetRow,
+    key: "name" | "vendor" | "finish" | "dimensions" | "sku" | "product_url",
+    value: string,
+  ) => Promise<void>;
+  onSaveMaterialText: (
+    row: SpecSpreadsheetRow,
+    key: "item_label" | "cad_label" | "client_product_name" | "color" | "notes" | "product_url",
+    value: string,
+  ) => Promise<void>;
+  onSaveCategory: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveQuantity: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSavePrice: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveOrderedBy: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveOrdered: (row: SpecSpreadsheetRow, value: boolean) => Promise<void>;
+}) {
+  switch (column) {
+    case "image":
+      return row.imageUrl ? (
+        <div className="h-14 w-14 overflow-hidden border border-border bg-bone print:h-8 print:w-8">
+          <img
+            src={normalizeSupabaseImageUrl(row.imageUrl)}
+            alt=""
+            className="h-full w-full object-contain p-1"
+            loading="eager"
+            data-spec-image="true"
+          />
+        </div>
+      ) : null;
+    case "room":
+      return row.room;
+    case "category":
+      return (
+        <EditableSpecTextCell
+          value={row.category}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveCategory(row, value)}
+        />
+      );
+    case "item":
+      return (
+        <EditableSpecTextCell
+          value={row.itemLabel}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveMaterialText(row, "item_label", value)}
+        />
+      );
+    case "cad":
+      return (
+        <EditableSpecTextCell
+          value={row.cadLabel}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveMaterialText(row, "cad_label", value)}
+        />
+      );
+    case "clientProductName":
+      return (
+        <EditableSpecTextCell
+          value={row.clientProductName}
+          disabled={!canEditProducts}
+          className="font-medium text-ink"
+          onSave={(value) => onSaveMaterialText(row, "client_product_name", value)}
+        />
+      );
+    case "productName":
+      return (
+        <EditableSpecTextCell
+          value={row.productName}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveProductText(row, "name", value)}
+        />
+      );
+    case "vendor":
+      return (
+        <EditableSpecTextCell
+          value={row.vendor}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveProductText(row, "vendor", value)}
+        />
+      );
+    case "finish":
+      return (
+        <EditableSpecTextCell
+          value={row.finish}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveProductText(row, "finish", value)}
+        />
+      );
+    case "color":
+      return (
+        <EditableSpecTextCell
+          value={row.color}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveMaterialText(row, "color", value)}
+        />
+      );
+    case "quantity":
+      return (
+        <EditableSpecTextCell
+          value={row.quantity}
+          disabled={!canEditProducts}
+          inputMode="decimal"
+          onSave={(value) => onSaveQuantity(row, value)}
+        />
+      );
+    case "dimensions":
+      return (
+        <EditableSpecTextCell
+          value={row.dimensions}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveProductText(row, "dimensions", value)}
+        />
+      );
+    case "sku":
+      return (
+        <EditableSpecTextCell
+          value={row.sku}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveProductText(row, "sku", value)}
+        />
+      );
+    case "clientPrice":
+      return (
+        <EditableSpecTextCell
+          value={row.clientPrice}
+          disabled={!canEditProducts}
+          inputMode="decimal"
+          onSave={(value) => onSavePrice(row, value)}
+        />
+      );
+    case "orderedBy":
+      return canEditOrdering ? (
+        <>
+          <select
+            value={row.orderedBy || "none"}
+            onChange={(event) => onSaveOrderedBy(row, event.target.value)}
+            className="h-8 w-28 border border-input bg-background px-2 text-xs print:hidden"
+          >
+            <option value="none">—</option>
+            {SPEC_ORDERED_BY_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <span className="hidden print:inline">{row.orderedBy}</span>
+        </>
+      ) : (
+        row.orderedBy
+      );
+    case "ordered":
+      return canEditOrdering ? (
+        <>
+          <label className="inline-flex items-center gap-2 print:hidden">
+            <input
+              type="checkbox"
+              checked={row.ordered === "Yes"}
+              onChange={(event) => onSaveOrdered(row, event.target.checked)}
+              className="h-4 w-4 accent-ink"
+            />
+            {row.ordered}
+          </label>
+          <span className="hidden print:inline">{row.ordered}</span>
+        </>
+      ) : (
+        row.ordered
+      );
+    case "link":
+      return (
+        <EditableSpecLinkCell
+          value={row.productUrl}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveMaterialText(row, "product_url", value)}
+        />
+      );
+    case "notes":
+      return (
+        <EditableSpecTextCell
+          value={row.notes}
+          disabled={!canEditProducts}
+          onSave={(value) => onSaveMaterialText(row, "notes", value)}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
+function EditableSpecTextCell({
+  value,
+  disabled,
+  onSave,
+  className = "",
+  inputMode,
+}: {
+  value: string;
+  disabled?: boolean;
+  onSave: (value: string) => Promise<void>;
+  className?: string;
+  inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const save = async () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next === value.trim()) return;
+    await onSave(next);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setEditing(true)}
+        className={`max-w-[180px] truncate text-left underline-offset-4 print:max-w-none ${
+          disabled ? "" : "hover:text-ink hover:underline"
+        } ${className}`}
+        title={disabled ? undefined : "Click to edit"}
+      >
+        {value || "—"}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={draft}
+      inputMode={inputMode}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(value);
+          setEditing(false);
+        }
+      }}
+      className="h-8 w-40 border border-input bg-background px-2 text-xs"
+    />
+  );
+}
+
+function EditableSpecLinkCell({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string;
+  disabled?: boolean;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const href = externalHref(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const save = async () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next === value.trim()) return;
+    await onSave(next);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={save}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        className="h-8 w-48 border border-input bg-background px-2 text-xs"
+      />
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="font-medium text-ink underline">
+          LINK
+        </a>
+      ) : (
+        <span>—</span>
+      )}
+      {!disabled && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground underline-offset-4 hover:text-ink hover:underline print:hidden"
+        >
+          Edit
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SpreadsheetTh({ children }: { children: ReactNode }) {
+  return (
+    <th className="px-2 py-2 align-bottom text-[10px] font-normal uppercase tracking-[0.14em] text-muted-foreground print:px-1 print:py-1 print:text-[6px]">
+      {children}
+    </th>
+  );
+}
+
+function SpreadsheetTd({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <td className={`max-w-[180px] px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
+      {children || "—"}
+    </td>
   );
 }
 
@@ -811,7 +1664,8 @@ function SpecCard({
             src={normalizeSupabaseImageUrl(imageUrl)}
             alt={p?.name ?? displayName}
             className="w-full h-full object-contain p-4 print:p-1.5"
-            loading="lazy"
+            loading="eager"
+            data-spec-image="true"
           />
         ) : (
           <div className="w-full h-full grid place-items-center text-muted-foreground font-display text-4xl">
@@ -1128,6 +1982,152 @@ function actualProductName(item: MaterialItem, room: Room) {
   if (!actualName) return null;
   const clientName = clientProductName(item, room).trim();
   return actualName.toLocaleLowerCase() === clientName.toLocaleLowerCase() ? null : actualName;
+}
+
+function buildSpecSpreadsheetRows(
+  items: MaterialItem[],
+  rooms: Room[],
+  roomById: Map<string, Room>,
+): SpecSpreadsheetRow[] {
+  const roomOrder = new Map(rooms.map((room, index) => [room.id, index]));
+  return items
+    .filter((item) => !item.not_needed && item.product_id && item.product)
+    .slice()
+    .sort((a, b) => {
+      const roomDelta = (roomOrder.get(a.room_id) ?? 9999) - (roomOrder.get(b.room_id) ?? 9999);
+      if (roomDelta !== 0) return roomDelta;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    })
+    .map((item) => {
+      const room = roomById.get(item.room_id);
+      const product = item.product;
+      return {
+        id: item.id,
+        productId: item.product_id ?? "",
+        roomId: item.room_id,
+        room: room?.name ?? "Unassigned",
+        category: normalizeItemCategory(item.category) ?? item.category ?? "",
+        imageUrl: materialImageUrl(item) ?? "",
+        itemLabel: item.item_label ?? "",
+        cadLabel: item.cad_label ?? "",
+        clientProductName: room ? clientProductName(item, room) : item.client_product_name || product?.name || "",
+        productName: product?.name ?? "",
+        vendor: product?.vendor ?? "",
+        finish: product?.finish ?? "",
+        color: item.color ?? "",
+        quantity: item.quantity != null ? String(item.quantity) : "",
+        dimensions: product?.dimensions ?? "",
+        sku: product?.sku ?? "",
+        clientPrice: priceLabel(product?.price) ?? "",
+        orderedBy: item.ordered_by ?? "",
+        ordered: item.ordered ? "Yes" : "No",
+        productUrl: item.product_url || product?.product_url || "",
+        notes: item.notes ?? "",
+      };
+    });
+}
+
+function groupSpreadsheetRows(rows: SpecSpreadsheetRow[], groupBy: "room" | "category") {
+  const groups = new Map<string, { id: string; label: string; rows: SpecSpreadsheetRow[] }>();
+  rows.forEach((row) => {
+    const label = groupBy === "room" ? row.room : row.category || "Other";
+    const id =
+      groupBy === "room"
+        ? spreadsheetGroupId(groupBy, label, row.roomId)
+        : spreadsheetGroupId(groupBy, label);
+    const group = groups.get(id) ?? { id, label, rows: [] };
+    group.rows.push(row);
+    groups.set(id, group);
+  });
+  const out = Array.from(groups.values());
+  if (groupBy === "category") {
+    out.sort((a, b) => {
+      const ai = ALL_CATEGORIES.indexOf(a.label);
+      const bi = ALL_CATEGORIES.indexOf(b.label);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      return a.label.localeCompare(b.label);
+    });
+  }
+  return out;
+}
+
+function spreadsheetGroupId(groupBy: "room" | "category", label: string, id?: string) {
+  return `sheet-${groupBy}-${slug(label || "other")}${id ? `-${id.slice(0, 6)}` : ""}`;
+}
+
+function downloadSpecSpreadsheetCsv(
+  projectName: string,
+  rows: SpecSpreadsheetRow[],
+  columns: Array<{ key: SpreadsheetColumnKey; label: string }>,
+) {
+  const csv = [
+    columns.map((column) => csvCell(column.label)).join(","),
+    ...rows.map((row) => columns.map((column) => csvCell(spreadsheetCsvValue(row, column.key))).join(",")),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${sanitizeSpecFileName(projectName)}-spec-book.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function spreadsheetCsvValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey) {
+  switch (key) {
+    case "image":
+      return row.imageUrl;
+    case "room":
+      return row.room;
+    case "category":
+      return row.category;
+    case "item":
+      return row.itemLabel;
+    case "cad":
+      return row.cadLabel;
+    case "clientProductName":
+      return row.clientProductName;
+    case "productName":
+      return row.productName;
+    case "vendor":
+      return row.vendor;
+    case "finish":
+      return row.finish;
+    case "color":
+      return row.color;
+    case "quantity":
+      return row.quantity;
+    case "dimensions":
+      return row.dimensions;
+    case "sku":
+      return row.sku;
+    case "clientPrice":
+      return row.clientPrice;
+    case "orderedBy":
+      return row.orderedBy;
+    case "ordered":
+      return row.ordered;
+    case "link":
+      return row.productUrl;
+    case "notes":
+      return row.notes;
+    default:
+      return "";
+  }
+}
+
+function csvCell(value: string) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function sanitizeSpecFileName(value: string) {
+  return value
+    .trim()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase() || "spec-book";
 }
 
 function Field({ label, value, onChange, className = "" }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {
