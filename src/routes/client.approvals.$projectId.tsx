@@ -68,6 +68,9 @@ function ClientApprovalsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["clientApprovals", projectId] });
       qc.invalidateQueries({ queryKey: ["roomProducts"] });
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+      qc.invalidateQueries({ queryKey: ["procurement"] });
+      qc.invalidateQueries({ queryKey: ["productInvoices"] });
     },
     onError: (error) => toast.error(error.message || "Could not save approval."),
   });
