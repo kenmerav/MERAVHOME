@@ -3328,11 +3328,11 @@ function ProjectDesignBoardsPage() {
                 {exportingPdf ? "Exporting PDF..." : "Export PDF"}
               </ToolbarButton>
               <Link
-                to="/presentations/$id"
+                to="/projects/$id/design-board-presentation"
                 params={{ id }}
                 className="inline-flex items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink"
               >
-                <LayoutTemplate className="h-4 w-4" /> Presentation
+                <LayoutTemplate className="h-4 w-4" /> Present Board
               </Link>
               {canRestoreDesignBoards && (
                 <ToolbarButton onClick={() => setHistoryOpen(true)}>History</ToolbarButton>
@@ -4024,7 +4024,7 @@ function ProjectDesignBoardsPage() {
                       : "Add Page to Presentation"}
                   </button>
                   <Link
-                    to="/presentations/$id"
+                    to="/projects/$id/design-board-presentation"
                     params={{ id }}
                     className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink"
                   >

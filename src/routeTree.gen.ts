@@ -54,6 +54,7 @@ import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$i
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
 import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
 import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
+import { Route as ProjectsIdDesignBoardPresentationRouteImport } from './routes/projects.$id.design-board-presentation'
 import { Route as ProjectsIdConstructionDocsRouteImport } from './routes/projects.$id.construction-docs'
 import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
 import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
@@ -302,6 +303,12 @@ const ProjectsIdDesignBoardsRoute = ProjectsIdDesignBoardsRouteImport.update({
   path: '/projects/$id/design-boards',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdDesignBoardPresentationRoute =
+  ProjectsIdDesignBoardPresentationRouteImport.update({
+    id: '/projects/$id/design-board-presentation',
+    path: '/projects/$id/design-board-presentation',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsIdConstructionDocsRoute =
   ProjectsIdConstructionDocsRouteImport.update({
     id: '/projects/$id/construction-docs',
@@ -443,6 +450,7 @@ export interface FileRoutesByFullPath {
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/construction-docs': typeof ProjectsIdConstructionDocsRoute
+  '/projects/$id/design-board-presentation': typeof ProjectsIdDesignBoardPresentationRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
@@ -506,6 +514,7 @@ export interface FileRoutesByTo {
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/construction-docs': typeof ProjectsIdConstructionDocsRoute
+  '/projects/$id/design-board-presentation': typeof ProjectsIdDesignBoardPresentationRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
@@ -570,6 +579,7 @@ export interface FileRoutesById {
   '/client/approvals/$projectId': typeof ClientApprovalsProjectIdRoute
   '/projects/$id/approvals': typeof ProjectsIdApprovalsRoute
   '/projects/$id/construction-docs': typeof ProjectsIdConstructionDocsRoute
+  '/projects/$id/design-board-presentation': typeof ProjectsIdDesignBoardPresentationRoute
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
@@ -635,6 +645,7 @@ export interface FileRouteTypes {
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
     | '/projects/$id/construction-docs'
+    | '/projects/$id/design-board-presentation'
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
@@ -698,6 +709,7 @@ export interface FileRouteTypes {
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
     | '/projects/$id/construction-docs'
+    | '/projects/$id/design-board-presentation'
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
@@ -761,6 +773,7 @@ export interface FileRouteTypes {
     | '/client/approvals/$projectId'
     | '/projects/$id/approvals'
     | '/projects/$id/construction-docs'
+    | '/projects/$id/design-board-presentation'
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
@@ -825,6 +838,7 @@ export interface RootRouteChildren {
   ClientApprovalsProjectIdRoute: typeof ClientApprovalsProjectIdRoute
   ProjectsIdApprovalsRoute: typeof ProjectsIdApprovalsRoute
   ProjectsIdConstructionDocsRoute: typeof ProjectsIdConstructionDocsRoute
+  ProjectsIdDesignBoardPresentationRoute: typeof ProjectsIdDesignBoardPresentationRoute
   ProjectsIdDesignBoardsRoute: typeof ProjectsIdDesignBoardsRoute
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
@@ -1152,6 +1166,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdDesignBoardsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id/design-board-presentation': {
+      id: '/projects/$id/design-board-presentation'
+      path: '/projects/$id/design-board-presentation'
+      fullPath: '/projects/$id/design-board-presentation'
+      preLoaderRoute: typeof ProjectsIdDesignBoardPresentationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/construction-docs': {
       id: '/projects/$id/construction-docs'
       path: '/projects/$id/construction-docs'
@@ -1321,6 +1342,8 @@ const rootRouteChildren: RootRouteChildren = {
   ClientApprovalsProjectIdRoute: ClientApprovalsProjectIdRoute,
   ProjectsIdApprovalsRoute: ProjectsIdApprovalsRoute,
   ProjectsIdConstructionDocsRoute: ProjectsIdConstructionDocsRoute,
+  ProjectsIdDesignBoardPresentationRoute:
+    ProjectsIdDesignBoardPresentationRoute,
   ProjectsIdDesignBoardsRoute: ProjectsIdDesignBoardsRoute,
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
