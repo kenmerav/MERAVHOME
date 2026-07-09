@@ -1934,20 +1934,41 @@ function ProjectDesignBoardsPage() {
           skipped += group.elements.length;
         }
       }
-      const targetPageIds = new Set(targetPages.map((page) => page.id));
+      const cleanupPageIds =
+        scope === "board"
+          ? new Set(pages.map((page) => page.id))
+          : new Set(targetPages.map((page) => page.id));
       const staleMaterialItems = materialItems.filter(
         (item) =>
           item.source_board_page_id &&
-          targetPageIds.has(item.source_board_page_id) &&
+          cleanupPageIds.has(item.source_board_page_id) &&
           !syncedMaterialIds.has(item.id) &&
           !protectedMaterialIds.has(item.id),
       );
+      const staleMaterialIds = new Set(staleMaterialItems.map((item) => item.id));
+      const roomProductIdsToRemove = new Set<string>();
       for (const item of staleMaterialItems) {
         await db.deleteMaterialItem(item.id);
+        if (item.room_product?.id && item.product_id) {
+          const stillUsed = materialItems.some(
+            (candidate) =>
+              candidate.id !== item.id &&
+              !staleMaterialIds.has(candidate.id) &&
+              candidate.room_id === item.room_id &&
+              candidate.product_id === item.product_id,
+          );
+          if (!stillUsed) roomProductIdsToRemove.add(item.room_product.id);
+        }
         removed += 1;
       }
+      for (const roomProductId of roomProductIdsToRemove) {
+        await db.removeRoomProduct(roomProductId);
+      }
       if (removed) {
-        await queryClient.invalidateQueries({ queryKey: ["materialItems", id] });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
+          queryClient.invalidateQueries({ queryKey: ["procurement"] }),
+        ]);
       }
       if (sent || removed) {
         const skippedReasonText = formatSkippedMaterialReasons(skippedReasons);
@@ -4093,7 +4114,7 @@ function ProjectDesignBoardsPage() {
                 </button>
                 {hiddenPageCount > 0 && (
                   <div className="mt-2 text-[11px] leading-relaxed text-stone-500">
-                    {hiddenPageCount} hidden page{hiddenPageCount === 1 ? "" : "s"} will be skipped.
+                    {hiddenPageCount} hidden page{hiddenPageCount === 1 ? "" : "s"} will be removed from project materials.
                   </div>
                 )}
               </div>
