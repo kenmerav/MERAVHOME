@@ -61,6 +61,7 @@ function DesignBoardPresentationPage() {
   const { id } = Route.useParams();
   const [activeIndex, setActiveIndex] = useState(0);
   const [scale, setScale] = useState(1);
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -102,12 +103,21 @@ function DesignBoardPresentationPage() {
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
       const availableWidth = viewportWidth - 48;
-      const availableHeight = viewportHeight - 190;
+      const availableHeight = viewportHeight - (isFullScreen ? 96 : 190);
       setScale(Math.min(1.2, availableWidth / BOARD_WIDTH, availableHeight / BOARD_HEIGHT));
     };
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
+  }, [isFullScreen]);
+
+  useEffect(() => {
+    const updateFullScreenState = () => {
+      setIsFullScreen(Boolean(document.fullscreenElement));
+    };
+    updateFullScreenState();
+    document.addEventListener("fullscreenchange", updateFullScreenState);
+    return () => document.removeEventListener("fullscreenchange", updateFullScreenState);
   }, []);
 
   useEffect(() => {
@@ -235,7 +245,7 @@ function DesignBoardPresentationPage() {
           )}
         </div>
 
-        {pages.length > 1 && (
+        {pages.length > 1 && !isFullScreen && (
           <footer className="flex shrink-0 gap-2 overflow-x-auto border-t border-stone-200 bg-white/90 px-4 py-3 print:hidden">
             {pages.map((page, pageIndex) => (
               <button
