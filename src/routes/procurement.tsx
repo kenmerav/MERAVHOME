@@ -202,6 +202,14 @@ function ProcurementPage() {
     qc.invalidateQueries({ queryKey: ["product", productId] });
   };
 
+  const updateProductVendor = async (productId: string, value: string) => {
+    const vendor = value.trim() || null;
+    await db.updateProduct(productId, { vendor });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
+    qc.invalidateQueries({ queryKey: ["catalog"] });
+    qc.invalidateQueries({ queryKey: ["product", productId] });
+  };
+
   const total = visibleItems.length;
   const ordered = visibleItems.filter((i) => i.ordered).length;
   const received = visibleItems.filter((i) => i.received).length;
@@ -446,7 +454,14 @@ function ProcurementPage() {
                         </div>
                       </ProductCell>
                     </td>
-                    <td className="px-3 py-3 text-xs">{p?.vendor || "—"}</td>
+                    <td className="px-3 py-3 text-xs">
+                      <EditableTextCell
+                        value={p?.vendor ?? ""}
+                        disabled={!p?.id}
+                        placeholder="Vendor"
+                        onSave={(value) => p?.id ? updateProductVendor(p.id, value) : Promise.resolve()}
+                      />
+                    </td>
                     <td className="px-3 py-3 text-xs">
                       {linkHref ? (
                         <a
@@ -600,6 +615,68 @@ function EditableMoneyCell({
       }}
       className="h-8 w-24 border border-input bg-background px-2 text-right text-xs"
       placeholder="$0.00"
+    />
+  );
+}
+
+function EditableTextCell({
+  value,
+  disabled,
+  placeholder,
+  onSave,
+}: {
+  value: string;
+  disabled?: boolean;
+  placeholder?: string;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const save = async () => {
+    const next = draft.trim();
+    const current = value.trim();
+    setEditing(false);
+    if (next === current) return;
+    await onSave(next);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setEditing(true)}
+        className={cn(
+          "max-w-[150px] truncate text-left underline-offset-4",
+          disabled ? "text-muted-foreground" : "hover:underline hover:text-ink",
+        )}
+        title={disabled ? undefined : "Click to edit"}
+      >
+        {value.trim() || "—"}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setDraft(value);
+          setEditing(false);
+        }
+      }}
+      className="h-8 w-40 border border-input bg-background px-2 text-xs"
+      placeholder={placeholder}
     />
   );
 }
