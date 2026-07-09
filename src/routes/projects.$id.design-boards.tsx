@@ -18,7 +18,10 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   Image as ImageIcon,
+  LayoutTemplate,
   MessageSquare,
   Plus,
   RotateCw,
@@ -146,6 +149,7 @@ type BoardPage = {
   id: string;
   title: string;
   roomId: string | null;
+  hidden?: boolean;
   presentationVisible?: boolean;
   elements: BoardElement[];
 };
@@ -563,6 +567,12 @@ function ProjectDesignBoardsPage() {
     pages.findIndex((page) => page.id === selectedPageId),
   );
   const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
+  const visiblePages = useMemo(() => pages.filter((page) => page.hidden !== true), [pages]);
+  const hiddenPageCount = pages.length - visiblePages.length;
+  const visiblePagesWithImages = useMemo(
+    () => visiblePages.filter((page) => page.elements.some((element) => element.type === "image")),
+    [visiblePages],
+  );
   const [pageTitleDraft, setPageTitleDraft] = useState(activePage.title ?? "");
   const selectedVersionRecord = useMemo(
     () =>
@@ -775,7 +785,7 @@ function ProjectDesignBoardsPage() {
   const activePageMissingInfoCount = imageElements.filter(
     (element) => imageMaterialReadinessIssues(element, activePage).length,
   ).length;
-  const boardMissingInfoCount = pages.reduce(
+  const boardMissingInfoCount = visiblePages.reduce(
     (total, page) =>
       total +
       page.elements.filter(
@@ -808,8 +818,8 @@ function ProjectDesignBoardsPage() {
     [imageMaterialReadinessIssues, pages, resolveMaterialRoom],
   );
   const missingMaterialInfoItems = useMemo(
-    () => materialInfoItemsForPages(pages),
-    [materialInfoItemsForPages, pages],
+    () => materialInfoItemsForPages(visiblePages),
+    [materialInfoItemsForPages, visiblePages],
   );
   const pendingMaterialSendPages = useMemo(() => {
     if (!pendingMaterialSend) return [];
@@ -841,6 +851,11 @@ function ProjectDesignBoardsPage() {
 
   const exportBoardPdf = useCallback(async () => {
     if (exportingPdf) return;
+    const exportPages = visiblePages.length ? visiblePages : [];
+    if (!exportPages.length) {
+      toast.error("No visible design board pages to export.");
+      return;
+    }
     setExportingPdf(true);
     try {
       const pdf = new jsPDF({
@@ -849,7 +864,6 @@ function ProjectDesignBoardsPage() {
         format: [BOARD_WIDTH, BOARD_HEIGHT],
         compress: true,
       });
-      const exportPages = pages.length ? pages : defaultPages();
 
       for (let index = 0; index < exportPages.length; index += 1) {
         if (index > 0) pdf.addPage([BOARD_WIDTH, BOARD_HEIGHT], "landscape");
@@ -868,7 +882,7 @@ function ProjectDesignBoardsPage() {
     } finally {
       setExportingPdf(false);
     }
-  }, [exportingPdf, pages, project?.name]);
+  }, [exportingPdf, project?.name, visiblePages]);
 
   const onlineUsers = useMemo(() => {
     const usersByIdentity = new Map<string, ActiveBoardUser>();
@@ -1956,7 +1970,11 @@ function ProjectDesignBoardsPage() {
   };
 
   const sendFullBoardToMaterials = () => {
-    void sendMaterialsForPages(pages, "board");
+    if (!visiblePagesWithImages.length) {
+      toast.error("No visible design board pages with images to send.");
+      return;
+    }
+    void sendMaterialsForPages(visiblePagesWithImages, "board");
   };
 
   const proceedWithPendingMaterialSend = () => {
@@ -2325,15 +2343,20 @@ function ProjectDesignBoardsPage() {
     });
   }, [pages, selectedPageId]);
 
-  const updateActivePage = (patch: Partial<BoardPage>) => {
+  const updatePage = (pageId: string, patch: Partial<BoardPage>) => {
+    const nextPatch = patch.hidden === true ? { ...patch, presentationVisible: false } : patch;
     pushUndo();
     applyLocalBoardUpdate((current) => ({
       ...current,
       pages: current.pages.map((page) =>
-        page.id === selectedPageId ? { ...page, ...patch } : page,
+        page.id === pageId ? { ...page, ...nextPatch } : page,
       ),
     }));
-    broadcastPatch({ kind: "patch-page", pageId: selectedPageId, patch });
+    broadcastPatch({ kind: "patch-page", pageId, patch: nextPatch });
+  };
+
+  const updateActivePage = (patch: Partial<BoardPage>) => {
+    updatePage(selectedPageId, patch);
   };
 
   const updateActivePageRoom = (roomId: string) => {
@@ -3304,6 +3327,13 @@ function ProjectDesignBoardsPage() {
                 <Download className="h-4 w-4" />
                 {exportingPdf ? "Exporting PDF..." : "Export PDF"}
               </ToolbarButton>
+              <Link
+                to="/presentations/$id"
+                params={{ id }}
+                className="inline-flex items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm transition hover:border-ink"
+              >
+                <LayoutTemplate className="h-4 w-4" /> Presentation
+              </Link>
               {canRestoreDesignBoards && (
                 <ToolbarButton onClick={() => setHistoryOpen(true)}>History</ToolbarButton>
               )}
@@ -3335,6 +3365,7 @@ function ProjectDesignBoardsPage() {
                 const sortedPageElements = [...pageElements].sort((a, b) => a.zIndex - b.zIndex);
                 const isActivePage = page.id === selectedPageId;
                 const isNearbyPage = editablePageIds.has(page.id);
+                const pageHidden = page.hidden === true;
 
                 return (
                   <div
@@ -3543,6 +3574,11 @@ function ProjectDesignBoardsPage() {
                           )}
                         />
                       )}
+                      {pageHidden && (
+                        <div className="pointer-events-none absolute left-6 top-6 z-[999999] rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-medium uppercase tracking-[0.16em] text-amber-900 shadow-sm">
+                          Hidden Page
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -3569,11 +3605,13 @@ function ProjectDesignBoardsPage() {
                   const pageCanMoveLeft = index > 0;
                   const pageCanMoveRight = index < pages.length - 1;
                   const pageCanDelete = pages.length > 1;
+                  const pageHidden = page.hidden === true;
                   return (
                     <div
                       key={page.id}
                       className={cn(
                         "group relative shrink-0 rounded-lg border bg-white p-0.5 text-left shadow-sm transition",
+                        pageHidden && "opacity-55",
                         page.id === selectedPageId
                           ? "border-[#6d4cff] ring-2 ring-[#6d4cff]"
                           : "border-stone-200 hover:border-ink",
@@ -3590,8 +3628,30 @@ function ProjectDesignBoardsPage() {
                           renderImages={!virtualizeThumbnails || isNearSelected}
                         />
                       </button>
+                      {pageHidden && (
+                        <div className="pointer-events-none absolute bottom-1 left-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-amber-900">
+                          Hidden
+                        </div>
+                      )}
                       {canEditDesignBoards && (
                         <div className="pointer-events-none absolute right-1 top-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePage(page.id, {
+                                hidden: !pageHidden,
+                              })
+                            }
+                            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink"
+                            aria-label={`${pageHidden ? "Show" : "Hide"} ${page.title || `Board ${index + 1}`}`}
+                            title={pageHidden ? "Show page" : "Hide page"}
+                          >
+                            {pageHidden ? (
+                              <Eye className="h-3.5 w-3.5" />
+                            ) : (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            )}
+                          </button>
                           <button
                             type="button"
                             onClick={() => movePage(page.id, "left")}
@@ -3921,6 +3981,60 @@ function ProjectDesignBoardsPage() {
                     ))}
                   </select>
                 </label>
+                <div className="mt-3 grid gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateActivePage({
+                        hidden: activePage.hidden !== true,
+                      })
+                    }
+                    className={cn(
+                      "inline-flex items-center justify-center gap-2 border px-4 py-2 text-sm transition",
+                      activePage.hidden === true
+                        ? "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-500"
+                        : "border-stone-300 bg-white text-ink hover:border-ink",
+                    )}
+                  >
+                    {activePage.hidden === true ? (
+                      <Eye className="h-4 w-4" />
+                    ) : (
+                      <EyeOff className="h-4 w-4" />
+                    )}
+                    {activePage.hidden === true ? "Show Page" : "Hide Page"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateActivePage({
+                        presentationVisible: activePage.presentationVisible !== true,
+                      })
+                    }
+                    disabled={activePage.hidden === true}
+                    className={cn(
+                      "inline-flex items-center justify-center gap-2 border px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-50",
+                      activePage.presentationVisible === true
+                        ? "border-ink bg-ink text-white hover:bg-stone-800"
+                        : "border-stone-300 bg-white text-ink hover:border-ink",
+                    )}
+                  >
+                    <LayoutTemplate className="h-4 w-4" />
+                    {activePage.presentationVisible === true
+                      ? "In Presentation"
+                      : "Add Page to Presentation"}
+                  </button>
+                  <Link
+                    to="/presentations/$id"
+                    params={{ id }}
+                    className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink"
+                  >
+                    Present Design Board <ExternalLink className="h-4 w-4" />
+                  </Link>
+                  <div className="text-[11px] leading-relaxed text-stone-500">
+                    Hidden pages stay editable here, but are skipped when sending the full board to
+                    Materials and exporting the design board PDF.
+                  </div>
+                </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
                   <div className="border border-stone-200 p-3">
                     <div className="font-display text-2xl">{elements.length}</div>
@@ -3959,7 +4073,7 @@ function ProjectDesignBoardsPage() {
                   onClick={sendFullBoardToMaterials}
                   disabled={
                     bulkMaterialScope !== null ||
-                    !pages.some((page) => page.elements.some((element) => element.type === "image"))
+                    !visiblePagesWithImages.length
                   }
                   className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -3968,6 +4082,11 @@ function ProjectDesignBoardsPage() {
                     ? "Sending Full Board..."
                     : "Send Full Board to Materials"}
                 </button>
+                {hiddenPageCount > 0 && (
+                  <div className="mt-2 text-[11px] leading-relaxed text-stone-500">
+                    {hiddenPageCount} hidden page{hiddenPageCount === 1 ? "" : "s"} will be skipped.
+                  </div>
+                )}
               </div>
 
               <CommentsPanel
@@ -7182,13 +7301,14 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
   const id = typeof page.id === "string" && page.id ? page.id : crypto.randomUUID();
   const title = typeof page.title === "string" ? page.title : `Design Board ${pageIndex + 1}`;
   const roomId = typeof page.roomId === "string" && page.roomId ? page.roomId : null;
+  const hidden = page.hidden === true;
   const presentationVisible = page.presentationVisible === true;
   const elements = Array.isArray(page.elements)
     ? page.elements
         .map(normalizeBoardElement)
         .filter((element): element is BoardElement => Boolean(element))
     : [];
-  return { id, title, roomId, presentationVisible, elements };
+  return { id, title, roomId, hidden, presentationVisible: hidden ? false : presentationVisible, elements };
 }
 
 function normalizeBoardElement(value: unknown): BoardElement | null {

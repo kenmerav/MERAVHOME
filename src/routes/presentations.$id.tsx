@@ -69,6 +69,7 @@ type PresentationBoardPage = {
   id: string;
   title: string;
   roomId: string | null;
+  hidden?: boolean;
   presentationVisible: boolean;
   elements: PresentationBoardElement[];
 };
@@ -299,7 +300,8 @@ function normalizePresentationBoardPages(boardState: unknown): PresentationBoard
             ? current.title
             : `Board ${pageIndex + 1}`,
         roomId: typeof current.roomId === "string" && current.roomId ? current.roomId : null,
-        presentationVisible: current.presentationVisible === true,
+        hidden: current.hidden === true,
+        presentationVisible: current.hidden === true ? false : current.presentationVisible === true,
         elements,
       } satisfies PresentationBoardPage;
     })
@@ -670,7 +672,9 @@ function PresentationPage() {
 
   const designBoardPages = useMemo(
     () =>
-      normalizePresentationBoardPages(sharedBoard?.board_state).filter(boardPageHasRenderableContent),
+      normalizePresentationBoardPages(sharedBoard?.board_state).filter(
+        (page) => page.hidden !== true && boardPageHasRenderableContent(page),
+      ),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
   const presentationExtraPages = useMemo(
