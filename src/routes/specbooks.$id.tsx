@@ -154,6 +154,7 @@ export function SpecBookDocument({
 }) {
   const [view, setView] = useState<"room" | "category">("room");
   const [overviewOpen, setOverviewOpen] = useState(false);
+  const [includeOverviewInPdf, setIncludeOverviewInPdf] = useState(true);
   const [jumpTarget, setJumpTarget] = useState("");
   const { data: project } = useQuery({
     queryKey: ["project", id],
@@ -302,6 +303,15 @@ export function SpecBookDocument({
               onJump={jumpToSection}
               className="w-[240px]"
             />
+            <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={includeOverviewInPdf}
+                onChange={(event) => setIncludeOverviewInPdf(event.target.checked)}
+                className="h-4 w-4 accent-ink"
+              />
+              Materials Overview in PDF
+            </label>
             <div className="inline-flex border border-border text-xs tracking-[0.18em] uppercase">
               <button
                 onClick={() => setView("room")}
@@ -383,7 +393,12 @@ export function SpecBookDocument({
           <div className="eyebrow mb-3">Contents</div>
           <h2 className="font-display text-4xl mb-10">Table of Contents</h2>
           <ol className="space-y-3 text-lg max-w-xl">
-            <TocRow num="01" label="Materials Overview" href="#materials-overview" />
+            <TocRow
+              num="01"
+              label="Materials Overview"
+              href="#materials-overview"
+              className={includeOverviewInPdf ? "" : "print:hidden"}
+            />
             {view === "room"
               ? populatedRooms.map((r, i) => (
                   <TocRow
@@ -411,7 +426,9 @@ export function SpecBookDocument({
         {/* MATERIALS OVERVIEW */}
         <section
           id="materials-overview"
-          className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page"
+          className={`border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-after-page ${
+            includeOverviewInPdf ? "" : "print:hidden"
+          }`}
         >
           <div className="flex items-start justify-between gap-6 mb-6">
             <div>
@@ -551,9 +568,19 @@ function SpecJumpSelect({
   );
 }
 
-function TocRow({ num, label, href }: { num: string; label: string; href: string }) {
+function TocRow({
+  num,
+  label,
+  href,
+  className = "",
+}: {
+  num: string;
+  label: string;
+  href: string;
+  className?: string;
+}) {
   return (
-    <li>
+    <li className={className}>
       <a href={href} className="flex items-baseline gap-4 hover:text-ink text-muted-foreground">
         <span className="eyebrow text-ink">{num}</span>
         <span className="flex-1 border-b border-dotted border-border/70 translate-y-[-4px]" />
@@ -603,23 +630,23 @@ function CategorySpec({
   return (
     <section
       id={`cat-${slug(category)}`}
-      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page print:px-10 print:py-12"
+      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page print:px-8 print:py-8"
     >
-      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border print:mb-8 print:pb-4">
+      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border print:mb-5 print:pb-3">
         <div>
           <div className="eyebrow">{projectName} · Category</div>
-          <h2 className="font-display text-5xl mt-2 print:text-4xl">{category}</h2>
+          <h2 className="font-display text-5xl mt-2 print:text-3xl">{category}</h2>
         </div>
         <div className="text-xs tracking-wide text-muted-foreground">
           {items.length} selection{items.length === 1 ? "" : "s"}
         </div>
       </div>
 
-      <div className="space-y-14 print:space-y-10">
+      <div className="space-y-14 print:space-y-5">
         {byRoom.map(({ room, list }) => (
           <div key={room!.id}>
-            <div className="eyebrow mb-6 print:mb-4">{room!.name}</div>
-            <div className="space-y-10 print:space-y-6">
+            <div className="eyebrow mb-6 print:mb-2">{room!.name}</div>
+            <div className="space-y-10 print:space-y-3">
               {list.map((it) => (
                 <SpecCard
                   key={it.id}
@@ -685,25 +712,25 @@ function RoomSpec({
   return (
     <section
       id={`room-${slug(room.name)}-${room.id.slice(0, 6)}`}
-      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page print:px-10 print:py-12"
+      className="border border-border bg-white p-12 lg:p-16 mb-10 print:border-0 print:break-before-page print:px-8 print:py-8"
     >
-      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border print:mb-8 print:pb-4">
+      <div className="flex items-baseline justify-between mb-12 pb-6 border-b border-border print:mb-5 print:pb-3">
         <div>
           <div className="eyebrow">
             {num} · {projectName}
           </div>
-          <h2 className="font-display text-5xl mt-2 print:text-4xl">{room.name}</h2>
+          <h2 className="font-display text-5xl mt-2 print:text-3xl">{room.name}</h2>
         </div>
         <div className="text-xs tracking-wide text-muted-foreground">
           {items.length} selection{items.length === 1 ? "" : "s"}
         </div>
       </div>
 
-      <div className="space-y-14 print:space-y-10">
+      <div className="space-y-14 print:space-y-5">
         {grouped.map((g) => (
           <div key={g.label}>
-            <div className="eyebrow mb-6 print:mb-4">{g.label}</div>
-            <div className="space-y-10 print:space-y-6">
+            <div className="eyebrow mb-6 print:mb-2">{g.label}</div>
+            <div className="space-y-10 print:space-y-3">
               {g.list.map((it) => (
                 <SpecCard
                   key={it.id}
@@ -771,19 +798,19 @@ function SpecCard({
   return (
     <>
     <article
-      className={`grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:grid-cols-[170px_minmax(0,1fr)] print:gap-5 print:pb-6 print:break-inside-avoid ${
+      className={`grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:grid-cols-[120px_minmax(0,1fr)] print:gap-4 print:pb-3 print:break-inside-avoid ${
         canEditProducts && p ? "cursor-pointer transition-colors hover:bg-bone/30" : ""
       }`}
       onClick={() => {
         if (canEditProducts && p) setOpen(true);
       }}
     >
-      <div className="aspect-square bg-bone overflow-hidden print:self-start print:max-w-[170px]">
+      <div className="aspect-square bg-bone overflow-hidden print:self-start print:max-w-[120px]">
         {imageUrl ? (
           <img
             src={normalizeSupabaseImageUrl(imageUrl)}
             alt={p?.name ?? displayName}
-            className="w-full h-full object-contain p-4 print:p-2"
+            className="w-full h-full object-contain p-4 print:p-1.5"
             loading="lazy"
           />
         ) : (
@@ -801,17 +828,17 @@ function SpecCard({
             </span>
           )}
         </div>
-        <h3 className="font-display text-3xl leading-tight print:text-[28px]">{displayName}</h3>
+        <h3 className="font-display text-3xl leading-tight print:text-[22px]">{displayName}</h3>
         {!hideInternalProductDetails && actualProductName(item, room) && (
-          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">
+          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[10px] print:leading-snug">
             {actualProductName(item, room)}
           </p>
         )}
         {p?.vendor && (
-          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[12px]">{p.vendor}</p>
+          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[10px] print:leading-snug">{p.vendor}</p>
         )}
 
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-4 print:gap-x-6 print:gap-y-2 print:text-[12px]">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-2 print:gap-x-4 print:gap-y-1 print:text-[10px] print:leading-snug">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
           {showPricing && <Detail label="Client Price" value={priceLabel(p?.price)} />}
@@ -828,7 +855,7 @@ function SpecCard({
         )}
 
         {showLinks && p?.product_url && (
-          <div className="mt-5 print:mt-3">
+          <div className="mt-5 print:mt-2">
             <dt className="eyebrow mb-1">Product URL</dt>
             {externalHref(p.product_url) ? (
               <a
@@ -849,9 +876,9 @@ function SpecCard({
         )}
 
         {item.notes && (
-          <div className="mt-5 print:mt-3">
+          <div className="mt-5 print:mt-2">
             <dt className="eyebrow mb-1">Notes</dt>
-            <p className="text-sm text-muted-foreground italic leading-relaxed print:text-[12px] print:leading-relaxed">
+            <p className="text-sm text-muted-foreground italic leading-relaxed print:text-[10px] print:leading-snug">
               {item.notes}
             </p>
           </div>
@@ -1090,7 +1117,7 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
   if (!value) return null;
   return (
     <div>
-      <dt className="eyebrow mb-1">{label}</dt>
+      <dt className="eyebrow mb-1 print:mb-0">{label}</dt>
       <dd>{value}</dd>
     </div>
   );
