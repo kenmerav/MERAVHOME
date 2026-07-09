@@ -129,8 +129,15 @@ function ClientApprovalsPage() {
   };
 
   const setApproval = async (item: ApprovalItem, status: ApprovalStatus, comment?: string) => {
-    await approvalMutation.mutateAsync({ item, status, comment });
-    toast.success(status === "approved" ? "Selection approved" : status === "declined" ? "Change request saved" : "Selection updated");
+    const nextStatus = getStatus(item) === status ? "undecided" : status;
+    await approvalMutation.mutateAsync({ item, status: nextStatus, comment });
+    toast.success(
+      nextStatus === "approved"
+        ? "Selection approved"
+        : nextStatus === "declined"
+          ? "Change request saved"
+          : "Selection cleared",
+    );
   };
 
   const showPrevious = () => {
@@ -634,10 +641,10 @@ function ApprovalDetailModal({
 
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <button type="button" disabled={saving} onClick={onApprove} className="border border-[#3f7f38] bg-[#3f7f38] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#346f2f] disabled:opacity-50">
-                Approve This Item
+                {status === "approved" ? "Clear Approval" : "Approve This Item"}
               </button>
               <button type="button" disabled={saving} onClick={onDecline} className="border border-ink bg-ink px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-ink/90 disabled:opacity-50">
-                Request Change
+                {status === "declined" ? "Clear Change Request" : "Request Change"}
               </button>
               <button type="button" disabled={saving} onClick={onSaveComment} className="border border-border bg-background px-5 py-3 text-sm font-medium text-ink transition-colors hover:border-ink disabled:opacity-50">
                 Save Comment
