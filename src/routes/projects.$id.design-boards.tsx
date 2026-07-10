@@ -16,6 +16,7 @@ import {
   ArrowRight,
   ArrowUp,
   Copy,
+  Crop,
   Download,
   ExternalLink,
   Eye,
@@ -143,6 +144,9 @@ type BoardElement = {
   imageContrast?: number | null;
   imageSaturation?: number | null;
   imageWarmth?: number | null;
+  imageCropZoom?: number | null;
+  imageCropX?: number | null;
+  imageCropY?: number | null;
 };
 
 type BoardPage = {
@@ -3343,6 +3347,13 @@ function ProjectDesignBoardsPage() {
               >
                 Restore Original
               </ToolbarButton>
+              <ToolbarButton
+                onClick={() => setToolsPinned(true)}
+                disabled={!selected || selectedCount !== 1 || selected.type !== "image"}
+                title="Open crop controls for the selected image"
+              >
+                <Crop className="h-4 w-4" /> Crop
+              </ToolbarButton>
               <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
               </ToolbarButton>
@@ -4352,7 +4363,7 @@ function LightweightPageElement({ element }: { element: BoardElement }) {
           className="h-full w-full object-contain"
           draggable={false}
           loading="lazy"
-          style={imageAdjustmentStyle(element)}
+          style={boardImageStyle(element)}
         />
       )}
       {element.type === "shape" && (
@@ -4419,7 +4430,7 @@ function PageThumbnail({
                   className="h-full w-full object-contain"
                   draggable={false}
                   loading="lazy"
-                  style={imageAdjustmentStyle(element)}
+                  style={boardImageStyle(element)}
                 />
               )}
               {element.type === "shape" && (
@@ -4609,17 +4620,21 @@ function BoardObject({
       {element.type === "image" && (
         <>
           {element.src ? (
-            <OptimizedBoardImage
-              src={normalizeSupabaseImageUrl(element.src)}
-              alt={element.label ?? ""}
-              kind="preview"
-              className="h-full w-full object-contain"
-              draggable={false}
-              style={{
-                ...imageAdjustmentStyle(element),
-                transform: `rotate(${element.rotation ?? 0}deg)`,
-              }}
-            />
+            <div
+              className={cn(
+                "h-full w-full",
+                imageCropSettings(element).active && "overflow-hidden",
+              )}
+            >
+              <OptimizedBoardImage
+                src={normalizeSupabaseImageUrl(element.src)}
+                alt={element.label ?? ""}
+                kind="preview"
+                className="h-full w-full object-contain"
+                draggable={false}
+                style={boardImageStyle(element, { includeRotation: true })}
+              />
+            </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center border border-dashed border-stone-300 bg-[#faf9f5] p-4 text-center font-display text-2xl text-stone-400">
               {element.label || element.productName || "Image"}
@@ -4789,6 +4804,36 @@ function imageAdjustmentStyle(element: BoardElement): CSSProperties | undefined 
       `sepia(${warmSepia})`,
       `hue-rotate(${hueRotate}deg)`,
     ].join(" "),
+  };
+}
+
+function imageCropSettings(element: BoardElement) {
+  const zoom = clampNumber(element.imageCropZoom ?? 1, 1, 3);
+  const x = clampNumber(element.imageCropX ?? 0, -50, 50);
+  const y = clampNumber(element.imageCropY ?? 0, -50, 50);
+  const active =
+    element.imageCropZoom != null || element.imageCropX != null || element.imageCropY != null;
+  return { active, zoom, x, y };
+}
+
+function boardImageStyle(
+  element: BoardElement,
+  options: { includeRotation?: boolean } = {},
+): CSSProperties | undefined {
+  const adjustments = imageAdjustmentStyle(element);
+  const crop = imageCropSettings(element);
+  const transforms = [
+    options.includeRotation ? `rotate(${element.rotation ?? 0}deg)` : "",
+    crop.active && crop.zoom !== 1 ? `scale(${crop.zoom})` : "",
+  ].filter(Boolean);
+
+  if (!adjustments && !crop.active && transforms.length === 0) return undefined;
+  return {
+    ...adjustments,
+    objectFit: crop.active ? "cover" : "contain",
+    objectPosition: crop.active ? `${50 - crop.x}% ${50 - crop.y}%` : undefined,
+    transform: transforms.length ? transforms.join(" ") : undefined,
+    transformOrigin: crop.active ? `${50 + crop.x}% ${50 + crop.y}%` : undefined,
   };
 }
 
@@ -5508,6 +5553,49 @@ function SelectedPanel({
             model before paid AI credits unlock.
           </p>
           <div className="border border-stone-200 bg-[#faf9f5] p-3">
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <div className="eyebrow">Crop</div>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdate({
+                    imageCropZoom: null,
+                    imageCropX: null,
+                    imageCropY: null,
+                  })
+                }
+                className="text-xs text-stone-500 underline-offset-4 hover:text-ink hover:underline"
+              >
+                Reset crop
+              </button>
+            </div>
+            <p className="mb-3 text-xs leading-relaxed text-stone-500">
+              Zoom in, then move the image within its frame. This does not change the original image.
+            </p>
+            <ImageAdjustmentSlider
+              label="Zoom"
+              value={Math.round((selected.imageCropZoom ?? 1) * 100)}
+              min={100}
+              max={300}
+              suffix="%"
+              onChange={(value) => onUpdate({ imageCropZoom: value / 100 })}
+            />
+            <ImageAdjustmentSlider
+              label="Horizontal"
+              value={selected.imageCropX ?? 0}
+              min={-50}
+              max={50}
+              onChange={(value) => onUpdate({ imageCropX: value })}
+            />
+            <ImageAdjustmentSlider
+              label="Vertical"
+              value={selected.imageCropY ?? 0}
+              min={-50}
+              max={50}
+              onChange={(value) => onUpdate({ imageCropY: value })}
+            />
+          </div>
+          <div className="border border-stone-200 bg-[#faf9f5] p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="eyebrow">Image edits</div>
               <button
@@ -6188,15 +6276,28 @@ function drawImageContain(
   const naturalHeight = image.naturalHeight || image.height;
   if (!naturalWidth || !naturalHeight) return;
 
-  const scale = Math.min(width / naturalWidth, height / naturalHeight);
+  const crop = imageCropSettings(element);
+  const scale =
+    (crop.active
+      ? Math.max(width / naturalWidth, height / naturalHeight)
+      : Math.min(width / naturalWidth, height / naturalHeight)) * crop.zoom;
   const drawWidth = naturalWidth * scale;
   const drawHeight = naturalHeight * scale;
-  const drawX = x + (width - drawWidth) / 2;
-  const drawY = y + (height - drawHeight) / 2;
+  const extraX = Math.max(0, drawWidth - width);
+  const extraY = Math.max(0, drawHeight - height);
+  const drawX = x + (width - drawWidth) / 2 + (crop.x / 100) * extraX;
+  const drawY = y + (height - drawHeight) / 2 + (crop.y / 100) * extraY;
 
   const previousFilter = ctx.filter;
   ctx.filter = boardElementCanvasFilter(element);
+  if (crop.active) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, width, height);
+    ctx.clip();
+  }
   ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+  if (crop.active) ctx.restore();
   ctx.filter = previousFilter;
 }
 
@@ -7086,6 +7187,9 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "imageContrast",
     "imageSaturation",
     "imageWarmth",
+    "imageCropZoom",
+    "imageCropX",
+    "imageCropY",
   ];
   for (const key of keys) {
     if (before[key] !== after[key]) {
