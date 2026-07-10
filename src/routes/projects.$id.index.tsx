@@ -1532,7 +1532,7 @@ function RoomCard({
     toast.success(`Renamed room to ${name}`);
   };
 
-  const setRoomDecision = async (decision: "approved" | "declined") => {
+  const setRoomDecision = async (decision: "approved" | "declined" | "neutral") => {
     if (!roomBoardPages.length) {
       toast.error("Assign a design board page to this room before choosing an option.");
       return;
@@ -1585,15 +1585,21 @@ function RoomCard({
           if (!page || typeof page !== "object") return page;
           const candidate = page as { roomId?: unknown };
           if (candidate.roomId !== room.id) return page;
-          return {
+          const nextPage = {
             ...page,
-            roomApprovalStatus: decision,
             hidden: decision === "declined",
             ...(decision === "declined"
               ? { declinedMaterialItems: snapshotsByPageId.get((page as { id?: string }).id ?? "") ?? [] }
               : {}),
             ...(decision === "declined" ? { presentationVisible: false } : {}),
           };
+          if (decision === "neutral") {
+            delete (nextPage as { roomApprovalStatus?: unknown }).roomApprovalStatus;
+            delete (nextPage as { declinedMaterialItems?: unknown }).declinedMaterialItems;
+          } else {
+            (nextPage as { roomApprovalStatus?: "approved" | "declined" }).roomApprovalStatus = decision;
+          }
+          return nextPage;
         }),
       };
       const savedBoard = await db.updateDesignBoardIfFresh(
@@ -1780,7 +1786,9 @@ function RoomCard({
       toast.success(
         decision === "approved"
           ? `${room.name} approved. Its design board page is visible and ${removed ? `${removed} material ${removed === 1 ? "item" : "items"} ${removed === 1 ? "was" : "were"} restored` : "its current materials are ready"}.`
-          : `${room.name} declined. Hidden its design board page${removed ? ` and removed ${removed} material ${removed === 1 ? "item" : "items"}` : ""}.`,
+          : decision === "neutral"
+            ? `${room.name} returned to neutral. Its design board page is visible${removed ? ` and ${removed} material ${removed === 1 ? "item was" : "items were"} restored` : ""}.`
+            : `${room.name} declined. Hidden its design board page${removed ? ` and removed ${removed} material ${removed === 1 ? "item" : "items"}` : ""}.`,
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update this room option.");
@@ -1856,10 +1864,18 @@ function RoomCard({
             </button>
             <button
               type="button"
-              onClick={() => void setRoomDecision("declined")}
+              onClick={() =>
+                void setRoomDecision(roomApprovalStatus === "declined" ? "neutral" : "declined")
+              }
               disabled={savingRoomDecision || !roomBoardPages.length}
               className="inline-flex items-center gap-1 border border-rose-700 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45"
-              title={roomBoardPages.length ? "Hide this room option and remove its project materials" : "Assign a design board page to this room first"}
+              title={
+                roomBoardPages.length
+                  ? roomApprovalStatus === "declined"
+                    ? "Clear the decline and return this room to neutral"
+                    : "Hide this room option and remove its project materials"
+                  : "Assign a design board page to this room first"
+              }
             >
               <X className="h-3 w-3" /> Decline
             </button>
