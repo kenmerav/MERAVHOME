@@ -4,6 +4,7 @@ const FINANCIAL_EMAILS = new Set([
   "ken@meravinteriors.com",
   "katie@meravinteriors.com",
 ]);
+const SPEC_BOOK_EDITOR_EMAILS = new Set(["homebycastellani@gmail.com"]);
 
 export const OVERALL_ADMIN_EMAILS = FINANCIAL_EMAILS;
 
@@ -48,6 +49,15 @@ export function canLogHours(profile?: Pick<UserProfile, "is_active" | "role"> | 
 
 export function canViewProductCatalog(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
   return !!profile?.is_active && isStudioTeamRole(profile.role);
+}
+
+export function canEditSpecBook(
+  profile?: Pick<UserProfile, "email" | "is_active" | "role"> | null,
+) {
+  return (
+    !!profile?.is_active &&
+    (isStudioTeamRole(profile.role) || SPEC_BOOK_EDITOR_EMAILS.has(profile.email.toLowerCase()))
+  );
 }
 
 export type ProjectSurface = "specBook" | "presentations" | "designBoards" | "constructionDocs";

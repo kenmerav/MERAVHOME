@@ -21,7 +21,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
-import { canUpdateSpecOrderingForRole, canViewProjectSurface, specBookVisibilityForRole } from "@/lib/permissions";
+import {
+  canEditSpecBook,
+  canUpdateSpecOrderingForRole,
+  canViewProjectSurface,
+  specBookVisibilityForRole,
+} from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
 
@@ -374,13 +379,12 @@ export function SpecBookDocument({
   });
   const canEditProducts =
     !publicView &&
-    profile?.is_active === true &&
-    (profile.role === "Admin" || profile.role === "Employee");
+    canEditSpecBook(profile);
   const canEditOrdering =
     !publicView &&
-    canUpdateSpecOrderingForRole(profile, project);
+    (canEditSpecBook(profile) || canUpdateSpecOrderingForRole(profile, project));
   const isSharedSpecView =
-    publicView || profile?.role === "Client" || profile?.role === "Contractor";
+    (publicView || profile?.role === "Client" || profile?.role === "Contractor") && !canEditProducts;
   const visibility = publicView
     ? { showPricing: true, showLinks: true, showOrdering: true }
     : specBookVisibilityForRole(profile, project);
