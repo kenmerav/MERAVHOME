@@ -459,6 +459,7 @@ function ProjectDesignBoardsPage() {
   const [boardState, setBoardState] = useState<BoardState>(() => boardStateRef.current);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [croppingElementId, setCroppingElementId] = useState<string | null>(null);
   const [toolsPinned, setToolsPinned] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentTagIds, setCommentTagIds] = useState<string[]>([]);
@@ -1514,6 +1515,38 @@ function ProjectDesignBoardsPage() {
     pageId = selectedPageId,
   ) => {
     pushUndo();
+    setElementsForPage(pageId, (current) =>
+      current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)),
+    );
+  };
+
+  const startImageCrop = (element: BoardElement, pageId = selectedPageId) => {
+    if (element.type !== "image") return;
+    selectPage(pageId, false, false);
+    selectOnly(element.id);
+    if (croppingElementId !== element.id) {
+      pushUndo();
+      setElementsForPage(pageId, (current) =>
+        current.map((candidate) =>
+          candidate.id === element.id
+            ? {
+                ...candidate,
+                imageCropZoom: candidate.imageCropZoom ?? 1,
+                imageCropX: candidate.imageCropX ?? 0,
+                imageCropY: candidate.imageCropY ?? 0,
+              }
+            : candidate,
+        ),
+      );
+    }
+    setCroppingElementId(element.id);
+  };
+
+  const updateImageCrop = (
+    elementId: string,
+    patch: Partial<BoardElement>,
+    pageId = selectedPageId,
+  ) => {
     setElementsForPage(pageId, (current) =>
       current.map((element) => (element.id === elementId ? { ...element, ...patch } : element)),
     );
@@ -3348,11 +3381,15 @@ function ProjectDesignBoardsPage() {
                 Restore Original
               </ToolbarButton>
               <ToolbarButton
-                onClick={() => setToolsPinned(true)}
+                onClick={() => {
+                  if (!selected || selected.type !== "image") return;
+                  if (croppingElementId === selected.id) setCroppingElementId(null);
+                  else startImageCrop(selected);
+                }}
                 disabled={!selected || selectedCount !== 1 || selected.type !== "image"}
-                title="Open crop controls for the selected image"
+                title="Double-click an image or enter crop mode"
               >
-                <Crop className="h-4 w-4" /> Crop
+                <Crop className="h-4 w-4" /> {croppingElementId === selected?.id ? "Done" : "Crop"}
               </ToolbarButton>
               <ToolbarButton onClick={toggleBoardDetails} disabled={!imageElements.length}>
                 {allBoardDetailsHidden ? "Show Text / Links" : "Hide Text / Links"}
@@ -3501,6 +3538,7 @@ function ProjectDesignBoardsPage() {
                             element={element}
                             editable={canEditDesignBoards}
                             showProductBadge={!isContractorRole(profile?.role)}
+                            cropMode={croppingElementId === element.id}
                             linkedProduct={
                               element.productId ? productById.get(element.productId) ?? null : null
                             }
@@ -3531,6 +3569,9 @@ function ProjectDesignBoardsPage() {
                               if (canEditDesignBoards) quickDeleteElement(element, page.id);
                             }}
                             onSelect={(event) => {
+                              if (croppingElementId && croppingElementId !== element.id) {
+                                setCroppingElementId(null);
+                              }
                               selectPage(page.id, false, false);
                               if (!canEditDesignBoards) return;
                               if (event.shiftKey || event.metaKey) {
@@ -3543,6 +3584,12 @@ function ProjectDesignBoardsPage() {
                             }}
                             onChange={(patch) => {
                               if (canEditDesignBoards) updateElement(element.id, patch, page.id);
+                            }}
+                            onEnterCrop={() => {
+                              if (canEditDesignBoards) startImageCrop(element, page.id);
+                            }}
+                            onCropChange={(patch) => {
+                              if (canEditDesignBoards) updateImageCrop(element.id, patch, page.id);
                             }}
                             onStartMove={(event) => {
                               if (!canEditDesignBoards) return;
@@ -4470,6 +4517,7 @@ function BoardObject({
   element,
   editable,
   showProductBadge,
+  cropMode,
   linkedProduct,
   needsReselection,
   selected,
@@ -4483,12 +4531,15 @@ function BoardObject({
   onQuickDelete,
   onSelect,
   onChange,
+  onEnterCrop,
+  onCropChange,
   onStartMove,
   onStartResize,
 }: {
   element: BoardElement;
   editable: boolean;
   showProductBadge: boolean;
+  cropMode: boolean;
   linkedProduct?: Product | null;
   needsReselection: boolean;
   selected: boolean;
@@ -4502,15 +4553,78 @@ function BoardObject({
   onQuickDelete: () => void;
   onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onChange: (patch: Partial<BoardElement>) => void;
+  onEnterCrop: () => void;
+  onCropChange: (patch: Partial<BoardElement>) => void;
   onStartMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStartResize: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
+  const cropGestureRef = useRef<
+    | {
+        kind: "move" | "zoom";
+        startClientX: number;
+        startClientY: number;
+        startX: number;
+        startY: number;
+        startZoom: number;
+        frameWidth: number;
+        frameHeight: number;
+      }
+    | null
+  >(null);
   const isLocked = element.locked === true;
   const isHidden = element.visible === false;
   const remoteUser = remoteUsers[0];
   const materialIssues =
     element.type === "image" ? imageMaterialIssues(element, linkedProduct) : [];
   const elementLinkHref = externalHref(element.link);
+
+  const startCropGesture = (
+    event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>,
+    kind: "move" | "zoom",
+  ) => {
+    if (!cropMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.parentElement?.getBoundingClientRect() ??
+      event.currentTarget.getBoundingClientRect();
+    cropGestureRef.current = {
+      kind,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: element.imageCropX ?? 0,
+      startY: element.imageCropY ?? 0,
+      startZoom: element.imageCropZoom ?? 1,
+      frameWidth: Math.max(1, rect.width),
+      frameHeight: Math.max(1, rect.height),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveCropGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = cropGestureRef.current;
+    if (!gesture) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const dx = event.clientX - gesture.startClientX;
+    const dy = event.clientY - gesture.startClientY;
+    if (gesture.kind === "zoom") {
+      const distance = (dx + dy) / Math.max(gesture.frameWidth, gesture.frameHeight);
+      onCropChange({ imageCropZoom: clampNumber(gesture.startZoom + distance, 1, 3) });
+      return;
+    }
+    onCropChange({
+      imageCropX: clampNumber(gesture.startX + (dx / gesture.frameWidth) * 100, -50, 50),
+      imageCropY: clampNumber(gesture.startY + (dy / gesture.frameHeight) * 100, -50, 50),
+    });
+  };
+
+  const endCropGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!cropGestureRef.current) return;
+    cropGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   return (
     <div
@@ -4535,6 +4649,7 @@ function BoardObject({
       }}
       onPointerDown={(event) => {
         if (!editable) return;
+        if (cropMode) return;
         if (isLocked) return;
         onStartMove(event);
       }}
@@ -4622,9 +4737,18 @@ function BoardObject({
           {element.src ? (
             <div
               className={cn(
-                "h-full w-full",
+                "relative h-full w-full",
                 imageCropSettings(element).active && "overflow-hidden",
+                cropMode && "cursor-grab touch-none",
               )}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                if (editable) onEnterCrop();
+              }}
+              onPointerDown={(event) => startCropGesture(event, "move")}
+              onPointerMove={moveCropGesture}
+              onPointerUp={endCropGesture}
+              onPointerCancel={endCropGesture}
             >
               <OptimizedBoardImage
                 src={normalizeSupabaseImageUrl(element.src)}
@@ -4634,6 +4758,22 @@ function BoardObject({
                 draggable={false}
                 style={boardImageStyle(element, { includeRotation: true })}
               />
+              {cropMode && (
+                <>
+                  <div className="pointer-events-none absolute inset-0 border-2 border-[#1f4e5f] shadow-[0_0_0_9999px_rgba(31,29,27,0.26)]">
+                    <div className="absolute left-2 top-2 bg-[#1f4e5f] px-2 py-1 font-[var(--font-montserrat)] text-[10px] uppercase tracking-[0.14em] text-white">
+                      Drag to reposition
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Drag to zoom crop"
+                    title="Drag to zoom"
+                    onPointerDown={(event) => startCropGesture(event, "zoom")}
+                    className="absolute -bottom-2 -right-2 z-20 h-5 w-5 cursor-se-resize border-2 border-[#1f4e5f] bg-white shadow-sm"
+                  />
+                </>
+              )}
             </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center border border-dashed border-stone-300 bg-[#faf9f5] p-4 text-center font-display text-2xl text-stone-400">
@@ -5570,30 +5710,9 @@ function SelectedPanel({
               </button>
             </div>
             <p className="mb-3 text-xs leading-relaxed text-stone-500">
-              Zoom in, then move the image within its frame. This does not change the original image.
+              Double-click the image or use Crop in the board toolbar. Drag the photo to reposition it,
+              then drag the lower-right handle to zoom. This does not change the original image.
             </p>
-            <ImageAdjustmentSlider
-              label="Zoom"
-              value={Math.round((selected.imageCropZoom ?? 1) * 100)}
-              min={100}
-              max={300}
-              suffix="%"
-              onChange={(value) => onUpdate({ imageCropZoom: value / 100 })}
-            />
-            <ImageAdjustmentSlider
-              label="Horizontal"
-              value={selected.imageCropX ?? 0}
-              min={-50}
-              max={50}
-              onChange={(value) => onUpdate({ imageCropX: value })}
-            />
-            <ImageAdjustmentSlider
-              label="Vertical"
-              value={selected.imageCropY ?? 0}
-              min={-50}
-              max={50}
-              onChange={(value) => onUpdate({ imageCropY: value })}
-            />
           </div>
           <div className="border border-stone-200 bg-[#faf9f5] p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
