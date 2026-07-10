@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type RoomImage } from "@/lib/db";
+import { supabase } from "@/integrations/supabase/client";
 import { clientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
@@ -641,9 +642,27 @@ function PresentationPage() {
     queryKey: ["materialItems", projectId],
     queryFn: async () => (await db.listMaterialItemsByProject(projectId)) ?? [],
   });
-  const { data: sharedBoard } = useQuery({
+  const {
+    data: sharedBoard,
+    isLoading: loadingPresentationBoard,
+    error: presentationBoardError,
+  } = useQuery({
     queryKey: ["designBoard", projectId],
-    queryFn: () => db.getDesignBoard(projectId),
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return null;
+      const response = await fetch(
+        `/api/presentation-board?projectId=${encodeURIComponent(projectId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        board?: Awaited<ReturnType<typeof db.getDesignBoard>>;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(body.error || "Could not load presentation settings.");
+      return body.board ?? null;
+    },
   });
 
   // Fetch data for all rooms in parallel
@@ -1326,10 +1345,23 @@ function PresentationPage() {
     };
   }, [presenting, slides.length, exitPresent]);
 
-  if (!project)
+  if (!project || loadingPresentationBoard)
     return (
       <AppShell>
         <div className="p-16">Loading…</div>
+      </AppShell>
+    );
+
+  if (presentationBoardError)
+    return (
+      <AppShell>
+        <div className="p-16">
+          <div className="eyebrow">Presentation</div>
+          <h1 className="mt-3 font-display text-5xl">Could not load presentation</h1>
+          <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+            Refresh the page to load the saved presentation order.
+          </p>
+        </div>
       </AppShell>
     );
 
