@@ -3489,6 +3489,7 @@ function ProjectDesignBoardsPage() {
                             key={element.id}
                             element={element}
                             editable={canEditDesignBoards}
+                            showProductBadge={!isContractorRole(profile?.role)}
                             linkedProduct={
                               element.productId ? productById.get(element.productId) ?? null : null
                             }
@@ -4457,6 +4458,7 @@ function PageThumbnail({
 function BoardObject({
   element,
   editable,
+  showProductBadge,
   linkedProduct,
   needsReselection,
   selected,
@@ -4475,6 +4477,7 @@ function BoardObject({
 }: {
   element: BoardElement;
   editable: boolean;
+  showProductBadge: boolean;
   linkedProduct?: Product | null;
   needsReselection: boolean;
   selected: boolean;
@@ -4640,7 +4643,7 @@ function BoardObject({
                 {element.label || element.productName}
               </div>
             ))}
-          {!element.hideDetails && element.productId && (
+          {!element.hideDetails && showProductBadge && element.productId && (
             <div className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#1f4e5f] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white shadow-sm">
               Product
             </div>
