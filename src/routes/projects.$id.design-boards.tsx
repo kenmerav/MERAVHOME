@@ -511,7 +511,21 @@ function ProjectDesignBoardsPage() {
     refetch: refetchSharedBoard,
   } = useQuery({
     queryKey: ["designBoard", id],
-    queryFn: () => db.getDesignBoard(id),
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in first.");
+      const response = await fetch(
+        `/api/shared-design-board?projectId=${encodeURIComponent(id)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const payload = (await response.json().catch(() => null)) as {
+        board?: Awaited<ReturnType<typeof db.getDesignBoard>>;
+        error?: string;
+      } | null;
+      if (!response.ok) throw new Error(payload?.error ?? "Could not load design board.");
+      return payload?.board ?? null;
+    },
     enabled: canViewDesignBoards,
     staleTime: 0,
     refetchOnMount: "always",
@@ -3072,7 +3086,11 @@ function ProjectDesignBoardsPage() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
-                  {onlineUsers.length ? `${onlineUsers.length} online` : "Live editing ready"}
+                  {onlineUsers.length
+                    ? `${onlineUsers.length} online`
+                    : canEditDesignBoards
+                      ? "Live editing ready"
+                      : "Read-only view"}
                 </div>
                 <label className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-700">
                   <span className="font-medium uppercase tracking-[0.14em] text-stone-500">

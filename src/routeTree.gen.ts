@@ -32,6 +32,7 @@ import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room
 import { Route as ApiUploadProjectDocumentRouteImport } from './routes/api/upload-project-document'
 import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
 import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
+import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
@@ -189,6 +190,11 @@ const ApiUploadDesignBoardImageRoute =
 const ApiStudioRemindersRoute = ApiStudioRemindersRouteImport.update({
   id: '/api/studio-reminders',
   path: '/api/studio-reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSharedDesignBoardRoute = ApiSharedDesignBoardRouteImport.update({
+  id: '/api/shared-design-board',
+  path: '/api/shared-design-board',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
@@ -432,6 +438,7 @@ export interface FileRoutesByFullPath {
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
@@ -498,6 +505,7 @@ export interface FileRoutesByTo {
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
@@ -565,6 +573,7 @@ export interface FileRoutesById {
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
+  '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
@@ -633,6 +642,7 @@ export interface FileRouteTypes {
     | '/api/remove-design-board-background'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/shared-design-board'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
@@ -699,6 +709,7 @@ export interface FileRouteTypes {
     | '/api/remove-design-board-background'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/shared-design-board'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
@@ -765,6 +776,7 @@ export interface FileRouteTypes {
     | '/api/remove-design-board-background'
     | '/api/scrape-materials'
     | '/api/scrape-url'
+    | '/api/shared-design-board'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
@@ -832,6 +844,7 @@ export interface RootRouteChildren {
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
+  ApiSharedDesignBoardRoute: typeof ApiSharedDesignBoardRoute
   ApiStudioRemindersRoute: typeof ApiStudioRemindersRoute
   ApiUploadDesignBoardImageRoute: typeof ApiUploadDesignBoardImageRoute
   ApiUploadProjectDocumentRoute: typeof ApiUploadProjectDocumentRoute
@@ -1036,6 +1049,13 @@ declare module '@tanstack/react-router' {
       path: '/api/studio-reminders'
       fullPath: '/api/studio-reminders'
       preLoaderRoute: typeof ApiStudioRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shared-design-board': {
+      id: '/api/shared-design-board'
+      path: '/api/shared-design-board'
+      fullPath: '/api/shared-design-board'
+      preLoaderRoute: typeof ApiSharedDesignBoardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/scrape-url': {
@@ -1352,6 +1372,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
+  ApiSharedDesignBoardRoute: ApiSharedDesignBoardRoute,
   ApiStudioRemindersRoute: ApiStudioRemindersRoute,
   ApiUploadDesignBoardImageRoute: ApiUploadDesignBoardImageRoute,
   ApiUploadProjectDocumentRoute: ApiUploadProjectDocumentRoute,
