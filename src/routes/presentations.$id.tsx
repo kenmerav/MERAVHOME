@@ -134,9 +134,6 @@ type PresentationSlideDraft =
 const DESIGN_BOARD_PRESENTATION_WIDTH = 1400;
 const DESIGN_BOARD_PRESENTATION_HEIGHT = 900;
 
-const DEFAULT_OVERLAY_LABEL = "Photoreal Visualization";
-const DEFAULT_OVERLAY_BODY =
-  "A true-to-life preview of your space, designed to give you confidence in every material, finish, and detail.";
 const DEFAULT_PRESENTATION_SECTION_LABELS = {
   palette: "Material Palette",
   cabinet: "Cabinetry",
@@ -2584,61 +2581,6 @@ function RoomSpread({
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
               No image yet
-            </div>
-          )}
-          {view.hero && (
-            <div
-              className={`absolute bottom-0 left-0 right-0 p-6 lg:p-8 bg-gradient-to-t from-black/60 to-transparent text-primary-foreground ${editingText ? "" : "pointer-events-none"}`}
-            >
-              {editingText ? (
-                <div className="max-w-xl space-y-2 print:hidden">
-                  <input
-                    key={`label-${room.id}-${room.presentation_overlay_label || ""}`}
-                    defaultValue={room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
-                    onBlur={(event) =>
-                      onTextChange?.({
-                        presentation_overlay_label: event.target.value.trim() || null,
-                      })
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") event.currentTarget.blur();
-                    }}
-                    className="w-full border border-white/40 bg-black/30 px-2 py-1 text-[10px] uppercase tracking-[0.28em] text-primary-foreground placeholder:text-primary-foreground/50"
-                    aria-label="Slide overlay label"
-                  />
-                  <textarea
-                    key={`body-${room.id}-${room.presentation_overlay_body || ""}`}
-                    defaultValue={room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
-                    onBlur={(event) =>
-                      onTextChange?.({
-                        presentation_overlay_body: event.target.value.trim() || null,
-                      })
-                    }
-                    rows={2}
-                    className="w-full resize-none border border-white/40 bg-black/30 px-2 py-1 font-display text-sm lg:text-base leading-snug text-primary-foreground placeholder:text-primary-foreground/50"
-                    aria-label="Slide overlay body"
-                  />
-                </div>
-              ) : (
-                <>
-                  <div className="eyebrow text-[10px] text-primary-foreground/80">
-                    {room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
-                  </div>
-                  <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">
-                    {room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
-                  </p>
-                </>
-              )}
-              {editingText && (
-                <div className="hidden print:block">
-                  <div className="eyebrow text-[10px] text-primary-foreground/80">
-                    {room.presentation_overlay_label || DEFAULT_OVERLAY_LABEL}
-                  </div>
-                  <p className="font-display text-sm lg:text-base mt-1 max-w-md leading-snug">
-                    {room.presentation_overlay_body || DEFAULT_OVERLAY_BODY}
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>
