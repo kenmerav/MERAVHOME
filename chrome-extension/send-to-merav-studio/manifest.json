@@ -2,9 +2,18 @@
   "manifest_version": 3,
   "name": "Send to MERAV Studio",
   "description": "Send product pages and product images directly to MERAV Studio.",
-  "version": "0.2.0",
-  "permissions": ["contextMenus", "storage", "activeTab", "scripting", "notifications", "identity"],
+  "version": "0.3.0",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications",
+    "identity",
+    "tabs"
+  ],
   "host_permissions": ["https://studio.meravinteriors.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": {
     "service_worker": "background.js"
   },

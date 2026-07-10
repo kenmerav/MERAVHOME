@@ -610,6 +610,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
             thumbnailUrl,
             previewUrl,
             autoRemoveBackground: !backgroundRemovedUrl,
+            price: price || null,
             warning: colorWarning,
           });
         } catch (error) {

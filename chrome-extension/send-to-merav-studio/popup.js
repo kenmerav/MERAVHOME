@@ -12,13 +12,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     "lastStudioProjectId",
   ]);
   await loadProjects();
+  await loadPriceQueue();
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type !== "MERAV_IMPORT_PROGRESS") return;
-  setProgress(message.percent, message.message);
-  if (message.done) {
-    window.setTimeout(() => setProgress(0, "", false), 1400);
+  if (message?.type === "MERAV_IMPORT_PROGRESS") {
+    setProgress(message.percent, message.message);
+    if (message.done) {
+      window.setTimeout(() => setProgress(0, "", false), 1400);
+    }
+  }
+  if (message?.type === "MERAV_PRICE_QUEUE_PROGRESS") {
+    renderPriceQueue(message.queue, message.message);
   }
 });
 
@@ -70,6 +75,11 @@ document.getElementById("send").addEventListener("click", async () => {
     setSending(false);
   }
 });
+
+document.getElementById("fillMissing").addEventListener("click", () => startPriceQueue("missing"));
+document.getElementById("verifyPrices").addEventListener("click", () => startPriceQueue("verify"));
+document.getElementById("updateCurrentPrice").addEventListener("click", updateCurrentPagePrice);
+document.getElementById("approveChanges").addEventListener("click", approveSelectedPriceChanges);
 
 document.getElementById("options").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
@@ -130,7 +140,9 @@ async function connectToStudio() {
   const token = params.get("token") || "";
   const returnedStudioUrl = normalizeStudioUrl(params.get("studioUrl") || studioUrl);
   if (!token) {
-    throw new Error("Studio did not return a connection token. Make sure you are signed into Studio.");
+    throw new Error(
+      "Studio did not return a connection token. Make sure you are signed into Studio.",
+    );
   }
   const values = { extensionToken: token, studioUrl: returnedStudioUrl };
   await chrome.storage.sync.set(values);
@@ -211,7 +223,10 @@ async function loadBoardPages(projectId) {
     renderBoardPageSelect(body.pages || [], selectedPageId);
 
     if (selectedPageId) {
-      const boardPageByProject = { ...(settings.boardPageByProject || {}), [projectId]: selectedPageId };
+      const boardPageByProject = {
+        ...(settings.boardPageByProject || {}),
+        [projectId]: selectedPageId,
+      };
       await chrome.storage.sync.set({ boardPageId: selectedPageId, boardPageByProject });
       settings.boardPageId = selectedPageId;
       settings.boardPageByProject = boardPageByProject;
@@ -263,6 +278,134 @@ function setProgress(percent, message, done = false) {
 
 function setSending(isSending) {
   document.getElementById("send").disabled = isSending;
+}
+
+async function requestVendorAccess() {
+  const granted = await chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] });
+  if (!granted)
+    throw new Error("Allow vendor-site access so the extension can check prices automatically.");
+}
+
+async function startPriceQueue(mode) {
+  const projectId = document.getElementById("projectSelect").value;
+  if (!projectId) return setStatus("Choose a project first.", true);
+  try {
+    await requestVendorAccess();
+    setPriceButtons(true);
+    const response = await chrome.runtime.sendMessage({
+      type: "MERAV_START_PRICE_QUEUE",
+      projectId,
+      mode,
+    });
+    if (!response?.ok) throw new Error(response?.error || "Could not start pricing.");
+    setStatus(
+      response.total
+        ? `Starting ${response.total} product${response.total === 1 ? "" : "s"}...`
+        : "No linked products need this check.",
+    );
+  } catch (error) {
+    setPriceButtons(false);
+    setStatus(error instanceof Error ? error.message : "Could not start pricing.", true);
+  }
+}
+
+async function updateCurrentPagePrice() {
+  const projectId = document.getElementById("projectSelect").value;
+  if (!projectId) return setStatus("Choose a project first.", true);
+  try {
+    await requestVendorAccess();
+    const response = await chrome.runtime.sendMessage({
+      type: "MERAV_UPDATE_CURRENT_PRICE",
+      projectId,
+    });
+    if (!response?.ok) throw new Error(response?.error || "Could not update price.");
+    setStatus(
+      response.status === "unresolved"
+        ? "No reliable price found on this page."
+        : "Current page price updated in Studio.",
+    );
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Could not update price.", true);
+  }
+}
+
+async function loadPriceQueue() {
+  const response = await chrome.runtime.sendMessage({ type: "MERAV_GET_PRICE_QUEUE" });
+  if (response?.ok) renderPriceQueue(response.queue);
+}
+
+function renderPriceQueue(queue, message = "") {
+  const summary = document.getElementById("queueSummary");
+  const review = document.getElementById("priceReview");
+  const approveButton = document.getElementById("approveChanges");
+  if (!queue) {
+    summary.textContent = "";
+    review.textContent = "";
+    approveButton.hidden = true;
+    setPriceButtons(false);
+    return;
+  }
+  const total = queue.items?.length || 0;
+  summary.textContent =
+    message ||
+    (queue.running
+      ? `Checking ${queue.processed || 0} of ${total} products...`
+      : `Checked ${queue.processed || 0} products. ${queue.saved || 0} saved, ${queue.matched || 0} matched, ${(queue.unresolved || []).length} need review.`);
+  review.textContent = "";
+  (queue.changes || []).forEach((change, index) => {
+    const row = document.createElement("div");
+    row.className = "price-change";
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.dataset.index = String(index);
+    label.append(
+      checkbox,
+      ` ${change.label || "Product"}: ${change.currentPrice} -> ${change.livePrice}`,
+    );
+    const link = document.createElement("a");
+    link.href = change.sourcePageUrl;
+    link.target = "_blank";
+    link.textContent = change.sourcePageUrl;
+    row.append(label, link);
+    review.appendChild(row);
+  });
+  approveButton.hidden = !(queue.changes || []).length;
+  setPriceButtons(Boolean(queue.running));
+}
+
+async function approveSelectedPriceChanges() {
+  const projectId = document.getElementById("projectSelect").value;
+  const response = await chrome.runtime.sendMessage({ type: "MERAV_GET_PRICE_QUEUE" });
+  const changes = response?.queue?.changes || [];
+  const selected = Array.from(document.querySelectorAll("#priceReview input:checked"))
+    .map((input) => changes[Number(input.dataset.index)])
+    .filter(Boolean)
+    .map((change) => ({
+      materialItemId: change.materialItemId,
+      price: change.livePrice,
+      sourcePageUrl: change.sourcePageUrl,
+    }));
+  if (!selected.length) return setStatus("Select at least one changed price.", true);
+  try {
+    const saved = await chrome.runtime.sendMessage({
+      type: "MERAV_APPROVE_PRICE_CHANGES",
+      projectId,
+      changes: selected,
+    });
+    if (!saved?.ok) throw new Error(saved?.error || "Could not apply price changes.");
+    setStatus(`${saved.updated || 0} price change${saved.updated === 1 ? "" : "s"} applied.`);
+    await loadPriceQueue();
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Could not apply price changes.", true);
+  }
+}
+
+function setPriceButtons(disabled) {
+  ["fillMissing", "verifyPrices", "updateCurrentPrice"].forEach((id) => {
+    document.getElementById(id).disabled = disabled;
+  });
 }
 
 function normalizeStudioUrl(value) {

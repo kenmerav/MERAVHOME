@@ -6,7 +6,8 @@ import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
-const MAX_SCRAPE_ROWS_PER_RUN = 3;
+const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
+const MAX_SCRAPE_ROWS_PER_BATCH = 12;
 const SCRAPE_TIMEOUT_MS = 15000;
 
 function json(data: unknown, status = 200) {
@@ -44,12 +45,12 @@ function firstPrice(...vals: unknown[]) {
           : "";
     if (!text || /^(null|undefined|n\/a)$/i.test(text)) continue;
 
-    const match = text.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)?|\$?\s*\d+(?:\.\d{2})?/);
+    const match = text.match(
+      /\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)?|\$?\s*\d+(?:\.\d{2})?/,
+    );
     if (!match) continue;
 
-    const cleaned = match[0]
-      .replace(/\s+/g, "")
-      .replace(/–|to/i, "-");
+    const cleaned = match[0].replace(/\s+/g, "").replace(/–|to/i, "-");
     if (!/\d/.test(cleaned)) continue;
     return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
   }
@@ -68,11 +69,7 @@ function priceFromPageText(markdown?: string, html?: string) {
     /(?:^|\n)\s*(?:[-*]\s*)?(\$\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)\s*(?:\n|$)/,
   );
 
-  return firstPrice(
-    automationPrice?.[1],
-    labeledPrice?.[1],
-    standaloneMarkdownPrice?.[1],
-  );
+  return firstPrice(automationPrice?.[1], labeledPrice?.[1], standaloneMarkdownPrice?.[1]);
 }
 
 function compactPayload<T extends Record<string, unknown>>(payload: T) {
@@ -112,6 +109,72 @@ type Scraped = {
   error?: string;
 };
 
+const scrapeSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    vendor: { type: "string" },
+    sku: { type: "string" },
+    color: { type: "string" },
+    selected_color: { type: "string" },
+    finish: { type: "string" },
+    selected_variant: { type: "string" },
+    variant: { type: "string" },
+    colorway: { type: "string" },
+    dimensions: { type: "string" },
+    price: {
+      type: "string",
+      description: "Exact visible price for the selected product variant. Never invent a price.",
+    },
+    current_price: { type: "string" },
+    sale_price: { type: "string" },
+    regular_price: { type: "string" },
+    list_price: { type: "string" },
+    price_per_item: { type: "string" },
+    unit_cost: { type: "string" },
+    shipping: { type: "string" },
+    image_url: { type: "string" },
+  },
+};
+
+function scrapedFromFirecrawlData(data: any, sourceUrl: string): Scraped {
+  const ex = data?.json ?? data?.extract ?? {};
+  const meta = data?.metadata ?? {};
+  const pagePrice = priceFromPageText(data?.markdown, data?.html);
+  return {
+    name: firstString(ex.name, meta.title, meta.ogTitle),
+    vendor: firstString(
+      inferVendorFromUrl(sourceUrl),
+      ex.vendor,
+      meta.ogSiteName,
+      meta["og:site_name"],
+    ),
+    sku: firstString(ex.sku, ex.model, ex.model_number),
+    color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
+    finish: firstString(
+      ex.finish,
+      ex.color,
+      ex.selected_color,
+      ex.selected_variant,
+      ex.variant,
+      ex.colorway,
+    ),
+    dimensions: firstString(ex.dimensions, ex.size),
+    price: firstPrice(
+      ex.price,
+      ex.current_price,
+      ex.sale_price,
+      ex.regular_price,
+      ex.list_price,
+      ex.price_per_item,
+      pagePrice,
+    ),
+    unit_cost: firstPrice(ex.unit_cost),
+    shipping: firstPrice(ex.shipping),
+    image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
+  };
+}
+
 async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
   const schema = {
     type: "object",
@@ -121,7 +184,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       sku: { type: "string" },
       color: {
         type: "string",
-        description: "Selected color, selected swatch, colorway, or color option shown for this exact product URL",
+        description:
+          "Selected color, selected swatch, colorway, or color option shown for this exact product URL",
       },
       selected_color: { type: "string" },
       finish: { type: "string" },
@@ -131,7 +195,8 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       dimensions: { type: "string" },
       price: {
         type: "string",
-        description: "Exact customer-visible price for the selected product variant. If no exact selected variant price is visible, use the product price range.",
+        description:
+          "Exact customer-visible price for the selected product variant. If no exact selected variant price is visible, use the product price range.",
       },
       current_price: { type: "string" },
       sale_price: { type: "string" },
@@ -161,8 +226,9 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
           "html",
           {
             type: "json",
-            schema,
-            prompt: "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, or variant already chosen, capture that exact selected value. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Do not invent a color or price.",
+            schema: scrapeSchema,
+            prompt:
+              "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, or variant already chosen, capture that exact selected value. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Do not invent a color or price.",
           },
         ],
         onlyMainContent: false,
@@ -175,23 +241,10 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     }
     const body = (await res.json()) as any;
     const data = body?.data ?? body;
-    const ex = data?.json ?? data?.extract ?? {};
-    const meta = data?.metadata ?? {};
-    const pagePrice = priceFromPageText(data?.markdown, data?.html);
-    return {
-      name: firstString(ex.name, meta.title, meta.ogTitle),
-      vendor: firstString(inferVendorFromUrl(url), ex.vendor, meta.ogSiteName, meta["og:site_name"]),
-      sku: firstString(ex.sku, ex.model, ex.model_number),
-      color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
-      finish: firstString(ex.finish, ex.color, ex.selected_color, ex.selected_variant, ex.variant, ex.colorway),
-      dimensions: firstString(ex.dimensions, ex.size),
-      price: firstPrice(ex.price, ex.current_price, ex.sale_price, ex.regular_price, ex.list_price, ex.price_per_item, pagePrice),
-      unit_cost: firstPrice(ex.unit_cost),
-      shipping: firstPrice(ex.shipping),
-      image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
-    };
+    return scrapedFromFirecrawlData(data, url);
   } catch (e: any) {
-    if (e?.name === "AbortError") return { error: "Scrape timed out. Try again or enter details manually." };
+    if (e?.name === "AbortError")
+      return { error: "Scrape timed out. Try again or enter details manually." };
     return { error: e?.message || "Scrape failed" };
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -201,95 +254,137 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
 export const Route = createFileRoute("/api/scrape-materials")({
   server: {
     handlers: {
-      // Phase 1 — fetch + scrape, return for review
+      // Phase 1 — Firecrawl batch jobs return immediately; the client polls until ready.
       POST: async ({ request }) => {
         try {
-          const { project_id, exclude_material_item_ids } = (await request.json()) as {
+          const body = (await request.json()) as {
+            action?: "start" | "poll";
             project_id?: string;
             exclude_material_item_ids?: string[];
+            batch_id?: string;
+            candidates?: Array<{
+              material_item_id?: string;
+              url?: string;
+              existing_product_id?: string | null;
+            }>;
           };
-          const projectId = cleanUuid(project_id);
+          const projectId = cleanUuid(body.project_id);
           if (!projectId) return json({ error: "Valid project_id required" }, 400);
-          const excludedIds = new Set(
-            (Array.isArray(exclude_material_item_ids) ? exclude_material_item_ids : [])
-              .map((id) => cleanUuid(id))
-              .filter((id): id is string => !!id),
-          );
-
           const fcKey = process.env.FIRECRAWL_API_KEY;
           if (!fcKey) return json({ error: "Firecrawl is not connected yet." }, 500);
 
+          if (body.action === "poll") {
+            if (!body.batch_id || !Array.isArray(body.candidates))
+              return json({ error: "Batch details required." }, 400);
+            const response = await fetch(
+              `${FIRECRAWL_BATCH_API}/${encodeURIComponent(body.batch_id)}`,
+              {
+                headers: { Authorization: `Bearer ${fcKey}` },
+              },
+            );
+            if (!response.ok)
+              return json({ error: `Batch status failed (${response.status}).` }, 502);
+            const batchBody = (await response.json()) as any;
+            const batch = batchBody?.data ?? batchBody;
+            const status = String(batch?.status ?? "processing").toLowerCase();
+            if (!/(completed|done|failed|error)/.test(status))
+              return json({ status: "processing" });
+            const pages = Array.isArray(batch?.data) ? batch.data : [];
+            const byUrl = new Map<string, any>();
+            pages.forEach((page: any) => {
+              const sourceUrl = firstString(
+                page?.metadata?.sourceURL,
+                page?.metadata?.url,
+                page?.url,
+              );
+              if (sourceUrl) byUrl.set(sourceUrl, page);
+            });
+            const rows = body.candidates.map((candidate) => {
+              const materialItemId = cleanUuid(candidate.material_item_id);
+              const url = candidate.url?.trim() ?? "";
+              const page = byUrl.get(url);
+              return {
+                material_item_id: materialItemId,
+                url,
+                existing_product_id: cleanUuid(candidate.existing_product_id),
+                scraped:
+                  materialItemId && page
+                    ? scrapedFromFirecrawlData(page, url)
+                    : { error: "Scrape did not return a result for this page." },
+              };
+            });
+            return json({ status: /(failed|error)/.test(status) ? "failed" : "completed", rows });
+          }
+
+          const excludedIds = new Set(
+            (Array.isArray(body.exclude_material_item_ids) ? body.exclude_material_item_ids : [])
+              .map((id) => cleanUuid(id))
+              .filter((id): id is string => Boolean(id)),
+          );
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
-            .select("id, product_url, product_id, scrape_status, product:products(id, price, unit_cost, shipping)")
+            .select("id, product_url, product_id, scrape_status, product:products(id, price)")
             .eq("project_id", projectId)
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
-
           const linkedItems = items ?? [];
-          const validLinkItems = linkedItems.filter((it) => isScrapeableUrl(it.product_url));
+          const validLinkItems = linkedItems.filter((item) => isScrapeableUrl(item.product_url));
           const invalid_link_count = linkedItems.length - validLinkItems.length;
           const candidates = validLinkItems.filter(
-            (it: any) =>
-              !excludedIds.has(it.id) &&
-              (it.scrape_status !== "scraped" ||
-                !hasValue(it.product?.price)),
+            (item: any) => !excludedIds.has(item.id) && !hasValue(item.product?.price),
           );
           const already_scraped_count = validLinkItems.length - candidates.length;
-          const limitedCandidates = candidates.slice(0, MAX_SCRAPE_ROWS_PER_RUN);
-          const remaining_count = Math.max(0, candidates.length - limitedCandidates.length);
-
-          const rows = await Promise.all(limitedCandidates.map(async (it) => {
-            const url = it.product_url!.trim();
-            // Catalog dedupe by exact URL
-            const { data: existing } = await supabaseAdmin
-              .from("products")
-              .select("id, name, vendor, image_url, finish, sku, dimensions, price, unit_cost, shipping")
-              .eq("product_url", url)
-              .maybeSingle();
-
-            if (existing) {
-              const needsBackfill = [
-                existing.name,
-                existing.vendor,
-                existing.image_url,
-                existing.finish,
-                existing.sku,
-                existing.dimensions,
-                existing.price,
-                existing.unit_cost,
-                existing.shipping,
-              ].some((value) => !hasValue(value));
-              const refreshed = needsBackfill ? await scrapeOne(url, fcKey) : null;
-              return {
-                material_item_id: it.id,
-                url,
-                existing_product_id: existing.id,
-                scraped: {
-                  name: firstString(existing.name, refreshed?.name),
-                  vendor: firstString(inferVendorFromUrl(url), existing.vendor, refreshed?.vendor),
-                  image_url: firstString(existing.image_url, refreshed?.image_url),
-                  color: firstString(existing.finish, refreshed?.color),
-                  finish: firstString(existing.finish, refreshed?.finish, refreshed?.color),
-                  sku: firstString(existing.sku, refreshed?.sku),
-                  dimensions: firstString(existing.dimensions, refreshed?.dimensions),
-                  price: firstPrice(existing.price, refreshed?.price),
-                  unit_cost: firstPrice(existing.unit_cost, refreshed?.unit_cost),
-                  shipping: firstPrice(existing.shipping, refreshed?.shipping),
-                },
-              };
-            }
-
-            const scraped = await scrapeOne(url, fcKey);
-            return {
-              material_item_id: it.id,
-              url,
-              existing_product_id: null,
-              scraped,
-            };
+          const batchItems = candidates.slice(0, MAX_SCRAPE_ROWS_PER_BATCH);
+          const remaining_count = Math.max(0, candidates.length - batchItems.length);
+          const batchCandidates = batchItems.map((item: any) => ({
+            material_item_id: item.id,
+            url: item.product_url.trim(),
+            existing_product_id: item.product?.id ?? item.product_id ?? null,
           }));
-
-          return json({ rows, invalid_link_count, already_scraped_count, remaining_count });
+          if (!batchCandidates.length) {
+            return json({
+              status: "completed",
+              rows: [],
+              invalid_link_count,
+              already_scraped_count,
+              remaining_count,
+            });
+          }
+          const urls = Array.from(new Set(batchCandidates.map((candidate) => candidate.url)));
+          const response = await fetch(FIRECRAWL_BATCH_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${fcKey}` },
+            body: JSON.stringify({
+              urls,
+              maxConcurrency: 4,
+              formats: [
+                "markdown",
+                "html",
+                {
+                  type: "json",
+                  schema: scrapeSchema,
+                  prompt:
+                    "Extract product details and the exact current visible price. Do not invent a price.",
+                },
+              ],
+              onlyMainContent: false,
+              timeout: 30000,
+            }),
+          });
+          if (!response.ok)
+            return json({ error: `Could not start scrape batch (${response.status}).` }, 502);
+          const batchBody = (await response.json()) as any;
+          const batch = batchBody?.data ?? batchBody;
+          const batchId = firstString(batch?.id, batchBody?.id);
+          if (!batchId) return json({ error: "Firecrawl did not return a batch id." }, 502);
+          return json({
+            status: "started",
+            batch_id: batchId,
+            candidates: batchCandidates,
+            invalid_link_count,
+            already_scraped_count,
+            remaining_count,
+          });
         } catch (e: any) {
           return json({ error: e?.message || "Unexpected error" }, 500);
         }
@@ -369,10 +464,13 @@ export const Route = createFileRoute("/api/scrape-materials")({
             }
 
             if (productId) {
+              const scrapedPrice = normalizeMoneyInput(row.scraped.price);
               const materialUpdate: Record<string, unknown> = {
                 product_id: productId,
-                scrape_status: "scraped",
-                scrape_error: null,
+                scrape_status: scrapedPrice ? "scraped" : "price_missing",
+                scrape_error: scrapedPrice
+                  ? null
+                  : "No reliable price found. Use the Studio extension to fill or verify this price.",
               };
               const scrapedColor = firstString(row.scraped.color, row.scraped.finish);
               if (scrapedColor && !matItem?.color) {
@@ -394,13 +492,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   .maybeSingle();
 
                 if (!existingLink) {
-                  await supabaseAdmin
-                    .from("room_products")
-                    .insert({
-                      room_id: roomId,
-                      product_id: productId,
-                      is_key_selection: false,
-                    });
+                  await supabaseAdmin.from("room_products").insert({
+                    room_id: roomId,
+                    product_id: productId,
+                    is_key_selection: false,
+                  });
                 }
               }
             }

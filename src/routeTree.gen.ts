@@ -67,6 +67,7 @@ import { Route as ApiQuickbooksCustomersRouteImport } from './routes/api/quickbo
 import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
 import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
 import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
+import { Route as ApiExtensionPricesRouteImport } from './routes/api/extension/prices'
 import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
 import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/extension/connect-token'
 import { Route as ApiExtensionBoardPagesRouteImport } from './routes/api/extension/board-pages'
@@ -373,6 +374,11 @@ const ApiExtensionProjectsRoute = ApiExtensionProjectsRouteImport.update({
   path: '/api/extension/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiExtensionPricesRoute = ApiExtensionPricesRouteImport.update({
+  id: '/api/extension/prices',
+  path: '/api/extension/prices',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiExtensionImportProductRoute =
   ApiExtensionImportProductRouteImport.update({
     id: '/api/extension/import-product',
@@ -438,6 +444,7 @@ export interface FileRoutesByFullPath {
   '/api/extension/board-pages': typeof ApiExtensionBoardPagesRoute
   '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
+  '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
@@ -502,6 +509,7 @@ export interface FileRoutesByTo {
   '/api/extension/board-pages': typeof ApiExtensionBoardPagesRoute
   '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
+  '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
@@ -567,6 +575,7 @@ export interface FileRoutesById {
   '/api/extension/board-pages': typeof ApiExtensionBoardPagesRoute
   '/api/extension/connect-token': typeof ApiExtensionConnectTokenRoute
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
+  '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
@@ -633,6 +642,7 @@ export interface FileRouteTypes {
     | '/api/extension/board-pages'
     | '/api/extension/connect-token'
     | '/api/extension/import-product'
+    | '/api/extension/prices'
     | '/api/extension/projects'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
@@ -697,6 +707,7 @@ export interface FileRouteTypes {
     | '/api/extension/board-pages'
     | '/api/extension/connect-token'
     | '/api/extension/import-product'
+    | '/api/extension/prices'
     | '/api/extension/projects'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
@@ -761,6 +772,7 @@ export interface FileRouteTypes {
     | '/api/extension/board-pages'
     | '/api/extension/connect-token'
     | '/api/extension/import-product'
+    | '/api/extension/prices'
     | '/api/extension/projects'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
@@ -826,6 +838,7 @@ export interface RootRouteChildren {
   ApiExtensionBoardPagesRoute: typeof ApiExtensionBoardPagesRoute
   ApiExtensionConnectTokenRoute: typeof ApiExtensionConnectTokenRoute
   ApiExtensionImportProductRoute: typeof ApiExtensionImportProductRoute
+  ApiExtensionPricesRoute: typeof ApiExtensionPricesRoute
   ApiExtensionProjectsRoute: typeof ApiExtensionProjectsRoute
   ApiQuickbooksCallbackRoute: typeof ApiQuickbooksCallbackRoute
   ApiQuickbooksConnectUrlRoute: typeof ApiQuickbooksConnectUrlRoute
@@ -1257,6 +1270,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiExtensionProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/extension/prices': {
+      id: '/api/extension/prices'
+      path: '/api/extension/prices'
+      fullPath: '/api/extension/prices'
+      preLoaderRoute: typeof ApiExtensionPricesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/extension/import-product': {
       id: '/api/extension/import-product'
       path: '/api/extension/import-product'
@@ -1330,6 +1350,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiExtensionBoardPagesRoute: ApiExtensionBoardPagesRoute,
   ApiExtensionConnectTokenRoute: ApiExtensionConnectTokenRoute,
   ApiExtensionImportProductRoute: ApiExtensionImportProductRoute,
+  ApiExtensionPricesRoute: ApiExtensionPricesRoute,
   ApiExtensionProjectsRoute: ApiExtensionProjectsRoute,
   ApiQuickbooksCallbackRoute: ApiQuickbooksCallbackRoute,
   ApiQuickbooksConnectUrlRoute: ApiQuickbooksConnectUrlRoute,

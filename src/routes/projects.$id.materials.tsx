@@ -1,10 +1,28 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Plus, Sparkles, Trash2, X, Check, Upload, Pencil, Search, AlertTriangle, ChevronUp } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Sparkles,
+  Trash2,
+  X,
+  Check,
+  Upload,
+  Pencil,
+  Search,
+  AlertTriangle,
+  ChevronUp,
+} from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
-import { ALL_CATEGORIES, PRODUCT_CATEGORIES, inferMaterialCategory, normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
+import {
+  ALL_CATEGORIES,
+  PRODUCT_CATEGORIES,
+  inferMaterialCategory,
+  normalizeItemCategory,
+  toProductCategory,
+} from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,7 +33,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
@@ -171,7 +195,8 @@ function MaterialsPage() {
   }, [items]);
 
   const sortedRooms = useMemo(
-    () => [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    () =>
+      [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     [rooms],
   );
   const [jumpRoomId, setJumpRoomId] = useState<string>("");
@@ -226,11 +251,19 @@ function MaterialsPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            action: "start",
             project_id: projectId,
             exclude_material_item_ids: Array.from(collectedIds),
           }),
         });
         const body = await readApiJson<{
+          status?: "started" | "processing" | "completed" | "failed";
+          batch_id?: string;
+          candidates?: Array<{
+            material_item_id?: string;
+            url?: string;
+            existing_product_id?: string | null;
+          }>;
           rows?: ScrapedRow[];
           invalid_link_count?: number;
           already_scraped_count?: number;
@@ -239,10 +272,36 @@ function MaterialsPage() {
         }>(res);
         if (!res.ok) throw new Error(body?.error || "Scrape failed");
 
-        const rows = (body?.rows ?? []) as ScrapedRow[];
-        invalidLinkCount = body?.invalid_link_count ?? invalidLinkCount;
-        alreadyScrapedCount = body?.already_scraped_count ?? alreadyScrapedCount;
-        remainingCount = body?.remaining_count ?? 0;
+        let completedBody = body;
+        if (body?.status === "started") {
+          if (!body.batch_id || !body.candidates?.length)
+            throw new Error("Scrape batch did not start correctly.");
+          while (true) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1200));
+            setScrapeStatus(`Scraping batch ${batchCount + 1}...`);
+            const pollRes = await fetch("/api/scrape-materials", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "poll",
+                project_id: projectId,
+                batch_id: body.batch_id,
+                candidates: body.candidates,
+              }),
+            });
+            const pollBody = await readApiJson<typeof body>(pollRes);
+            if (!pollRes.ok) throw new Error(pollBody?.error || "Scrape batch failed");
+            if (pollBody?.status === "processing") continue;
+            if (pollBody?.status === "failed") throw new Error("Scrape batch could not complete.");
+            completedBody = { ...body, ...pollBody };
+            break;
+          }
+        }
+
+        const rows = (completedBody?.rows ?? []) as ScrapedRow[];
+        invalidLinkCount = completedBody?.invalid_link_count ?? invalidLinkCount;
+        alreadyScrapedCount = completedBody?.already_scraped_count ?? alreadyScrapedCount;
+        remainingCount = completedBody?.remaining_count ?? 0;
 
         rows.forEach((row) => {
           if (collectedIds.has(row.material_item_id)) return;
@@ -267,7 +326,11 @@ function MaterialsPage() {
             ? `${invalidLinkCount} item${invalidLinkCount === 1 ? "" : "s"} without a valid link`
             : "",
         ].filter(Boolean);
-        toast.info(parts.length ? `Nothing new to scrape. Skipped ${parts.join(" and ")}.` : "Nothing new to scrape.");
+        toast.info(
+          parts.length
+            ? `Nothing new to scrape. Skipped ${parts.join(" and ")}.`
+            : "Nothing new to scrape.",
+        );
       } else {
         setReviewRows(rows);
         toast.info(`Opened ${rows.length} item${rows.length === 1 ? "" : "s"} for review.`);
@@ -296,7 +359,9 @@ function MaterialsPage() {
       });
       const body = await readApiJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(body?.error || "Could not save");
-      toast.success(`Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`);
+      toast.success(
+        `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
+      );
       setReviewRows(null);
       qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -310,12 +375,13 @@ function MaterialsPage() {
     if (!projectId) return toast.error("Invalid project link.");
     setImportingPdf(true);
     try {
-      const res = file.size > DIRECT_PDF_UPLOAD_LIMIT
-        ? await importLargePdf(projectId, file)
-        : await fetch("/api/import-materials-pdf", {
-            method: "POST",
-            body: pdfImportFormData(projectId!, file),
-          });
+      const res =
+        file.size > DIRECT_PDF_UPLOAD_LIMIT
+          ? await importLargePdf(projectId, file)
+          : await fetch("/api/import-materials-pdf", {
+              method: "POST",
+              body: pdfImportFormData(projectId!, file),
+            });
       const body = await readJsonResponse(res);
       if (!res.ok) throw new Error(body?.error || "PDF import failed");
       toast.success(
@@ -331,40 +397,68 @@ function MaterialsPage() {
     }
   };
 
-  if (!projectId) return <AppShell><div className="p-16 text-muted-foreground">Invalid project link.</div></AppShell>;
-  if (loadingProfile) return <AppShell><div className="p-16 text-muted-foreground">Loading materials...</div></AppShell>;
+  if (!projectId)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Invalid project link.</div>
+      </AppShell>
+    );
+  if (loadingProfile)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading materials...</div>
+      </AppShell>
+    );
   if (!canManageMaterials) {
     return (
       <AppShell>
         <div className="page-pad max-w-3xl">
-          <Link to="/projects/$id" params={{ id: projectId }} className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+          <Link
+            to="/projects/$id"
+            params={{ id: projectId }}
+            className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
+          >
             <ArrowLeft className="h-4 w-4" /> Back to project
           </Link>
           <h1 className="editorial-hero text-5xl">Materials</h1>
-          <p className="mt-4 text-muted-foreground">Materials editing is available to MERAV team members only.</p>
+          <p className="mt-4 text-muted-foreground">
+            Materials editing is available to MERAV team members only.
+          </p>
         </div>
       </AppShell>
     );
   }
-  if (!project) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
+  if (!project)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading…</div>
+      </AppShell>
+    );
 
   return (
     <AppShell>
       <div id={MATERIALS_TOP_ID} className="page-pad max-w-[1500px]">
-        <Link to="/projects/$id" params={{ id: projectId }} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6">
+        <Link
+          to="/projects/$id"
+          params={{ id: projectId }}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-6"
+        >
           <ArrowLeft className="w-3.5 h-3.5" /> Project
         </Link>
 
         <div className="flex items-end justify-between flex-wrap gap-6 mb-10">
           <div>
-            <div className="eyebrow mb-2">{project.name} · {project.client_name}</div>
+            <div className="eyebrow mb-2">
+              {project.name} · {project.client_name}
+            </div>
             <h1 className="editorial-hero text-4xl lg:text-6xl">Materials</h1>
             <div className="mt-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
               Last updated {formatLastUpdated(lastUpdatedAt)}
             </div>
             <p className="text-sm text-muted-foreground mt-3 max-w-xl">
-              Fill in CAD label, product link, quantity, and color for every required item. Delete anything you don't need.
-              When you're ready, scrape every link to save products into the catalog.
+              Fill in CAD label, product link, quantity, and color for every required item. Delete
+              anything you don't need. When you're ready, scrape every link to save products into
+              the catalog.
             </p>
           </div>
           <div className="flex flex-col items-end gap-3">
@@ -472,7 +566,9 @@ function RoomMaterialsSection({
     () =>
       [...items]
         .filter((item) => approvalFilter === "all" || isNeedsReselection(item))
-        .sort((a, b) => a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" })),
+        .sort((a, b) =>
+          a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" }),
+        ),
     [approvalFilter, items],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -488,9 +584,7 @@ function RoomMaterialsSection({
     value: `${roomInitial}-${String(index + 1).padStart(2, "0")}`,
   }));
   const usedCadLabels = new Set(
-    sortedItems
-      .map((it) => it.cad_label?.trim())
-      .filter((label): label is string => !!label),
+    sortedItems.map((it) => it.cad_label?.trim()).filter((label): label is string => !!label),
   );
   const cadLabelOwner = new Map<string, string>();
   for (const item of sortedItems) {
@@ -501,9 +595,7 @@ function RoomMaterialsSection({
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
   useEffect(() => {
-    setSelectedIds((current) =>
-      current.filter((id) => sortedItems.some((item) => item.id === id)),
-    );
+    setSelectedIds((current) => current.filter((id) => sortedItems.some((item) => item.id === id)));
   }, [sortedItems]);
 
   const update = async (id: string, patch: Partial<MaterialItem>) => {
@@ -515,7 +607,10 @@ function RoomMaterialsSection({
       currentItem?.product_id &&
       isUuid(currentItem.product_id)
     ) {
-      await db.updateProduct(currentItem.product_id, productCategoryPatchForMaterialCategory(patch.category));
+      await db.updateProduct(
+        currentItem.product_id,
+        productCategoryPatchForMaterialCategory(patch.category),
+      );
       qc.invalidateQueries({ queryKey: ["catalog"] });
       qc.invalidateQueries({ queryKey: ["product", currentItem.product_id] });
     }
@@ -594,7 +689,11 @@ function RoomMaterialsSection({
       const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
       const alreadyLinked = roomProducts.some((rp) => rp.product_id === product.id);
       if (!alreadyLinked) {
-        await db.addRoomProduct({ room_id: room.id, product_id: product.id, is_key_selection: false });
+        await db.addRoomProduct({
+          room_id: room.id,
+          product_id: product.id,
+          is_key_selection: false,
+        });
       }
       toast.success(`Added ${product.name} to ${item.item_label}`);
     }
@@ -612,7 +711,12 @@ function RoomMaterialsSection({
             {done} of {items.length} completed
           </span>
         </div>
-        <AddCustomItemButton roomId={room.id} roomName={room.name} projectId={projectId} sortStart={items.length} />
+        <AddCustomItemButton
+          roomId={room.id}
+          roomName={room.name}
+          projectId={projectId}
+          sortStart={items.length}
+        />
       </div>
 
       {items.length === 0 ? (
@@ -650,10 +754,16 @@ function RoomMaterialsSection({
               {allSelected ? "Clear Selection" : "Select All Room"}
             </button>
             <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ordered By</span>
+              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                Ordered By
+              </span>
               <Select
                 value={bulkOrderedBy ?? "none"}
-                onValueChange={(value) => setBulkOrderedBy(value === "none" ? "none" : (value as MaterialItem["ordered_by"]))}
+                onValueChange={(value) =>
+                  setBulkOrderedBy(
+                    value === "none" ? "none" : (value as MaterialItem["ordered_by"]),
+                  )
+                }
               >
                 <SelectTrigger className="h-9 w-[150px] text-xs">
                   <SelectValue />
@@ -736,7 +846,10 @@ function RoomMaterialsSection({
                 const linkedProductId = cleanUuid(it.product?.id);
                 const needsReselection = isNeedsReselection(it);
                 return (
-                  <tr key={it.id} className={`border-t border-border align-middle ${needsReselection ? "bg-red-50/35" : ""}`}>
+                  <tr
+                    key={it.id}
+                    className={`border-t border-border align-middle ${needsReselection ? "bg-red-50/35" : ""}`}
+                  >
                     <td className="px-6 py-3">
                       <input
                         type="checkbox"
@@ -764,10 +877,14 @@ function RoomMaterialsSection({
                           }
                         />
                         {!it.is_required && (
-                          <span className="text-[10px] tracking-wider uppercase text-muted-foreground">Custom</span>
+                          <span className="text-[10px] tracking-wider uppercase text-muted-foreground">
+                            Custom
+                          </span>
                         )}
                         {it.product && (
-                          <span className="text-[10px] tracking-wider uppercase text-emerald-700">Scraped</span>
+                          <span className="text-[10px] tracking-wider uppercase text-emerald-700">
+                            Scraped
+                          </span>
                         )}
                         {!hasProductLink && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-800">
@@ -789,16 +906,25 @@ function RoomMaterialsSection({
                           className="mt-2 flex items-center gap-2 pl-3.5 group/product"
                         >
                           {materialImageUrl(it) ? (
-                            <img src={normalizeSupabaseImageUrl(materialImageUrl(it)!)} alt="" className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink" />
+                            <img
+                              src={normalizeSupabaseImageUrl(materialImageUrl(it)!)}
+                              alt=""
+                              className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink"
+                            />
                           ) : (
                             <div className="w-10 h-10 bg-bone border border-border transition-colors group-hover/product:border-ink" />
                           )}
                           <div className="min-w-0">
-                            <div className="text-xs text-ink truncate max-w-[200px] underline-offset-4 group-hover/product:underline" title={it.product.name}>
+                            <div
+                              className="text-xs text-ink truncate max-w-[200px] underline-offset-4 group-hover/product:underline"
+                              title={it.product.name}
+                            >
                               {it.product.name}
                             </div>
                             <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">
-                              {[it.product.vendor, it.product.price, it.product.dimensions].filter(Boolean).join(" · ")}
+                              {[it.product.vendor, it.product.price, it.product.dimensions]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </div>
                           </div>
                         </Link>
@@ -807,7 +933,12 @@ function RoomMaterialsSection({
                     <td className="py-2 pr-3">
                       <InlineInput
                         value={clientProductName(it, room)}
-                        onSave={(v) => update(it.id, { client_product_name: v || buildClientProductName(room.name, it.item_label) })}
+                        onSave={(v) =>
+                          update(it.id, {
+                            client_product_name:
+                              v || buildClientProductName(room.name, it.item_label),
+                          })
+                        }
                         placeholder="Kitchen Pendant"
                       />
                       {actualProductName(it, room) && (
@@ -826,7 +957,9 @@ function RoomMaterialsSection({
                         </SelectTrigger>
                         <SelectContent>
                           {ALL_CATEGORIES.map((c) => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -844,12 +977,19 @@ function RoomMaterialsSection({
                     <td className="py-2 pr-3">
                       <InlineInput
                         value={it.product_url ?? ""}
-                        onSave={(v) => update(it.id, { product_url: v || null, scrape_status: "pending" })}
-                        className={!hasProductLink ? "border-amber-300 bg-amber-50/60 focus-visible:border-amber-500 focus-visible:ring-amber-200" : undefined}
+                        onSave={(v) =>
+                          update(it.id, { product_url: v || null, scrape_status: "pending" })
+                        }
+                        className={
+                          !hasProductLink
+                            ? "border-amber-300 bg-amber-50/60 focus-visible:border-amber-500 focus-visible:ring-amber-200"
+                            : undefined
+                        }
                       />
                       {!hasProductLink && (
                         <div className="mt-1 text-[11px] text-amber-800">
-                          Add a source link so this item can flow cleanly into scraping, specs, and procurement.
+                          Add a source link so this item can flow cleanly into scraping, specs, and
+                          procurement.
                         </div>
                       )}
                     </td>
@@ -903,7 +1043,10 @@ function RoomMaterialsSection({
                       />
                     </td>
                     <td className="py-2 pr-3">
-                      <NotesPopover value={it.notes ?? ""} onSave={(v) => update(it.id, { notes: v || null })} />
+                      <NotesPopover
+                        value={it.notes ?? ""}
+                        onSave={(v) => update(it.id, { notes: v || null })}
+                      />
                     </td>
                     <td className="px-4 py-2 text-right">
                       <button
@@ -942,7 +1085,9 @@ function RoomJumpSelect({
 
   return (
     <Select value={value || undefined} onValueChange={onJump}>
-      <SelectTrigger className={`${compact ? "h-10 rounded-full" : "h-11"} border-border bg-background text-sm ${className}`}>
+      <SelectTrigger
+        className={`${compact ? "h-10 rounded-full" : "h-11"} border-border bg-background text-sm ${className}`}
+      >
         <SelectValue placeholder="Jump to room" />
       </SelectTrigger>
       <SelectContent>
@@ -956,7 +1101,13 @@ function RoomJumpSelect({
   );
 }
 
-function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSave: (name: string) => Promise<void> }) {
+function EditRoomNameButton({
+  currentName,
+  onSave,
+}: {
+  currentName: string;
+  onSave: (name: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
   const [saving, setSaving] = useState(false);
@@ -984,7 +1135,10 @@ function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSa
       }}
     >
       <DialogTrigger asChild>
-        <button type="button" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-ink">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-ink"
+        >
           <Pencil className="h-3 w-3" /> Edit
         </button>
       </DialogTrigger>
@@ -995,7 +1149,11 @@ function EditRoomNameButton({ currentName, onSave }: { currentName: string; onSa
         <div className="space-y-4">
           <div>
             <Label className="eyebrow">Room Name</Label>
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Kitchen" />
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Kitchen"
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             This will also update this room's client product names.
@@ -1061,7 +1219,10 @@ function EditItemNameButton({
       }}
     >
       <DialogTrigger asChild>
-        <button type="button" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-ink">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-ink"
+        >
           <Pencil className="h-3 w-3" />
         </button>
       </DialogTrigger>
@@ -1072,7 +1233,11 @@ function EditItemNameButton({
         <div className="space-y-4">
           <div>
             <Label className="eyebrow">Item Name</Label>
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Pendant" />
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Pendant"
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             This will also update the client product name for this row.
@@ -1105,9 +1270,13 @@ function CatalogProductPicker({
   const category = toProductCategory(item.category);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const matchingProducts = products.filter((product) => product.category === category && isUuid(product.id));
+  const matchingProducts = products.filter(
+    (product) => product.category === category && isUuid(product.id),
+  );
   const currentProductId = cleanUuid(item.product_id);
-  const selectedProduct = currentProductId ? products.find((product) => product.id === currentProductId) : null;
+  const selectedProduct = currentProductId
+    ? products.find((product) => product.id === currentProductId)
+    : null;
   const searchedProducts = matchingProducts
     .filter((product) => {
       const q = search.trim().toLowerCase();
@@ -1125,7 +1294,13 @@ function CatalogProductPicker({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setSearch(""); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch("");
+      }}
+    >
       <DialogTrigger asChild>
         <button
           type="button"
@@ -1137,11 +1312,14 @@ function CatalogProductPicker({
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl font-normal">Assign Catalog Product</DialogTitle>
+          <DialogTitle className="font-display text-2xl font-normal">
+            Assign Catalog Product
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            Choose a {category.toLowerCase()} product to attach to <span className="text-ink">{item.item_label}</span>.
+            Choose a {category.toLowerCase()} product to attach to{" "}
+            <span className="text-ink">{item.item_label}</span>.
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1159,7 +1337,9 @@ function CatalogProductPicker({
               className="w-full text-left border border-border p-3 text-sm hover:border-ink"
             >
               Clear catalog product
-              <span className="block text-xs text-muted-foreground">Keeps the row, but removes the catalog assignment.</span>
+              <span className="block text-xs text-muted-foreground">
+                Keeps the row, but removes the catalog assignment.
+              </span>
             </button>
           )}
           <div className="max-h-[420px] overflow-y-auto border border-border divide-y divide-border">
@@ -1176,7 +1356,11 @@ function CatalogProductPicker({
                   className={`w-full grid grid-cols-[64px_1fr] gap-4 p-3 text-left hover:bg-bone/50 ${product.id === currentProductId ? "bg-bone" : ""}`}
                 >
                   {product.image_url ? (
-                    <img src={normalizeSupabaseImageUrl(product.image_url)} alt="" className="h-16 w-16 object-cover bg-bone border border-border" />
+                    <img
+                      src={normalizeSupabaseImageUrl(product.image_url)}
+                      alt=""
+                      className="h-16 w-16 object-cover bg-bone border border-border"
+                    />
                   ) : (
                     <div className="h-16 w-16 bg-bone border border-border" />
                   )}
@@ -1186,7 +1370,9 @@ function CatalogProductPicker({
                       {[product.vendor, product.finish, product.price].filter(Boolean).join(" · ")}
                     </span>
                     {product.product_url && (
-                      <span className="block text-[11px] text-muted-foreground truncate">{product.product_url}</span>
+                      <span className="block text-[11px] text-muted-foreground truncate">
+                        {product.product_url}
+                      </span>
                     )}
                   </span>
                 </button>
@@ -1211,7 +1397,8 @@ function CadLabelSelect({
   disabled?: boolean;
 }) {
   const normalizedValue = value?.trim() || "__none__";
-  const hasCurrentValue = normalizedValue !== "__none__" && options.some((option) => option.value === normalizedValue);
+  const hasCurrentValue =
+    normalizedValue !== "__none__" && options.some((option) => option.value === normalizedValue);
 
   return (
     <Select
@@ -1228,7 +1415,9 @@ function CadLabelSelect({
           <SelectItem value={normalizedValue}>{normalizedValue}</SelectItem>
         )}
         {options.map((option) => (
-          <SelectItem key={option.itemId} value={option.value}>{option.value}</SelectItem>
+          <SelectItem key={option.itemId} value={option.value}>
+            {option.value}
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>
@@ -1261,7 +1450,9 @@ function InlineInput({
       placeholder={placeholder}
       disabled={disabled}
       onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => { if (local !== value) onSave(local); }}
+      onBlur={() => {
+        if (local !== value) onSave(local);
+      }}
       className={`h-8 border-transparent hover:border-input focus:border-input bg-transparent ${className ?? ""}`}
     />
   );
@@ -1271,17 +1462,30 @@ function NotesPopover({ value, onSave }: { value: string; onSave: (v: string) =>
   const [open, setOpen] = useState(false);
   const [local, setLocal] = useState(value);
   return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (o) setLocal(value); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setLocal(value);
+      }}
+    >
       <DialogTrigger asChild>
-        <button className={`text-xs underline-offset-4 hover:underline ${value ? "text-ink" : "text-muted-foreground"}`}>
+        <button
+          className={`text-xs underline-offset-4 hover:underline ${value ? "text-ink" : "text-muted-foreground"}`}
+        >
           {value ? "Edit" : "Add"}
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle className="font-display text-xl font-normal">Notes</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl font-normal">Notes</DialogTitle>
+        </DialogHeader>
         <Textarea value={local} onChange={(e) => setLocal(e.target.value)} rows={5} />
         <button
-          onClick={() => { onSave(local); setOpen(false); }}
+          onClick={() => {
+            onSave(local);
+            setOpen(false);
+          }}
           className="w-full py-2.5 bg-ink text-primary-foreground text-sm"
         >
           Save
@@ -1291,7 +1495,17 @@ function NotesPopover({ value, onSave }: { value: string; onSave: (v: string) =>
   );
 }
 
-function AddCustomItemButton({ roomId, roomName, projectId, sortStart }: { roomId: string; roomName: string; projectId: string; sortStart: number }) {
+function AddCustomItemButton({
+  roomId,
+  roomName,
+  projectId,
+  sortStart,
+}: {
+  roomId: string;
+  roomName: string;
+  projectId: string;
+  sortStart: number;
+}) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
@@ -1299,27 +1513,32 @@ function AddCustomItemButton({ roomId, roomName, projectId, sortStart }: { roomI
 
   const submit = async () => {
     if (!label.trim()) return toast.error("Label required");
-    if (!isUuid(roomId) || !isUuid(projectId)) return toast.error("Could not add this item because the project link is invalid.");
-    await db.bulkInsertMaterialItems([{
-      room_id: roomId,
-      project_id: projectId,
-      item_label: label.trim(),
-      client_product_name: buildClientProductName(roomName, label.trim()),
-      category: category === "Other" ? inferMaterialCategory(label.trim()) : category,
-      is_required: false,
-      sort_order: sortStart,
-      cad_label: null,
-      product_url: null,
-      quantity: null,
-      color: null,
-      notes: null,
-      not_needed: false,
-      product_id: null,
-      scrape_status: "pending",
-      scrape_error: null,
-    }]);
+    if (!isUuid(roomId) || !isUuid(projectId))
+      return toast.error("Could not add this item because the project link is invalid.");
+    await db.bulkInsertMaterialItems([
+      {
+        room_id: roomId,
+        project_id: projectId,
+        item_label: label.trim(),
+        client_product_name: buildClientProductName(roomName, label.trim()),
+        category: category === "Other" ? inferMaterialCategory(label.trim()) : category,
+        is_required: false,
+        sort_order: sortStart,
+        cad_label: null,
+        product_url: null,
+        quantity: null,
+        color: null,
+        notes: null,
+        not_needed: false,
+        product_id: null,
+        scrape_status: "pending",
+        scrape_error: null,
+      },
+    ]);
     qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
-    setLabel(""); setCategory("Other"); setOpen(false);
+    setLabel("");
+    setCategory("Other");
+    setOpen(false);
   };
 
   return (
@@ -1330,22 +1549,36 @@ function AddCustomItemButton({ roomId, roomName, projectId, sortStart }: { roomI
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle className="font-display text-xl font-normal">Add custom item</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl font-normal">Add custom item</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="eyebrow">Item label</Label>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Vent Hood Insert" />
+            <Input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Vent Hood Insert"
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="eyebrow">Category</Label>
             <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {ALL_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {ALL_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-          <button onClick={submit} className="w-full py-2.5 bg-ink text-primary-foreground text-sm">Add</button>
+          <button onClick={submit} className="w-full py-2.5 bg-ink text-primary-foreground text-sm">
+            Add
+          </button>
         </div>
       </DialogContent>
     </Dialog>
@@ -1367,18 +1600,28 @@ function ReviewDialog({
   const itemById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
 
   const update = (idx: number, patch: Partial<ScrapedRow["scraped"]>) =>
-    setEdited((prev) => prev.map((r, i) => (i === idx ? { ...r, scraped: { ...r.scraped, ...patch } } : r)));
+    setEdited((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, scraped: { ...r.scraped, ...patch } } : r)),
+    );
 
   const remove = (idx: number) => setEdited((prev) => prev.filter((_, i) => i !== idx));
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onCancel();
+      }}
+    >
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl font-normal">Review scraped products</DialogTitle>
+          <DialogTitle className="font-display text-2xl font-normal">
+            Review scraped products
+          </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Confirm or edit any details below. Products will be saved to your catalog and linked to each material row.
+          Confirm or edit any details below. Products will be saved to your catalog and linked to
+          each material row.
         </p>
 
         <div className="space-y-5 mt-4">
@@ -1386,37 +1629,104 @@ function ReviewDialog({
             const item = itemById.get(row.material_item_id);
             const failed = !!row.scraped.error;
             return (
-              <div key={row.material_item_id} className="border border-border p-4 grid grid-cols-1 sm:grid-cols-[120px_1fr_auto] gap-4">
+              <div
+                key={row.material_item_id}
+                className="border border-border p-4 grid grid-cols-1 sm:grid-cols-[120px_1fr_auto] gap-4"
+              >
                 <div className="aspect-square bg-bone overflow-hidden">
                   {row.scraped.image_url ? (
-                    <img src={normalizeSupabaseImageUrl(row.scraped.image_url)} alt="" className="w-full h-full object-cover" />
+                    <img
+                      src={normalizeSupabaseImageUrl(row.scraped.image_url)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
-                    <div className="w-full h-full grid place-items-center text-muted-foreground text-xs">No image</div>
+                    <div className="w-full h-full grid place-items-center text-muted-foreground text-xs">
+                      No image
+                    </div>
                   )}
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
                     <span className="eyebrow">{item?.client_product_name || item?.item_label}</span>
                     {row.existing_product_id && (
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-bone">Reused from catalog</span>
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-bone">
+                        Reused from catalog
+                      </span>
                     )}
-                    {failed && <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-rose-100 text-rose-700">Scrape failed — edit manually</span>}
+                    {failed && (
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-rose-100 text-rose-700">
+                        Scrape failed — edit manually
+                      </span>
+                    )}
                   </div>
-                  <a href={row.url} target="_blank" rel="noreferrer" className="block text-xs text-muted-foreground underline-offset-4 hover:underline truncate">{row.url}</a>
+                  <a
+                    href={row.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-xs text-muted-foreground underline-offset-4 hover:underline truncate"
+                  >
+                    {row.url}
+                  </a>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Field label="Name" value={row.scraped.name ?? ""} onChange={(v) => update(idx, { name: v })} />
-                    <Field label="Vendor" value={row.scraped.vendor ?? ""} onChange={(v) => update(idx, { vendor: v })} />
-                    <Field label="SKU" value={row.scraped.sku ?? ""} onChange={(v) => update(idx, { sku: v })} />
-                    <Field label="Color" value={row.scraped.color ?? ""} onChange={(v) => update(idx, { color: v })} />
-                    <Field label="Finish" value={row.scraped.finish ?? ""} onChange={(v) => update(idx, { finish: v })} />
-                    <Field label="Dimensions" value={row.scraped.dimensions ?? ""} onChange={(v) => update(idx, { dimensions: v })} />
-                    <Field label="Price" value={row.scraped.price ?? ""} onChange={(v) => update(idx, { price: v })} />
-                    <Field label="Unit Cost" value={row.scraped.unit_cost ?? ""} onChange={(v) => update(idx, { unit_cost: v })} />
-                    <Field label="Shipping" value={row.scraped.shipping ?? ""} onChange={(v) => update(idx, { shipping: v })} />
-                    <Field label="Image URL" value={row.scraped.image_url ?? ""} onChange={(v) => update(idx, { image_url: v })} className="sm:col-span-2" />
+                    <Field
+                      label="Name"
+                      value={row.scraped.name ?? ""}
+                      onChange={(v) => update(idx, { name: v })}
+                    />
+                    <Field
+                      label="Vendor"
+                      value={row.scraped.vendor ?? ""}
+                      onChange={(v) => update(idx, { vendor: v })}
+                    />
+                    <Field
+                      label="SKU"
+                      value={row.scraped.sku ?? ""}
+                      onChange={(v) => update(idx, { sku: v })}
+                    />
+                    <Field
+                      label="Color"
+                      value={row.scraped.color ?? ""}
+                      onChange={(v) => update(idx, { color: v })}
+                    />
+                    <Field
+                      label="Finish"
+                      value={row.scraped.finish ?? ""}
+                      onChange={(v) => update(idx, { finish: v })}
+                    />
+                    <Field
+                      label="Dimensions"
+                      value={row.scraped.dimensions ?? ""}
+                      onChange={(v) => update(idx, { dimensions: v })}
+                    />
+                    <Field
+                      label="Price"
+                      value={row.scraped.price ?? ""}
+                      onChange={(v) => update(idx, { price: v })}
+                    />
+                    <Field
+                      label="Unit Cost"
+                      value={row.scraped.unit_cost ?? ""}
+                      onChange={(v) => update(idx, { unit_cost: v })}
+                    />
+                    <Field
+                      label="Shipping"
+                      value={row.scraped.shipping ?? ""}
+                      onChange={(v) => update(idx, { shipping: v })}
+                    />
+                    <Field
+                      label="Image URL"
+                      value={row.scraped.image_url ?? ""}
+                      onChange={(v) => update(idx, { image_url: v })}
+                      className="sm:col-span-2"
+                    />
                   </div>
                 </div>
-                <button onClick={() => remove(idx)} className="text-muted-foreground hover:text-ink self-start" title="Skip this row">
+                <button
+                  onClick={() => remove(idx)}
+                  className="text-muted-foreground hover:text-ink self-start"
+                  title="Skip this row"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1425,8 +1735,13 @@ function ReviewDialog({
         </div>
 
         <div className="flex justify-end gap-3 mt-6 sticky bottom-0 bg-background pt-4">
-          <button onClick={onCancel} className="px-5 py-2.5 border border-border text-sm">Cancel</button>
-          <button onClick={() => onCommit(edited)} className="px-5 py-2.5 bg-ink text-primary-foreground text-sm inline-flex items-center gap-2">
+          <button onClick={onCancel} className="px-5 py-2.5 border border-border text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={() => onCommit(edited)}
+            className="px-5 py-2.5 bg-ink text-primary-foreground text-sm inline-flex items-center gap-2"
+          >
             <Check className="w-4 h-4" /> Save {edited.length} to catalog
           </button>
         </div>
@@ -1435,7 +1750,17 @@ function ReviewDialog({
   );
 }
 
-function Field({ label, value, onChange, className }: { label: string; value: string; onChange: (v: string) => void; className?: string }) {
+function Field({
+  label,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
   return (
     <div className={`space-y-1 ${className ?? ""}`}>
       <Label className="eyebrow text-[10px]">{label}</Label>
@@ -1491,9 +1816,10 @@ async function readJsonResponse(response: Response) {
     return JSON.parse(text);
   } catch {
     return {
-      error: response.status === 413 || /request entity too large/i.test(text)
-        ? "That PDF is too large to upload directly. Try again and the browser-side importer will process it locally."
-        : text,
+      error:
+        response.status === 413 || /request entity too large/i.test(text)
+          ? "That PDF is too large to upload directly. Try again and the browser-side importer will process it locally."
+          : text,
     };
   }
 }

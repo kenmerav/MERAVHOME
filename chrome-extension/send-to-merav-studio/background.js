@@ -1,6 +1,7 @@
 const IMAGE_MENU_ID = "send-image-to-merav-studio";
 const PAGE_MENU_ID = "send-page-to-merav-studio";
 const DEFAULT_STUDIO_URL = "https://studio.meravinteriors.com";
+let priceQueueProcessing = false;
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -33,14 +34,56 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "MERAV_SEND_CURRENT_TAB") return false;
-  sendCurrentTabToStudio(message.projectId, message.boardPageId)
-    .then((result) => sendResponse({ ok: true, ...result }))
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : "Could not send product.";
-      sendResponse({ ok: false, error: message });
+  if (message?.type === "MERAV_SEND_CURRENT_TAB") {
+    sendCurrentTabToStudio(message.projectId, message.boardPageId)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "Could not send product.";
+        sendResponse({ ok: false, error: message });
+      });
+    return true;
+  }
+  if (message?.type === "MERAV_START_PRICE_QUEUE") {
+    startPriceQueue(message.projectId, message.mode)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Could not start pricing.",
+        }),
+      );
+    return true;
+  }
+  if (message?.type === "MERAV_GET_PRICE_QUEUE") {
+    chrome.storage.local.get(["priceQueue"], (result) => {
+      if (result.priceQueue?.running) void processPriceQueue();
+      sendResponse({ ok: true, queue: result.priceQueue || null });
     });
-  return true;
+    return true;
+  }
+  if (message?.type === "MERAV_APPROVE_PRICE_CHANGES") {
+    approvePriceChanges(message.projectId, message.changes)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Could not approve price changes.",
+        });
+      });
+    return true;
+  }
+  if (message?.type === "MERAV_UPDATE_CURRENT_PRICE") {
+    updateCurrentPagePrice(message.projectId)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Could not update price.",
+        }),
+      );
+    return true;
+  }
+  return false;
 });
 
 async function sendCurrentTabToStudio(projectIdOverride, boardPageIdOverride) {
@@ -48,7 +91,12 @@ async function sendCurrentTabToStudio(projectIdOverride, boardPageIdOverride) {
   if (!tab?.id || !tab.url) {
     throw new Error("Open a product page first.");
   }
-  return sendImageToStudio({ pageUrl: tab.url, srcUrl: "" }, tab, projectIdOverride, boardPageIdOverride);
+  return sendImageToStudio(
+    { pageUrl: tab.url, srcUrl: "" },
+    tab,
+    projectIdOverride,
+    boardPageIdOverride,
+  );
 }
 
 async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverride) {
@@ -108,7 +156,11 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
   }
 
   const title = body.warning ? "Imported with review needed" : "Sent to MERAV Studio";
-  const message = body.warning || "Product added to the active design board page.";
+  const message =
+    body.warning ||
+    (body.price
+      ? `Product added to the design board with price ${body.price}.`
+      : "Product added to the active design board page. Price was not found.");
   await updateProgress(100, message, { done: true });
   notify(title, message);
   setTimeout(() => updateProgress(0, "", { clearBadge: true }), 1600);
@@ -131,13 +183,234 @@ async function importProduct(studioUrl, extensionToken, payload) {
   return body;
 }
 
+async function getExtensionSettings() {
+  const settings = await chrome.storage.sync.get([
+    "studioUrl",
+    "projectId",
+    "extensionToken",
+    "lastStudioProjectId",
+  ]);
+  const projectId = settings.projectId || settings.lastStudioProjectId;
+  if (!projectId) throw new Error("Choose a Studio project first.");
+  if (!settings.extensionToken) throw new Error("Connect the extension to Studio first.");
+  return {
+    studioUrl: normalizeStudioUrl(settings.studioUrl || DEFAULT_STUDIO_URL),
+    projectId,
+    extensionToken: settings.extensionToken,
+  };
+}
+
+async function extensionPriceRequest(studioUrl, extensionToken, path, options = {}) {
+  const response = await fetch(`${studioUrl}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${extensionToken}`,
+      ...(options.headers || {}),
+    },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.error)
+    throw new Error(body.error || `Studio pricing failed (${response.status}).`);
+  return body;
+}
+
+async function startPriceQueue(projectIdOverride, mode) {
+  const settings = await getExtensionSettings();
+  const projectId = projectIdOverride || settings.projectId;
+  const normalizedMode = mode === "verify" ? "verify" : "missing";
+  const body = await extensionPriceRequest(
+    settings.studioUrl,
+    settings.extensionToken,
+    `/api/extension/prices?projectId=${encodeURIComponent(projectId)}&mode=${normalizedMode}`,
+  );
+  const queue = {
+    projectId,
+    studioUrl: settings.studioUrl,
+    extensionToken: settings.extensionToken,
+    mode: normalizedMode,
+    items: body.items || [],
+    index: 0,
+    processed: 0,
+    saved: 0,
+    matched: 0,
+    unresolved: [],
+    changes: [],
+    running: true,
+  };
+  await chrome.storage.local.set({ priceQueue: queue });
+  broadcastPriceQueue(queue);
+  void processPriceQueue();
+  return { total: queue.items.length };
+}
+
+async function processPriceQueue() {
+  if (priceQueueProcessing) return;
+  priceQueueProcessing = true;
+  const { priceQueue: queue } = await chrome.storage.local.get(["priceQueue"]);
+  try {
+    if (!queue?.running) return;
+    while (queue.index < queue.items.length) {
+      const item = queue.items[queue.index];
+      broadcastPriceQueue(queue, `Checking ${queue.index + 1} of ${queue.items.length}...`);
+      try {
+        const tab = await chrome.tabs.create({ url: item.sourcePageUrl, active: false });
+        if (!tab.id) throw new Error("Could not open product page.");
+        await waitForTabLoad(tab.id);
+        const extracted = await extractFromTab(tab.id, {
+          pageUrl: item.sourcePageUrl,
+          clickedImageUrl: "",
+        });
+        await chrome.tabs.remove(tab.id).catch(() => undefined);
+        const response = await extensionPriceRequest(
+          queue.studioUrl,
+          queue.extensionToken,
+          "/api/extension/prices",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              action: "capture",
+              mode: queue.mode,
+              projectId: queue.projectId,
+              materialItemId: item.materialItemId,
+              sourcePageUrl: item.sourcePageUrl,
+              product: { ...extracted.product, imageUrl: extracted.imageUrl },
+            }),
+          },
+        );
+        if (response.status === "changed") {
+          queue.changes.push({
+            ...item,
+            currentPrice: response.currentPrice,
+            livePrice: response.livePrice,
+          });
+        } else if (response.status === "unresolved") {
+          queue.unresolved.push({ ...item, reason: "No reliable live price found" });
+        } else if (response.status === "match") {
+          queue.matched += 1;
+        } else {
+          queue.saved += 1;
+        }
+      } catch (error) {
+        queue.unresolved.push({
+          ...item,
+          reason: error instanceof Error ? error.message : "Could not check this page",
+        });
+      }
+      queue.processed += 1;
+      queue.index += 1;
+      await chrome.storage.local.set({ priceQueue: queue });
+    }
+    queue.running = false;
+    await chrome.storage.local.set({ priceQueue: queue });
+    broadcastPriceQueue(
+      queue,
+      queue.changes.length
+        ? `${queue.changes.length} price change${queue.changes.length === 1 ? "" : "s"} ready for approval.`
+        : "Price check complete.",
+    );
+    notify(
+      "MERAV Studio pricing complete",
+      queue.changes.length
+        ? `${queue.changes.length} price changes need approval.`
+        : "Pricing queue complete.",
+    );
+  } finally {
+    priceQueueProcessing = false;
+  }
+}
+
+function waitForTabLoad(tabId) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      reject(new Error("Product page took too long to load."));
+    }, 15000);
+    const onUpdated = (updatedTabId, changeInfo) => {
+      if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      setTimeout(resolve, 900);
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+async function approvePriceChanges(projectIdOverride, changes) {
+  const settings = await getExtensionSettings();
+  const result = await extensionPriceRequest(
+    settings.studioUrl,
+    settings.extensionToken,
+    "/api/extension/prices",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action: "approve",
+        projectId: projectIdOverride || settings.projectId,
+        changes,
+      }),
+    },
+  );
+  const { priceQueue: queue } = await chrome.storage.local.get(["priceQueue"]);
+  if (queue) {
+    queue.changes = [];
+    await chrome.storage.local.set({ priceQueue: queue });
+    broadcastPriceQueue(
+      queue,
+      `${result.updated || 0} price change${result.updated === 1 ? "" : "s"} applied.`,
+    );
+  }
+  return result;
+}
+
+async function updateCurrentPagePrice(projectIdOverride) {
+  const settings = await getExtensionSettings();
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !tab.url) throw new Error("Open a product page first.");
+  const extracted = await extractFromTab(tab.id, { pageUrl: tab.url, clickedImageUrl: "" });
+  const projectId = projectIdOverride || settings.projectId;
+  const queue = await extensionPriceRequest(
+    settings.studioUrl,
+    settings.extensionToken,
+    `/api/extension/prices?projectId=${encodeURIComponent(projectId)}&mode=verify`,
+  );
+  const current = (queue.items || []).find(
+    (item) => item.sourcePageUrl === (extracted.sourcePageUrl || tab.url),
+  );
+  if (!current) throw new Error("This product link is not in the selected project's materials.");
+  return extensionPriceRequest(
+    settings.studioUrl,
+    settings.extensionToken,
+    "/api/extension/prices",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action: "capture",
+        mode: "current",
+        projectId,
+        materialItemId: current.materialItemId,
+        sourcePageUrl: current.sourcePageUrl,
+        product: { ...extracted.product, imageUrl: extracted.imageUrl },
+      }),
+    },
+  );
+}
+
+function broadcastPriceQueue(queue, message = "") {
+  chrome.runtime
+    .sendMessage({ type: "MERAV_PRICE_QUEUE_PROGRESS", queue, message })
+    .catch(() => {});
+}
+
 function needsBrowserImageData(imageUrl) {
   return /^data:image\//i.test(imageUrl || "") || /^(blob|filesystem):/i.test(imageUrl || "");
 }
 
 function shouldRetryWithBrowserImage(error) {
   const message = error instanceof Error ? error.message : String(error || "");
-  return /download product image|selected image url|product image is required|image url did not return an image/i.test(message);
+  return /download product image|selected image url|product image is required|image url did not return an image/i.test(
+    message,
+  );
 }
 
 async function imageDataUrlFromUrl(imageUrl) {
@@ -213,14 +486,18 @@ function notify(title, message) {
 async function updateProgress(percent, message, options = {}) {
   const nextPercent = Math.max(0, Math.min(100, Number(percent) || 0));
   const badgeText = options.clearBadge || nextPercent <= 0 ? "" : `${nextPercent}%`;
-  await chrome.action.setBadgeBackgroundColor({ color: nextPercent >= 100 ? "#2f7d46" : "#17130f" });
+  await chrome.action.setBadgeBackgroundColor({
+    color: nextPercent >= 100 ? "#2f7d46" : "#17130f",
+  });
   await chrome.action.setBadgeText({ text: badgeText });
-  chrome.runtime.sendMessage({
-    type: "MERAV_IMPORT_PROGRESS",
-    percent: nextPercent,
-    message,
-    done: Boolean(options.done),
-  }).catch(() => {});
+  chrome.runtime
+    .sendMessage({
+      type: "MERAV_IMPORT_PROGRESS",
+      percent: nextPercent,
+      message,
+      done: Boolean(options.done),
+    })
+    .catch(() => {});
 }
 
 function pageFallbackExtraction(fallback) {

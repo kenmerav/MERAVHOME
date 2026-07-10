@@ -9,7 +9,13 @@
         margin: 0;
         background: #f7f5ef;
         color: #17130f;
-        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
       }
       main {
         padding: 18px;
@@ -105,6 +111,61 @@
       .connection.visible {
         display: block;
       }
+      .pricing {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid #ded9cd;
+      }
+      .pricing h2 {
+        margin: 0 0 4px;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .pricing button {
+        margin-top: 8px;
+      }
+      .price-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .price-actions button {
+        font-size: 12px;
+        padding: 9px;
+      }
+      .queue-summary {
+        margin-top: 10px;
+        color: #675f55;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .price-review {
+        margin-top: 10px;
+        max-height: 150px;
+        overflow-y: auto;
+      }
+      .price-change {
+        padding: 8px 0;
+        border-top: 1px solid #ece7dd;
+        font-size: 12px;
+      }
+      .price-change label {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0;
+        text-transform: none;
+        color: #17130f;
+      }
+      .price-change a {
+        display: block;
+        margin-top: 3px;
+        color: #675f55;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>
@@ -131,6 +192,17 @@
         <button id="send">Send Current Product</button>
         <button id="options" class="secondary">Settings</button>
       </div>
+      <section class="pricing">
+        <h2>Product Pricing</h2>
+        <div class="price-actions">
+          <button id="fillMissing" class="secondary">Fill Missing Prices</button>
+          <button id="verifyPrices" class="secondary">Verify Prices</button>
+        </div>
+        <button id="updateCurrentPrice" class="secondary">Update Current Page Price</button>
+        <div id="queueSummary" class="queue-summary"></div>
+        <div id="priceReview" class="price-review"></div>
+        <button id="approveChanges" hidden>Apply Selected Price Changes</button>
+      </section>
       <div id="progress" class="progress" hidden>
         <div id="progressBar" class="progress-bar"></div>
       </div>
