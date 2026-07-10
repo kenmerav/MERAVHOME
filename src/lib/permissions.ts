@@ -56,7 +56,9 @@ export function canEditSpecBook(
 ) {
   return (
     !!profile?.is_active &&
-    (isStudioTeamRole(profile.role) || SPEC_BOOK_EDITOR_EMAILS.has(profile.email.toLowerCase()))
+    (isStudioTeamRole(profile.role) ||
+      isContractorRole(profile.role) ||
+      SPEC_BOOK_EDITOR_EMAILS.has(profile.email.toLowerCase()))
   );
 }
 
