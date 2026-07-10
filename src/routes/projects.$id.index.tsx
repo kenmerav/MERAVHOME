@@ -1494,12 +1494,16 @@ function RoomCard({
   const selectedBoardPage = manualBoardPage ?? automaticBoardPage;
   const heroUrl =
     selectedBoardPage ? null : room.cover_image_url || renderingHero?.url || sketchupHero?.url || null;
-  const roomBoardPages = boardPages.filter((page) => page.roomId === room.id);
-  const roomApprovalStatus = roomBoardPages.every((page) => page.roomApprovalStatus === "declined")
-    ? "declined"
-    : roomBoardPages.every((page) => page.roomApprovalStatus === "approved")
-      ? "approved"
-      : null;
+  const roomBoardPages = boardPages.filter(
+    (page) => page.roomId === room.id || page.id === selectedBoardPage?.id,
+  );
+  const roomApprovalStatus =
+    roomBoardPages.length > 0 && roomBoardPages.every((page) => page.roomApprovalStatus === "declined")
+      ? "declined"
+      : roomBoardPages.length > 0 &&
+          roomBoardPages.every((page) => page.roomApprovalStatus === "approved")
+        ? "approved"
+        : null;
 
   const remove = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1556,10 +1560,15 @@ function RoomCard({
       if (!Array.isArray(currentState.pages)) {
         throw new Error("Could not find this project's design board pages.");
       }
+      const roomBoardPageIds = new Set(roomBoardPages.map((page) => page.id));
       const affectedPageIds = currentState.pages.flatMap((page) => {
         if (!page || typeof page !== "object") return [];
         const candidate = page as { id?: unknown; roomId?: unknown };
-        return candidate.roomId === room.id && typeof candidate.id === "string" ? [candidate.id] : [];
+        return (candidate.roomId === room.id ||
+          (typeof candidate.id === "string" && roomBoardPageIds.has(candidate.id))) &&
+          typeof candidate.id === "string"
+          ? [candidate.id]
+          : [];
       });
       if (!affectedPageIds.length) {
         throw new Error("No design board page is assigned to this room.");
@@ -1583,8 +1592,8 @@ function RoomCard({
         ...currentState,
         pages: currentState.pages.map((page) => {
           if (!page || typeof page !== "object") return page;
-          const candidate = page as { roomId?: unknown };
-          if (candidate.roomId !== room.id) return page;
+          const candidate = page as { id?: unknown };
+          if (typeof candidate.id !== "string" || !affectedPageIds.includes(candidate.id)) return page;
           const nextPage = {
             ...page,
             hidden: decision === "declined",
@@ -1635,7 +1644,8 @@ function RoomCard({
       } else {
         const approvedPages = currentState.pages.filter((page) => {
           if (!page || typeof page !== "object") return false;
-          return (page as { roomId?: unknown }).roomId === room.id;
+          const pageId = (page as { id?: unknown }).id;
+          return typeof pageId === "string" && affectedPageIds.includes(pageId);
         });
         const savedSnapshots = approvedPages.flatMap((page) => {
           const snapshots = (page as { declinedMaterialItems?: unknown }).declinedMaterialItems;
