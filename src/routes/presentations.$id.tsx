@@ -1835,14 +1835,16 @@ function PresentationPage() {
                   />
                 )}
 
-                <PresentationExtraPageManager
-                  afterSlideKey={current.slideKey}
-                  slots={slotsByAfterKey.get(current.slideKey) ?? []}
-                  pages={designBoardPages}
-                  onAdd={() => void addPresentationExtraPage(current.slideKey)}
-                  onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
-                  onRemove={(slotId) => void removePresentationExtraPage(slotId)}
-                />
+                {canEditPresentation && (
+                  <PresentationExtraPageManager
+                    afterSlideKey={current.slideKey}
+                    slots={slotsByAfterKey.get(current.slideKey) ?? []}
+                    pages={designBoardPages}
+                    onAdd={() => void addPresentationExtraPage(current.slideKey)}
+                    onChange={(slotId, pageId) => void updatePresentationExtraPage(slotId, pageId)}
+                    onRemove={(slotId) => void removePresentationExtraPage(slotId)}
+                  />
+                )}
               </div>
             );
           })}
