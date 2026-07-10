@@ -836,6 +836,15 @@ function SharedDashboardOverview({
                         Spec Book
                       </Link>
                     )}
+                    {isClientUser && (
+                      <Link
+                        to="/client/financials"
+                        search={{ project: project.id }}
+                        className="text-xs border border-border px-3 py-1.5 hover:border-ink"
+                      >
+                        Invoices
+                      </Link>
+                    )}
                     {project.access.designBoards && (
                       <Link to="/projects/$id/design-boards" params={{ id: project.id }} className="text-xs border border-border px-3 py-1.5 hover:border-ink">
                         Design Boards
@@ -844,15 +853,6 @@ function SharedDashboardOverview({
                     {project.access.constructionDocs && (
                       <Link to="/projects/$id/construction-docs" params={{ id: project.id }} className="text-xs border border-border px-3 py-1.5 hover:border-ink">
                         Construction Docs
-                      </Link>
-                    )}
-                    {isClientUser && (
-                      <Link
-                        to="/client/financials"
-                        search={{ project: project.id }}
-                        className="text-xs border border-border px-3 py-1.5 hover:border-ink"
-                      >
-                        Invoices
                       </Link>
                     )}
                     {timelines.some((timeline) => timeline.project_id === project.id) && (
