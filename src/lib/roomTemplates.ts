@@ -128,7 +128,7 @@ export function inferMaterialCategory(label: string | null | undefined, productU
     return "Accent Mirrors";
   }
 
-  if (/\b(tile|tiles|zellige|backsplash|mosaic|stone tile|floor tile|wall tile)\b/.test(text)) {
+  if (/\b(tile|tiles|zellige|backsplash|mosaic|stone tile|floor tile|wall tile|shower wall)\b/.test(text)) {
     return "Tile & Stone";
   }
 
