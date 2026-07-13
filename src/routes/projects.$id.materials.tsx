@@ -6,8 +6,6 @@ import {
   Plus,
   Sparkles,
   Trash2,
-  X,
-  Check,
   Upload,
   Pencil,
   Search,
@@ -178,7 +176,6 @@ function MaterialsPage() {
   const [scraping, setScraping] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState("");
   const [importingPdf, setImportingPdf] = useState(false);
-  const [reviewRows, setReviewRows] = useState<ScrapedRow[] | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
 
   const canManageMaterials =
@@ -229,6 +226,42 @@ function MaterialsPage() {
     [items, project?.updated_at, rooms],
   );
 
+  const saveScrapedRows = async (rows: ScrapedRow[]) => {
+    const successfulRows = rows.filter((row) => !row.scraped.error);
+    const failedCount = rows.length - successfulRows.length;
+
+    if (successfulRows.length > 0) {
+      setScrapeStatus(
+        `Saving ${successfulRows.length} product${successfulRows.length === 1 ? "" : "s"}...`,
+      );
+      const safeRows = successfulRows
+        .map((row) => ({
+          ...row,
+          material_item_id: cleanUuid(row.material_item_id) ?? "",
+          existing_product_id: cleanUuid(row.existing_product_id),
+        }))
+        .filter((row) => row.material_item_id);
+      const res = await fetch("/api/scrape-materials", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: safeRows }),
+      });
+      const body = await readApiJson<{ error?: string }>(res);
+      if (!res.ok) throw new Error(body?.error || "Could not save scraped products");
+      toast.success(
+        `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
+      );
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+    }
+
+    if (failedCount > 0) {
+      toast.warning(
+        `${failedCount} item${failedCount === 1 ? " was" : "s were"} left unchanged because product details could not be scraped.`,
+      );
+    }
+  };
+
   const runScrape = async () => {
     if (!projectId) return toast.error("Invalid project link.");
     setScraping(true);
@@ -244,7 +277,7 @@ function MaterialsPage() {
       while (true) {
         setScrapeStatus(
           collectedRows.length > 0
-            ? `Scraping... ${collectedRows.length} ready for review`
+            ? `Scraping... ${collectedRows.length} found`
             : "Finding product details...",
         );
         const res = await fetch("/api/scrape-materials", {
@@ -312,7 +345,7 @@ function MaterialsPage() {
         batchCount += 1;
         if (rows.length === 0 || remainingCount === 0) break;
         if (batchCount > 100) {
-          throw new Error("Scrape stopped after 100 batches. Save what opened, then run it again.");
+          throw new Error("Scrape stopped after 100 batches. Run it again to continue.");
         }
       }
 
@@ -332,41 +365,13 @@ function MaterialsPage() {
             : "Nothing new to scrape.",
         );
       } else {
-        setReviewRows(rows);
-        toast.info(`Opened ${rows.length} item${rows.length === 1 ? "" : "s"} for review.`);
+        await saveScrapedRows(rows);
       }
     } catch (e: any) {
       toast.error(e?.message || "Scrape failed");
     } finally {
       setScrapeStatus("");
       setScraping(false);
-    }
-  };
-
-  const commitReview = async (final: ScrapedRow[]) => {
-    try {
-      const safeRows = final
-        .map((row) => ({
-          ...row,
-          material_item_id: cleanUuid(row.material_item_id) ?? "",
-          existing_product_id: cleanUuid(row.existing_product_id),
-        }))
-        .filter((row) => row.material_item_id);
-      const res = await fetch("/api/scrape-materials", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: safeRows }),
-      });
-      const body = await readApiJson<{ error?: string }>(res);
-      if (!res.ok) throw new Error(body?.error || "Could not save");
-      toast.success(
-        `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
-      );
-      setReviewRows(null);
-      qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
-      qc.invalidateQueries({ queryKey: ["products"] });
-    } catch (e: any) {
-      toast.error(e?.message || "Could not save");
     }
   };
 
@@ -532,14 +537,6 @@ function MaterialsPage() {
           </div>
         )}
 
-        {reviewRows && (
-          <ReviewDialog
-            rows={reviewRows}
-            items={items}
-            onCancel={() => setReviewRows(null)}
-            onCommit={commitReview}
-          />
-        )}
       </div>
     </AppShell>
   );
@@ -1582,190 +1579,6 @@ function AddCustomItemButton({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ReviewDialog({
-  rows,
-  items,
-  onCancel,
-  onCommit,
-}: {
-  rows: ScrapedRow[];
-  items: MaterialItem[];
-  onCancel: () => void;
-  onCommit: (rows: ScrapedRow[]) => void;
-}) {
-  const [edited, setEdited] = useState<ScrapedRow[]>(rows);
-  const itemById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
-
-  const update = (idx: number, patch: Partial<ScrapedRow["scraped"]>) =>
-    setEdited((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, scraped: { ...r.scraped, ...patch } } : r)),
-    );
-
-  const remove = (idx: number) => setEdited((prev) => prev.filter((_, i) => i !== idx));
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => {
-        if (!o) onCancel();
-      }}
-    >
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-display text-2xl font-normal">
-            Review scraped products
-          </DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Confirm or edit any details below. Products will be saved to your catalog and linked to
-          each material row.
-        </p>
-
-        <div className="space-y-5 mt-4">
-          {edited.map((row, idx) => {
-            const item = itemById.get(row.material_item_id);
-            const failed = !!row.scraped.error;
-            return (
-              <div
-                key={row.material_item_id}
-                className="border border-border p-4 grid grid-cols-1 sm:grid-cols-[120px_1fr_auto] gap-4"
-              >
-                <div className="aspect-square bg-bone overflow-hidden">
-                  {row.scraped.image_url ? (
-                    <img
-                      src={normalizeSupabaseImageUrl(row.scraped.image_url)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full grid place-items-center text-muted-foreground text-xs">
-                      No image
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className="eyebrow">{item?.client_product_name || item?.item_label}</span>
-                    {row.existing_product_id && (
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-bone">
-                        Reused from catalog
-                      </span>
-                    )}
-                    {failed && (
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-rose-100 text-rose-700">
-                        Scrape failed — edit manually
-                      </span>
-                    )}
-                  </div>
-                  <a
-                    href={row.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block text-xs text-muted-foreground underline-offset-4 hover:underline truncate"
-                  >
-                    {row.url}
-                  </a>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Field
-                      label="Name"
-                      value={row.scraped.name ?? ""}
-                      onChange={(v) => update(idx, { name: v })}
-                    />
-                    <Field
-                      label="Vendor"
-                      value={row.scraped.vendor ?? ""}
-                      onChange={(v) => update(idx, { vendor: v })}
-                    />
-                    <Field
-                      label="SKU"
-                      value={row.scraped.sku ?? ""}
-                      onChange={(v) => update(idx, { sku: v })}
-                    />
-                    <Field
-                      label="Color"
-                      value={row.scraped.color ?? ""}
-                      onChange={(v) => update(idx, { color: v })}
-                    />
-                    <Field
-                      label="Finish"
-                      value={row.scraped.finish ?? ""}
-                      onChange={(v) => update(idx, { finish: v })}
-                    />
-                    <Field
-                      label="Dimensions"
-                      value={row.scraped.dimensions ?? ""}
-                      onChange={(v) => update(idx, { dimensions: v })}
-                    />
-                    <Field
-                      label="Price"
-                      value={row.scraped.price ?? ""}
-                      onChange={(v) => update(idx, { price: v })}
-                    />
-                    <Field
-                      label="Unit Cost"
-                      value={row.scraped.unit_cost ?? ""}
-                      onChange={(v) => update(idx, { unit_cost: v })}
-                    />
-                    <Field
-                      label="Shipping"
-                      value={row.scraped.shipping ?? ""}
-                      onChange={(v) => update(idx, { shipping: v })}
-                    />
-                    <Field
-                      label="Image URL"
-                      value={row.scraped.image_url ?? ""}
-                      onChange={(v) => update(idx, { image_url: v })}
-                      className="sm:col-span-2"
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={() => remove(idx)}
-                  className="text-muted-foreground hover:text-ink self-start"
-                  title="Skip this row"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex justify-end gap-3 mt-6 sticky bottom-0 bg-background pt-4">
-          <button onClick={onCancel} className="px-5 py-2.5 border border-border text-sm">
-            Cancel
-          </button>
-          <button
-            onClick={() => onCommit(edited)}
-            className="px-5 py-2.5 bg-ink text-primary-foreground text-sm inline-flex items-center gap-2"
-          >
-            <Check className="w-4 h-4" /> Save {edited.length} to catalog
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  className,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  className?: string;
-}) {
-  return (
-    <div className={`space-y-1 ${className ?? ""}`}>
-      <Label className="eyebrow text-[10px]">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8" />
-    </div>
   );
 }
 

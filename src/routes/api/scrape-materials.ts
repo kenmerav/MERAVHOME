@@ -390,7 +390,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
         }
       },
 
-      // Phase 2 — commit reviewed rows to catalog + link material_items
+      // Phase 2 — save scraped rows to catalog + link material_items.
       PUT: async ({ request }) => {
         try {
           const { rows } = (await request.json()) as {
