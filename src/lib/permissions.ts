@@ -62,6 +62,20 @@ export function canEditSpecBook(
   );
 }
 
+export function canDownloadSpecBookPdf(
+  profile: Pick<UserProfile, "is_active" | "role"> | null | undefined,
+  project: Pick<
+    Project,
+    "client_can_download_spec_book_pdf" | "contractor_can_download_spec_book_pdf"
+  > | null | undefined,
+) {
+  if (!profile?.is_active || !project) return false;
+  if (isStudioTeamRole(profile.role)) return true;
+  if (isContractorRole(profile.role)) return project.contractor_can_download_spec_book_pdf === true;
+  if (isClientRole(profile.role)) return project.client_can_download_spec_book_pdf === true;
+  return false;
+}
+
 export type ProjectSurface = "specBook" | "presentations" | "designBoards" | "constructionDocs";
 
 export function canViewProjectSurface(

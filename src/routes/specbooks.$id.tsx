@@ -22,6 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { toast } from "sonner";
 import {
+  canDownloadSpecBookPdf,
   canEditSpecBook,
   canUpdateSpecOrderingForRole,
   canViewProjectSurface,
@@ -388,6 +389,7 @@ export function SpecBookDocument({
   const visibility = publicView
     ? { showPricing: true, showLinks: true, showOrdering: true }
     : specBookVisibilityForRole(profile, project);
+  const canDownloadPdf = publicView || canDownloadSpecBookPdf(profile, project);
   const specBookUrl = `https://studio.meravinteriors.com/specbooks/public/${id}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&format=svg&data=${encodeURIComponent(
     specBookUrl,
@@ -502,12 +504,14 @@ export function SpecBookDocument({
                 View Presentation
               </Link>
             )}
-            <button
-              onClick={printSpecBook}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
-            >
-              <Printer className="w-4 h-4" /> Print / PDF
-            </button>
+            {canDownloadPdf && (
+              <button
+                onClick={printSpecBook}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink text-primary-foreground text-sm"
+              >
+                <Printer className="w-4 h-4" /> Print / PDF
+              </button>
+            )}
           </div>
         </div>
 
