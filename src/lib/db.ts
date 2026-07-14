@@ -123,6 +123,13 @@ export interface Project {
   contractor_spec_can_update_ordering: boolean;
   is_pinned: boolean;
   last_opened_at: string | null;
+  accepted_date: string | null;
+  turnaround_speed: "Standard" | "Priority" | "Rush" | "Custom" | null;
+  promised_completion_date: string | null;
+  forecast_completion_date: string | null;
+  progress_override: number | null;
+  health_override: "on_track" | "at_risk" | "critical" | "late" | null;
+  health_override_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -383,6 +390,8 @@ export interface EmployeeTimeEntry {
   paid: boolean;
   paid_on: string | null;
   paid_through: string | null;
+  project_id?: string | null;
+  todo_id?: string | null;
   created_at: string;
   updated_at: string;
   user?: Pick<UserProfile, "id" | "email" | "full_name" | "hourly_rate"> | null;
@@ -515,7 +524,7 @@ export const db = {
     design_notes?: string;
   }) => (await supabase.from("projects").insert(p).select().single()).data as Project | null,
   updateProject: async (id: string, p: Partial<Project>) =>
-    (await supabase.from("projects").update(p).eq("id", id).select().single())
+    (await supabase.from("projects").update(p as any).eq("id", id).select().single())
       .data as Project | null,
   markProjectOpened: async (id: string) =>
     supabase.from("projects").update({ last_opened_at: new Date().toISOString() } as any).eq("id", id),
@@ -1056,7 +1065,7 @@ export const db = {
     entry: Pick<
       EmployeeTimeEntry,
       "user_id" | "work_date" | "hours" | "task_project" | "hourly_rate"
-    >,
+    > & Pick<EmployeeTimeEntry, "project_id" | "todo_id">,
   ) =>
     (
       await supabase

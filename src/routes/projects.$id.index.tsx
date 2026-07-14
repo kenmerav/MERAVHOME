@@ -80,6 +80,7 @@ import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { templateForRoomName } from "@/lib/roomTemplates";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
+import { ProjectManagementSummary } from "@/components/ProjectManagementSummary";
 
 export const Route = createFileRoute("/projects/$id/")({
   head: () => ({ meta: [{ title: "Project — MERAV Studio" }] }),
@@ -371,6 +372,8 @@ function ProjectDetailPage() {
             </div>
           </section>
         )}
+
+        {!isSharedUser && <ProjectManagementSummary projectId={id} />}
 
         {isSharedUser && (
           <SharedProjectPortal project={project} projectId={id} profile={profile} />

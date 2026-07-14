@@ -874,6 +874,22 @@ function SharedDashboardOverview({
 function CompleteSharedTodoButton({ todoId }: { todoId?: string }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [reply, setReply] = useState("");
+  const { data: discussion, isLoading: loadingDiscussion } = useQuery({
+    queryKey: ["sharedTodoMessages", todoId],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch(`/api/project-todos?taskId=${encodeURIComponent(todoId || "")}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not load replies.");
+      return body as { messages: Array<{ id: string; body: string; created_at: string; author?: { full_name?: string; email?: string } }> };
+    },
+    enabled: replyOpen && Boolean(todoId),
+  });
 
   const complete = async () => {
     if (!todoId) return;
@@ -891,7 +907,7 @@ function CompleteSharedTodoButton({ todoId }: { todoId?: string }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || "Could not complete to-do.");
-      toast.success("To-do completed");
+      toast.success("Sent to Studio for review");
       qc.invalidateQueries({ queryKey: ["clientDashboard"] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not complete to-do.");
@@ -900,16 +916,64 @@ function CompleteSharedTodoButton({ todoId }: { todoId?: string }) {
     }
   };
 
+  const sendReply = async () => {
+    if (!todoId || !reply.trim()) return;
+    setBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch("/api/project-todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ action: "message", todo_id: todoId, message: reply }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not send reply.");
+      setReply("");
+      qc.invalidateQueries({ queryKey: ["sharedTodoMessages", todoId] });
+      toast.success("Reply sent to Studio");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send reply.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <button
-      type="button"
-      onClick={complete}
-      disabled={busy || !todoId}
-      className="inline-flex items-center gap-2 text-sm border border-border px-4 py-2 hover:border-ink disabled:opacity-50"
-    >
-      <CheckCircle2 className="h-4 w-4" />
-      {busy ? "Completing..." : "Mark Done"}
-    </button>
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => setReplyOpen(true)}
+        disabled={!todoId}
+        className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink disabled:opacity-50"
+      >
+        Reply
+      </button>
+      <button
+        type="button"
+        onClick={complete}
+        disabled={busy || !todoId}
+        className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink disabled:opacity-50"
+      >
+        <CheckCircle2 className="h-4 w-4" />
+        {busy ? "Sending..." : "Mark Ready"}
+      </button>
+      <Dialog open={replyOpen} onOpenChange={setReplyOpen}>
+        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+          <DialogHeader><DialogTitle className="font-display text-3xl">Task Replies</DialogTitle></DialogHeader>
+          <div className="space-y-2 border-y border-border py-4">
+            {loadingDiscussion ? <p className="text-sm text-muted-foreground">Loading replies...</p> : discussion?.messages.length ? discussion.messages.map((message) => (
+              <div key={message.id} className="border border-border bg-bone/20 p-3 text-sm">
+                <div className="mb-1 text-xs text-muted-foreground">{message.author?.full_name || message.author?.email || "Studio"}</div>
+                {message.body}
+              </div>
+            )) : <p className="text-sm text-muted-foreground">No replies yet.</p>}
+          </div>
+          <Textarea rows={3} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Add a question or update..." />
+          <button type="button" disabled={busy || !reply.trim()} onClick={sendReply} className="bg-ink px-4 py-2.5 text-sm text-white disabled:opacity-50">{busy ? "Sending..." : "Send Reply"}</button>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

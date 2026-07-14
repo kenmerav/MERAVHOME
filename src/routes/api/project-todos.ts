@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { canManageStudio, canViewFinancials } from "@/lib/permissions";
+import { canManageStudio, canViewFinancials, isStudioTeamRole } from "@/lib/permissions";
 
-type TodoStatus = "open" | "complete";
+const admin = supabaseAdmin as any;
+
+type TodoStatus = "suggested" | "open" | "ready" | "in_progress" | "waiting" | "blocked" | "complete" | "cancelled";
 type TodoPriority = "low" | "normal" | "high";
 
-const STATUSES: TodoStatus[] = ["open", "complete"];
+const STATUSES: TodoStatus[] = ["suggested", "open", "ready", "in_progress", "waiting", "blocked", "complete", "cancelled"];
 const PRIORITIES: TodoPriority[] = ["low", "normal", "high"];
 
 function json(data: unknown, status = 200) {
@@ -42,10 +44,10 @@ async function requireActiveUser(request: Request) {
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
   if (!token) return { error: json({ error: "Sign in first." }, 401) };
 
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return { error: json({ error: "Your session is no longer valid." }, 401) };
 
-  const { data: profile, error: profileError } = await supabaseAdmin
+  const { data: profile, error: profileError } = await admin
     .from("user_profiles")
     .select("*")
     .eq("id", userData.user.id)
@@ -58,7 +60,7 @@ async function requireActiveUser(request: Request) {
 }
 
 async function userCanAccessProject(userId: string, projectId: string) {
-  const { data } = await supabaseAdmin
+  const { data } = await admin
     .from("user_project_assignments")
     .select("project_id")
     .eq("user_id", userId)
@@ -68,7 +70,7 @@ async function userCanAccessProject(userId: string, projectId: string) {
 }
 
 async function getProjectAssignees(projectId: string) {
-  const { data: assignments, error: assignmentError } = await supabaseAdmin
+  const { data: assignments, error: assignmentError } = await admin
     .from("user_project_assignments")
     .select("user_id")
     .eq("project_id", projectId);
@@ -77,7 +79,7 @@ async function getProjectAssignees(projectId: string) {
   const userIds = Array.from(new Set((assignments ?? []).map((row: any) => row.user_id).filter(Boolean)));
   if (!userIds.length) return [];
 
-  const { data: users, error: usersError } = await supabaseAdmin
+  const { data: users, error: usersError } = await admin
     .from("user_profiles")
     .select("id,email,full_name,role,is_active")
     .in("id", userIds)
@@ -102,6 +104,41 @@ export const Route = createFileRoute("/api/project-todos")({
 
           const url = new URL(request.url);
           const projectId = cleanText(url.searchParams.get("projectId"));
+          const taskId = cleanText(url.searchParams.get("taskId"));
+          if (taskId) {
+            const { data: task, error: taskError } = await admin
+              .from("shared_project_todos" as any)
+              .select("id,project_id,assigned_user_id,visibility")
+              .eq("id", taskId)
+              .maybeSingle();
+            if (taskError || !task) return json({ error: "To-do not found." }, 404);
+            const isStudio = isStudioTeamRole(access.profile.role);
+            if (!isStudio && (task.assigned_user_id !== access.user.id || task.visibility !== "assigned_external")) {
+              return json({ error: "You do not have access to this to-do." }, 403);
+            }
+            const { data: messages, error: messageError } = await admin
+              .from("project_todo_messages" as any)
+              .select("*, author:user_profiles(id,email,full_name,role)")
+              .eq("todo_id", taskId)
+              .in("visibility", isStudio ? ["shared", "internal"] : ["shared"])
+              .order("created_at");
+            if (messageError) return json({ error: messageError.message }, 500);
+            const attachmentQuery = admin
+              .from("project_todo_attachments" as any)
+              .select("*")
+              .eq("todo_id", taskId)
+              .order("created_at");
+            const { data: attachments, error: attachmentError } = await (isStudio
+              ? attachmentQuery
+              : attachmentQuery.eq("visibility", "shared"));
+            if (attachmentError) return json({ error: attachmentError.message }, 500);
+            const signedAttachments = await Promise.all((attachments ?? []).map(async (attachment: any) => {
+              if (!attachment.storage_path) return { ...attachment, signed_url: attachment.external_url };
+              const { data: signed } = await admin.storage.from("project-task-attachments").createSignedUrl(attachment.storage_path, 60 * 60);
+              return { ...attachment, signed_url: signed?.signedUrl ?? null };
+            }));
+            return json({ messages: messages ?? [], attachments: signedAttachments });
+          }
           if (!projectId) return json({ error: "Missing project id." }, 400);
 
           const isStudio = canManageStudio(access.profile) || canViewFinancials(access.profile);
@@ -109,22 +146,30 @@ export const Route = createFileRoute("/api/project-todos")({
             return json({ error: "You do not have access to this project." }, 403);
           }
 
-          const query = supabaseAdmin
+          const query = admin
             .from("shared_project_todos" as any)
-            .select("*, assigned_user:user_profiles!shared_project_todos_assigned_user_id_fkey(id,email,full_name,role)")
+            .select("*")
             .eq("project_id", projectId)
+            .eq("visibility", "assigned_external")
             .order("status", { ascending: false })
             .order("due_date", { ascending: true, nullsFirst: false })
             .order("created_at", { ascending: false });
 
-          const { data, error } = await (isStudio ? query : query.eq("assigned_user_id", access.user.id));
+          const { data, error } = await (isStudio
+            ? query
+            : query.eq("assigned_user_id", access.user.id).eq("visibility", "assigned_external"));
           if (error) {
             if (isMissingTable(error)) return json({ todos: [], assignees: [], setupNeeded: true });
             return json({ error: error.message }, 500);
           }
 
           const assignees = isStudio ? await getProjectAssignees(projectId) : [];
-          return json({ todos: data ?? [], assignees });
+          const assigneeById = new Map(assignees.map((assignee: any) => [assignee.id, assignee]));
+          const todos = (data ?? []).map((todo: any) => ({
+            ...todo,
+            assigned_user: assigneeById.get(todo.assigned_user_id) ?? null,
+          }));
+          return json({ todos, assignees });
         } catch (error: any) {
           console.error("List project todos failed", error);
           return json({ error: error?.message || "Unable to load project to-dos." }, 500);
@@ -134,11 +179,33 @@ export const Route = createFileRoute("/api/project-todos")({
         try {
           const access = await requireActiveUser(request);
           if ("error" in access) return access.error;
+          const body = await request.json();
+          if (body.action === "message") {
+            const todoId = cleanText(body.todo_id);
+            const message = cleanText(body.message);
+            if (!todoId || !message) return json({ error: "Write a reply first." }, 400);
+            const { data: task, error: taskError } = await admin
+              .from("shared_project_todos" as any)
+              .select("id,assigned_user_id,visibility")
+              .eq("id", todoId)
+              .maybeSingle();
+            if (taskError || !task) return json({ error: "To-do not found." }, 404);
+            const isStudio = isStudioTeamRole(access.profile.role);
+            if (!isStudio && (task.assigned_user_id !== access.user.id || task.visibility !== "assigned_external")) {
+              return json({ error: "You cannot reply to this to-do." }, 403);
+            }
+            const { data, error } = await admin.from("project_todo_messages" as any).insert({
+              todo_id: todoId,
+              author_id: access.user.id,
+              body: message,
+              visibility: isStudio && body.visibility === "internal" ? "internal" : "shared",
+            }).select("*").single();
+            if (error) return json({ error: error.message }, 500);
+            return json({ message: data });
+          }
           if (!canViewFinancials(access.profile)) {
             return json({ error: "Only Ken and Katie can assign project to-dos." }, 403);
           }
-
-          const body = await request.json();
           const title = cleanText(body.title);
           const projectId = cleanText(body.project_id);
           const assignedUserId = cleanText(body.assigned_user_id);
@@ -148,8 +215,13 @@ export const Route = createFileRoute("/api/project-todos")({
           if (!(await userCanAccessProject(assignedUserId, projectId))) {
             return json({ error: "That user is not assigned to this project." }, 400);
           }
+          const { data: assignedProfile } = await admin
+            .from("user_profiles")
+            .select("role")
+            .eq("id", assignedUserId)
+            .maybeSingle();
 
-          const { data, error } = await supabaseAdmin
+          const { data, error } = await admin
             .from("shared_project_todos" as any)
             .insert({
               project_id: projectId,
@@ -160,6 +232,8 @@ export const Route = createFileRoute("/api/project-todos")({
               reminder_date: cleanDate(body.reminder_date),
               priority: cleanChoice(body.priority, PRIORITIES, "normal"),
               status: "open",
+              visibility: "assigned_external",
+              waiting_on: assignedProfile?.role === "Contractor" ? "gc" : "client",
               created_by: access.user.id,
             })
             .select("*")
@@ -181,7 +255,7 @@ export const Route = createFileRoute("/api/project-todos")({
           const id = cleanText(body.id);
           if (!id) return json({ error: "Missing to-do id." }, 400);
 
-          const { data: existing, error: existingError } = await supabaseAdmin
+          const { data: existing, error: existingError } = await admin
             .from("shared_project_todos" as any)
             .select("id,assigned_user_id")
             .eq("id", id)
@@ -189,17 +263,20 @@ export const Route = createFileRoute("/api/project-todos")({
           if (existingError) return json({ error: existingError.message }, isMissingTable(existingError) ? 503 : 500);
           if (!existing) return json({ error: "To-do not found." }, 404);
 
-          const isStudio = canViewFinancials(access.profile);
+          const isStudio = isStudioTeamRole(access.profile.role);
           if (!isStudio && existing.assigned_user_id !== access.user.id) {
             return json({ error: "You can only update your assigned to-dos." }, 403);
           }
 
-          const status = cleanChoice(body.status, STATUSES, "open");
-          const { data, error } = await supabaseAdmin
+          const requestedStatus = cleanChoice(body.status, STATUSES, "open");
+          const status = !isStudio && requestedStatus === "complete" ? "ready" : requestedStatus;
+          const { data, error } = await admin
             .from("shared_project_todos" as any)
             .update({
               status,
               completed_at: status === "complete" ? new Date().toISOString() : null,
+              ready_for_review_at: status === "ready" ? new Date().toISOString() : null,
+              waiting_on: status === "ready" ? "employee" : undefined,
             })
             .eq("id", id)
             .select("*")

@@ -11,6 +11,7 @@ import { db, type EmployeeTimeEntry, type UserProfile } from "@/lib/db";
 import { canLogHours, canManageHours } from "@/lib/permissions";
 import { formatMoney } from "@/lib/money";
 import { supabase } from "@/integrations/supabase/client";
+import type { ProjectManagementData } from "@/lib/projectManagement";
 
 export const Route = createFileRoute("/hours/")({
   head: () => ({ meta: [{ title: "Hours — MERAV Studio" }] }),
@@ -24,6 +25,7 @@ function HoursPage() {
   const [workDate, setWorkDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [hours, setHours] = useState("");
   const [taskProject, setTaskProject] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState("");
   const [employeeFilter, setEmployeeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"unpaid" | "all" | "paid">("unpaid");
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10));
@@ -53,6 +55,21 @@ function HoursPage() {
       ((await supabase.from("user_profiles").select("*").neq("role", "Client").eq("is_active", true).order("full_name")).data ?? []) as UserProfile[],
     enabled: canManage,
   });
+  const { data: commandData } = useQuery({
+    queryKey: ["projectManagement"],
+    queryFn: async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const response = await fetch("/api/project-management", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!response.ok) return null;
+      return await response.json() as ProjectManagementData;
+    },
+    enabled: !!profile && canLog,
+  });
+  const availableTasks = (commandData?.tasks ?? []).filter((task) =>
+    task.assigned_user_id === profile?.id && !["complete", "cancelled", "suggested"].includes(task.status),
+  );
+  const commandProjectById = new Map((commandData?.projects ?? []).map((project) => [project.id, project]));
 
   const visibleEntries = useMemo(() => {
     return entries.filter((entry) => {
@@ -96,10 +113,13 @@ function HoursPage() {
         hours: parsedHours,
         task_project: taskProject.trim(),
         hourly_rate: Number(profile.hourly_rate || 0),
+        project_id: selectedTaskId ? availableTasks.find((task) => task.id === selectedTaskId)?.project_id ?? null : null,
+        todo_id: selectedTaskId || null,
       });
       toast.success("Hours logged");
       setHours("");
       setTaskProject("");
+      setSelectedTaskId("");
       qc.invalidateQueries({ queryKey: ["employeeTimeEntries"] });
     } catch (e: any) {
       toast.error(e?.message || "Could not log hours.");
@@ -205,6 +225,27 @@ function HoursPage() {
                 <Label className="eyebrow">Task/Project</Label>
                 <Input value={taskProject} onChange={(e) => setTaskProject(e.target.value)} required />
               </div>
+              {availableTasks.length > 0 && (
+                <div>
+                  <Label className="eyebrow">Link Command Center Task</Label>
+                  <select
+                    value={selectedTaskId}
+                    onChange={(event) => {
+                      const task = availableTasks.find((item) => item.id === event.target.value);
+                      setSelectedTaskId(event.target.value);
+                      if (task) setTaskProject(`${commandProjectById.get(task.project_id)?.name || "Project"} - ${task.title}`);
+                    }}
+                    className="h-10 w-full border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">No linked task</option>
+                    {availableTasks.map((task) => (
+                      <option key={task.id} value={task.id}>
+                        {commandProjectById.get(task.project_id)?.name || "Project"} - {task.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <button type="submit" disabled={busy} className="w-full bg-ink text-primary-foreground py-3 text-sm disabled:opacity-50">
                 {busy ? "Saving..." : "Add Hours"}
               </button>

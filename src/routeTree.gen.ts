@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as ProjectManagementRouteImport } from './routes/project-management'
 import { Route as ProcurementRouteImport } from './routes/procurement'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
@@ -38,6 +39,8 @@ import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-mate
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
+import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
+import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
 import { Route as ApiPresentationBoardRouteImport } from './routes/api/presentation-board'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
@@ -78,6 +81,11 @@ import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectManagementRoute = ProjectManagementRouteImport.update({
+  id: '/project-management',
+  path: '/project-management',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProcurementRoute = ProcurementRouteImport.update({
@@ -221,6 +229,17 @@ const ApiProjectsRoute = ApiProjectsRouteImport.update({
 const ApiProjectTodosRoute = ApiProjectTodosRouteImport.update({
   id: '/api/project-todos',
   path: '/api/project-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProjectTaskAttachmentRoute =
+  ApiProjectTaskAttachmentRouteImport.update({
+    id: '/api/project-task-attachment',
+    path: '/api/project-task-attachment',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
+  id: '/api/project-management',
+  path: '/api/project-management',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPresentationBoardRoute = ApiPresentationBoardRouteImport.update({
@@ -421,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
+  '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
@@ -433,6 +453,8 @@ export interface FileRoutesByFullPath {
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/project-management': typeof ApiProjectManagementRoute
+  '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
@@ -488,6 +510,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
+  '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
@@ -500,6 +523,8 @@ export interface FileRoutesByTo {
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/project-management': typeof ApiProjectManagementRoute
+  '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
@@ -556,6 +581,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
+  '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
@@ -568,6 +594,8 @@ export interface FileRoutesById {
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/project-management': typeof ApiProjectManagementRoute
+  '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
@@ -625,6 +653,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/procurement'
+    | '/project-management'
     | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
@@ -637,6 +666,8 @@ export interface FileRouteTypes {
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/project-management'
+    | '/api/project-task-attachment'
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
@@ -692,6 +723,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/procurement'
+    | '/project-management'
     | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
@@ -704,6 +736,8 @@ export interface FileRouteTypes {
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/project-management'
+    | '/api/project-task-attachment'
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
@@ -759,6 +793,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/procurement'
+    | '/project-management'
     | '/terms'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
@@ -771,6 +806,8 @@ export interface FileRouteTypes {
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/project-management'
+    | '/api/project-task-attachment'
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
@@ -827,6 +864,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   ProcurementRoute: typeof ProcurementRoute
+  ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
@@ -839,6 +877,8 @@ export interface RootRouteChildren {
   ApiMyTodosRoute: typeof ApiMyTodosRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiPresentationBoardRoute: typeof ApiPresentationBoardRoute
+  ApiProjectManagementRoute: typeof ApiProjectManagementRoute
+  ApiProjectTaskAttachmentRoute: typeof ApiProjectTaskAttachmentRoute
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
@@ -895,6 +935,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/project-management': {
+      id: '/project-management'
+      path: '/project-management'
+      fullPath: '/project-management'
+      preLoaderRoute: typeof ProjectManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/procurement': {
@@ -1091,6 +1138,20 @@ declare module '@tanstack/react-router' {
       path: '/api/project-todos'
       fullPath: '/api/project-todos'
       preLoaderRoute: typeof ApiProjectTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-task-attachment': {
+      id: '/api/project-task-attachment'
+      path: '/api/project-task-attachment'
+      fullPath: '/api/project-task-attachment'
+      preLoaderRoute: typeof ApiProjectTaskAttachmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-management': {
+      id: '/api/project-management'
+      path: '/api/project-management'
+      fullPath: '/api/project-management'
+      preLoaderRoute: typeof ApiProjectManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/presentation-board': {
@@ -1355,6 +1416,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   ProcurementRoute: ProcurementRoute,
+  ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
@@ -1367,6 +1429,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMyTodosRoute: ApiMyTodosRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiPresentationBoardRoute: ApiPresentationBoardRoute,
+  ApiProjectManagementRoute: ApiProjectManagementRoute,
+  ApiProjectTaskAttachmentRoute: ApiProjectTaskAttachmentRoute,
   ApiProjectTodosRoute: ApiProjectTodosRoute,
   ApiProjectsRoute: ApiProjectsRoute,
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,

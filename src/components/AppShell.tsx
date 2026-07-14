@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen, ReceiptText, Bell } from "lucide-react";
+import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen, ReceiptText, Bell, ListChecks } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -20,6 +20,7 @@ type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?
 const nav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/projects", label: "Projects", icon: FolderOpen },
+  { to: "/project-management", label: "Project Management", icon: ListChecks },
   { to: "/catalog", label: "Product Catalog", icon: Library },
   { to: "/presentations", label: "Presentation Boards", icon: LayoutTemplate },
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
@@ -274,6 +275,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !canManageStudio(profile)) return null;
+            if (to === "/project-management" && isSharedProjectRole(profile?.role)) return null;
             if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -340,6 +342,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
+              if (to === "/project-management" && isSharedProjectRole(profile?.role)) return null;
               if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
