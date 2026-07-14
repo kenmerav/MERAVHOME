@@ -1134,7 +1134,7 @@ function ProjectAccessDialog({
           <ShieldCheck className="w-4 h-4" /> Access
         </button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="font-display text-3xl font-normal">Project Access</DialogTitle>
         </DialogHeader>
@@ -1169,11 +1169,11 @@ function ProjectAccessDialog({
             ]}
           />
         </div>
-        <div className="flex justify-end gap-3">
+        <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-col-reverse gap-3 border-t border-border bg-background px-6 py-4 sm:static sm:mx-0 sm:mb-0 sm:flex-row sm:justify-end sm:border-0 sm:p-0">
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="px-5 py-2.5 border border-border text-sm"
+            className="w-full border border-border px-5 py-2.5 text-sm sm:w-auto"
           >
             Cancel
           </button>
@@ -1181,7 +1181,7 @@ function ProjectAccessDialog({
             type="button"
             disabled={saving}
             onClick={save}
-            className="px-5 py-2.5 bg-ink text-primary-foreground text-sm disabled:opacity-60"
+            className="w-full bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-60 sm:w-auto"
           >
             {saving ? "Saving..." : "Save Access"}
           </button>
