@@ -9,6 +9,8 @@ const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
 const MAX_SCRAPE_ROWS_PER_BATCH = 12;
 const SCRAPE_TIMEOUT_MS = 15000;
+const DIRECT_PRODUCT_TIMEOUT_MS = 8000;
+const FIRECRAWL_MAX_AGE_MS = 10 * 60 * 1000;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -35,6 +37,27 @@ function isScrapeableUrl(value: string | null | undefined) {
   }
 }
 
+function canonicalScrapeUrl(value: string | null | undefined) {
+  if (!value) return "";
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    Array.from(url.searchParams.keys()).forEach((key) => {
+      if (/^(utm_|fbclid$|gclid$|dclid$|msclkid$|epik$|cm_|pr_|mc_|ref$|source$)/i.test(key)) {
+        url.searchParams.delete(key);
+      }
+    });
+    url.hostname = url.hostname.toLowerCase();
+    const productMatch = url.pathname.match(/\/products\/([^/]+)/i);
+    if (productMatch) url.pathname = `/products/${productMatch[1]}`;
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    url.searchParams.sort();
+    return url.toString();
+  } catch {
+    return value.trim();
+  }
+}
+
 function firstPrice(...vals: unknown[]) {
   for (const val of vals) {
     const text =
@@ -57,6 +80,66 @@ function firstPrice(...vals: unknown[]) {
   return "";
 }
 
+function formatPriceNumber(value: unknown) {
+  const number = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(number) || number < 0) return "";
+  return `$${number.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function structuredPriceFromHtml(html?: string) {
+  if (!html) return "";
+
+  const metaPatterns = [
+    /<meta[^>]+(?:property|name|itemprop)=["'](?:product:price:amount|og:price:amount|price)["'][^>]+content=["']([^"']+)["'][^>]*>/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name|itemprop)=["'](?:product:price:amount|og:price:amount|price)["'][^>]*>/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    const price = firstPrice(match?.[1]);
+    if (price) return price;
+  }
+
+  const jsonLdScripts = html.matchAll(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  );
+  const candidates: Array<{ low: number; high: number }> = [];
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    const type = Array.isArray(record["@type"])
+      ? record["@type"].join(" ")
+      : String(record["@type"] ?? "");
+    if (/Offer/i.test(type)) {
+      const low = Number(record.lowPrice ?? record.price);
+      const high = Number(record.highPrice ?? record.price);
+      if (Number.isFinite(low) && Number.isFinite(high) && low >= 0 && high >= 0) {
+        candidates.push({ low, high });
+      }
+    }
+    Object.values(record).forEach(visit);
+  };
+  for (const match of jsonLdScripts) {
+    try {
+      visit(JSON.parse(match[1]));
+    } catch {
+      // Some sites emit malformed JSON-LD; visible-price parsing remains available below.
+    }
+  }
+  if (!candidates.length) return "";
+  const low = Math.min(...candidates.map((candidate) => candidate.low));
+  const high = Math.max(...candidates.map((candidate) => candidate.high));
+  const lowPrice = formatPriceNumber(low);
+  const highPrice = formatPriceNumber(high);
+  return low === high ? lowPrice : `${lowPrice}-${highPrice}`;
+}
+
 function priceFromPageText(markdown?: string, html?: string) {
   const htmlText = html ?? "";
   const markdownText = markdown ?? "";
@@ -69,7 +152,12 @@ function priceFromPageText(markdown?: string, html?: string) {
     /(?:^|\n)\s*(?:[-*]\s*)?(\$\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)\s*(?:\n|$)/,
   );
 
-  return firstPrice(automationPrice?.[1], labeledPrice?.[1], standaloneMarkdownPrice?.[1]);
+  return firstPrice(
+    structuredPriceFromHtml(htmlText),
+    automationPrice?.[1],
+    labeledPrice?.[1],
+    standaloneMarkdownPrice?.[1],
+  );
 }
 
 function compactPayload<T extends Record<string, unknown>>(payload: T) {
@@ -109,6 +197,189 @@ type Scraped = {
   error?: string;
 };
 
+type ShopifyVariant = {
+  id?: string | number;
+  title?: string;
+  price?: number;
+  compare_at_price?: number | null;
+  available?: boolean;
+  sku?: string;
+  options?: string[];
+};
+
+type ShopifyProduct = {
+  title?: string;
+  vendor?: string;
+  featured_image?: string;
+  images?: string[];
+  variants?: ShopifyVariant[];
+};
+
+type FirecrawlPage = {
+  json?: Record<string, unknown>;
+  extract?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  markdown?: string;
+  html?: string;
+  url?: string;
+};
+
+type FirecrawlEnvelope = Record<string, unknown> & {
+  data?: unknown;
+  status?: unknown;
+  completed?: unknown;
+  total?: unknown;
+  next?: unknown;
+  id?: unknown;
+};
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function shopifyProductJsonUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const productMatch = url.pathname.match(/\/products\/([^/]+)/i);
+    if (!productMatch) return null;
+    url.pathname = `/products/${productMatch[1]}.js`;
+    url.hash = "";
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function shopifyPrice(variants: ShopifyVariant[], selectedVariantId: string | null) {
+  const selected = selectedVariantId
+    ? variants.find((variant) => String(variant.id) === selectedVariantId)
+    : null;
+  const purchasable = variants.filter(
+    (variant) =>
+      variant.available !== false &&
+      !/sample|swatch/i.test(firstString(variant.title, variant.options?.join(" "))),
+  );
+  const eligible = selected ? [selected] : purchasable.length ? purchasable : variants;
+  const prices = eligible
+    .map((variant) => variant.price)
+    .filter((price): price is number => typeof price === "number" && Number.isFinite(price))
+    .map((price) => price / 100);
+  if (!prices.length) return "";
+  const low = Math.min(...prices);
+  const high = Math.max(...prices);
+  return low === high
+    ? formatPriceNumber(low)
+    : `${formatPriceNumber(low)}-${formatPriceNumber(high)}`;
+}
+
+async function scrapeShopifyProduct(url: string): Promise<Scraped | null> {
+  const productJsonUrl = shopifyProductJsonUrl(url);
+  if (!productJsonUrl) return null;
+  const originalUrl = new URL(url);
+  const selectedVariantId = originalUrl.searchParams.get("variant");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DIRECT_PRODUCT_TIMEOUT_MS);
+  try {
+    const response = await fetch(productJsonUrl, {
+      headers: { Accept: "application/json", "User-Agent": "MERAVHOME Studio product scraper" },
+      signal: controller.signal,
+    });
+    if (!response.ok || !/json|javascript/i.test(response.headers.get("content-type") ?? "")) {
+      return null;
+    }
+    const product = (await response.json()) as ShopifyProduct;
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const selected = selectedVariantId
+      ? variants.find((variant) => String(variant.id) === selectedVariantId)
+      : null;
+    const representative =
+      selected ??
+      variants.find(
+        (variant) =>
+          variant.available !== false &&
+          !/sample|swatch/i.test(firstString(variant.title, variant.options?.join(" "))),
+      ) ??
+      variants[0];
+    const image = firstString(
+      product.featured_image,
+      Array.isArray(product.images) ? product.images[0] : "",
+    );
+    return {
+      name: firstString(product.title),
+      vendor: firstString(inferVendorFromUrl(url), product.vendor),
+      sku: firstString(representative?.sku),
+      finish: firstString(representative?.title === "Default Title" ? "" : representative?.title),
+      price: shopifyPrice(variants, selectedVariantId),
+      image_url: image.startsWith("//") ? `https:${image}` : image,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | null | undefined) {
+  return compactPayload({
+    name: firstString(primary?.name, fallback?.name),
+    vendor: firstString(primary?.vendor, fallback?.vendor),
+    image_url: firstString(primary?.image_url, fallback?.image_url),
+    color: firstString(primary?.color, fallback?.color),
+    finish: firstString(primary?.finish, fallback?.finish),
+    sku: firstString(primary?.sku, fallback?.sku),
+    dimensions: firstString(primary?.dimensions, fallback?.dimensions),
+    price: firstString(primary?.price, fallback?.price),
+    unit_cost: firstString(primary?.unit_cost, fallback?.unit_cost),
+    shipping: firstString(primary?.shipping, fallback?.shipping),
+    error: firstString(primary?.error, fallback?.error),
+  }) as Scraped;
+}
+
+function batchEnvelope(value: unknown): FirecrawlEnvelope {
+  const body = asRecord(value);
+  return body.data && !Array.isArray(body.data) && typeof body.data === "object"
+    ? asRecord(body.data)
+    : body;
+}
+
+async function fetchBatchResult(batchId: string, fcKey: string) {
+  let nextUrl = `${FIRECRAWL_BATCH_API}/${encodeURIComponent(batchId)}`;
+  let status = "processing";
+  let completed = 0;
+  let total = 0;
+  const pages: FirecrawlPage[] = [];
+
+  for (let pageNumber = 0; pageNumber < 10 && nextUrl; pageNumber += 1) {
+    const parsedUrl = new URL(nextUrl);
+    if (parsedUrl.origin !== "https://api.firecrawl.dev") {
+      throw new Error("Firecrawl returned an invalid batch page URL.");
+    }
+    const response = await fetch(parsedUrl, {
+      headers: { Authorization: `Bearer ${fcKey}` },
+    });
+    if (!response.ok) throw new Error(`Batch status failed (${response.status}).`);
+    const body = (await response.json()) as FirecrawlEnvelope;
+    const envelope = batchEnvelope(body);
+    status = firstString(envelope?.status, body?.status, status).toLowerCase();
+    completed = Number(envelope?.completed ?? body?.completed ?? completed) || completed;
+    total = Number(envelope?.total ?? body?.total ?? total) || total;
+    const responsePages = Array.isArray(envelope?.data)
+      ? envelope.data
+      : Array.isArray(body?.data)
+        ? body.data
+        : [];
+    pages.push(...(responsePages as FirecrawlPage[]));
+
+    const next = firstString(envelope?.next, body?.next);
+    if (status !== "completed" || !next) break;
+    nextUrl = next;
+  }
+
+  return { status, completed, total, pages };
+}
+
 const scrapeSchema = {
   type: "object",
   properties: {
@@ -137,10 +408,10 @@ const scrapeSchema = {
   },
 };
 
-function scrapedFromFirecrawlData(data: any, sourceUrl: string): Scraped {
-  const ex = data?.json ?? data?.extract ?? {};
-  const meta = data?.metadata ?? {};
-  const pagePrice = priceFromPageText(data?.markdown, data?.html);
+function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scraped {
+  const ex = data.json ?? data.extract ?? {};
+  const meta = data.metadata ?? {};
+  const pagePrice = priceFromPageText(data.markdown, data.html);
   return {
     name: firstString(ex.name, meta.title, meta.ogTitle),
     vendor: firstString(
@@ -176,6 +447,8 @@ function scrapedFromFirecrawlData(data: any, sourceUrl: string): Scraped {
 }
 
 async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
+  const shopifyProduct = await scrapeShopifyProduct(url);
+  if (shopifyProduct?.price) return shopifyProduct;
   const schema = {
     type: "object",
     properties: {
@@ -232,6 +505,10 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
           },
         ],
         onlyMainContent: false,
+        waitFor: 2000,
+        maxAge: FIRECRAWL_MAX_AGE_MS,
+        location: { country: "US", languages: ["en-US"] },
+        proxy: "auto",
       }),
     });
     if (timeout) clearTimeout(timeout);
@@ -239,9 +516,9 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     if (!res.ok) {
       return { error: `Scrape failed (${res.status})` };
     }
-    const body = (await res.json()) as any;
-    const data = body?.data ?? body;
-    return scrapedFromFirecrawlData(data, url);
+    const body = (await res.json()) as FirecrawlEnvelope;
+    const data = batchEnvelope(body.data ?? body) as FirecrawlPage;
+    return mergeScraped(scrapedFromFirecrawlData(data, url), shopifyProduct);
   } catch (e: any) {
     if (e?.name === "AbortError")
       return { error: "Scrape timed out. Try again or enter details manually." };
@@ -306,44 +583,56 @@ export const Route = createFileRoute("/api/scrape-materials")({
           if (body.action === "poll") {
             if (!body.batch_id || !Array.isArray(body.candidates))
               return json({ error: "Batch details required." }, 400);
-            const response = await fetch(
-              `${FIRECRAWL_BATCH_API}/${encodeURIComponent(body.batch_id)}`,
-              {
-                headers: { Authorization: `Bearer ${fcKey}` },
-              },
-            );
-            if (!response.ok)
-              return json({ error: `Batch status failed (${response.status}).` }, 502);
-            const batchBody = (await response.json()) as any;
-            const batch = batchBody?.data ?? batchBody;
-            const status = String(batch?.status ?? "processing").toLowerCase();
-            if (!/(completed|done|failed|error)/.test(status))
-              return json({ status: "processing" });
-            const pages = Array.isArray(batch?.data) ? batch.data : [];
-            const byUrl = new Map<string, any>();
-            pages.forEach((page: any) => {
+            const batch = await fetchBatchResult(body.batch_id, fcKey);
+            if (
+              batch.status === "scraping" ||
+              batch.status === "processing" ||
+              batch.status === "queued"
+            ) {
+              return json({
+                status: "processing",
+                completed_count: batch.completed,
+                total_count: batch.total,
+              });
+            }
+            const pages = batch.pages;
+            const byUrl = new Map<string, FirecrawlPage>();
+            pages.forEach((page) => {
               const sourceUrl = firstString(
                 page?.metadata?.sourceURL,
                 page?.metadata?.url,
                 page?.url,
               );
-              if (sourceUrl) byUrl.set(sourceUrl, page);
+              if (sourceUrl) {
+                byUrl.set(sourceUrl, page);
+                byUrl.set(canonicalScrapeUrl(sourceUrl), page);
+              }
             });
-            const rows = body.candidates.map((candidate) => {
-              const materialItemId = cleanUuid(candidate.material_item_id);
-              const url = candidate.url?.trim() ?? "";
-              const page = byUrl.get(url);
-              return {
-                material_item_id: materialItemId,
-                url,
-                existing_product_id: cleanUuid(candidate.existing_product_id),
-                scraped:
-                  materialItemId && page
-                    ? scrapedFromFirecrawlData(page, url)
-                    : { error: "Scrape did not return a result for this page." },
-              };
+            const rows = await Promise.all(
+              body.candidates.map(async (candidate) => {
+                const materialItemId = cleanUuid(candidate.material_item_id);
+                const url = candidate.url?.trim() ?? "";
+                const page = byUrl.get(url) ?? byUrl.get(canonicalScrapeUrl(url));
+                const directProduct = await scrapeShopifyProduct(url);
+                return {
+                  material_item_id: materialItemId,
+                  url,
+                  existing_product_id: cleanUuid(candidate.existing_product_id),
+                  scraped:
+                    materialItemId && page
+                      ? mergeScraped(directProduct, scrapedFromFirecrawlData(page, url))
+                      : directProduct?.price
+                        ? directProduct
+                        : { error: "Scrape did not return a result for this page." },
+                };
+              }),
+            );
+            return json({
+              status: batch.status === "failed" ? "failed" : "completed",
+              rows,
+              completed_count: batch.completed,
+              total_count: batch.total,
             });
-            return json({ status: /(failed|error)/.test(status) ? "failed" : "completed", rows });
           }
 
           const excludedIds = new Set(
@@ -380,7 +669,31 @@ export const Route = createFileRoute("/api/scrape-materials")({
               remaining_count,
             });
           }
-          const urls = Array.from(new Set(batchCandidates.map((candidate) => candidate.url)));
+          const directRows = await Promise.all(
+            batchCandidates.map(async (candidate) => ({
+              material_item_id: cleanUuid(candidate.material_item_id),
+              url: candidate.url,
+              existing_product_id: cleanUuid(candidate.existing_product_id),
+              scraped: await scrapeShopifyProduct(candidate.url),
+            })),
+          );
+          const prefetchedRows = directRows
+            .filter((row) => row.scraped?.price)
+            .map((row) => ({ ...row, scraped: row.scraped as Scraped }));
+          const prefetchedIds = new Set(prefetchedRows.map((row) => row.material_item_id));
+          const firecrawlCandidates = batchCandidates.filter(
+            (candidate) => !prefetchedIds.has(cleanUuid(candidate.material_item_id)),
+          );
+          if (!firecrawlCandidates.length) {
+            return json({
+              status: "completed",
+              rows: prefetchedRows,
+              invalid_link_count,
+              already_scraped_count,
+              remaining_count,
+            });
+          }
+          const urls = Array.from(new Set(firecrawlCandidates.map((candidate) => candidate.url)));
           const response = await fetch(FIRECRAWL_BATCH_API, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${fcKey}` },
@@ -399,18 +712,23 @@ export const Route = createFileRoute("/api/scrape-materials")({
               ],
               onlyMainContent: false,
               timeout: 30000,
+              waitFor: 2000,
+              maxAge: FIRECRAWL_MAX_AGE_MS,
+              location: { country: "US", languages: ["en-US"] },
+              proxy: "auto",
             }),
           });
           if (!response.ok)
             return json({ error: `Could not start scrape batch (${response.status}).` }, 502);
-          const batchBody = (await response.json()) as any;
-          const batch = batchBody?.data ?? batchBody;
+          const batchBody = (await response.json()) as FirecrawlEnvelope;
+          const batch = batchEnvelope(batchBody);
           const batchId = firstString(batch?.id, batchBody?.id);
           if (!batchId) return json({ error: "Firecrawl did not return a batch id." }, 502);
           return json({
             status: "started",
             batch_id: batchId,
-            candidates: batchCandidates,
+            candidates: firecrawlCandidates,
+            prefetched_rows: prefetchedRows,
             invalid_link_count,
             already_scraped_count,
             remaining_count,
@@ -481,7 +799,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 patch.vendor = sourceVendor;
               }
               if (Object.keys(patch).length) {
-                await supabaseAdmin.from("products").update(patch).eq("id", productId);
+                const { error: updateError } = await supabaseAdmin
+                  .from("products")
+                  .update(patch)
+                  .eq("id", productId);
+                if (updateError) return json({ error: updateError.message }, 500);
               }
             } else {
               const { data: inserted, error: insErr } = await supabaseAdmin
@@ -507,10 +829,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 materialUpdate.color = scrapedColor;
               }
 
-              await supabaseAdmin
+              const { error: materialUpdateError } = await supabaseAdmin
                 .from("material_items")
                 .update(materialUpdate)
                 .eq("id", materialItemId);
+              if (materialUpdateError) return json({ error: materialUpdateError.message }, 500);
 
               const roomId = cleanUuid(matItem?.room_id);
               if (roomId) {
@@ -522,11 +845,12 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   .maybeSingle();
 
                 if (!existingLink) {
-                  await supabaseAdmin.from("room_products").insert({
+                  const { error: linkError } = await supabaseAdmin.from("room_products").insert({
                     room_id: roomId,
                     product_id: productId,
                     is_key_selection: false,
                   });
+                  if (linkError) return json({ error: linkError.message }, 500);
                 }
               }
             }

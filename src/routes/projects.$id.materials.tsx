@@ -299,7 +299,10 @@ function MaterialsPage() {
             url?: string;
             existing_product_id?: string | null;
           }>;
+          prefetched_rows?: ScrapedRow[];
           rows?: ScrapedRow[];
+          completed_count?: number;
+          total_count?: number;
           invalid_link_count?: number;
           already_scraped_count?: number;
           remaining_count?: number;
@@ -328,9 +331,12 @@ function MaterialsPage() {
                 }),
               });
               const fallbackBody = await readApiJson<typeof body>(fallbackRes);
-              if (!fallbackRes.ok)
-                throw new Error(fallbackBody?.error || "Scrape fallback failed");
-              completedBody = { ...body, ...fallbackBody };
+              if (!fallbackRes.ok) throw new Error(fallbackBody?.error || "Scrape fallback failed");
+              completedBody = {
+                ...body,
+                ...fallbackBody,
+                rows: [...(body.prefetched_rows ?? []), ...(fallbackBody?.rows ?? [])],
+              };
               break;
             }
             const pollRes = await fetch("/api/scrape-materials", {
@@ -345,9 +351,21 @@ function MaterialsPage() {
             });
             const pollBody = await readApiJson<typeof body>(pollRes);
             if (!pollRes.ok) throw new Error(pollBody?.error || "Scrape batch failed");
-            if (pollBody?.status === "processing") continue;
-            if (pollBody?.status === "failed") throw new Error("Scrape batch could not complete.");
-            completedBody = { ...body, ...pollBody };
+            if (pollBody?.status === "processing") {
+              const completed = pollBody.completed_count ?? 0;
+              const total = pollBody.total_count ?? body.candidates.length;
+              setScrapeStatus(
+                completed > 0
+                  ? `Scraping batch ${batchCount + 1} (${completed} of ${total})...`
+                  : `Scraping batch ${batchCount + 1}...`,
+              );
+              continue;
+            }
+            completedBody = {
+              ...body,
+              ...pollBody,
+              rows: [...(body.prefetched_rows ?? []), ...(pollBody?.rows ?? [])],
+            };
             break;
           }
         }
@@ -572,7 +590,6 @@ function MaterialsPage() {
             </button>
           </div>
         )}
-
       </div>
     </AppShell>
   );
