@@ -226,7 +226,7 @@ function MaterialsPage() {
     [items, project?.updated_at, rooms],
   );
 
-  const saveScrapedRows = async (rows: ScrapedRow[]) => {
+  const saveScrapedRows = async (rows: ScrapedRow[], announce = true) => {
     const successfulRows = rows.filter((row) => !row.scraped.error);
     const failedCount = rows.length - successfulRows.length;
 
@@ -248,14 +248,16 @@ function MaterialsPage() {
       });
       const body = await readApiJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(body?.error || "Could not save scraped products");
-      toast.success(
-        `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
-      );
+      if (announce) {
+        toast.success(
+          `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
+        );
+      }
       qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       qc.invalidateQueries({ queryKey: ["products"] });
     }
 
-    if (failedCount > 0) {
+    if (announce && failedCount > 0) {
       toast.warning(
         `${failedCount} item${failedCount === 1 ? " was" : "s were"} left unchanged because product details could not be scraped.`,
       );
@@ -309,9 +311,28 @@ function MaterialsPage() {
         if (body?.status === "started") {
           if (!body.batch_id || !body.candidates?.length)
             throw new Error("Scrape batch did not start correctly.");
+          let pollCount = 0;
           while (true) {
             await new Promise((resolve) => window.setTimeout(resolve, 1200));
             setScrapeStatus(`Scraping batch ${batchCount + 1}...`);
+            pollCount += 1;
+            if (pollCount >= 45) {
+              setScrapeStatus(`Finishing batch ${batchCount + 1} one product at a time...`);
+              const fallbackRes = await fetch("/api/scrape-materials", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "fallback",
+                  project_id: projectId,
+                  candidates: body.candidates,
+                }),
+              });
+              const fallbackBody = await readApiJson<typeof body>(fallbackRes);
+              if (!fallbackRes.ok)
+                throw new Error(fallbackBody?.error || "Scrape fallback failed");
+              completedBody = { ...body, ...fallbackBody };
+              break;
+            }
             const pollRes = await fetch("/api/scrape-materials", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -342,6 +363,10 @@ function MaterialsPage() {
           collectedRows.push(row);
         });
 
+        if (rows.length > 0) {
+          await saveScrapedRows(rows, false);
+        }
+
         batchCount += 1;
         if (rows.length === 0 || remainingCount === 0) break;
         if (batchCount > 100) {
@@ -365,7 +390,18 @@ function MaterialsPage() {
             : "Nothing new to scrape.",
         );
       } else {
-        await saveScrapedRows(rows);
+        const failedCount = rows.filter((row) => row.scraped.error).length;
+        const savedCount = rows.length - failedCount;
+        if (savedCount > 0) {
+          toast.success(
+            `Scrape complete. Saved ${savedCount} product${savedCount === 1 ? "" : "s"} to catalog.`,
+          );
+        }
+        if (failedCount > 0) {
+          toast.warning(
+            `${failedCount} item${failedCount === 1 ? " still needs" : "s still need"} product details.`,
+          );
+        }
       }
     } catch (e: any) {
       toast.error(e?.message || "Scrape failed");

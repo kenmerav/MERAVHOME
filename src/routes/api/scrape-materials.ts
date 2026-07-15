@@ -258,7 +258,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
       POST: async ({ request }) => {
         try {
           const body = (await request.json()) as {
-            action?: "start" | "poll";
+            action?: "start" | "poll" | "fallback";
             project_id?: string;
             exclude_material_item_ids?: string[];
             batch_id?: string;
@@ -272,6 +272,36 @@ export const Route = createFileRoute("/api/scrape-materials")({
           if (!projectId) return json({ error: "Valid project_id required" }, 400);
           const fcKey = process.env.FIRECRAWL_API_KEY;
           if (!fcKey) return json({ error: "Firecrawl is not connected yet." }, 500);
+
+          if (body.action === "fallback") {
+            if (!Array.isArray(body.candidates) || !body.candidates.length) {
+              return json({ error: "Batch candidates required." }, 400);
+            }
+            const candidates = body.candidates.filter(
+              (candidate) =>
+                cleanUuid(candidate.material_item_id) && isScrapeableUrl(candidate.url),
+            );
+            const uniqueUrls = Array.from(
+              new Set(candidates.map((candidate) => candidate.url?.trim() ?? "")),
+            );
+            const scrapedByUrl = new Map(
+              await Promise.all(
+                uniqueUrls.map(async (url) => [url, await scrapeOne(url, fcKey)] as const),
+              ),
+            );
+            return json({
+              status: "completed",
+              rows: candidates.map((candidate) => {
+                const url = candidate.url?.trim() ?? "";
+                return {
+                  material_item_id: cleanUuid(candidate.material_item_id),
+                  url,
+                  existing_product_id: cleanUuid(candidate.existing_product_id),
+                  scraped: scrapedByUrl.get(url) ?? { error: "Scrape did not return a result." },
+                };
+              }),
+            });
+          }
 
           if (body.action === "poll") {
             if (!body.batch_id || !Array.isArray(body.candidates))
