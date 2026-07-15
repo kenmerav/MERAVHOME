@@ -12,29 +12,6 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function dataUrlToFileBuffer(dataUrl: string) {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
-  if (!match) throw new Error("File must be uploaded as a base64 data URL.");
-  const contentType = match[1].toLowerCase();
-  if (!ALLOWED_MIME_TYPES.includes(contentType)) {
-    throw new Error("Upload a PDF, JPG, PNG, or WebP file.");
-  }
-  const buffer = Buffer.from(match[2], "base64");
-  if (buffer.byteLength > PROJECT_FILE_LIMIT) {
-    throw new Error("File is too large. Keep construction docs under 50 MB.");
-  }
-  return { contentType, buffer };
-}
-
-function extensionForContentType(contentType: string, fileName?: string) {
-  const existing = fileName?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
-  if (existing && ["pdf", "jpg", "jpeg", "png", "webp"].includes(existing)) return existing;
-  if (contentType === "application/pdf") return "pdf";
-  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
-  if (contentType.includes("webp")) return "webp";
-  return "png";
-}
-
 function safeFileName(fileName?: string) {
   return (
     (fileName || "project-document")
@@ -95,31 +72,46 @@ export const Route = createFileRoute("/api/upload-project-document")({
           if ("error" in access) return access.error;
 
           const body = (await request.json()) as {
-            dataUrl?: string;
             projectId?: string;
             fileName?: string;
+            fileSize?: number;
+            contentType?: string;
           };
           if (!body.projectId) return json({ error: "projectId is required." }, 400);
-          if (!body.dataUrl) return json({ error: "Choose a construction document to upload." }, 400);
+          if (!body.fileName || !body.fileName.toLowerCase().endsWith(".pdf")) {
+            return json({ error: "Choose a PDF construction document." }, 400);
+          }
+          if (body.contentType && body.contentType !== "application/pdf") {
+            return json({ error: "Construction documents must be PDF files." }, 400);
+          }
+          if (!Number.isFinite(body.fileSize) || Number(body.fileSize) <= 0) {
+            return json({ error: "The selected PDF is empty or invalid." }, 400);
+          }
+          if (Number(body.fileSize) > PROJECT_FILE_LIMIT) {
+            return json({ error: "File is too large. Keep construction docs under 50 MB." }, 400);
+          }
+
+          const { data: project } = await supabaseAdmin
+            .from("projects")
+            .select("id")
+            .eq("id", body.projectId)
+            .maybeSingle();
+          if (!project) return json({ error: "Project not found." }, 404);
 
           await ensureProjectFilesBucket();
-          const { buffer, contentType } = dataUrlToFileBuffer(body.dataUrl);
-          const extension = extensionForContentType(contentType, body.fileName);
-          const path = `${body.projectId}/construction-docs/${Date.now()}-${crypto.randomUUID()}-${safeFileName(body.fileName)}.${extension}`;
-
-          const { error } = await supabaseAdmin.storage.from(PROJECT_FILES_BUCKET).upload(path, buffer, {
-            contentType,
-            cacheControl: "31536000",
-            upsert: false,
-          });
+          const path = `${body.projectId}/construction-docs/${Date.now()}-${crypto.randomUUID()}-${safeFileName(body.fileName)}.pdf`;
+          const { data: upload, error } = await supabaseAdmin.storage
+            .from(PROJECT_FILES_BUCKET)
+            .createSignedUploadUrl(path);
           if (error) throw error;
 
           const { data } = supabaseAdmin.storage.from(PROJECT_FILES_BUCKET).getPublicUrl(path);
           return json({
             url: data.publicUrl,
             path,
-            contentType,
-            size: buffer.byteLength,
+            token: upload.token,
+            contentType: "application/pdf",
+            size: Number(body.fileSize),
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Upload failed.";

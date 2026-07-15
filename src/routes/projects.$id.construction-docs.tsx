@@ -7,23 +7,12 @@ import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { db, type ProjectDocumentType } from "@/lib/db";
+import { db } from "@/lib/db";
 import { canViewProjectSurface, isStudioTeamRole } from "@/lib/permissions";
 
-const DOCUMENT_TYPES: ProjectDocumentType[] = [
-  "Construction Doc",
-  "Layout Doc",
-  "SketchUp Rendering",
-  "AI Rendering",
-];
+const PROJECT_FILES_BUCKET = "project-files";
+const PROJECT_FILE_LIMIT = 50 * 1024 * 1024;
 
 export const Route = createFileRoute("/projects/$id/construction-docs")({
   head: () => ({ meta: [{ title: "Construction Docs — MERAV Studio" }] }),
@@ -35,7 +24,6 @@ function ConstructionDocsPage() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [title, setTitle] = useState("");
-  const [documentType, setDocumentType] = useState<ProjectDocumentType>("Construction Doc");
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -55,6 +43,13 @@ function ConstructionDocsPage() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".pdf") || (file.type && file.type !== "application/pdf")) {
+        throw new Error("Choose a PDF construction document.");
+      }
+      if (file.size > PROJECT_FILE_LIMIT) {
+        throw new Error("File is too large. Keep construction docs under 50 MB.");
+      }
+
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error("Sign in to upload construction docs.");
@@ -68,22 +63,31 @@ function ConstructionDocsPage() {
         body: JSON.stringify({
           projectId: id,
           fileName: file.name,
-          dataUrl: await fileToDataUrl(file),
+          fileSize: file.size,
+          contentType: file.type || "application/pdf",
         }),
       });
       const uploadBody = await uploadRes.json().catch(() => ({}));
       if (!uploadRes.ok) throw new Error(uploadBody?.error || "Upload failed.");
 
+      const { error: storageError } = await supabase.storage
+        .from(PROJECT_FILES_BUCKET)
+        .uploadToSignedUrl(uploadBody.path, uploadBody.token, file, {
+          contentType: "application/pdf",
+          cacheControl: "31536000",
+        });
+      if (storageError) throw storageError;
+
       return db.createProjectDocument({
         project_id: id,
         title: title.trim() || file.name.replace(/\.[^/.]+$/, ""),
-        document_type: documentType,
+        document_type: "Construction Doc",
         file_url: uploadBody.url,
         file_name: file.name,
         file_size: uploadBody.size ?? file.size,
         mime_type: uploadBody.contentType ?? file.type,
         visible_to_contractors: true,
-        visible_to_clients: false,
+        visible_to_clients: true,
         created_by: sessionData.session?.user.id ?? null,
       });
     },
@@ -140,7 +144,7 @@ function ConstructionDocsPage() {
             <div className="eyebrow mb-3">Builder Resources</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">Construction Docs</h1>
             <p className="mt-4 max-w-2xl text-muted-foreground">
-              Upload layout docs, SketchUp references, renderings, and construction files for the GC/builder.
+              Upload PDF construction documents for the client and GC/builder portal.
             </p>
           </div>
         </div>
@@ -151,36 +155,33 @@ function ConstructionDocsPage() {
               <Upload className="h-4 w-4" />
               <h2 className="font-display text-3xl">Upload document</h2>
             </div>
-            <div className="grid gap-4 lg:grid-cols-[1fr_220px_1.3fr_auto] lg:items-end">
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
               <div>
                 <Label>Title</Label>
-                <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Layout Plan, AI Rendering, SketchUp View..." />
-              </div>
-              <div>
-                <Label>Type</Label>
-                <Select value={documentType} onValueChange={(value) => setDocumentType(value as ProjectDocumentType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {DOCUMENT_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>File</Label>
                 <Input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf,image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) uploadMutation.mutate(file);
-                  }}
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Construction Set, Floor Plan, Electrical Plan..."
                 />
               </div>
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                aria-label="Construction document PDF"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) uploadMutation.mutate(file);
+                }}
+              />
               <Button type="button" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
-                {uploadMutation.isPending ? "Uploading..." : "Choose File"}
+                {uploadMutation.isPending ? "Uploading..." : "Choose PDF"}
               </Button>
             </div>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Client and Builder/GC visibility is controlled from the project Access settings.
+            </p>
           </section>
         )}
 
@@ -231,15 +232,6 @@ function ConstructionDocsPage() {
       </div>
     </AppShell>
   );
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read file."));
-    reader.readAsDataURL(file);
-  });
 }
 
 function formatFileSize(size: number) {
