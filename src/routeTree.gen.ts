@@ -48,6 +48,7 @@ import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mar
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
+import { Route as ApiDuplicateProjectRouteImport } from './routes/api/duplicate-project'
 import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
 import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
@@ -278,6 +279,11 @@ const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
   path: '/api/generate-rendering',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDuplicateProjectRoute = ApiDuplicateProjectRouteImport.update({
+  id: '/api/duplicate-project',
+  path: '/api/duplicate-project',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDesignBoardQuestionRoute = ApiDesignBoardQuestionRouteImport.update({
   id: '/api/design-board-question',
   path: '/api/design-board-question',
@@ -446,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
+  '/api/duplicate-project': typeof ApiDuplicateProjectRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -516,6 +523,7 @@ export interface FileRoutesByTo {
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
+  '/api/duplicate-project': typeof ApiDuplicateProjectRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -587,6 +595,7 @@ export interface FileRoutesById {
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
+  '/api/duplicate-project': typeof ApiDuplicateProjectRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -659,6 +668,7 @@ export interface FileRouteTypes {
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
+    | '/api/duplicate-project'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -729,6 +739,7 @@ export interface FileRouteTypes {
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
+    | '/api/duplicate-project'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -799,6 +810,7 @@ export interface FileRouteTypes {
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
+    | '/api/duplicate-project'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -870,6 +882,7 @@ export interface RootRouteChildren {
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiDesignBoardCommentTodosRoute: typeof ApiDesignBoardCommentTodosRoute
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
+  ApiDuplicateProjectRoute: typeof ApiDuplicateProjectRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
@@ -1203,6 +1216,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGenerateRenderingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/duplicate-project': {
+      id: '/api/duplicate-project'
+      path: '/api/duplicate-project'
+      fullPath: '/api/duplicate-project'
+      preLoaderRoute: typeof ApiDuplicateProjectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/design-board-question': {
       id: '/api/design-board-question'
       path: '/api/design-board-question'
@@ -1422,6 +1442,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiDesignBoardCommentTodosRoute: ApiDesignBoardCommentTodosRoute,
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
+  ApiDuplicateProjectRoute: ApiDuplicateProjectRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
