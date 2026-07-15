@@ -76,6 +76,15 @@ export function canDownloadSpecBookPdf(
   return false;
 }
 
+export function canDownloadConstructionDocs(
+  profile: Pick<UserProfile, "is_active" | "role"> | null | undefined,
+  project: Pick<Project, "client_can_download_construction_docs"> | null | undefined,
+) {
+  if (!profile?.is_active || !project) return false;
+  if (isStudioTeamRole(profile.role) || isContractorRole(profile.role)) return true;
+  return isClientRole(profile.role) && project.client_can_download_construction_docs === true;
+}
+
 export type ProjectSurface = "specBook" | "presentations" | "designBoards" | "constructionDocs";
 
 export function canViewProjectSurface(

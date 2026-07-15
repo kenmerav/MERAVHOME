@@ -1069,6 +1069,8 @@ function ProjectAccessDialog({
     client_can_view_presentations: project.client_can_view_presentations,
     client_can_view_design_boards: project.client_can_view_design_boards,
     client_can_view_construction_docs: project.client_can_view_construction_docs,
+    client_can_download_construction_docs:
+      project.client_can_download_construction_docs ?? false,
     client_can_download_spec_book_pdf: project.client_can_download_spec_book_pdf ?? false,
     client_spec_show_pricing: project.client_spec_show_pricing,
     client_spec_show_links: project.client_spec_show_links,
@@ -1090,6 +1092,8 @@ function ProjectAccessDialog({
       client_can_view_presentations: project.client_can_view_presentations,
       client_can_view_design_boards: project.client_can_view_design_boards,
       client_can_view_construction_docs: project.client_can_view_construction_docs,
+      client_can_download_construction_docs:
+        project.client_can_download_construction_docs ?? false,
       client_can_download_spec_book_pdf: project.client_can_download_spec_book_pdf ?? false,
       client_spec_show_pricing: project.client_spec_show_pricing,
       client_spec_show_links: project.client_spec_show_links,
@@ -1150,6 +1154,7 @@ function ProjectAccessDialog({
               ["Presentations Ready", form.client_can_view_presentations, () => toggle("client_can_view_presentations")],
               ["Design Boards Ready", form.client_can_view_design_boards, () => toggle("client_can_view_design_boards")],
               ["Construction Docs Ready", form.client_can_view_construction_docs, () => toggle("client_can_view_construction_docs")],
+              ["Can Download Construction Docs", form.client_can_download_construction_docs, () => toggle("client_can_download_construction_docs")],
               ["Can Download Spec Book PDF", form.client_can_download_spec_book_pdf, () => toggle("client_can_download_spec_book_pdf")],
               ["Spec Shows Pricing", form.client_spec_show_pricing, () => toggle("client_spec_show_pricing")],
               ["Spec Shows Product Links", form.client_spec_show_links, () => toggle("client_spec_show_links")],

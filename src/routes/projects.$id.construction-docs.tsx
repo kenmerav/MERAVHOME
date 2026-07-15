@@ -9,7 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { db } from "@/lib/db";
-import { canViewProjectSurface, isStudioTeamRole } from "@/lib/permissions";
+import {
+  canDownloadConstructionDocs,
+  canViewProjectSurface,
+  isStudioTeamRole,
+} from "@/lib/permissions";
 
 const PROJECT_FILES_BUCKET = "project-files";
 const PROJECT_FILE_LIMIT = 50 * 1024 * 1024;
@@ -35,6 +39,7 @@ function ConstructionDocsPage() {
   });
   const canManageDocs = profile?.is_active === true && isStudioTeamRole(profile.role);
   const canViewDocs = canViewProjectSurface(profile, project, "constructionDocs");
+  const canDownloadDocs = canDownloadConstructionDocs(profile, project);
   const { data: docs = [], isLoading: loadingDocs } = useQuery({
     queryKey: ["projectDocuments", id],
     queryFn: async () => (await db.listProjectDocuments(id)) ?? [],
@@ -211,9 +216,11 @@ function ConstructionDocsPage() {
                     <a href={doc.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
                       <ExternalLink className="h-4 w-4" /> Open
                     </a>
-                    <a href={doc.file_url} download className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
-                      <Download className="h-4 w-4" /> Download
-                    </a>
+                    {canDownloadDocs && (
+                      <a href={doc.file_url} download className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
+                        <Download className="h-4 w-4" /> Download
+                      </a>
+                    )}
                     {canManageDocs && (
                       <button
                         type="button"

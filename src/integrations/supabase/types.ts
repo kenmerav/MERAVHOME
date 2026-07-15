@@ -505,6 +505,7 @@ export type Database = {
           approval_show_quantity: boolean
           approval_show_vendor: boolean
           client_name: string
+          client_can_download_construction_docs: boolean
           client_can_view_construction_docs: boolean
           client_can_view_design_boards: boolean
           client_can_view_presentations: boolean
@@ -545,6 +546,7 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name: string
+          client_can_download_construction_docs?: boolean
           client_can_view_construction_docs?: boolean
           client_can_view_design_boards?: boolean
           client_can_view_presentations?: boolean
@@ -585,6 +587,7 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name?: string
+          client_can_download_construction_docs?: boolean
           client_can_view_construction_docs?: boolean
           client_can_view_design_boards?: boolean
           client_can_view_presentations?: boolean

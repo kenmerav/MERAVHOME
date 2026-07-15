@@ -105,6 +105,7 @@ async function duplicateProject(sourceProjectId: string, name: string, clientNam
     client_can_view_presentations: false,
     client_can_view_design_boards: false,
     client_can_view_construction_docs: false,
+    client_can_download_construction_docs: false,
     client_can_download_spec_book_pdf: false,
     contractor_can_view_spec_book: false,
     contractor_can_view_presentations: false,
