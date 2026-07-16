@@ -13,7 +13,7 @@ const REQUIRED_ENV = [
 
 const PAGE_SIZE = 1000;
 const TABLE_PAGE_SIZES = {
-  design_board_versions: 25,
+  design_board_versions: 100,
 };
 const MAX_SINGLE_UPLOAD_BYTES = 4.5 * 1024 * 1024 * 1024;
 
@@ -157,17 +157,31 @@ async function discoverPublicResources(supabaseUrl, serviceRoleKey) {
   const specification = await jsonResponse(response, "Supabase schema discovery");
   return Object.entries(specification?.paths ?? {})
     .filter(([path, operations]) => path.startsWith("/") && !path.startsWith("/rpc/") && operations?.get)
-    .map(([path]) => decodeURIComponent(path.slice(1)))
-    .filter(Boolean)
-    .sort();
+    .map(([path]) => {
+      const name = decodeURIComponent(path.slice(1));
+      const properties = specification?.definitions?.[name]?.properties ?? {};
+      const identifier = properties.id ? "id" : properties.version_id ? "version_id" : null;
+      return {
+        name,
+        snapshotColumn: properties.created_at ? "created_at" : null,
+        orderColumns: [properties.created_at ? "created_at" : null, identifier].filter(Boolean),
+      };
+    })
+    .filter((resource) => resource.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function readAllRows(supabase, table) {
-  const rows = [];
+async function backUpPublicResource(supabase, b2, resource, databasePrefix, snapshotTime) {
+  const table = resource.name;
   let from = 0;
   let pageSize = TABLE_PAGE_SIZES[table] ?? PAGE_SIZE;
+  let chunks = 0;
+  let rows = 0;
   for (;;) {
-    const { data, error } = await supabase.from(table).select("*").range(from, from + pageSize - 1);
+    let query = supabase.from(table).select("*");
+    if (resource.snapshotColumn) query = query.lte(resource.snapshotColumn, snapshotTime);
+    for (const column of resource.orderColumns) query = query.order(column, { ascending: true });
+    const { data, error } = await query.range(from, from + pageSize - 1);
     if (error) {
       const timedOut = /statement timeout|timed out/i.test(error.message || "");
       if (timedOut && pageSize > 1) {
@@ -177,20 +191,52 @@ async function readAllRows(supabase, table) {
       }
       throw new Error(`${table}: ${error.message}`);
     }
-    rows.push(...(data ?? []));
-    if (!data || data.length < pageSize) return rows;
-    from += data.length;
+    const page = data ?? [];
+    if (page.length) {
+      const chunkName = String(chunks).padStart(6, "0");
+      const content = gzipSync(Buffer.from(JSON.stringify({
+        formatVersion: 2,
+        table,
+        snapshotTime,
+        offset: from,
+        rows: page,
+      })));
+      await uploadB2File(
+        b2,
+        `${databasePrefix}/tables/${table}/${chunkName}.json.gz`,
+        content,
+        "application/gzip",
+      );
+      chunks += 1;
+      rows += page.length;
+      from += page.length;
+    }
+    if (page.length < pageSize) {
+      console.log(`database: ${table} (${rows} rows in ${chunks} chunks)`);
+      return {
+        rows,
+        chunks,
+        pageSize,
+        snapshotColumn: resource.snapshotColumn,
+        orderColumns: resource.orderColumns,
+      };
+    }
   }
 }
 
-async function exportPublicData(supabase, supabaseUrl, serviceRoleKey) {
+async function backUpPublicData(supabase, b2, supabaseUrl, serviceRoleKey, databasePrefix, snapshotTime) {
   const resources = await discoverPublicResources(supabaseUrl, serviceRoleKey);
-  const tables = {};
-  for (const table of resources) {
-    tables[table] = await readAllRows(supabase, table);
-    console.log(`database: ${table} (${tables[table].length} rows)`);
+  const summary = {};
+  for (const resource of resources) {
+    summary[resource.name] = await backUpPublicResource(
+      supabase,
+      b2,
+      resource,
+      databasePrefix,
+      snapshotTime,
+    );
   }
-  return tables;
+  return summary;
 }
 
 async function exportAuthUsers(supabase) {
@@ -279,26 +325,31 @@ async function main() {
   });
   const b2 = await authorizeB2();
   const existingFiles = await listB2Files(b2, "storage/");
+  const databasePrefix = `database/${startedAt.getUTCFullYear()}/${String(startedAt.getUTCMonth() + 1).padStart(2, "0")}/${String(startedAt.getUTCDate()).padStart(2, "0")}/${timestamp}`;
 
-  const tables = await exportPublicData(supabase, process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const publicResources = await backUpPublicData(
+    supabase,
+    b2,
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    databasePrefix,
+    startedAt.toISOString(),
+  );
   const authUsers = await exportAuthUsers(supabase);
   console.log(`auth: users (${authUsers.length} rows)`);
 
   const storage = await backUpStorage(supabase, b2, existingFiles);
-  const databasePrefix = `database/${startedAt.getUTCFullYear()}/${String(startedAt.getUTCMonth() + 1).padStart(2, "0")}/${String(startedAt.getUTCDate()).padStart(2, "0")}/${timestamp}`;
-  const publicData = gzipSync(Buffer.from(JSON.stringify({ generatedAt: startedAt.toISOString(), tables })));
   const authData = gzipSync(Buffer.from(JSON.stringify({ generatedAt: startedAt.toISOString(), users: authUsers })));
   const storageManifest = gzipSync(Buffer.from(JSON.stringify({ generatedAt: startedAt.toISOString(), objects: storage.manifest })));
 
-  await uploadB2File(b2, `${databasePrefix}/public-data.json.gz`, publicData, "application/gzip");
   await uploadB2File(b2, `${databasePrefix}/auth-users.json.gz`, authData, "application/gzip");
   await uploadB2File(b2, `${databasePrefix}/storage-manifest.json.gz`, storageManifest, "application/gzip");
 
   const summary = {
-    formatVersion: 1,
+    formatVersion: 2,
     generatedAt: startedAt.toISOString(),
     completedAt: new Date().toISOString(),
-    publicResources: Object.fromEntries(Object.entries(tables).map(([table, rows]) => [table, rows.length])),
+    publicResources,
     authUsers: authUsers.length,
     storageFiles: storage.manifest.length,
     storageUploaded: storage.uploaded,
