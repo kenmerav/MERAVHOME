@@ -53,16 +53,26 @@ async function authorizeB2() {
   });
   const authorization = await jsonResponse(response, "Backblaze authorization");
   const storageApi = authorization?.apiInfo?.storageApi;
-  if (!storageApi?.apiUrl || !storageApi?.bucketId || !authorization?.authorizationToken) {
+  const allowedBuckets = storageApi?.allowed?.buckets;
+  const backupBucket = Array.isArray(allowedBuckets)
+    ? allowedBuckets.find((bucket) => bucket.name === process.env.B2_BUCKET_NAME)
+    : null;
+  if (!storageApi?.apiUrl || !backupBucket?.id || !authorization?.authorizationToken) {
     throw new Error("Backblaze key is not restricted to the expected backup bucket.");
   }
-  if (storageApi.bucketName && storageApi.bucketName !== process.env.B2_BUCKET_NAME) {
-    throw new Error(`Backblaze key is scoped to ${storageApi.bucketName}, not ${process.env.B2_BUCKET_NAME}.`);
+  if (allowedBuckets.length !== 1) {
+    throw new Error("Backblaze key must be restricted to only the Studio backup bucket.");
+  }
+  const capabilities = storageApi.allowed?.capabilities ?? [];
+  for (const capability of ["listFiles", "writeFiles"]) {
+    if (!capabilities.includes(capability)) {
+      throw new Error(`Backblaze key is missing the ${capability} capability.`);
+    }
   }
   return {
     apiUrl: storageApi.apiUrl,
     authorizationToken: authorization.authorizationToken,
-    bucketId: storageApi.bucketId,
+    bucketId: backupBucket.id,
   };
 }
 
