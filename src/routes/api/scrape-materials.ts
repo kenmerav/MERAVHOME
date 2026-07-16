@@ -140,7 +140,40 @@ function structuredPriceFromHtml(html?: string) {
   return low === high ? lowPrice : `${lowPrice}-${highPrice}`;
 }
 
-function priceFromPageText(markdown?: string, html?: string) {
+function selectedSkuPriceFromHtml(html: string, sourceUrl: string) {
+  let selectedSku = "";
+  try {
+    selectedSku = new URL(sourceUrl).searchParams.get("sku")?.trim() ?? "";
+  } catch {
+    return "";
+  }
+  if (!selectedSku || !/^\d{4,20}$/.test(selectedSku)) return "";
+
+  const escapedSku = selectedSku.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const skuObject = new RegExp(`"${escapedSku}"\\s*:\\s*\\{\\s*"id"\\s*:\\s*"${escapedSku}"`).exec(
+    html,
+  );
+  if (!skuObject) return "";
+  const selectedProductData = html.slice(skuObject.index, skuObject.index + 12000);
+  const priceBlock = selectedProductData.match(/"price"\s*:\s*\{([^}]{0,1200})\}/i)?.[1] ?? "";
+  const priceField = (field: string) => {
+    const match = new RegExp(`"${field}"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`, "i").exec(priceBlock);
+    return match ? Number(match[1]) : Number.NaN;
+  };
+  const sellingPrice = priceField("sellingPrice");
+  const regularPrice = priceField("regularPrice");
+  const retailPrice = priceField("retailPrice");
+  const currentPrice = [sellingPrice, regularPrice, retailPrice].find(
+    (price) => Number.isFinite(price) && price >= 0,
+  );
+  return currentPrice == null ? "" : formatPriceNumber(currentPrice);
+}
+
+function priceFromPageText(
+  markdown: string | undefined,
+  html: string | undefined,
+  sourceUrl: string,
+) {
   const htmlText = html ?? "";
   const markdownText = markdown ?? "";
 
@@ -153,6 +186,7 @@ function priceFromPageText(markdown?: string, html?: string) {
   );
 
   return firstPrice(
+    selectedSkuPriceFromHtml(htmlText, sourceUrl),
     structuredPriceFromHtml(htmlText),
     automationPrice?.[1],
     labeledPrice?.[1],
@@ -321,6 +355,48 @@ async function scrapeShopifyProduct(url: string): Promise<Scraped | null> {
   }
 }
 
+async function scrapeEmbeddedSkuProduct(url: string): Promise<Scraped | null> {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return null;
+  }
+  const supportedHost = /(^|\.)(rejuvenation|potterybarn|westelm|williams-sonoma)\.com$/i.test(
+    parsedUrl.hostname,
+  );
+  const selectedSku = parsedUrl.searchParams.get("sku")?.trim() ?? "";
+  if (!supportedHost || !/^\d{4,20}$/.test(selectedSku)) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DIRECT_PRODUCT_TIMEOUT_MS);
+  try {
+    const response = await fetch(parsedUrl, {
+      headers: {
+        Accept: "text/html",
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "Mozilla/5.0 AppleWebKit/537.36 Chrome/126 Safari/537.36",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const price = selectedSkuPriceFromHtml(html, url);
+    if (!price) return null;
+    return { price, sku: selectedSku, vendor: inferVendorFromUrl(url) };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function scrapeDirectProduct(url: string) {
+  const shopifyProduct = await scrapeShopifyProduct(url);
+  if (shopifyProduct?.price) return shopifyProduct;
+  return mergeScraped(await scrapeEmbeddedSkuProduct(url), shopifyProduct);
+}
+
 function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | null | undefined) {
   return compactPayload({
     name: firstString(primary?.name, fallback?.name),
@@ -411,7 +487,7 @@ const scrapeSchema = {
 function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scraped {
   const ex = data.json ?? data.extract ?? {};
   const meta = data.metadata ?? {};
-  const pagePrice = priceFromPageText(data.markdown, data.html);
+  const pagePrice = priceFromPageText(data.markdown, data.html, sourceUrl);
   return {
     name: firstString(ex.name, meta.title, meta.ogTitle),
     vendor: firstString(
@@ -447,8 +523,8 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
 }
 
 async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
-  const shopifyProduct = await scrapeShopifyProduct(url);
-  if (shopifyProduct?.price) return shopifyProduct;
+  const directProduct = await scrapeDirectProduct(url);
+  if (directProduct?.price) return directProduct;
   const schema = {
     type: "object",
     properties: {
@@ -518,7 +594,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     }
     const body = (await res.json()) as FirecrawlEnvelope;
     const data = batchEnvelope(body.data ?? body) as FirecrawlPage;
-    return mergeScraped(scrapedFromFirecrawlData(data, url), shopifyProduct);
+    return mergeScraped(scrapedFromFirecrawlData(data, url), directProduct);
   } catch (e: any) {
     if (e?.name === "AbortError")
       return { error: "Scrape timed out. Try again or enter details manually." };
@@ -613,7 +689,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 const materialItemId = cleanUuid(candidate.material_item_id);
                 const url = candidate.url?.trim() ?? "";
                 const page = byUrl.get(url) ?? byUrl.get(canonicalScrapeUrl(url));
-                const directProduct = await scrapeShopifyProduct(url);
+                const directProduct = await scrapeDirectProduct(url);
                 return {
                   material_item_id: materialItemId,
                   url,
@@ -674,7 +750,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               material_item_id: cleanUuid(candidate.material_item_id),
               url: candidate.url,
               existing_product_id: cleanUuid(candidate.existing_product_id),
-              scraped: await scrapeShopifyProduct(candidate.url),
+              scraped: await scrapeDirectProduct(candidate.url),
             })),
           );
           const prefetchedRows = directRows
