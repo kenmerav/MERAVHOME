@@ -8,7 +8,7 @@ import { inferVendorFromUrl } from "@/lib/vendorInference";
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
 const MAX_SCRAPE_ROWS_PER_BATCH = 12;
-const SCRAPE_TIMEOUT_MS = 15000;
+const SCRAPE_TIMEOUT_MS = 40000;
 const DIRECT_PRODUCT_TIMEOUT_MS = 8000;
 const FIRECRAWL_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -577,7 +577,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
             type: "json",
             schema: scrapeSchema,
             prompt:
-              "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, or variant already chosen, capture that exact selected value. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Do not invent a color or price.",
+              "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, SKU, or variant already chosen, capture that exact selected value. Capture only the primary product price matching the URL and selected SKU. Ignore installation services, financing thresholds, shipping offers, and related or recommended product prices. If no exact variant price is visible, capture the primary product price range. Do not invent a color or price.",
           },
         ],
         onlyMainContent: false,
@@ -783,7 +783,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   type: "json",
                   schema: scrapeSchema,
                   prompt:
-                    "Extract product details and the exact current visible price. Do not invent a price.",
+                    "Extract product details and the exact current visible price for the primary product matching the URL and selected SKU. Ignore installation services, financing thresholds, shipping offers, and related or recommended product prices. Do not invent a price.",
                 },
               ],
               onlyMainContent: false,
