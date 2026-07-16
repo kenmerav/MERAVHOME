@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "backup:studio": "node scripts/backup-studio.mjs",
     "validate:design-board-collab": "node scripts/validate-design-board-collab.mjs",
     "validate:design-board-recovery": "node scripts/validate-design-board-recovery.mjs",
     "format": "prettier --write ."
