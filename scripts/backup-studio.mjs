@@ -12,6 +12,9 @@ const REQUIRED_ENV = [
 ];
 
 const PAGE_SIZE = 1000;
+const TABLE_PAGE_SIZES = {
+  design_board_versions: 25,
+};
 const MAX_SINGLE_UPLOAD_BYTES = 4.5 * 1024 * 1024 * 1024;
 
 function requireEnvironment() {
@@ -161,11 +164,22 @@ async function discoverPublicResources(supabaseUrl, serviceRoleKey) {
 
 async function readAllRows(supabase, table) {
   const rows = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase.from(table).select("*").range(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(`${table}: ${error.message}`);
+  let from = 0;
+  let pageSize = TABLE_PAGE_SIZES[table] ?? PAGE_SIZE;
+  for (;;) {
+    const { data, error } = await supabase.from(table).select("*").range(from, from + pageSize - 1);
+    if (error) {
+      const timedOut = /statement timeout|timed out/i.test(error.message || "");
+      if (timedOut && pageSize > 1) {
+        pageSize = Math.max(1, Math.floor(pageSize / 2));
+        console.warn(`database: ${table} timed out; retrying with ${pageSize} rows per request`);
+        continue;
+      }
+      throw new Error(`${table}: ${error.message}`);
+    }
     rows.push(...(data ?? []));
-    if (!data || data.length < PAGE_SIZE) return rows;
+    if (!data || data.length < pageSize) return rows;
+    from += data.length;
   }
 }
 
