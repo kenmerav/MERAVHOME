@@ -488,6 +488,11 @@ function ProjectDesignBoardsPage() {
   const [thumbnailViewport, setThumbnailViewport] = useState({ scrollLeft: 0, width: 0 });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [missingInfoOpen, setMissingInfoOpen] = useState(false);
+  const [pageTransferOpen, setPageTransferOpen] = useState(false);
+  const [pageTransferMode, setPageTransferMode] = useState<"duplicate" | "move">("duplicate");
+  const [destinationProjectId, setDestinationProjectId] = useState("");
+  const [destinationRoomId, setDestinationRoomId] = useState("");
+  const [transferringPage, setTransferringPage] = useState(false);
   const [materialInfoReviewPageIds, setMaterialInfoReviewPageIds] = useState<string[] | null>(null);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
@@ -540,6 +545,16 @@ function ProjectDesignBoardsPage() {
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", id],
     queryFn: async () => sortRoomsAlphabetically((await db.listRooms(id)) ?? []),
+  });
+  const { data: pageTransferProjects = [] } = useQuery({
+    queryKey: ["designBoardTransferProjects"],
+    queryFn: async () => (await db.listProjects()) ?? [],
+    enabled: canEditDesignBoards && pageTransferOpen,
+  });
+  const { data: destinationRooms = [], isLoading: loadingDestinationRooms } = useQuery({
+    queryKey: ["designBoardTransferRooms", destinationProjectId],
+    queryFn: async () => sortRoomsAlphabetically((await db.listRooms(destinationProjectId)) ?? []),
+    enabled: canEditDesignBoards && pageTransferOpen && Boolean(destinationProjectId),
   });
   const { data: products = [] } = useQuery({
     queryKey: ["catalog", search],
@@ -734,6 +749,15 @@ function ProjectDesignBoardsPage() {
   const sortedRooms = useMemo(
     () => sortRoomsAlphabetically(rooms),
     [rooms],
+  );
+  const sortedPageTransferProjects = useMemo(
+    () =>
+      pageTransferProjects
+        .filter((candidate) => candidate.id !== id)
+        .sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+        ),
+    [id, pageTransferProjects],
   );
   const productById = useMemo(
     () => new Map(products.map((product) => [product.id, product] as const)),
@@ -2323,6 +2347,160 @@ function ProjectDesignBoardsPage() {
     void saveBoardStateImmediately(nextState);
   };
 
+  const transferActivePage = async () => {
+    if (!canEditDesignBoards || !destinationProjectId || transferringPage) return;
+    const sourcePageId = activePage.id;
+    setTransferringPage(true);
+    setSaveStatus("saving");
+
+    try {
+      if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
+      const sourceSnapshot = prepareBoardStateForSave(boardStateRef.current);
+      const sourceSnapshotJson = JSON.stringify(sourceSnapshot);
+      let savedSourceState = sourceSnapshot;
+      if (sourceSnapshotJson !== lastSavedJsonRef.current) {
+        const sourceSave = await saveBoardStateSafely(sourceSnapshot);
+        savedSourceState = sourceSave.savedState;
+        lastSavedJsonRef.current = sourceSave.savedJson;
+        lastGoodBoardStateRef.current = sourceSave.savedState;
+        if (sourceSave.savedBoard) {
+          queryClient.setQueryData(["designBoard", id], sourceSave.savedBoard);
+        }
+      }
+
+      const sourcePage = savedSourceState.pages.find((page) => page.id === sourcePageId);
+      if (!sourcePage) throw new Error("That page changed before it could be transferred.");
+      const transferredPage = createTransferredBoardPage(sourcePage, destinationRoomId || null);
+
+      let destinationSaved = false;
+      for (let attempt = 0; attempt < 3 && !destinationSaved; attempt += 1) {
+        const destinationBoard = await db.getDesignBoard(destinationProjectId);
+        if (!destinationBoard) {
+          try {
+            await db.insertDesignBoard(
+              destinationProjectId,
+              prepareBoardStateForSave({
+                pages: [transferredPage],
+                selectedPageId: transferredPage.id,
+                presentationExtraPages: [],
+                comments: [],
+              }),
+              profile?.id,
+            );
+            destinationSaved = true;
+          } catch (error) {
+            const boardCreatedElsewhere = await db.getDesignBoard(destinationProjectId);
+            if (!boardCreatedElsewhere) throw error;
+          }
+          continue;
+        }
+
+        const destinationState = normalizeBoardState(destinationBoard.board_state);
+        const replaceDefaultPage = isUntouchedDefaultBoard(destinationState);
+        const nextDestinationState = prepareBoardStateForSave({
+          ...destinationState,
+          pages: replaceDefaultPage
+            ? [transferredPage]
+            : [...destinationState.pages, transferredPage],
+          selectedPageId: replaceDefaultPage ? transferredPage.id : destinationState.selectedPageId,
+        });
+        destinationSaved = Boolean(
+          await db.updateDesignBoardIfFresh(
+            destinationProjectId,
+            nextDestinationState,
+            destinationBoard.updated_at,
+            profile?.id,
+          ),
+        );
+      }
+
+      if (!destinationSaved) {
+        throw new Error(
+          "The destination board changed while this page was being added. Try again.",
+        );
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: ["designBoard", destinationProjectId],
+      });
+
+      if (pageTransferMode === "move") {
+        const latestSource = normalizeBoardState(boardStateRef.current);
+        const sourcePageIndex = latestSource.pages.findIndex((page) => page.id === sourcePageId);
+        if (sourcePageIndex < 0) {
+          throw new Error(
+            "The page was copied, but it had already been removed from this project.",
+          );
+        }
+
+        const remainingPages = latestSource.pages.filter((page) => page.id !== sourcePageId);
+        const replacementPage: BoardPage | null = remainingPages.length
+          ? null
+          : {
+              id: crypto.randomUUID(),
+              title: "Design Board 1",
+              roomId: null,
+              elements: [],
+            };
+        const nextPages = replacementPage ? [replacementPage] : remainingPages;
+        const nextSelectedPageId =
+          latestSource.pages[sourcePageIndex - 1]?.id ??
+          latestSource.pages[sourcePageIndex + 1]?.id ??
+          nextPages[0].id;
+        const nextSourceState = normalizeBoardState({
+          ...latestSource,
+          pages: nextPages,
+          selectedPageId: nextSelectedPageId,
+          comments: (latestSource.comments ?? []).filter(
+            (comment) => comment.pageId !== sourcePageId,
+          ),
+          presentationExtraPages: (latestSource.presentationExtraPages ?? []).filter(
+            (slot) => slot.boardPageId !== sourcePageId,
+          ),
+        });
+
+        try {
+          const sourceMoveSave = await saveBoardStateSafely(nextSourceState);
+          pushUndo();
+          applyLocalBoardUpdate(sourceMoveSave.savedState);
+          boardStateRef.current = sourceMoveSave.savedState;
+          lastGoodBoardStateRef.current = sourceMoveSave.savedState;
+          markRemoteBoardApplied(sourceMoveSave.savedJson, sourceMoveSave.savedBoard?.updated_at);
+          if (sourceMoveSave.savedBoard) {
+            queryClient.setQueryData(["designBoard", id], sourceMoveSave.savedBoard);
+          }
+          broadcastPatch({ kind: "restore-state", state: sourceMoveSave.savedState });
+          pendingPageFocusRef.current = sourceMoveSave.savedState.selectedPageId;
+          clearSelection();
+        } catch {
+          setSaveStatus("error");
+          toast.warning(
+            "The page was duplicated to the other project, but could not be removed here. No source data was deleted.",
+          );
+          setPageTransferOpen(false);
+          return;
+        }
+      }
+
+      setSaveStatus("saved");
+      const destinationProject = sortedPageTransferProjects.find(
+        (candidate) => candidate.id === destinationProjectId,
+      );
+      toast.success(
+        `Page ${pageTransferMode === "move" ? "moved" : "duplicated"} to ${destinationProject?.name ?? "the selected project"}.`,
+      );
+      setPageTransferOpen(false);
+      setDestinationProjectId("");
+      setDestinationRoomId("");
+      setPageTransferMode("duplicate");
+    } catch (error) {
+      setSaveStatus("error");
+      toast.error(error instanceof Error ? error.message : "Could not transfer this page.");
+    } finally {
+      setTransferringPage(false);
+    }
+  };
+
   const updateZoom = (zoomPercent: number) => {
     hasCustomZoomRef.current = true;
     setBoardScale(clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM));
@@ -3839,6 +4017,144 @@ function ProjectDesignBoardsPage() {
           </div>
 
           <Dialog
+            open={pageTransferOpen}
+            onOpenChange={(open) => {
+              if (transferringPage) return;
+              setPageTransferOpen(open);
+              if (!open) {
+                setDestinationProjectId("");
+                setDestinationRoomId("");
+                setPageTransferMode("duplicate");
+              }
+            }}
+          >
+            <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-display text-3xl font-normal">
+                  Transfer Design Board Page
+                </DialogTitle>
+                <DialogDescription>
+                  Send "{activePage.title || `Board ${selectedPageIndex + 1}`}" to another project.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-5">
+                <div>
+                  <div className="mb-2 text-xs uppercase tracking-[0.18em] text-stone-500">
+                    Transfer Type
+                  </div>
+                  <div className="grid grid-cols-2 border border-stone-300 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setPageTransferMode("duplicate")}
+                      className={cn(
+                        "inline-flex items-center justify-center gap-2 px-3 py-2 text-sm transition",
+                        pageTransferMode === "duplicate"
+                          ? "bg-ink text-white"
+                          : "bg-white text-stone-700 hover:bg-stone-50",
+                      )}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPageTransferMode("move")}
+                      className={cn(
+                        "inline-flex items-center justify-center gap-2 px-3 py-2 text-sm transition",
+                        pageTransferMode === "move"
+                          ? "bg-ink text-white"
+                          : "bg-white text-stone-700 hover:bg-stone-50",
+                      )}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                      Move
+                    </button>
+                  </div>
+                </div>
+
+                <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                  Destination Project
+                  <select
+                    value={destinationProjectId}
+                    onChange={(event) => {
+                      setDestinationProjectId(event.target.value);
+                      setDestinationRoomId("");
+                    }}
+                    className="mt-1 w-full border border-stone-300 bg-white px-3 py-2.5 text-sm normal-case tracking-normal"
+                  >
+                    <option value="">Choose a project</option>
+                    {sortedPageTransferProjects.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.name}
+                        {candidate.client_name ? ` - ${candidate.client_name}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
+                  Room in Destination Project
+                  <select
+                    value={destinationRoomId}
+                    onChange={(event) => setDestinationRoomId(event.target.value)}
+                    disabled={!destinationProjectId || loadingDestinationRooms}
+                    className="mt-1 w-full border border-stone-300 bg-white px-3 py-2.5 text-sm normal-case tracking-normal disabled:cursor-not-allowed disabled:bg-stone-100"
+                  >
+                    <option value="">
+                      {loadingDestinationRooms ? "Loading rooms..." : "No room assigned"}
+                    </option>
+                    {destinationRooms.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        {room.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="border border-stone-200 bg-stone-50 px-4 py-3 text-xs leading-relaxed text-stone-600">
+                  The page layout and product details will transfer. Project-specific material rows,
+                  approvals, comments, and presentation placement will stay with the original
+                  project.
+                </div>
+                {pageTransferMode === "move" && (
+                  <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                    The original page is removed only after the destination project saves its copy.
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPageTransferOpen(false)}
+                    disabled={transferringPage}
+                    className="border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void transferActivePage()}
+                    disabled={!destinationProjectId || transferringPage}
+                    className="inline-flex items-center justify-center gap-2 border border-ink bg-ink px-4 py-2 text-sm text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pageTransferMode === "duplicate" ? (
+                      <Copy className="h-4 w-4" />
+                    ) : (
+                      <ArrowRight className="h-4 w-4" />
+                    )}
+                    {transferringPage
+                      ? "Transferring..."
+                      : pageTransferMode === "duplicate"
+                        ? "Duplicate Page"
+                        : "Move Page"}
+                  </button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
             open={pendingMaterialSend !== null}
             onOpenChange={(open) => {
               if (!open) setPendingMaterialSend(null);
@@ -4139,6 +4455,19 @@ function ProjectDesignBoardsPage() {
                   >
                     Present Design Board <ExternalLink className="h-4 w-4" />
                   </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDestinationProjectId("");
+                        setDestinationRoomId("");
+                        setPageTransferMode("duplicate");
+                        setPageTransferOpen(true);
+                      }}
+                      className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink"
+                    >
+                      <Copy className="h-4 w-4" />
+                      Transfer Page
+                    </button>
                   <div className="text-[11px] leading-relaxed text-stone-500">
                     Hidden pages stay editable here, but are skipped when sending the full board to
                     Materials and exporting the design board PDF.
@@ -7652,6 +7981,42 @@ function defaultPages(): BoardPage[] {
       elements: [],
     },
   ];
+}
+
+function createTransferredBoardPage(
+  sourcePage: BoardPage,
+  destinationRoomId: string | null,
+): BoardPage {
+  return {
+    ...cloneBoardState({
+      pages: [sourcePage],
+      selectedPageId: sourcePage.id,
+    }).pages[0],
+    id: crypto.randomUUID(),
+    roomId: destinationRoomId,
+    hidden: false,
+    roomApprovalStatus: undefined,
+    declinedMaterialItems: undefined,
+    presentationVisible: false,
+    elements: sourcePage.elements.map((element) => ({
+      ...element,
+      id: crypto.randomUUID(),
+      materialItemId: null,
+      materialRoomId: destinationRoomId,
+      materialInfoSkipApproved: false,
+    })),
+  };
+}
+
+function isUntouchedDefaultBoard(state: BoardState) {
+  return (
+    state.pages.length === 1 &&
+    state.pages[0].id === "board-1" &&
+    state.pages[0].title === "Design Board 1" &&
+    state.pages[0].roomId === null &&
+    state.pages[0].elements.length === 0 &&
+    (state.comments ?? []).length === 0
+  );
 }
 
 function storageKey(projectId: string) {
