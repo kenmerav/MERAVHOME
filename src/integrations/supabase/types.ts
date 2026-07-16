@@ -199,7 +199,15 @@ export type Database = {
           client_product_name: string | null
           color: string | null
           created_at: string
+          finish_check_confidence: number | null
+          finish_check_image_finish: string | null
+          finish_check_image_url: string | null
+          finish_check_product_finish: string | null
+          finish_check_reason: string | null
+          finish_check_status: string
+          finish_checked_at: string | null
           id: string
+          image_url: string | null
           is_required: boolean
           item_label: string
           not_needed: boolean
@@ -225,7 +233,15 @@ export type Database = {
           client_product_name?: string | null
           color?: string | null
           created_at?: string
+          finish_check_confidence?: number | null
+          finish_check_image_finish?: string | null
+          finish_check_image_url?: string | null
+          finish_check_product_finish?: string | null
+          finish_check_reason?: string | null
+          finish_check_status?: string
+          finish_checked_at?: string | null
           id?: string
+          image_url?: string | null
           is_required?: boolean
           item_label: string
           not_needed?: boolean
@@ -251,7 +267,15 @@ export type Database = {
           client_product_name?: string | null
           color?: string | null
           created_at?: string
+          finish_check_confidence?: number | null
+          finish_check_image_finish?: string | null
+          finish_check_image_url?: string | null
+          finish_check_product_finish?: string | null
+          finish_check_reason?: string | null
+          finish_check_status?: string
+          finish_checked_at?: string | null
           id?: string
+          image_url?: string | null
           is_required?: boolean
           item_label?: string
           not_needed?: boolean

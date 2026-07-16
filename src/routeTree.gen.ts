@@ -53,6 +53,7 @@ import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-
 import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
+import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
@@ -306,6 +307,12 @@ const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
   path: '/api/client-dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCheckMaterialFinishesRoute =
+  ApiCheckMaterialFinishesRouteImport.update({
+    id: '/api/check-material-finishes',
+    path: '/api/check-material-finishes',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
   id: '/projects/$id/',
   path: '/projects/$id/',
@@ -448,6 +455,7 @@ export interface FileRoutesByFullPath {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
@@ -519,6 +527,7 @@ export interface FileRoutesByTo {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
@@ -591,6 +600,7 @@ export interface FileRoutesById {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
@@ -664,6 +674,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
@@ -735,6 +746,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
@@ -806,6 +818,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
@@ -878,6 +891,7 @@ export interface RootRouteChildren {
   ProcurementRoute: typeof ProcurementRoute
   ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
+  ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiDesignBoardCommentTodosRoute: typeof ApiDesignBoardCommentTodosRoute
@@ -1251,6 +1265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiClientDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/check-material-finishes': {
+      id: '/api/check-material-finishes'
+      path: '/api/check-material-finishes'
+      fullPath: '/api/check-material-finishes'
+      preLoaderRoute: typeof ApiCheckMaterialFinishesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/': {
       id: '/projects/$id/'
       path: '/projects/$id'
@@ -1438,6 +1459,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProcurementRoute: ProcurementRoute,
   ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
+  ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiDesignBoardCommentTodosRoute: ApiDesignBoardCommentTodosRoute,

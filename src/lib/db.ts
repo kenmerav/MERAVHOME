@@ -297,6 +297,13 @@ export interface MaterialItem {
   source_board_element_id: string | null;
   scrape_status: string;
   scrape_error: string | null;
+  finish_check_status?: "unchecked" | "match" | "possible_mismatch" | "uncertain";
+  finish_check_image_finish?: string | null;
+  finish_check_product_finish?: string | null;
+  finish_check_image_url?: string | null;
+  finish_check_confidence?: number | null;
+  finish_check_reason?: string | null;
+  finish_checked_at?: string | null;
   created_at: string;
   updated_at: string;
   product?: Product | null;

@@ -11,6 +11,7 @@ import {
   Search,
   AlertTriangle,
   ChevronUp,
+  ScanSearch,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
@@ -68,6 +69,74 @@ function NeedsReselectionBadge() {
       <AlertTriangle className="h-3 w-3" />
       Needs re-selection
     </span>
+  );
+}
+
+function currentFinishCheck(item: MaterialItem) {
+  const values = [item.color?.trim(), item.product?.finish?.trim()].filter(
+    (value): value is string => Boolean(value),
+  );
+  const productFinish = Array.from(new Set(values.map((value) => value.toLowerCase())))
+    .map((value) => values.find((candidate) => candidate.toLowerCase() === value)!)
+    .join(" / ");
+
+  if (
+    !item.finish_check_status ||
+    item.finish_check_status === "unchecked" ||
+    item.finish_check_image_url !== item.image_url ||
+    item.finish_check_product_finish !== productFinish
+  ) {
+    return null;
+  }
+  return item.finish_check_status;
+}
+
+function FinishCheckBadge({ item }: { item: MaterialItem }) {
+  const status = currentFinishCheck(item);
+  if (!status) return null;
+
+  if (status === "possible_mismatch") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-900"
+        title={item.finish_check_reason || "Review the product finish against the board image."}
+      >
+        <AlertTriangle className="h-3 w-3" />
+        Possible finish mismatch
+      </span>
+    );
+  }
+
+  if (status === "uncertain") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground"
+        title={item.finish_check_reason || "The image was not clear enough to verify the finish."}
+      >
+        Finish unclear
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium tracking-wide text-emerald-800">
+      Finish checked
+    </span>
+  );
+}
+
+function FinishCheckDetails({ item }: { item: MaterialItem }) {
+  const status = currentFinishCheck(item);
+  if (status !== "possible_mismatch") return null;
+
+  return (
+    <div className="mt-2 border-l-2 border-amber-400 pl-2 text-[10px] leading-4 text-amber-900">
+      <div>
+        Product: {item.finish_check_product_finish || "Unclear"} · Image appears:{" "}
+        {item.finish_check_image_finish || "Unclear"}
+      </div>
+      {item.finish_check_reason && <div className="text-amber-800">{item.finish_check_reason}</div>}
+    </div>
   );
 }
 
@@ -175,6 +244,8 @@ function MaterialsPage() {
 
   const [scraping, setScraping] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState("");
+  const [checkingFinishes, setCheckingFinishes] = useState(false);
+  const [finishCheckStatus, setFinishCheckStatus] = useState("");
   const [importingPdf, setImportingPdf] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -429,6 +500,87 @@ function MaterialsPage() {
     }
   };
 
+  const runFinishCheck = async () => {
+    if (!projectId) return toast.error("Invalid project link.");
+    setCheckingFinishes(true);
+    setFinishCheckStatus("Finding finishes...");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in again to check finishes.");
+
+      const processedIds = new Set<string>();
+      let checkedCount = 0;
+      let mismatchCount = 0;
+      let uncertainCount = 0;
+      let failedCount = 0;
+      let batchCount = 0;
+
+      while (true) {
+        setFinishCheckStatus(
+          checkedCount > 0
+            ? `Checking finishes... ${checkedCount} complete`
+            : "Checking finishes...",
+        );
+        const res = await fetch("/api/check-material-finishes", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            project_id: projectId,
+            exclude_material_item_ids: Array.from(processedIds),
+          }),
+        });
+        const body = await readApiJson<{
+          rows?: Array<{
+            material_item_id: string;
+            status: "match" | "possible_mismatch" | "uncertain" | "error";
+          }>;
+          remaining_count?: number;
+          error?: string;
+        }>(res);
+        if (!res.ok) throw new Error(body.error || "Finish check failed.");
+
+        const rows = body.rows ?? [];
+        rows.forEach((row) => {
+          processedIds.add(row.material_item_id);
+          checkedCount += 1;
+          if (row.status === "possible_mismatch") mismatchCount += 1;
+          if (row.status === "uncertain") uncertainCount += 1;
+          if (row.status === "error") failedCount += 1;
+        });
+        await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+
+        batchCount += 1;
+        if (rows.length === 0 || (body.remaining_count ?? 0) === 0) break;
+        if (batchCount >= 100) throw new Error("Finish check paused after 100 batches.");
+      }
+
+      if (checkedCount === 0) {
+        toast.info("All eligible board images and product finishes are already checked.");
+      } else if (mismatchCount > 0) {
+        toast.warning(
+          `Checked ${checkedCount} item${checkedCount === 1 ? "" : "s"}. Review ${mismatchCount} possible finish mismatch${mismatchCount === 1 ? "" : "es"}.${failedCount > 0 ? ` ${failedCount} could not be checked and can be retried.` : ""}`,
+        );
+      } else if (failedCount > 0) {
+        toast.warning(
+          `${checkedCount - failedCount} finish${checkedCount - failedCount === 1 ? " was" : "es were"} checked. ${failedCount} item${failedCount === 1 ? "" : "s"} could not be checked and can be retried.`,
+        );
+      } else {
+        toast.success(
+          `Checked ${checkedCount} item${checkedCount === 1 ? "" : "s"}.${uncertainCount > 0 ? ` ${uncertainCount} could not be confirmed from the image.` : " No finish mismatches found."}`,
+        );
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Finish check failed.");
+    } finally {
+      setCheckingFinishes(false);
+      setFinishCheckStatus("");
+    }
+  };
+
   const importPdf = async (file: File | null | undefined) => {
     if (!file) return;
     if (!projectId) return toast.error("Invalid project link.");
@@ -541,15 +693,25 @@ function MaterialsPage() {
               <button
                 type="button"
                 onClick={() => pdfInputRef.current?.click()}
-                disabled={importingPdf}
+                disabled={importingPdf || checkingFinishes}
                 className="inline-flex items-center gap-2 px-5 py-3 border border-ink text-ink text-sm tracking-wide disabled:opacity-60"
               >
                 <Upload className="w-4 h-4" />
                 {importingPdf ? "Importing..." : "Import PDF"}
               </button>
               <button
+                type="button"
+                onClick={runFinishCheck}
+                disabled={checkingFinishes || scraping}
+                className="inline-flex items-center gap-2 border border-ink px-5 py-3 text-sm tracking-wide text-ink disabled:opacity-60"
+                title="Compare each material's design-board image with its product finish"
+              >
+                <ScanSearch className="h-4 w-4" />
+                {checkingFinishes ? finishCheckStatus || "Checking..." : "Check Finishes"}
+              </button>
+              <button
                 onClick={runScrape}
-                disabled={scraping}
+                disabled={scraping || checkingFinishes}
                 className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-primary-foreground text-sm tracking-wide disabled:opacity-60"
               >
                 <Sparkles className="w-4 h-4" />
@@ -943,6 +1105,7 @@ function RoomMaterialsSection({
                           </span>
                         )}
                         {needsReselection && <NeedsReselectionBadge />}
+                        <FinishCheckBadge item={it} />
                       </div>
                       <CatalogProductPicker
                         item={it}
@@ -979,6 +1142,7 @@ function RoomMaterialsSection({
                           </div>
                         </Link>
                       )}
+                      <FinishCheckDetails item={it} />
                     </td>
                     <td className="py-2 pr-3">
                       <InlineInput
