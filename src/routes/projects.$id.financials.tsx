@@ -368,14 +368,15 @@ function FinancialsPage() {
     if (!serviceDraft) return;
     if (!allowed) return toast.error("Only Ken and Katie can save invoices.");
     const fee = calculatedDesignFee(serviceDraft);
-    const paid = numberValue(serviceDraft.paid) ?? 0;
+    const paid = paidDesignFee(serviceDraft, fee);
     if (fee <= 0) return toast.error("Enter square feet and the matching price per sq/ft first.");
     setSavingServiceInvoice(true);
     try {
-      const payments = serviceDraft.phases.map((phase, index) => ({
+      const phaseAmounts = servicePhaseAmounts(serviceDraft, fee);
+      const phasePayments = serviceDraft.phases.map((phase, index) => ({
         project_id: id,
         label: `Phase ${index + 1} - ${phase.name}`,
-        amount: phaseAmount(fee, phase.percent),
+        amount: phaseAmounts[index],
         due_date: null,
         status: (index === 0 ? "due" : "not_due") as const,
         notes: serviceDraft.currentPhase === phase.name && serviceDraft.stripeLink ? `Stripe payment link: ${serviceDraft.stripeLink}` : null,
@@ -383,8 +384,23 @@ function FinancialsPage() {
         stripe_checkout_session_id: null,
         stripe_payment_intent_id: null,
         paid_at: null,
-        sort_order: index,
+        sort_order: index + (paid > 0 ? 1 : 0),
       }));
+      const payments = paid > 0
+        ? [{
+            project_id: id,
+            label: "Previously Paid",
+            amount: paid,
+            due_date: null,
+            status: "paid" as const,
+            notes: "Payment received before this invoice was created.",
+            stripe_payment_link_id: null,
+            stripe_checkout_session_id: null,
+            stripe_payment_intent_id: null,
+            paid_at: new Date().toISOString(),
+            sort_order: 0,
+          }, ...phasePayments]
+        : phasePayments;
       const invoiceHtml = buildServiceInvoiceHtml(serviceDraft, fee, payments);
       await db.createFinancialInvoice({
         project_id: id,
@@ -414,8 +430,8 @@ function FinancialsPage() {
     if (!serviceDraft) return;
     if (!allowed) return toast.error("Only Ken and Katie can create payment links.");
     const fee = calculatedDesignFee(serviceDraft);
-    const amount = serviceDraft.phases.find((phase) => phase.name === serviceDraft.currentPhase);
-    const paymentAmount = amount ? phaseAmount(fee, amount.percent) : 0;
+    const phaseIndex = serviceDraft.phases.findIndex((phase) => phase.name === serviceDraft.currentPhase);
+    const paymentAmount = phaseIndex >= 0 ? servicePhaseAmounts(serviceDraft, fee)[phaseIndex] : 0;
     if (paymentAmount <= 0) return toast.error("Enter square feet, rate, and phase percent before creating the Stripe link.");
     setCreatingStripeLink(true);
     try {
@@ -860,7 +876,7 @@ function FinancialsPage() {
                             <td className="py-3 px-4 min-w-[130px]">
                               <Input value={phase.percent} onChange={(e) => updateServicePhase(index, { percent: e.target.value })} className="text-right" />
                             </td>
-                            <td className="py-3 px-4 text-right min-w-[130px]">{formatMoney(phaseAmount(fee, phase.percent))}</td>
+                            <td className="py-3 px-4 text-right min-w-[130px]">{formatMoney(servicePhaseAmounts(serviceDraft, fee)[index])}</td>
                             <td className="py-3 px-4 min-w-[220px] text-muted-foreground">
                               {phaseDueLabel(phase.name)}
                             </td>
@@ -1302,11 +1318,12 @@ function ServiceInvoicePreview({
 }) {
   const fee = calculatedDesignFee(draft);
   const sections = invoiceDesignSections(draft);
-  const paid = numberValue(draft.paid) ?? 0;
+  const paid = paidDesignFee(draft, fee);
+  const phaseAmounts = servicePhaseAmounts(draft, fee);
   const phaseRows = draft.phases.map((phase, index) => ({
     ...phase,
     label: `Phase ${index + 1} - ${phase.name}`,
-    amount: phaseAmount(fee, phase.percent),
+    amount: phaseAmounts[index],
   }));
   const selectedAmount = phaseRows.find((phase) => phase.name === draft.currentPhase)?.amount ?? 0;
   const percentTotal = draft.phases.reduce((sum, phase) => sum + (numberValue(phase.percent) ?? 0), 0);
@@ -1439,6 +1456,33 @@ function numberValue(value: string) {
 
 function phaseAmount(fee: number, percent: string) {
   return Math.round((fee * ((numberValue(percent) ?? 0) / 100)) * 100) / 100;
+}
+
+function paidDesignFee(draft: ServiceInvoiceDraft, fee: number) {
+  return Math.min(Math.max(numberValue(draft.paid) ?? 0, 0), fee);
+}
+
+function remainingDesignFee(draft: ServiceInvoiceDraft, fee: number) {
+  return roundMoney(Math.max(fee - paidDesignFee(draft, fee), 0));
+}
+
+function servicePhaseAmounts(draft: ServiceInvoiceDraft, fee: number) {
+  const remainingFee = remainingDesignFee(draft, fee);
+  const amounts = draft.phases.map((phase) => phaseAmount(remainingFee, phase.percent));
+  const percentTotal = draft.phases.reduce((sum, phase) => sum + (numberValue(phase.percent) ?? 0), 0);
+
+  if (Math.abs(percentTotal - 100) < 0.0001) {
+    const lastPhaseIndex = draft.phases.reduce(
+      (lastIndex, phase, index) => (numberValue(phase.percent) ?? 0) > 0 ? index : lastIndex,
+      -1,
+    );
+    if (lastPhaseIndex >= 0) {
+      const difference = roundMoney(remainingFee - amounts.reduce((sum, amount) => sum + amount, 0));
+      amounts[lastPhaseIndex] = roundMoney(amounts[lastPhaseIndex] + difference);
+    }
+  }
+
+  return amounts;
 }
 
 function roundMoney(value: number) {
@@ -1574,9 +1618,10 @@ function serviceInvoiceHtmlFromInvoice(invoice: FinancialInvoice) {
     if (raw.type !== "design_service_invoice") return null;
     const draft = raw as ServiceInvoiceDraft;
     const fee = invoice.total_amount ?? calculatedDesignFee(draft);
+    const phaseAmounts = servicePhaseAmounts(draft, fee);
     const payments = (invoice.payments?.length ? invoice.payments : draft.phases.map((phase, index) => ({
       label: `Phase ${index + 1} - ${phase.name}`,
-      amount: phaseAmount(fee, phase.percent),
+      amount: phaseAmounts[index],
       due_date: null,
       status: index === 0 ? "due" : "not_due",
       notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
@@ -1620,7 +1665,7 @@ function buildServiceInvoiceHtml(
     </table>
   `).join("");
   const phaseLines = payments
-    .filter((payment) => payment.amount > 0)
+    .filter((payment) => payment.amount > 0 && /^Phase \d+ - /.test(payment.label))
     .map((payment) => {
       const clean = payment.label.replace(/^Phase \d+ - /, "");
       return `<div class="summary-row"><span>Due ${clean === "Project Start" ? "on" : "at"} ${escapeHtml(clean)}:</span><span>${formatMoney(payment.amount)}</span></div>`;
@@ -1745,9 +1790,10 @@ async function downloadInvoicePdf(pdfDataUrl: string | null, fileName?: string |
 function printServiceInvoiceDraft(draft: ServiceInvoiceDraft) {
   const fee = calculatedDesignFee(draft);
   if (fee <= 0) return toast.error("Enter square feet and the matching price per sq/ft first.");
+  const phaseAmounts = servicePhaseAmounts(draft, fee);
   const payments = draft.phases.map((phase, index) => ({
     label: `Phase ${index + 1} - ${phase.name}`,
-    amount: phaseAmount(fee, phase.percent),
+    amount: phaseAmounts[index],
     due_date: null,
     status: index === 0 ? "due" : "not_due",
     notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
