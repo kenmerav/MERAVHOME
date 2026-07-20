@@ -297,7 +297,7 @@ function PortfolioTable({
     );
   return (
     <div className="overflow-x-auto border border-border">
-      <table className="w-full min-w-[1480px] text-left text-sm">
+      <table className="w-full min-w-[1580px] text-left text-sm">
         <thead className="bg-bone/50 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           <tr>
             <th className="px-4 py-3">Project</th>
@@ -310,6 +310,7 @@ function PortfolioTable({
             <th className="px-3 py-3">Owners</th>
             <th className="px-3 py-3">Next milestone</th>
             <th className="px-3 py-3">Next action</th>
+            <th className="px-3 py-3">Assigned to</th>
             <th className="px-3 py-3">Waiting on</th>
             <th className="px-4 py-3" />
           </tr>
@@ -385,11 +386,14 @@ function PortfolioTable({
                 </td>
                 <td className="max-w-56 px-3 py-4 text-xs">
                   <div>{value.nextTask?.title || "No ready task"}</div>
-                  {value.nextTask?.assigned_user && (
-                    <div className="mt-1 text-muted-foreground">
-                      {value.nextTask.assigned_user.full_name || value.nextTask.assigned_user.email}
-                    </div>
-                  )}
+                </td>
+                <td className="max-w-44 px-3 py-4 text-xs">
+                  {value.nextTask
+                    ? value.nextTask.assigned_user?.full_name ||
+                      value.nextTask.assigned_user?.email || (
+                        <span className="text-muted-foreground">Unassigned</span>
+                      )
+                    : "-"}
                 </td>
                 <td className="px-3 py-4 capitalize">{value.waitingOn || "-"}</td>
                 <td className="px-4 py-4">
