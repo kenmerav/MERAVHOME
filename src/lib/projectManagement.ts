@@ -260,6 +260,14 @@ function calculateHealth(
   today: string,
 ): ProjectHealth {
   if (setupMissing.length) return "needs_setup";
+  const meravWorkComplete = calculateProjectProgress(milestones) >= 100;
+  const onlyOutsideWaiting = tasks.every(
+    (task) =>
+      task.status === "waiting" &&
+      task.waiting_on != null &&
+      ["client", "gc", "vendor"].includes(task.waiting_on),
+  );
+  if (meravWorkComplete && onlyOutsideWaiting) return "on_track";
   if (
     project.status !== "Complete" &&
     project.promised_completion_date &&
