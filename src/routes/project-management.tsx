@@ -350,7 +350,9 @@ function PortfolioTable({
                 <td className="px-3 py-4">
                   <HealthBadge health={value.displayHealth} />
                   <div className="mt-1 text-[11px] text-muted-foreground">
-                    {formatDaysRemaining(value.daysRemaining)}
+                    {value.displayHealth === "on_track" && value.displayProgress >= 100
+                      ? "MERAV work complete"
+                      : formatDaysRemaining(value.daysRemaining)}
                   </div>
                 </td>
                 <td className="break-words px-3 py-4 text-xs">
@@ -390,7 +392,9 @@ function PortfolioTable({
               <div className="shrink-0 text-right">
                 <HealthBadge health={value.displayHealth} />
                 <div className="mt-1 text-[11px] text-muted-foreground">
-                  {formatDaysRemaining(value.daysRemaining)}
+                  {value.displayHealth === "on_track" && value.displayProgress >= 100
+                    ? "MERAV work complete"
+                    : formatDaysRemaining(value.daysRemaining)}
                 </div>
               </div>
             </div>
