@@ -119,6 +119,7 @@ export interface ProjectMetrics {
   setupMissing: string[];
   nextMilestone: ProjectMilestone | null;
   nextTask: ProjectTask | null;
+  waitingTask: ProjectTask | null;
   waitingOn: WaitingOn | null;
   daysRemaining: number | null;
 }
@@ -242,6 +243,7 @@ export function calculateProjectMetrics(
     setupMissing,
     nextMilestone,
     nextTask: ranked[0]?.task ?? null,
+    waitingTask: waitingTask ?? null,
     waitingOn: waitingTask?.waiting_on ?? null,
     daysRemaining: project.promised_completion_date
       ? differenceInCalendarDays(project.promised_completion_date, today)

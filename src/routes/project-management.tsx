@@ -368,8 +368,8 @@ function PortfolioTable({
                 <td className="min-w-0 px-3 py-4 text-xs">
                   <PortfolioCurrentWork value={value} />
                 </td>
-                <td className="break-words px-3 py-4 text-xs capitalize">
-                  {value.waitingOn || "-"}
+                <td className="break-words px-3 py-4 text-xs">
+                  {value.waitingTask ? formatWaitingStatus(value.waitingTask) : "-"}
                 </td>
               </tr>
             ))}
@@ -415,8 +415,8 @@ function PortfolioTable({
               </div>
             </div>
             <div className="mt-4 flex items-center justify-between gap-4 border-t border-border pt-3 text-xs">
-              <span className="capitalize text-muted-foreground">
-                Waiting on: {value.waitingOn || "-"}
+              <span className="text-muted-foreground">
+                {value.waitingTask ? formatWaitingStatus(value.waitingTask) : "Waiting: -"}
               </span>
               <button
                 type="button"
@@ -486,11 +486,16 @@ function PortfolioCurrentWork({
 }) {
   const assignee =
     value.nextTask?.assigned_user?.full_name || value.nextTask?.assigned_user?.email;
+  const waitingStatus = value.waitingTask ? formatWaitingStatus(value.waitingTask) : null;
   return (
     <div className="space-y-2">
       <div>
-        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Milestone</div>
-        <div className="break-words">{value.nextMilestone?.title || "None"}</div>
+        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          {!value.nextMilestone && waitingStatus ? "Project status" : "Milestone"}
+        </div>
+        <div className="break-words">
+          {value.nextMilestone?.title || waitingStatus || "None"}
+        </div>
         {value.nextMilestone && (
           <div className="text-muted-foreground">
             {formatShortDate(value.nextMilestone.target_date)}
@@ -508,6 +513,25 @@ function PortfolioCurrentWork({
       </div>
     </div>
   );
+}
+
+function formatWaitingStatus(task: ProjectTask) {
+  if (!task.waiting_on) return task.title;
+  const party = task.waiting_on === "gc" ? "GC / Builder" : task.waiting_on;
+  const aliases =
+    task.waiting_on === "gc" ? "(?:gc|builder)" : task.waiting_on.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let action = task.title
+    .trim()
+    .replace(new RegExp(`^(?:waiting\\s+(?:on|for)\\s+)?${aliases}\\s+(?:to\\s+)?`, "i"), "")
+    .trim();
+  action = action.replace(/^choose\b/i, "select");
+  if (!action) return `Waiting on ${party}`;
+  const startsWithAction = /^(approve|choose|complete|confirm|decide|deliver|install|order|pay|provide|respond|review|schedule|select|send|sign)\b/i.test(
+    action,
+  );
+  return startsWithAction
+    ? `Waiting on ${party} to ${action}`
+    : `Waiting on ${party}: ${action}`;
 }
 
 function formatDaysRemaining(daysRemaining: number | null) {
