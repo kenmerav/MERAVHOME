@@ -180,7 +180,10 @@ SELECT milestone.id, milestone.project_id
 FROM public.project_milestones milestone
 JOIN _pm_upgrade_projects upgrade ON upgrade.project_id = milestone.project_id
 WHERE milestone.title = 'Client Approval'
-  AND coalesce(upgrade.project_type, '') NOT IN ('Furnishings', 'Commercial');
+  AND (
+    upgrade.project_type IS NULL
+    OR upgrade.project_type NOT IN ('Furnishings', 'Commercial')
+  );
 
 DELETE FROM public.shared_project_todos task
 USING _pm_removed_client_milestones removed
