@@ -295,124 +295,225 @@ function PortfolioTable({
     return (
       <EmptyMessage title="No active projects" body="Active Studio projects will appear here." />
     );
+  const rows = sorted.map((project) => ({
+    project,
+    value: metrics.get(project.id)!,
+    owners: (ownerIdsByProject.get(project.id) ?? [])
+      .map((id) => employeeById.get(id)?.full_name)
+      .filter(Boolean),
+  }));
   return (
-    <div className="overflow-x-auto border border-border">
-      <table className="w-full min-w-[1580px] text-left text-sm">
-        <thead className="bg-bone/50 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <tr>
-            <th className="px-4 py-3">Project</th>
-            <th className="px-3 py-3">Health</th>
-            <th className="px-3 py-3">Turnaround</th>
-            <th className="px-3 py-3">Accepted</th>
-            <th className="px-3 py-3">Promised</th>
-            <th className="px-3 py-3">Forecast</th>
-            <th className="px-3 py-3">Progress</th>
-            <th className="px-3 py-3">Owners</th>
-            <th className="px-3 py-3">Next milestone</th>
-            <th className="px-3 py-3">Next action</th>
-            <th className="px-3 py-3">Assigned to</th>
-            <th className="px-3 py-3">Waiting on</th>
-            <th className="px-4 py-3" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {sorted.map((project) => {
-            const value = metrics.get(project.id)!;
-            const owners = (ownerIdsByProject.get(project.id) ?? [])
-              .map((id) => employeeById.get(id)?.full_name)
-              .filter(Boolean);
-            return (
+    <>
+      <div className="hidden border border-border lg:block">
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[17%]" />
+            <col className="w-[10%]" />
+            <col className="w-[9%]" />
+            <col className="w-[16%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[22%]" />
+            <col className="w-[6%]" />
+          </colgroup>
+          <thead className="bg-bone/50 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3">Project</th>
+              <th className="px-3 py-3">Health</th>
+              <th className="px-3 py-3">Turnaround</th>
+              <th className="px-3 py-3">Timeline</th>
+              <th className="px-3 py-3">Progress</th>
+              <th className="px-3 py-3">Owners</th>
+              <th className="px-3 py-3">Current work</th>
+              <th className="px-3 py-3">Waiting</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.map(({ project, value, owners }) => (
               <tr key={project.id} className="align-top hover:bg-bone/20">
-                <td className="px-4 py-4">
-                  <button type="button" onClick={() => onOpen(project)} className="text-left">
-                    <div className="font-medium">{project.name}</div>
-                    <div className="text-xs text-muted-foreground">
+                <td className="min-w-0 px-4 py-4">
+                  <button type="button" onClick={() => onOpen(project)} className="max-w-full text-left">
+                    <div className="break-words font-medium">{project.name}</div>
+                    <div className="break-words text-xs text-muted-foreground">
                       {project.client_name} · {project.status}
                     </div>
                   </button>
-                </td>
-                <td className="px-3 py-4">
-                  <HealthBadge health={value.displayHealth} />
-                  <div className="mt-1 text-[11px] text-muted-foreground">
-                    {value.daysRemaining == null
-                      ? "No deadline"
-                      : value.daysRemaining < 0
-                        ? `${Math.abs(value.daysRemaining)}d late`
-                        : `${value.daysRemaining}d left`}
-                  </div>
-                </td>
-                <td className="px-3 py-4">{project.turnaround_speed || "Not set"}</td>
-                <td className="px-3 py-4">{formatShortDate(project.accepted_date)}</td>
-                <td className="px-3 py-4">{formatShortDate(project.promised_completion_date)}</td>
-                <td className="px-3 py-4">
-                  <div>{formatShortDate(project.forecast_completion_date)}</div>
-                  {project.forecast_completion_date && project.promised_completion_date && (
-                    <div
-                      className={`text-xs ${project.forecast_completion_date > project.promised_completion_date ? "text-red-700" : "text-muted-foreground"}`}
-                    >
-                      {formatForecastVariance(
-                        project.forecast_completion_date,
-                        project.promised_completion_date,
-                      )}
-                    </div>
-                  )}
-                </td>
-                <td className="px-3 py-4">
-                  <div className="w-28">
-                    <div className="mb-1 flex justify-between text-xs">
-                      <span>{value.displayProgress}%</span>
-                      {project.progress_override != null && (
-                        <span className="text-muted-foreground">
-                          Auto {value.automaticProgress}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="h-1.5 bg-bone">
-                      <div
-                        className="h-full bg-ink"
-                        style={{ width: `${value.displayProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                </td>
-                <td className="max-w-40 px-3 py-4 text-xs">
-                  {owners.join(", ") || "Not assigned"}
-                </td>
-                <td className="max-w-48 px-3 py-4">
-                  <div>{value.nextMilestone?.title || "None"}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatShortDate(value.nextMilestone?.target_date ?? null)}
-                  </div>
-                </td>
-                <td className="max-w-56 px-3 py-4 text-xs">
-                  <div>{value.nextTask?.title || "No ready task"}</div>
-                </td>
-                <td className="max-w-44 px-3 py-4 text-xs">
-                  {value.nextTask
-                    ? value.nextTask.assigned_user?.full_name ||
-                      value.nextTask.assigned_user?.email || (
-                        <span className="text-muted-foreground">Unassigned</span>
-                      )
-                    : "-"}
-                </td>
-                <td className="px-3 py-4 capitalize">{value.waitingOn || "-"}</td>
-                <td className="px-4 py-4">
                   <button
                     type="button"
                     onClick={() => (value.setupMissing.length ? onSetup(project) : onOpen(project))}
-                    className="inline-flex items-center gap-1 text-xs underline underline-offset-4"
+                    className="mt-2 inline-flex items-center gap-1 text-xs underline underline-offset-4"
                   >
                     {value.setupMissing.length ? "Set up" : "Open"}
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 </td>
+                <td className="px-3 py-4">
+                  <HealthBadge health={value.displayHealth} />
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {formatDaysRemaining(value.daysRemaining)}
+                  </div>
+                </td>
+                <td className="break-words px-3 py-4 text-xs">
+                  {project.turnaround_speed || "Not set"}
+                </td>
+                <td className="px-3 py-4 text-xs">
+                  <PortfolioTimeline project={project} />
+                </td>
+                <td className="px-3 py-4">
+                  <PortfolioProgress project={project} value={value} />
+                </td>
+                <td className="break-words px-3 py-4 text-xs">
+                  {owners.join(", ") || "Not assigned"}
+                </td>
+                <td className="min-w-0 px-3 py-4 text-xs">
+                  <PortfolioCurrentWork value={value} />
+                </td>
+                <td className="break-words px-3 py-4 text-xs capitalize">
+                  {value.waitingOn || "-"}
+                </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="divide-y divide-border border border-border lg:hidden">
+        {rows.map(({ project, value, owners }) => (
+          <section key={project.id} className="p-4">
+            <div className="flex items-start justify-between gap-4">
+              <button type="button" onClick={() => onOpen(project)} className="min-w-0 text-left">
+                <div className="break-words font-medium">{project.name}</div>
+                <div className="break-words text-xs text-muted-foreground">
+                  {project.client_name} · {project.status}
+                </div>
+              </button>
+              <div className="shrink-0 text-right">
+                <HealthBadge health={value.displayHealth} />
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {formatDaysRemaining(value.daysRemaining)}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 text-xs">
+              <div>
+                <div className="eyebrow mb-1">Timeline</div>
+                <PortfolioTimeline project={project} />
+              </div>
+              <div>
+                <div className="eyebrow mb-1">Turnaround</div>
+                <div>{project.turnaround_speed || "Not set"}</div>
+                <div className="eyebrow mb-1 mt-3">Owners</div>
+                <div className="break-words">{owners.join(", ") || "Not assigned"}</div>
+              </div>
+              <div className="col-span-2">
+                <div className="eyebrow mb-1">Progress</div>
+                <PortfolioProgress project={project} value={value} />
+              </div>
+              <div className="col-span-2 border-t border-border pt-3">
+                <div className="eyebrow mb-1">Current work</div>
+                <PortfolioCurrentWork value={value} />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-4 border-t border-border pt-3 text-xs">
+              <span className="capitalize text-muted-foreground">
+                Waiting on: {value.waitingOn || "-"}
+              </span>
+              <button
+                type="button"
+                onClick={() => (value.setupMissing.length ? onSetup(project) : onOpen(project))}
+                className="inline-flex items-center gap-1 underline underline-offset-4"
+              >
+                {value.setupMissing.length ? "Set up" : "Open"}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function PortfolioTimeline({ project }: { project: Project }) {
+  return (
+    <div className="space-y-1">
+      <div><span className="text-muted-foreground">Accepted:</span> {formatShortDate(project.accepted_date)}</div>
+      <div><span className="text-muted-foreground">Promised:</span> {formatShortDate(project.promised_completion_date)}</div>
+      <div>
+        <span className="text-muted-foreground">Forecast:</span>{" "}
+        {formatShortDate(project.forecast_completion_date)}
+      </div>
+      {project.forecast_completion_date && project.promised_completion_date && (
+        <div
+          className={project.forecast_completion_date > project.promised_completion_date ? "text-red-700" : "text-muted-foreground"}
+        >
+          {formatForecastVariance(
+            project.forecast_completion_date,
+            project.promised_completion_date,
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function PortfolioProgress({
+  project,
+  value,
+}: {
+  project: Project;
+  value: ReturnType<typeof calculateProjectMetrics>;
+}) {
+  return (
+    <div className="w-full max-w-36">
+      <div className="mb-1 flex justify-between gap-2 text-xs">
+        <span>{value.displayProgress}%</span>
+        {project.progress_override != null && (
+          <span className="text-muted-foreground">Auto {value.automaticProgress}%</span>
+        )}
+      </div>
+      <div className="h-1.5 bg-bone">
+        <div className="h-full bg-ink" style={{ width: `${value.displayProgress}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function PortfolioCurrentWork({
+  value,
+}: {
+  value: ReturnType<typeof calculateProjectMetrics>;
+}) {
+  const assignee =
+    value.nextTask?.assigned_user?.full_name || value.nextTask?.assigned_user?.email;
+  return (
+    <div className="space-y-2">
+      <div>
+        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Milestone</div>
+        <div className="break-words">{value.nextMilestone?.title || "None"}</div>
+        {value.nextMilestone && (
+          <div className="text-muted-foreground">
+            {formatShortDate(value.nextMilestone.target_date)}
+          </div>
+        )}
+      </div>
+      <div className="border-t border-border pt-2">
+        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Current task</div>
+        <div className="break-words">{value.nextTask?.title || "No ready task"}</div>
+        {value.nextTask && (
+          <div className="mt-1 break-words text-muted-foreground">
+            Assigned to: {assignee || "Unassigned"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatDaysRemaining(daysRemaining: number | null) {
+  if (daysRemaining == null) return "No deadline";
+  if (daysRemaining < 0) return `${Math.abs(daysRemaining)}d late`;
+  return `${daysRemaining}d left`;
 }
 
 function MyWorkView({
