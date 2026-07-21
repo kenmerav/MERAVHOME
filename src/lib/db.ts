@@ -53,10 +53,10 @@ export const PROJECT_STATUSES: ProjectStatus[] = [
 ];
 
 export const WORKFLOW_STAGES = [
-  "Create Project",
-  "Create Rooms",
-  "Upload SketchUp",
+  "Create Project & Rooms",
   "Design Selections",
+  "Render and Draw SketchUp",
+  "Construction Docs Completed",
   "AI Renderings",
   "Presentation Boards",
   "Client Approval",
