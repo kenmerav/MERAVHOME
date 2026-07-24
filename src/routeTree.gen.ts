@@ -41,9 +41,16 @@ import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
 import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
 import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
+import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
+import { Route as ApiProcurementMcpRouteImport } from './routes/api/procurement-mcp'
 import { Route as ApiPresentationBoardRouteImport } from './routes/api/presentation-board'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
+import { Route as ApiMarvinUploadRouteImport } from './routes/api/marvin-upload'
+import { Route as ApiMarvinGmailCallbackRouteImport } from './routes/api/marvin-gmail-callback'
+import { Route as ApiMarvinFathomWebhookRouteImport } from './routes/api/marvin-fathom-webhook'
+import { Route as ApiMarvinCronRouteImport } from './routes/api/marvin-cron'
+import { Route as ApiMarvinRouteImport } from './routes/api/marvin'
 import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
@@ -244,6 +251,16 @@ const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
   path: '/api/project-management',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProcurementRunsRoute = ApiProcurementRunsRouteImport.update({
+  id: '/api/procurement-runs',
+  path: '/api/procurement-runs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProcurementMcpRoute = ApiProcurementMcpRouteImport.update({
+  id: '/api/procurement-mcp',
+  path: '/api/procurement-mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPresentationBoardRoute = ApiPresentationBoardRouteImport.update({
   id: '/api/presentation-board',
   path: '/api/presentation-board',
@@ -257,6 +274,31 @@ const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
 const ApiMyTodosRoute = ApiMyTodosRouteImport.update({
   id: '/api/my-todos',
   path: '/api/my-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinUploadRoute = ApiMarvinUploadRouteImport.update({
+  id: '/api/marvin-upload',
+  path: '/api/marvin-upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinGmailCallbackRoute = ApiMarvinGmailCallbackRouteImport.update({
+  id: '/api/marvin-gmail-callback',
+  path: '/api/marvin-gmail-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinFathomWebhookRoute = ApiMarvinFathomWebhookRouteImport.update({
+  id: '/api/marvin-fathom-webhook',
+  path: '/api/marvin-fathom-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinCronRoute = ApiMarvinCronRouteImport.update({
+  id: '/api/marvin-cron',
+  path: '/api/marvin-cron',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinRoute = ApiMarvinRouteImport.update({
+  id: '/api/marvin',
+  path: '/api/marvin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMarkFinancialPaymentDueRoute =
@@ -465,9 +507,16 @@ export interface FileRoutesByFullPath {
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
+  '/api/marvin': typeof ApiMarvinRoute
+  '/api/marvin-cron': typeof ApiMarvinCronRoute
+  '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
+  '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
+  '/api/marvin-upload': typeof ApiMarvinUploadRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/procurement-mcp': typeof ApiProcurementMcpRoute
+  '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -537,9 +586,16 @@ export interface FileRoutesByTo {
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
+  '/api/marvin': typeof ApiMarvinRoute
+  '/api/marvin-cron': typeof ApiMarvinCronRoute
+  '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
+  '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
+  '/api/marvin-upload': typeof ApiMarvinUploadRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/procurement-mcp': typeof ApiProcurementMcpRoute
+  '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -610,9 +666,16 @@ export interface FileRoutesById {
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
+  '/api/marvin': typeof ApiMarvinRoute
+  '/api/marvin-cron': typeof ApiMarvinCronRoute
+  '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
+  '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
+  '/api/marvin-upload': typeof ApiMarvinUploadRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/procurement-mcp': typeof ApiProcurementMcpRoute
+  '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -684,9 +747,16 @@ export interface FileRouteTypes {
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
+    | '/api/marvin'
+    | '/api/marvin-cron'
+    | '/api/marvin-fathom-webhook'
+    | '/api/marvin-gmail-callback'
+    | '/api/marvin-upload'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/procurement-mcp'
+    | '/api/procurement-runs'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -756,9 +826,16 @@ export interface FileRouteTypes {
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
+    | '/api/marvin'
+    | '/api/marvin-cron'
+    | '/api/marvin-fathom-webhook'
+    | '/api/marvin-gmail-callback'
+    | '/api/marvin-upload'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/procurement-mcp'
+    | '/api/procurement-runs'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -828,9 +905,16 @@ export interface FileRouteTypes {
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
     | '/api/mark-financial-payment-due'
+    | '/api/marvin'
+    | '/api/marvin-cron'
+    | '/api/marvin-fathom-webhook'
+    | '/api/marvin-gmail-callback'
+    | '/api/marvin-upload'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/procurement-mcp'
+    | '/api/procurement-runs'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -901,9 +985,16 @@ export interface RootRouteChildren {
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
   ApiMarkFinancialPaymentDueRoute: typeof ApiMarkFinancialPaymentDueRoute
+  ApiMarvinRoute: typeof ApiMarvinRoute
+  ApiMarvinCronRoute: typeof ApiMarvinCronRoute
+  ApiMarvinFathomWebhookRoute: typeof ApiMarvinFathomWebhookRoute
+  ApiMarvinGmailCallbackRoute: typeof ApiMarvinGmailCallbackRoute
+  ApiMarvinUploadRoute: typeof ApiMarvinUploadRoute
   ApiMyTodosRoute: typeof ApiMyTodosRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiPresentationBoardRoute: typeof ApiPresentationBoardRoute
+  ApiProcurementMcpRoute: typeof ApiProcurementMcpRoute
+  ApiProcurementRunsRoute: typeof ApiProcurementRunsRoute
   ApiProjectManagementRoute: typeof ApiProjectManagementRoute
   ApiProjectTaskAttachmentRoute: typeof ApiProjectTaskAttachmentRoute
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
@@ -1181,6 +1272,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiProjectManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/procurement-runs': {
+      id: '/api/procurement-runs'
+      path: '/api/procurement-runs'
+      fullPath: '/api/procurement-runs'
+      preLoaderRoute: typeof ApiProcurementRunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-mcp': {
+      id: '/api/procurement-mcp'
+      path: '/api/procurement-mcp'
+      fullPath: '/api/procurement-mcp'
+      preLoaderRoute: typeof ApiProcurementMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/presentation-board': {
       id: '/api/presentation-board'
       path: '/api/presentation-board'
@@ -1200,6 +1305,41 @@ declare module '@tanstack/react-router' {
       path: '/api/my-todos'
       fullPath: '/api/my-todos'
       preLoaderRoute: typeof ApiMyTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/marvin-upload': {
+      id: '/api/marvin-upload'
+      path: '/api/marvin-upload'
+      fullPath: '/api/marvin-upload'
+      preLoaderRoute: typeof ApiMarvinUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/marvin-gmail-callback': {
+      id: '/api/marvin-gmail-callback'
+      path: '/api/marvin-gmail-callback'
+      fullPath: '/api/marvin-gmail-callback'
+      preLoaderRoute: typeof ApiMarvinGmailCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/marvin-fathom-webhook': {
+      id: '/api/marvin-fathom-webhook'
+      path: '/api/marvin-fathom-webhook'
+      fullPath: '/api/marvin-fathom-webhook'
+      preLoaderRoute: typeof ApiMarvinFathomWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/marvin-cron': {
+      id: '/api/marvin-cron'
+      path: '/api/marvin-cron'
+      fullPath: '/api/marvin-cron'
+      preLoaderRoute: typeof ApiMarvinCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/marvin': {
+      id: '/api/marvin'
+      path: '/api/marvin'
+      fullPath: '/api/marvin'
+      preLoaderRoute: typeof ApiMarvinRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/mark-financial-payment-due': {
@@ -1469,9 +1609,16 @@ const rootRouteChildren: RootRouteChildren = {
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
   ApiMarkFinancialPaymentDueRoute: ApiMarkFinancialPaymentDueRoute,
+  ApiMarvinRoute: ApiMarvinRoute,
+  ApiMarvinCronRoute: ApiMarvinCronRoute,
+  ApiMarvinFathomWebhookRoute: ApiMarvinFathomWebhookRoute,
+  ApiMarvinGmailCallbackRoute: ApiMarvinGmailCallbackRoute,
+  ApiMarvinUploadRoute: ApiMarvinUploadRoute,
   ApiMyTodosRoute: ApiMyTodosRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiPresentationBoardRoute: ApiPresentationBoardRoute,
+  ApiProcurementMcpRoute: ApiProcurementMcpRoute,
+  ApiProcurementRunsRoute: ApiProcurementRunsRoute,
   ApiProjectManagementRoute: ApiProjectManagementRoute,
   ApiProjectTaskAttachmentRoute: ApiProjectTaskAttachmentRoute,
   ApiProjectTodosRoute: ApiProjectTodosRoute,

@@ -1,0 +1,13 @@
+interface:
+  display_name: "Merav Cart Workflow"
+  short_description: "Safely build retailer carts from Studio"
+  default_prompt: "Use $merav-cart-workflow to process a prepared Studio cart run with @Chrome."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "merav-cart-builder"
+      description: "Token-scoped MERAVHOME Studio procurement runs"
+      transport: "streamable_http"
+      url: "https://studio.meravinteriors.com/api/procurement-mcp"
+policy:
+  allow_implicit_invocation: true

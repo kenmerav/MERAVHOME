@@ -18,12 +18,14 @@ import {
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { MarvinPanel } from "@/components/MarvinPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import type { Project } from "@/lib/db";
+import { db, type Project } from "@/lib/db";
+import { canUseMarvin } from "@/lib/permissions";
 import {
   PROJECT_CAPABILITIES,
   calculateProjectMetrics,
@@ -47,12 +49,13 @@ export const Route = createFileRoute("/project-management")({
   component: ProjectManagementPage,
 });
 
-type CommandTab = "portfolio" | "my-work" | "tasks" | "workload" | "setup";
+type CommandTab = "portfolio" | "my-work" | "tasks" | "workload" | "setup" | "marvin";
 
 function ProjectManagementPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<CommandTab>("portfolio");
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [marvinEmail, setMarvinEmail] = useState<string | null>(null);
   const [setupProject, setSetupProject] = useState<Project | null>(null);
   const [planProject, setPlanProject] = useState<Project | null>(null);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -64,6 +67,10 @@ function ProjectManagementPage() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: userData }) => setProfileId(userData.user?.id ?? null));
+    db.getCurrentUserProfile().then((profile) => {
+      if (canUseMarvin(profile)) setMarvinEmail(profile?.email ?? null);
+    });
+    if (new URLSearchParams(window.location.search).get("tab") === "marvin") setTab("marvin");
   }, []);
 
   const commandData = data ?? emptyData();
@@ -143,6 +150,7 @@ function ProjectManagementPage() {
               ["tasks", "All Tasks"],
               ["workload", "Workload"],
               ["setup", "Needs Setup"],
+              ...(marvinEmail ? [["marvin", "Marvin"]] : []),
             ] as Array<[CommandTab, string]>
           ).map(([value, label]) => (
             <button
@@ -185,6 +193,8 @@ function ProjectManagementPage() {
             <AllTasksView data={commandData} onChanged={refresh} onAddTask={openTask} />
           ) : tab === "workload" ? (
             <WorkloadView data={commandData} onChanged={refresh} />
+          ) : tab === "marvin" && marvinEmail ? (
+            <MarvinPanel currentEmail={marvinEmail} />
           ) : (
             <NeedsSetupView
               data={commandData}

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "merav-cart-builder": {
+      "url": "https://studio.meravinteriors.com/api/procurement-mcp"
+    }
+  }
+}

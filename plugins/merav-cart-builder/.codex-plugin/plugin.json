@@ -1,0 +1,20 @@
+{
+  "name": "merav-cart-builder",
+  "version": "0.1.0",
+  "description": "Safely turn prepared MERAVHOME Studio Spec Book runs into retailer carts with @Chrome.",
+  "author": {
+    "name": "MERAV Interiors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Merav Cart Builder",
+    "shortDescription": "Build retailer carts from Studio Spec Books",
+    "longDescription": "Retrieves one secure, short-lived Studio procurement run, guides exact product and option matching with @Chrome, and reports each result back to Studio without authorizing checkout.",
+    "developerName": "MERAV Interiors",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": ["Use Merav Cart Builder and @Chrome to process my prepared Studio cart run."],
+    "brandColor": "#2F352E"
+  },
+  "mcpServers": "./.mcp.json"
+}

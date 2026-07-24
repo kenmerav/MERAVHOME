@@ -26,10 +26,12 @@ import {
   canEditSpecBook,
   canUpdateSpecOrderingForRole,
   canViewProjectSurface,
+  isStudioTeamRole,
   specBookVisibilityForRole,
 } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
+import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -514,6 +516,10 @@ export function SpecBookDocument({
             )}
           </div>
         </div>
+
+        {!publicView && profile?.is_active && isStudioTeamRole(profile.role) && (
+          <ProcurementCartBuilder project={project} rooms={rooms} items={items} />
+        )}
 
         {layout === "spreadsheet" ? (
           <SpecSpreadsheetView
