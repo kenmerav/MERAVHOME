@@ -1,7 +1,7 @@
 interface:
   display_name: "Merav Cart Workflow"
-  short_description: "Safely build retailer carts from Studio"
-  default_prompt: "Use $merav-cart-workflow to process a prepared Studio cart run with @Chrome."
+  short_description: "Build carts and draft rep emails safely"
+  default_prompt: "Use $merav-cart-workflow to process a prepared Studio cart run, use Studio's draft-only tool for retailer-rep emails, and use @Chrome for online retailers."
 dependencies:
   tools:
     - type: "mcp"

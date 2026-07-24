@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   RefreshCw,
+  ScanSearch,
   ShoppingCart,
   X,
 } from "lucide-react";
@@ -15,14 +16,18 @@ import { supabase } from "@/integrations/supabase/client";
 import type { MaterialItem, Project, Room } from "@/lib/db";
 import {
   buildProcurementDraft,
+  calculateProcurementOrderQuantity,
   classifyProcurementDraft,
   hasPriceChanged,
   isRetryableStatus,
   itemStatusLabel,
   preflightLabel,
   summarizeRun,
+  quantityUnitLabel,
   type ProcurementDraft,
+  type ProcurementMethod,
   type ProcurementOptionKey,
+  type ProcurementQuantityUnit,
   type ProcurementRunResult,
 } from "@/lib/procurementCart";
 
@@ -31,6 +36,14 @@ type PreparedAccess = {
   runAuthorization: string;
   prompt: string;
   deepLink: string;
+};
+
+type DraftEmailConnection = {
+  connected: boolean;
+  account_email: string;
+  status: string;
+  capability: "draft_only";
+  last_error: string | null;
 };
 
 async function authenticatedRequest(path: string, init?: RequestInit) {
@@ -60,7 +73,7 @@ function formatPrice(value: number | null) {
 }
 
 function statusTone(status: string) {
-  if (status === "ready" || status === "added" || status === "completed") {
+  if (status === "ready" || status === "added" || status === "drafted" || status === "completed") {
     return "border-emerald-300 bg-emerald-50 text-emerald-800";
   }
   if (
@@ -90,6 +103,7 @@ export function ProcurementCartBuilder({
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<ProcurementDraft[]>([]);
   const [busy, setBusy] = useState(false);
+  const [coverageScrapingIds, setCoverageScrapingIds] = useState<Set<string>>(new Set());
   const [preparedAccess, setPreparedAccess] = useState<PreparedAccess | null>(null);
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
 
@@ -118,6 +132,14 @@ export function ProcurementCartBuilder({
     refetchInterval: open ? 3_000 : false,
   });
 
+  const draftEmailQuery = useQuery({
+    queryKey: ["procurementEmailConnection"],
+    queryFn: async () =>
+      (await authenticatedRequest("/api/procurement-email")) as DraftEmailConnection,
+    enabled: open,
+    retry: false,
+  });
+
   const classifiedDrafts = useMemo(
     () =>
       drafts.map((draft) => ({
@@ -129,11 +151,57 @@ export function ProcurementCartBuilder({
   const selected = classifiedDrafts.filter(({ draft }) => draft.selected);
   const selectedReady = selected.filter(({ status }) => status === "ready");
   const selectedBlocked = selected.filter(({ status }) => status !== "ready");
+  const selectedEmailCount = selectedReady.filter(
+    ({ draft }) => draft.procurementMethod === "email_rep",
+  ).length;
+  const draftEmailMissing = selectedEmailCount > 0 && !draftEmailQuery.data?.connected;
 
   const updateDraft = (id: string, patch: Partial<ProcurementDraft>) => {
     setDrafts((current) =>
       current.map((draft) => (draft.specBookItemId === id ? { ...draft, ...patch } : draft)),
     );
+  };
+
+  const scrapeCartonCoverage = async (draft: ProcurementDraft) => {
+    if (coverageScrapingIds.has(draft.specBookItemId)) return;
+    setCoverageScrapingIds((current) => new Set(current).add(draft.specBookItemId));
+    try {
+      const result = (await authenticatedRequest("/api/scrape-carton-coverage", {
+        method: "POST",
+        body: JSON.stringify({
+          material_item_id: draft.specBookItemId,
+          size: draft.size || draft.dimensions,
+        }),
+      })) as {
+        carton_coverage_sq_ft: number | null;
+        confidence: "exact" | "review" | "missing";
+        source_url: string;
+        evidence: string | null;
+        message: string;
+      };
+      updateDraft(draft.specBookItemId, {
+        cartonCoverageSquareFeet:
+          result.confidence === "exact" ? result.carton_coverage_sq_ft : null,
+        cartonCoverageConfidence: result.confidence,
+        cartonCoverageSourceUrl: result.source_url,
+        cartonCoverageSourceText: result.evidence ?? "",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["materialItems", project.id] });
+      if (result.confidence === "exact") toast.success(result.message);
+      else toast.warning(result.message);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not find carton coverage. Enter it manually.",
+      );
+    } finally {
+      setCoverageScrapingIds((current) => {
+        const next = new Set(current);
+        next.delete(draft.specBookItemId);
+        return next;
+      });
+    }
   };
 
   const toggleRequired = (draft: ProcurementDraft, key: ProcurementOptionKey) => {
@@ -167,6 +235,9 @@ export function ProcurementCartBuilder({
           items: selectedReady.map(({ draft }) => ({
             spec_book_item_id: draft.specBookItemId,
             quantity: draft.quantity,
+            quantity_unit: draft.quantityUnit,
+            carton_coverage_sq_ft: draft.cartonCoverageSquareFeet,
+            waste_percentage: draft.wastePercentage,
             color: draft.color,
             finish: draft.finish,
             size: draft.size,
@@ -174,6 +245,8 @@ export function ProcurementCartBuilder({
             other_requirements: draft.otherRequirements,
             substitution_instructions: draft.substitutionInstructions,
             required_option_keys: draft.requiredOptionKeys,
+            procurement_method: draft.procurementMethod,
+            rep_email: draft.repEmail,
           })),
         }),
       })) as PreparedAccess;
@@ -228,7 +301,24 @@ export function ProcurementCartBuilder({
   const copyPrompt = async () => {
     if (!preparedAccess) return;
     await navigator.clipboard.writeText(preparedAccess.prompt);
-    toast.success("ChatGPT prompt copied.");
+    toast.success("Codex prompt copied. Return to Codex, paste it into a task, and send.");
+  };
+
+  const connectDraftEmail = async () => {
+    setBusy(true);
+    try {
+      const body = (await authenticatedRequest("/api/procurement-email", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "connect",
+          return_to: `${window.location.pathname}${window.location.search}`,
+        }),
+      })) as { url: string };
+      window.location.assign(body.url);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not connect draft email.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -256,8 +346,10 @@ export function ProcurementCartBuilder({
             <div className="max-w-2xl">
               <p className="text-sm leading-6 text-muted-foreground">
                 Select purchase-ready Spec Book products, confirm exact requirements, then prepare a
-                one-hour run for ChatGPT and <span className="font-medium text-ink">@Chrome</span>.
-                Checkout and payment always remain manual.
+                one-hour run. Choose Online cart for Codex and{" "}
+                <span className="font-medium text-ink">@Chrome</span>, or Email rep to create a
+                reviewable draft through Studio&apos;s draft-only email tool. Checkout, payment, and
+                sending email always remain manual.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -280,13 +372,45 @@ export function ProcurementCartBuilder({
             </div>
           </div>
 
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-border bg-white p-4">
+            <div>
+              <div className="text-sm font-medium">Ken&apos;s procurement draft email</div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {draftEmailQuery.data?.connected
+                  ? `${draftEmailQuery.data.account_email} is connected. Studio can create drafts but exposes no Send command.`
+                  : "Connect ken@meravinteriors.com before running Email rep items. This is separate from Marvin's read-only email setup."}
+              </p>
+              {draftEmailQuery.isError && (
+                <p className="mt-1 text-xs text-red-700">
+                  {draftEmailQuery.error instanceof Error
+                    ? draftEmailQuery.error.message
+                    : "Draft email setup could not be loaded."}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={connectDraftEmail}
+              disabled={busy}
+              className="border border-border bg-white px-4 py-2 text-xs uppercase tracking-[0.14em] disabled:opacity-40"
+            >
+              {draftEmailQuery.data?.connected ? "Reconnect draft email" : "Connect draft email"}
+            </button>
+          </div>
+
           <div className="mt-6 overflow-x-auto border border-border bg-white">
-            <table className="min-w-[1180px] w-full text-sm">
+            <table className="min-w-[1920px] w-full text-sm">
               <thead className="bg-bone/40 text-left">
                 <tr className="border-b border-border">
                   <th className="p-3">Buy</th>
                   <th className="p-3">Product</th>
+                  <th className="p-3">Method</th>
+                  <th className="p-3">Rep email</th>
                   <th className="p-3">Qty</th>
+                  <th className="p-3">Unit</th>
+                  <th className="p-3">Carton sq ft</th>
+                  <th className="p-3">Waste %</th>
+                  <th className="p-3">Order qty</th>
                   <th className="p-3">Color</th>
                   <th className="p-3">Finish</th>
                   <th className="p-3">Size</th>
@@ -348,6 +472,36 @@ export function ProcurementCartBuilder({
                       </div>
                     </td>
                     <td className="p-3">
+                      <select
+                        value={draft.procurementMethod}
+                        onChange={(event) =>
+                          updateDraft(draft.specBookItemId, {
+                            procurementMethod: event.target.value as ProcurementMethod,
+                          })
+                        }
+                        className="h-9 w-32 border border-input bg-white px-2 text-xs"
+                        aria-label={`Purchasing method for ${draft.productName}`}
+                      >
+                        <option value="online_cart">Online cart</option>
+                        <option value="email_rep">Email rep</option>
+                      </select>
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="email"
+                        value={draft.repEmail}
+                        disabled={draft.procurementMethod !== "email_rep"}
+                        onChange={(event) =>
+                          updateDraft(draft.specBookItemId, { repEmail: event.target.value })
+                        }
+                        placeholder={
+                          draft.procurementMethod === "email_rep" ? "rep@example.com" : "Not needed"
+                        }
+                        className="h-9 w-52 border border-input px-2 text-xs disabled:bg-bone/40 disabled:text-muted-foreground"
+                        aria-label={`Representative email for ${draft.productName}`}
+                      />
+                    </td>
+                    <td className="p-3">
                       <input
                         type="number"
                         min="0.01"
@@ -359,7 +513,140 @@ export function ProcurementCartBuilder({
                           })
                         }
                         className="h-9 w-20 border border-input px-2"
+                        aria-label={`Quantity needed for ${draft.productName}`}
                       />
+                    </td>
+                    <td className="p-3">
+                      <select
+                        value={draft.quantityUnit}
+                        onChange={(event) => {
+                          const quantityUnit = event.target.value as ProcurementQuantityUnit;
+                          updateDraft(draft.specBookItemId, {
+                            quantityUnit,
+                          });
+                          if (quantityUnit === "square_feet" && !draft.cartonCoverageSquareFeet) {
+                            void scrapeCartonCoverage({ ...draft, quantityUnit });
+                          }
+                        }}
+                        className="h-9 w-32 border border-input bg-white px-2 text-xs"
+                        aria-label={`Quantity unit for ${draft.productName}`}
+                      >
+                        <option value="pieces">Pieces</option>
+                        <option value="boxes">Boxes</option>
+                        <option value="square_feet">Square feet</option>
+                      </select>
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        disabled={draft.quantityUnit !== "square_feet"}
+                        value={draft.cartonCoverageSquareFeet ?? ""}
+                        onChange={(event) =>
+                          updateDraft(draft.specBookItemId, {
+                            cartonCoverageSquareFeet:
+                              event.target.value === "" ? null : Number(event.target.value),
+                            cartonCoverageConfidence: event.target.value === "" ? null : "manual",
+                            cartonCoverageSourceUrl: "",
+                            cartonCoverageSourceText:
+                              event.target.value === "" ? "" : "Entered manually in Studio",
+                          })
+                        }
+                        placeholder={draft.quantityUnit === "square_feet" ? "Required" : "—"}
+                        className="h-9 w-24 border border-input px-2 disabled:bg-bone/40 disabled:text-muted-foreground"
+                        aria-label={`Carton coverage for ${draft.productName}`}
+                      />
+                      {draft.quantityUnit === "square_feet" && (
+                        <button
+                          type="button"
+                          onClick={() => scrapeCartonCoverage(draft)}
+                          disabled={coverageScrapingIds.has(draft.specBookItemId)}
+                          className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] underline disabled:opacity-50"
+                        >
+                          {coverageScrapingIds.has(draft.specBookItemId) ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <ScanSearch className="h-3 w-3" />
+                          )}
+                          {coverageScrapingIds.has(draft.specBookItemId)
+                            ? "Checking website"
+                            : "Find on website"}
+                        </button>
+                      )}
+                      {draft.cartonCoverageConfidence && (
+                        <div
+                          className={`mt-1 max-w-36 text-[10px] leading-4 ${
+                            draft.cartonCoverageConfidence === "exact"
+                              ? "text-emerald-700"
+                              : draft.cartonCoverageConfidence === "manual"
+                                ? "text-muted-foreground"
+                                : "text-amber-800"
+                          }`}
+                        >
+                          {draft.cartonCoverageConfidence === "exact"
+                            ? "Matched manufacturer packaging"
+                            : draft.cartonCoverageConfidence === "manual"
+                              ? "Entered manually"
+                              : "Website result needs review"}
+                          {draft.cartonCoverageSourceUrl && (
+                            <>
+                              {" · "}
+                              <a
+                                href={draft.cartonCoverageSourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                Source
+                              </a>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        disabled={draft.quantityUnit !== "square_feet"}
+                        value={draft.wastePercentage ?? ""}
+                        onChange={(event) =>
+                          updateDraft(draft.specBookItemId, {
+                            wastePercentage:
+                              event.target.value === "" ? null : Number(event.target.value),
+                          })
+                        }
+                        placeholder="0"
+                        className="h-9 w-20 border border-input px-2 disabled:bg-bone/40 disabled:text-muted-foreground"
+                        aria-label={`Waste percentage for ${draft.productName}`}
+                      />
+                    </td>
+                    <td className="p-3 text-xs leading-5">
+                      {draft.quantity
+                        ? (() => {
+                            const order = calculateProcurementOrderQuantity({
+                              quantity: draft.quantity,
+                              quantityUnit: draft.quantityUnit,
+                              cartonCoverageSquareFeet: draft.cartonCoverageSquareFeet,
+                              wastePercentage: draft.wastePercentage,
+                            });
+                            return (
+                              <>
+                                <div className="font-medium">
+                                  {order.quantity} {quantityUnitLabel(order.unit, order.quantity)}
+                                </div>
+                                {order.coveredSquareFeet !== null && (
+                                  <div className="text-muted-foreground">
+                                    {order.coveredSquareFeet.toFixed(2)} sq ft coverage
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()
+                        : "—"}
                     </td>
                     {(["color", "finish", "size", "dimensions"] as ProcurementOptionKey[]).map(
                       (key) => (
@@ -432,6 +719,14 @@ export function ProcurementCartBuilder({
             <div className="text-sm">
               <span className="font-medium">{selectedReady.length} Ready</span>
               <span className="text-muted-foreground"> will be included</span>
+              {selectedEmailCount > 0 && (
+                <span className="ml-3 text-muted-foreground">
+                  {selectedEmailCount} will be drafted to rep email
+                </span>
+              )}
+              {draftEmailMissing && (
+                <span className="ml-3 text-amber-800">Connect Ken&apos;s draft email first</span>
+              )}
               {selectedBlocked.length > 0 && (
                 <span className="ml-3 text-amber-800">
                   {selectedBlocked.length} selected item{selectedBlocked.length === 1 ? "" : "s"}{" "}
@@ -442,7 +737,7 @@ export function ProcurementCartBuilder({
             <button
               type="button"
               onClick={prepareRun}
-              disabled={busy || !selectedReady.length}
+              disabled={busy || !selectedReady.length || draftEmailMissing}
               className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy ? (
@@ -460,9 +755,10 @@ export function ProcurementCartBuilder({
                 <div>
                   <div className="eyebrow text-emerald-800">Run prepared</div>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-emerald-950">
-                    The prompt includes one-hour run authorization. Review it in the new
-                    conversation, make sure Merav Cart Builder and @Chrome are enabled, then press
-                    Send. The deep link never sends automatically.
+                    The prompt includes one-hour run authorization. Copy it, return to Codex, paste
+                    it into a task, and press Send. Codex uses Merav Cart Builder, @Chrome, and
+                    Studio&apos;s dedicated draft-only email tool. Nothing starts checkout or sends
+                    an email.
                   </p>
                 </div>
                 <button
@@ -478,18 +774,12 @@ export function ProcurementCartBuilder({
                 {preparedAccess.prompt}
               </div>
               <div className="mt-4 flex flex-wrap gap-3">
-                <a
-                  href={preparedAccess.deepLink}
-                  className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground"
-                >
-                  Open in ChatGPT <ExternalLink className="h-4 w-4" />
-                </a>
                 <button
                   type="button"
                   onClick={copyPrompt}
-                  className="inline-flex items-center gap-2 border border-emerald-400 bg-white px-5 py-2.5 text-sm"
+                  className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground"
                 >
-                  <Copy className="h-4 w-4" /> Copy Prompt
+                  <Copy className="h-4 w-4" /> Copy for Codex
                 </button>
               </div>
             </div>
@@ -651,6 +941,19 @@ function RunResults({
                 <div className="divide-y divide-border border border-border">
                   {retailerItems.map((item) => {
                     const priceChanged = hasPriceChanged(item.expected_price, item.observed_price);
+                    const procurementMethod =
+                      item.requested_options.procurement_method ?? "online_cart";
+                    const quantityUnit = item.requested_options.quantity_unit ?? "pieces";
+                    const orderQuantity = calculateProcurementOrderQuantity({
+                      quantity: item.requested_quantity,
+                      quantityUnit,
+                      cartonCoverageSquareFeet: item.requested_options.carton_coverage_sq_ft,
+                      wastePercentage: item.requested_options.waste_percentage,
+                    });
+                    const displayStatus =
+                      procurementMethod === "email_rep" && item.status === "skipped"
+                        ? "drafted"
+                        : item.status;
                     return (
                       <div
                         key={item.id}
@@ -670,15 +973,48 @@ function RunResults({
                           <div className="font-medium">{item.product_name}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{item.room_name}</div>
                           <div className="mt-2 text-xs leading-5">
-                            Qty {item.requested_quantity}
+                            Needed {item.requested_quantity}{" "}
+                            {quantityUnitLabel(quantityUnit, item.requested_quantity)}
+                            {quantityUnit === "square_feet" && (
+                              <span className="ml-2 font-medium">
+                                · Order {orderQuantity.quantity}{" "}
+                                {quantityUnitLabel(orderQuantity.unit, orderQuantity.quantity)}
+                              </span>
+                            )}
                             {Object.entries(item.requested_options)
-                              .filter(([, value]) => value)
+                              .filter(
+                                ([key, value]) =>
+                                  value &&
+                                  ![
+                                    "procurement_method",
+                                    "rep_email",
+                                    "quantity_unit",
+                                    "carton_coverage_sq_ft",
+                                    "waste_percentage",
+                                  ].includes(key),
+                              )
                               .map(([key, value]) => (
                                 <span key={key} className="ml-2">
                                   · {key.replaceAll("_", " ")}: {String(value)}
                                 </span>
                               ))}
                           </div>
+                          {(item.requested_options.carton_coverage_sq_ft != null ||
+                            item.requested_options.waste_percentage != null) && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {item.requested_options.carton_coverage_sq_ft != null
+                                ? `${item.requested_options.carton_coverage_sq_ft} sq ft per carton`
+                                : "Carton coverage not set"}
+                              {item.requested_options.waste_percentage != null
+                                ? ` · ${item.requested_options.waste_percentage}% waste`
+                                : ""}
+                            </div>
+                          )}
+                          {procurementMethod === "email_rep" && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Email rep: {item.requested_options.rep_email}
+                            </div>
+                          )}
                           <div className="mt-2 flex flex-wrap gap-3 text-xs">
                             <a
                               href={item.product_url}
@@ -727,10 +1063,10 @@ function RunResults({
                         <div>
                           <span
                             className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${statusTone(
-                              item.status,
+                              displayStatus,
                             )}`}
                           >
-                            {itemStatusLabel(item.status)}
+                            {itemStatusLabel(displayStatus)}
                           </span>
                         </div>
                       </div>

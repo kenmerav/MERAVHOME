@@ -2,10 +2,14 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import type { MaterialItem } from "@/lib/db";
 import {
+  ARIZONA_TILE_REP_EMAIL,
+  KEN_PROCUREMENT_EMAIL,
   buildCodexDeepLink,
   buildProcurementDraft,
+  buildProcurementEmailDrafts,
   buildProcurementPrompt,
   buildRunSnapshots,
+  calculateProcurementOrderQuantity,
   classifyProcurementDraft,
   hasPriceChanged,
   isCheckoutOrPaymentAction,
@@ -109,6 +113,11 @@ describe("Spec Book selection and preflight", () => {
     [{ productUrl: "" }, "missing_product_link"],
     [{ productUrl: "javascript:alert(1)" }, "invalid_link"],
     [{ quantity: null }, "missing_quantity"],
+    [{ procurementMethod: "email_rep", repEmail: "" }, "missing_rep_email"],
+    [{ procurementMethod: "email_rep", repEmail: "not-an-email" }, "invalid_rep_email"],
+    [{ quantityUnit: "square_feet", cartonCoverageSquareFeet: null }, "missing_carton_coverage"],
+    [{ quantityUnit: "boxes", quantity: 1.5 }, "invalid_tile_quantity"],
+    [{ wastePercentage: 101 }, "invalid_tile_quantity"],
     [{ size: "", requiredOptionKeys: ["size"] }, "missing_required_option"],
     [{ sourceNeedsReview: true }, "needs_review"],
     [{ selected: false }, "excluded"],
@@ -126,6 +135,9 @@ describe("Frozen snapshots and duplicate prevention", () => {
     draft.color = "Black";
     draft.quantity = 9;
     expect(snapshot.requested_options.color).toBe("Sand");
+    expect(snapshot.requested_options.procurement_method).toBe("online_cart");
+    expect(snapshot.requested_options.rep_email).toBeNull();
+    expect(snapshot.requested_options.quantity_unit).toBe("pieces");
     expect(snapshot.requested_quantity).toBe(2);
     expect(snapshot.retailer_domain).toBe("shop.example.com");
   });
@@ -181,9 +193,165 @@ describe("Prompt, matching, retry, and safety contract", () => {
       runAuthorization: "secret-token",
     });
     expect(prompt).toContain("merav-cart-builder");
+    expect(prompt).toContain("$merav-cart-workflow");
     expect(prompt).toContain("@Chrome");
+    expect(prompt).not.toContain("@Gmail");
+    expect(prompt).toContain(KEN_PROCUREMENT_EMAIL);
+    expect(prompt).toContain("create_retailer_draft");
+    expect(prompt).toContain("no Send operation");
     expect(prompt).toContain("Do not guess");
     expect(decodeURIComponent(buildCodexDeepLink(prompt).split("prompt=")[1])).toBe(prompt);
+  });
+
+  it("groups generic Email rep items into drafts with the project, products, and quantities", () => {
+    const drafts = buildProcurementEmailDrafts("Desert House", [
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        retailer_domain: "www.arizonatile.com",
+        vendor: "Arizona Tile",
+        product_name: "Flash White 3 x 12",
+        product_url: "https://www.arizonatile.com/products/flash-white",
+        sku: "FLASWHI3X12",
+        room_name: "Primary Bath",
+        requested_quantity: 42,
+        requested_options: {
+          color: "White",
+          finish: "Glossy",
+          size: "3 x 12",
+          dimensions: null,
+          other_requirements: "Confirm dye lot",
+          substitution_instructions: null,
+          procurement_method: "email_rep",
+          rep_email: ARIZONA_TILE_REP_EMAIL,
+        },
+      },
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        retailer_domain: "arizonatile.com",
+        vendor: "Arizona Tile",
+        product_name: "Calacatta Umber Honed",
+        product_url: "https://www.arizonatile.com/products/calacatta-umber",
+        sku: null,
+        room_name: "Kitchen",
+        requested_quantity: 3,
+        requested_options: {
+          color: null,
+          finish: "Honed",
+          size: null,
+          dimensions: null,
+          other_requirements: null,
+          substitution_instructions: null,
+          procurement_method: "email_rep",
+          rep_email: ARIZONA_TILE_REP_EMAIL,
+        },
+      },
+      {
+        id: "88888888-8888-4888-8888-888888888888",
+        retailer_domain: "stonesource.example.com",
+        vendor: "Stone Source",
+        product_name: "Limestone Field Tile",
+        product_url: "https://stonesource.example.com/limestone",
+        sku: "LIME-24",
+        room_name: "Powder Room",
+        requested_quantity: 18,
+        requested_options: {
+          color: "Ivory",
+          finish: "Honed",
+          size: "24 x 24",
+          dimensions: null,
+          other_requirements: null,
+          substitution_instructions: null,
+          procurement_method: "email_rep",
+          rep_email: "alex@stonesource.example.com",
+        },
+      },
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        retailer_domain: "shop.example.com",
+        vendor: "Online Shop",
+        product_name: "Online-only item",
+        product_url: "https://shop.example.com/product",
+        sku: null,
+        room_name: "Kitchen",
+        requested_quantity: 1,
+        requested_options: {
+          color: null,
+          finish: null,
+          size: null,
+          dimensions: null,
+          other_requirements: null,
+          substitution_instructions: null,
+          procurement_method: "online_cart",
+          rep_email: null,
+        },
+      },
+    ]);
+
+    expect(drafts).toHaveLength(2);
+    const arizonaDraft = drafts.find((draft) => draft.to === ARIZONA_TILE_REP_EMAIL);
+    const stoneSourceDraft = drafts.find((draft) => draft.to === "alex@stonesource.example.com");
+    expect(arizonaDraft).toMatchObject({
+      retailer: "Arizona Tile",
+      from_account: "ken@meravinteriors.com",
+      to: ARIZONA_TILE_REP_EMAIL,
+      subject: "Arizona Tile product request — Desert House",
+      run_item_ids: [
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ],
+    });
+    expect(arizonaDraft?.body).toContain("Project: Desert House");
+    expect(arizonaDraft?.body).toContain("Flash White 3 x 12");
+    expect(arizonaDraft?.body).toContain("Quantity needed: 42 pieces");
+    expect(arizonaDraft?.body).toContain("Calacatta Umber Honed");
+    expect(arizonaDraft?.body).toContain("Quantity needed: 3 pieces");
+    expect(arizonaDraft?.body).not.toContain("Online-only item");
+    expect(stoneSourceDraft).toMatchObject({
+      retailer: "Stone Source",
+      from_account: KEN_PROCUREMENT_EMAIL,
+      to: "alex@stonesource.example.com",
+      subject: "Stone Source product request — Desert House",
+    });
+    expect(stoneSourceDraft?.body).toContain("Limestone Field Tile");
+    expect(stoneSourceDraft?.body).toContain("Quantity needed: 18 pieces");
+  });
+
+  it("rounds square-foot tile requirements up to whole boxes with waste", () => {
+    const order = calculateProcurementOrderQuantity({
+      quantity: 100,
+      quantityUnit: "square_feet",
+      cartonCoverageSquareFeet: 12.5,
+      wastePercentage: 10,
+    });
+    expect(order).toMatchObject({
+      quantity: 9,
+      unit: "boxes",
+      requestedSquareFeet: 100,
+      coveredSquareFeet: 112.5,
+    });
+    expect(order.squareFeetWithWaste).toBeCloseTo(110);
+
+    const tileDraft = {
+      ...readyDraft(),
+      procurementMethod: "email_rep" as const,
+      repEmail: ARIZONA_TILE_REP_EMAIL,
+      quantity: 100,
+      quantityUnit: "square_feet" as const,
+      cartonCoverageSquareFeet: 12.5,
+      wastePercentage: 10,
+    };
+    const snapshot = snapshotProcurementDraft(tileDraft);
+    const [email] = buildProcurementEmailDrafts("Desert House", [
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        ...snapshot,
+      },
+    ]);
+    expect(email.body).toContain("Quantity needed: 100 square feet");
+    expect(email.body).toContain("Waste: 10%");
+    expect(email.body).toContain("Carton coverage: 12.5 square feet per box");
+    expect(email.body).toContain("Order quantity: 9 boxes");
+    expect(email.body).toContain("Coverage ordered: 112.5 square feet");
   });
 
   it("normalizes harmless formatting but stops on ambiguous options", () => {
@@ -201,6 +369,7 @@ describe("Prompt, matching, retry, and safety contract", () => {
     expect(isRetryableStatus("out_of_stock")).toBe(true);
     expect(isRetryableStatus("failed")).toBe(true);
     expect(isRetryableStatus("added")).toBe(false);
+    expect(isRetryableStatus("drafted")).toBe(false);
     expect(isRetryableStatus("completed")).toBe(false);
   });
 

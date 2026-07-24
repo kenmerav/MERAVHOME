@@ -4,6 +4,7 @@ import { toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
+import { resolveCartonCoverage } from "@/lib/cartonCoverage";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
@@ -25,6 +26,21 @@ function firstString(...vals: unknown[]) {
 
 function hasValue(value: unknown) {
   return typeof value === "string" ? value.trim().length > 0 : value != null;
+}
+
+function firstPositiveNumber(...values: unknown[]) {
+  for (const value of values) {
+    const number =
+      typeof value === "number"
+        ? value
+        : Number(
+            String(value ?? "")
+              .replace(/,/g, "")
+              .trim(),
+          );
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
 }
 
 function isScrapeableUrl(value: string | null | undefined) {
@@ -228,6 +244,10 @@ type Scraped = {
   price?: string;
   unit_cost?: string;
   shipping?: string;
+  carton_coverage_sq_ft?: number;
+  carton_coverage_source_url?: string;
+  carton_coverage_source_text?: string;
+  carton_coverage_confidence?: "exact" | "review" | "missing";
   error?: string;
 };
 
@@ -409,6 +429,19 @@ function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | n
     price: firstString(primary?.price, fallback?.price),
     unit_cost: firstString(primary?.unit_cost, fallback?.unit_cost),
     shipping: firstString(primary?.shipping, fallback?.shipping),
+    carton_coverage_sq_ft:
+      firstPositiveNumber(primary?.carton_coverage_sq_ft, fallback?.carton_coverage_sq_ft) ??
+      undefined,
+    carton_coverage_source_url: firstString(
+      primary?.carton_coverage_source_url,
+      fallback?.carton_coverage_source_url,
+    ),
+    carton_coverage_source_text: firstString(
+      primary?.carton_coverage_source_text,
+      fallback?.carton_coverage_source_text,
+    ),
+    carton_coverage_confidence:
+      primary?.carton_coverage_confidence ?? fallback?.carton_coverage_confidence,
     error: firstString(primary?.error, fallback?.error),
   }) as Scraped;
 }
@@ -481,6 +514,20 @@ const scrapeSchema = {
     unit_cost: { type: "string" },
     shipping: { type: "string" },
     image_url: { type: "string" },
+    carton_coverage_sq_ft: {
+      type: "number",
+      description:
+        "Total square feet contained in one unopened box, carton, or case for the exact selected product size.",
+    },
+    carton_coverage_text: {
+      type: "string",
+      description: "Exact source line supporting carton coverage.",
+    },
+    coverage_matches_requested_variant: {
+      type: "boolean",
+      description:
+        "True only if carton coverage clearly belongs to the exact selected size or SKU.",
+    },
   },
 };
 
@@ -488,6 +535,21 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
   const ex = data.json ?? data.extract ?? {};
   const meta = data.metadata ?? {};
   const pagePrice = priceFromPageText(data.markdown, data.html, sourceUrl);
+  const parsedCoverage = resolveCartonCoverage({
+    pageText: [data.markdown, data.html],
+  });
+  const coverage =
+    ex.coverage_matches_requested_variant === true
+      ? resolveCartonCoverage({
+          extractedSquareFeet: ex.carton_coverage_sq_ft,
+          extractedEvidence: ex.carton_coverage_text,
+        })
+      : {
+          squareFeet: null,
+          confidence: parsedCoverage.candidates.length ? ("review" as const) : ("missing" as const),
+          evidence: firstString(ex.carton_coverage_text) || parsedCoverage.evidence,
+          candidates: parsedCoverage.candidates,
+        };
   return {
     name: firstString(ex.name, meta.title, meta.ogTitle),
     vendor: firstString(
@@ -519,6 +581,11 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
     unit_cost: firstPrice(ex.unit_cost),
     shipping: firstPrice(ex.shipping),
     image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
+    carton_coverage_sq_ft:
+      coverage.confidence === "exact" ? (coverage.squareFeet ?? undefined) : undefined,
+    carton_coverage_source_url: coverage.confidence === "exact" ? sourceUrl : undefined,
+    carton_coverage_source_text: coverage.evidence ?? undefined,
+    carton_coverage_confidence: coverage.confidence,
   };
 }
 
@@ -555,6 +622,13 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
       unit_cost: { type: "string" },
       shipping: { type: "string" },
       image_url: { type: "string" },
+      carton_coverage_sq_ft: {
+        type: "number",
+        description:
+          "Total square feet contained in one unopened box, carton, or case for the exact selected product size.",
+      },
+      carton_coverage_text: { type: "string" },
+      coverage_matches_requested_variant: { type: "boolean" },
     },
   };
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -577,7 +651,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
             type: "json",
             schema: scrapeSchema,
             prompt:
-              "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, SKU, or variant already chosen, capture that exact selected value. Capture only the primary product price matching the URL and selected SKU. Ignore installation services, financing thresholds, shipping offers, and related or recommended product prices. If no exact variant price is visible, capture the primary product price range. Do not invent a color or price.",
+              "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, SKU, or variant already chosen, capture that exact selected value. Capture only the primary product price matching the URL and selected SKU. For tile, capture the total square feet in one box/carton/case only when it clearly matches the exact selected size or SKU; never use pieces per box, price per square foot, pallet coverage, or another size. Ignore installation services, financing thresholds, shipping offers, and related or recommended product prices. If no exact variant price is visible, capture the primary product price range. Do not invent a color, price, or carton coverage.",
           },
         ],
         onlyMainContent: false,
@@ -619,6 +693,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               material_item_id?: string;
               url?: string;
               existing_product_id?: string | null;
+              needs_carton_coverage?: boolean;
             }>;
           };
           const projectId = cleanUuid(body.project_id);
@@ -718,16 +793,23 @@ export const Route = createFileRoute("/api/scrape-materials")({
           );
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
-            .select("id, product_url, product_id, scrape_status, product:products(id, price)")
+            .select(
+              "id, category, product_url, product_id, scrape_status, product:products(id, price, carton_coverage_sq_ft)",
+            )
             .eq("project_id", projectId)
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
           const linkedItems = items ?? [];
           const validLinkItems = linkedItems.filter((item) => isScrapeableUrl(item.product_url));
           const invalid_link_count = linkedItems.length - validLinkItems.length;
-          const candidates = validLinkItems.filter(
-            (item: any) => !excludedIds.has(item.id) && !hasValue(item.product?.price),
-          );
+          const candidates = validLinkItems.filter((item: any) => {
+            const tileItem = /tile|stone/i.test(String(item.category ?? ""));
+            return (
+              !excludedIds.has(item.id) &&
+              (!hasValue(item.product?.price) ||
+                (tileItem && !hasValue(item.product?.carton_coverage_sq_ft)))
+            );
+          });
           const already_scraped_count = validLinkItems.length - candidates.length;
           const batchItems = candidates.slice(0, MAX_SCRAPE_ROWS_PER_BATCH);
           const remaining_count = Math.max(0, candidates.length - batchItems.length);
@@ -735,6 +817,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
             material_item_id: item.id,
             url: item.product_url.trim(),
             existing_product_id: item.product?.id ?? item.product_id ?? null,
+            needs_carton_coverage:
+              /tile|stone/i.test(String(item.category ?? "")) &&
+              !hasValue(item.product?.carton_coverage_sq_ft),
           }));
           if (!batchCandidates.length) {
             return json({
@@ -750,11 +835,12 @@ export const Route = createFileRoute("/api/scrape-materials")({
               material_item_id: cleanUuid(candidate.material_item_id),
               url: candidate.url,
               existing_product_id: cleanUuid(candidate.existing_product_id),
+              needs_carton_coverage: candidate.needs_carton_coverage,
               scraped: await scrapeDirectProduct(candidate.url),
             })),
           );
           const prefetchedRows = directRows
-            .filter((row) => row.scraped?.price)
+            .filter((row) => row.scraped?.price && !row.needs_carton_coverage)
             .map((row) => ({ ...row, scraped: row.scraped as Scraped }));
           const prefetchedIds = new Set(prefetchedRows.map((row) => row.material_item_id));
           const firecrawlCandidates = batchCandidates.filter(
@@ -783,7 +869,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   type: "json",
                   schema: scrapeSchema,
                   prompt:
-                    "Extract product details and the exact current visible price for the primary product matching the URL and selected SKU. Ignore installation services, financing thresholds, shipping offers, and related or recommended product prices. Do not invent a price.",
+                    "Extract product details and the exact current visible price for the primary product matching the URL and selected SKU. For tile, capture total square feet per unopened box/carton/case only when it clearly matches the exact selected size or SKU. Ignore pieces per box, price per square foot, pallet coverage, installation services, financing thresholds, shipping offers, and related or recommended product prices. Do not invent a price or carton coverage.",
                 },
               ],
               onlyMainContent: false,
@@ -861,6 +947,13 @@ export const Route = createFileRoute("/api/scrape-materials")({
               price: normalizeMoneyInput(row.scraped.price),
               unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
               shipping: normalizeMoneyInput(row.scraped.shipping),
+              carton_coverage_sq_ft: row.scraped.carton_coverage_sq_ft ?? null,
+              carton_coverage_source_url: row.scraped.carton_coverage_source_url || null,
+              carton_coverage_source_text: row.scraped.carton_coverage_source_text || null,
+              carton_coverage_confidence: row.scraped.carton_coverage_confidence || null,
+              carton_coverage_scraped_at: row.scraped.carton_coverage_confidence
+                ? new Date().toISOString()
+                : null,
             });
 
             if (productId) {
@@ -873,6 +966,17 @@ export const Route = createFileRoute("/api/scrape-materials")({
               const sourceVendor = firstString(inferVendorFromUrl(row.url), row.scraped.vendor);
               if (sourceVendor && existingProduct?.vendor !== sourceVendor) {
                 patch.vendor = sourceVendor;
+              }
+              if (
+                row.scraped.carton_coverage_sq_ft &&
+                !hasValue(existingProduct?.carton_coverage_sq_ft)
+              ) {
+                patch.carton_coverage_sq_ft = row.scraped.carton_coverage_sq_ft;
+                patch.carton_coverage_source_url =
+                  row.scraped.carton_coverage_source_url || row.url;
+                patch.carton_coverage_source_text = row.scraped.carton_coverage_source_text || null;
+                patch.carton_coverage_confidence = "exact";
+                patch.carton_coverage_scraped_at = new Date().toISOString();
               }
               if (Object.keys(patch).length) {
                 const { error: updateError } = await supabaseAdmin

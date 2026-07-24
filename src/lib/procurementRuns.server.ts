@@ -11,6 +11,8 @@ import {
   parseMoney,
   type ProcurementDraft,
   type ProcurementItemStatus,
+  type ProcurementMethod,
+  type ProcurementQuantityUnit,
   type ProcurementRunResult,
   type ProcurementSnapshot,
 } from "@/lib/procurementCart";
@@ -25,6 +27,9 @@ const admin = supabaseAdmin as any;
 export interface ProcurementDraftOverride {
   spec_book_item_id: string;
   quantity: number | null;
+  quantity_unit?: ProcurementQuantityUnit;
+  carton_coverage_sq_ft?: number | null;
+  waste_percentage?: number | null;
   color?: string;
   finish?: string;
   size?: string;
@@ -32,6 +37,8 @@ export interface ProcurementDraftOverride {
   other_requirements?: string;
   substitution_instructions?: string;
   required_option_keys?: ProcurementDraft["requiredOptionKeys"];
+  procurement_method?: ProcurementMethod;
+  rep_email?: string;
 }
 
 export interface PreparedProcurementRun {
@@ -52,6 +59,14 @@ function asNullableString(value: unknown) {
 
 function numeric(value: unknown) {
   return parseMoney(value);
+}
+
+function procurementMethod(value: unknown, fallback: ProcurementMethod): ProcurementMethod {
+  return value === "email_rep" || value === "online_cart" ? value : fallback;
+}
+
+function quantityUnit(value: unknown, fallback: ProcurementQuantityUnit): ProcurementQuantityUnit {
+  return value === "pieces" || value === "boxes" || value === "square_feet" ? value : fallback;
 }
 
 function normalizeRunItem(row: any) {
@@ -199,9 +214,7 @@ export async function createProcurementRun(input: {
       admin.from("projects").select("id,name").eq("id", input.projectId).maybeSingle(),
       admin
         .from("material_items")
-        .select(
-          "*, product:products(*), room:rooms!material_items_room_id_fkey(id,name)",
-        )
+        .select("*, product:products(*), room:rooms!material_items_room_id_fkey(id,name)")
         .eq("project_id", input.projectId)
         .in("id", requestedIds),
     ]);
@@ -246,6 +259,9 @@ export async function createProcurementRun(input: {
     return {
       ...draft,
       quantity: override?.quantity ?? null,
+      quantityUnit: quantityUnit(override?.quantity_unit, draft.quantityUnit),
+      cartonCoverageSquareFeet: numeric(override?.carton_coverage_sq_ft),
+      wastePercentage: numeric(override?.waste_percentage),
       color: asString(override?.color ?? draft.color),
       finish: asString(override?.finish ?? draft.finish),
       size: asString(override?.size ?? draft.size),
@@ -255,6 +271,8 @@ export async function createProcurementRun(input: {
       requiredOptionKeys: Array.isArray(override?.required_option_keys)
         ? override.required_option_keys
         : draft.requiredOptionKeys,
+      procurementMethod: procurementMethod(override?.procurement_method, draft.procurementMethod),
+      repEmail: asString(override?.rep_email ?? draft.repEmail).slice(0, 320),
       selected: true,
     } satisfies ProcurementDraft;
   });
@@ -419,6 +437,9 @@ export async function updateAuthorizedProcurementItem(input: {
       "An Added item cannot be reopened through the MCP tool. Use Studio retry controls.",
     );
   }
+  if (input.status === "drafted") {
+    throw new Error("Drafted status can only be recorded by Studio's create_retailer_draft tool.");
+  }
 
   const { data: updated, error } = await admin
     .from("procurement_run_items")
@@ -451,6 +472,7 @@ export async function completeAuthorizedProcurementRun(runAuthorization: string)
   const run = await authorizeProcurementRun(runAuthorization);
   const totals = {
     added: run.items.filter((item) => ["added", "completed"].includes(item.status)).length,
+    drafted: run.items.filter((item) => item.status === "drafted").length,
     needs_review: run.items.filter((item) =>
       [
         "needs_review",
