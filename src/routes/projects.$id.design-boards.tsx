@@ -149,6 +149,35 @@ type BoardElement = {
   imageCropY?: number | null;
 };
 
+type PageMaterialsSyncImageSnapshot = {
+  id: string;
+  src: string | null;
+  label: string | null;
+  notes: string | null;
+  link: string | null;
+  materialLinkCleared: boolean;
+  productId: string | null;
+  productName: string | null;
+  finish: string | null;
+  materialRoomId: string | null;
+  materialCategory: string | null;
+  materialQuantity: number | null;
+  materialFinish: string | null;
+  materialDimensions: string | null;
+  materialInfoNotNeeded: boolean;
+  materialInfoSkipApproved: boolean;
+  materialExcludeFromMaterials: boolean;
+};
+
+type PageMaterialsSyncSnapshot = {
+  version: 1;
+  title: string;
+  roomId: string | null;
+  hidden: boolean;
+  roomApprovalStatus: "approved" | "declined" | null;
+  materialImages: PageMaterialsSyncImageSnapshot[];
+};
+
 type BoardPage = {
   id: string;
   title: string;
@@ -157,6 +186,9 @@ type BoardPage = {
   roomApprovalStatus?: "approved" | "declined";
   declinedMaterialItems?: Array<Record<string, unknown>>;
   presentationVisible?: boolean;
+  materialsSyncFingerprint?: string;
+  materialsSyncSnapshot?: PageMaterialsSyncSnapshot;
+  materialsSyncedAt?: string;
   elements: BoardElement[];
 };
 
@@ -406,6 +438,193 @@ function normalizedMaterialItemCategory(item: MaterialItem): ItemCategory {
   return inferredMaterialItemCategory(item);
 }
 
+type PageMaterialsSyncStatus = "not-applicable" | "not-tracked" | "current" | "changed";
+
+function hashMaterialsSnapshot(value: string) {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0)
+    .toString(16)
+    .padStart(8, "0")}`;
+}
+
+function createPageMaterialsSyncSnapshot(page: BoardPage): PageMaterialsSyncSnapshot {
+  const materialImages: PageMaterialsSyncImageSnapshot[] = page.elements
+    .filter((element) => element.type === "image")
+    .map((element) => ({
+      id: element.id,
+      src: element.src ?? null,
+      label: element.label ?? null,
+      notes: element.notes ?? null,
+      link: element.link ?? null,
+      materialLinkCleared: element.materialLinkCleared === true,
+      productId: element.productId ?? null,
+      productName: element.productName ?? null,
+      finish: element.finish ?? null,
+      materialRoomId: element.materialRoomId ?? null,
+      materialCategory: element.materialCategory ?? null,
+      materialQuantity: element.materialQuantity ?? null,
+      materialFinish: element.materialFinish ?? null,
+      materialDimensions: element.materialDimensions ?? null,
+      materialInfoNotNeeded: element.materialInfoNotNeeded === true,
+      materialInfoSkipApproved: element.materialInfoSkipApproved === true,
+      materialExcludeFromMaterials: element.materialExcludeFromMaterials === true,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  return {
+    version: 1,
+    title: page.title,
+    roomId: page.roomId,
+    hidden: page.hidden === true,
+    roomApprovalStatus: page.roomApprovalStatus ?? null,
+    materialImages,
+  };
+}
+
+function materialsSyncSnapshotFingerprint(snapshot: PageMaterialsSyncSnapshot) {
+  return `v1:${hashMaterialsSnapshot(
+    JSON.stringify({
+      title: snapshot.title,
+      roomId: snapshot.roomId,
+      hidden: snapshot.hidden,
+      roomApprovalStatus: snapshot.roomApprovalStatus,
+      materialImages: snapshot.materialImages,
+    }),
+  )}`;
+}
+
+function pageMaterialsSyncFingerprint(page: BoardPage) {
+  return materialsSyncSnapshotFingerprint(createPageMaterialsSyncSnapshot(page));
+}
+
+function pageMaterialsSyncStatus(page: BoardPage): PageMaterialsSyncStatus {
+  const hasMaterialImages = page.elements.some(
+    (element) => element.type === "image" && !element.materialExcludeFromMaterials,
+  );
+  if (!hasMaterialImages) return "not-applicable";
+  if (!page.materialsSyncFingerprint) return "not-tracked";
+  return page.materialsSyncFingerprint === pageMaterialsSyncFingerprint(page)
+    ? "current"
+    : "changed";
+}
+
+function describePageMaterialsChanges(
+  previous: PageMaterialsSyncSnapshot | undefined,
+  current: PageMaterialsSyncSnapshot,
+  roomNameForId: (roomId: string | null) => string,
+) {
+  if (!previous) return [];
+  const changes: string[] = [];
+  const value = (entry: string | number | null) =>
+    entry === null || entry === "" ? "Not set" : String(entry);
+
+  if (previous.title !== current.title) {
+    changes.push(`Page title changed from "${previous.title}" to "${current.title}".`);
+  }
+  if (previous.roomId !== current.roomId) {
+    changes.push(
+      `Page room changed from ${roomNameForId(previous.roomId)} to ${roomNameForId(current.roomId)}.`,
+    );
+  }
+  if (previous.hidden !== current.hidden) {
+    changes.push(
+      current.hidden
+        ? "Page was hidden and should be removed from project Materials."
+        : "Page was restored and should be included in project Materials.",
+    );
+  }
+  if (previous.roomApprovalStatus !== current.roomApprovalStatus) {
+    changes.push(
+      `Room option changed from ${value(previous.roomApprovalStatus)} to ${value(
+        current.roomApprovalStatus,
+      )}.`,
+    );
+  }
+
+  const previousById = new Map(previous.materialImages.map((item) => [item.id, item] as const));
+  const currentById = new Map(current.materialImages.map((item) => [item.id, item] as const));
+  const itemName = (item: PageMaterialsSyncImageSnapshot) =>
+    item.label || item.productName || "Unlabeled item";
+
+  for (const item of current.materialImages) {
+    const before = previousById.get(item.id);
+    if (!before) {
+      changes.push(`Added ${itemName(item)}.`);
+      continue;
+    }
+    const beforeName = itemName(before);
+    const afterName = itemName(item);
+    const name = afterName || beforeName;
+    const itemChanges: string[] = [];
+    const addValueChange = (
+      label: string,
+      beforeValue: string | number | null,
+      afterValue: string | number | null,
+    ) => {
+      if (beforeValue === afterValue) return;
+      itemChanges.push(`${label} changed from ${value(beforeValue)} to ${value(afterValue)}`);
+    };
+
+    addValueChange("label", before.label, item.label);
+    addValueChange("product", before.productName, item.productName);
+    addValueChange("category", before.materialCategory, item.materialCategory);
+    addValueChange("quantity", before.materialQuantity, item.materialQuantity);
+    addValueChange(
+      "finish",
+      before.materialFinish || before.finish,
+      item.materialFinish || item.finish,
+    );
+    addValueChange("dimensions", before.materialDimensions, item.materialDimensions);
+    if (before.materialRoomId !== item.materialRoomId) {
+      itemChanges.push(
+        `room changed from ${roomNameForId(before.materialRoomId)} to ${roomNameForId(
+          item.materialRoomId,
+        )}`,
+      );
+    }
+    if (before.src !== item.src) itemChanges.push("image changed");
+    if (before.link !== item.link || before.materialLinkCleared !== item.materialLinkCleared) {
+      itemChanges.push("product link changed");
+    }
+    if (before.notes !== item.notes) itemChanges.push("notes changed");
+    if (before.materialExcludeFromMaterials !== item.materialExcludeFromMaterials) {
+      itemChanges.push(
+        item.materialExcludeFromMaterials
+          ? "excluded from Materials"
+          : "included in Materials",
+      );
+    }
+    if (
+      before.productId !== item.productId &&
+      before.productName === item.productName
+    ) {
+      itemChanges.push("connected catalog product changed");
+    }
+    if (
+      before.materialInfoNotNeeded !== item.materialInfoNotNeeded ||
+      before.materialInfoSkipApproved !== item.materialInfoSkipApproved
+    ) {
+      itemChanges.push("material review setting changed");
+    }
+    if (!itemChanges.length && JSON.stringify(before) !== JSON.stringify(item)) {
+      itemChanges.push("material details changed");
+    }
+    if (itemChanges.length) changes.push(`${name}: ${itemChanges.join("; ")}.`);
+  }
+
+  for (const item of previous.materialImages) {
+    if (!currentById.has(item.id)) changes.push(`Removed ${itemName(item)}.`);
+  }
+
+  return changes;
+}
+
 function inferredMaterialItemCategory(item: MaterialItem): ItemCategory {
   return inferMaterialCategory(
     [
@@ -488,6 +707,7 @@ function ProjectDesignBoardsPage() {
   const [thumbnailViewport, setThumbnailViewport] = useState({ scrollLeft: 0, width: 0 });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [missingInfoOpen, setMissingInfoOpen] = useState(false);
+  const [materialsChangesOpen, setMaterialsChangesOpen] = useState(false);
   const [pageTransferOpen, setPageTransferOpen] = useState(false);
   const [pageTransferMode, setPageTransferMode] = useState<"duplicate" | "move">("duplicate");
   const [destinationProjectId, setDestinationProjectId] = useState("");
@@ -603,6 +823,22 @@ function ProjectDesignBoardsPage() {
     pages.findIndex((page) => page.id === selectedPageId),
   );
   const activePage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
+  const materialsSyncStatusByPageId = useMemo(
+    () =>
+      new Map(
+        pages.map((page) => [page.id, pageMaterialsSyncStatus(page)] as const),
+      ),
+    [pages],
+  );
+  const activePageMaterialsSyncStatus =
+    materialsSyncStatusByPageId.get(activePage.id) ?? "not-applicable";
+  const changedMaterialsPages = useMemo(
+    () =>
+      pages.filter(
+        (page) => materialsSyncStatusByPageId.get(page.id) === "changed",
+      ),
+    [materialsSyncStatusByPageId, pages],
+  );
   const visiblePages = useMemo(() => pages.filter((page) => page.hidden !== true), [pages]);
   const hiddenPageCount = pages.length - visiblePages.length;
   const visiblePagesWithImages = useMemo(
@@ -768,6 +1004,15 @@ function ProjectDesignBoardsPage() {
     [materialItems],
   );
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room] as const)), [rooms]);
+  const activePageMaterialsChanges = useMemo(
+    () =>
+      describePageMaterialsChanges(
+        activePage.materialsSyncSnapshot,
+        createPageMaterialsSyncSnapshot(activePage),
+        (roomId) => (roomId ? roomById.get(roomId)?.name || "Unknown room" : "No room"),
+      ),
+    [activePage, roomById],
+  );
   const filteredProjectMaterials = useMemo(
     () =>
       materialItems
@@ -1188,6 +1433,30 @@ function ProjectDesignBoardsPage() {
       setElementsForPage(selectedPageId, updater);
     },
     [selectedPageId, setElementsForPage],
+  );
+
+  const markPagesMaterialsSynced = useCallback(
+    (pageIds: string[]) => {
+      const pageIdSet = new Set(pageIds);
+      const materialsSyncedAt = new Date().toISOString();
+      applyLocalBoardUpdate((current) => ({
+        ...current,
+        pages: current.pages.map((page) => {
+          if (!pageIdSet.has(page.id)) return page;
+          const materialsSyncSnapshot = createPageMaterialsSyncSnapshot(page);
+          const patch = {
+            materialsSyncFingerprint: materialsSyncSnapshotFingerprint(materialsSyncSnapshot),
+            materialsSyncSnapshot,
+            materialsSyncedAt,
+          };
+          if (!applyingRemoteRef.current) {
+            broadcastPatch({ kind: "patch-page", pageId: page.id, patch });
+          }
+          return { ...page, ...patch };
+        }),
+      }));
+    },
+    [applyLocalBoardUpdate, broadcastPatch],
   );
 
   const clearSelection = useCallback(() => {
@@ -2041,6 +2310,11 @@ function ProjectDesignBoardsPage() {
       for (const roomProductId of roomProductIdsToRemove) {
         await db.removeRoomProduct(roomProductId);
       }
+      if (skipped === 0) {
+        markPagesMaterialsSynced(
+          scope === "board" ? pages.map((page) => page.id) : targetPages.map((page) => page.id),
+        );
+      }
       if (removed) {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
@@ -2054,6 +2328,8 @@ function ProjectDesignBoardsPage() {
             removed ? ` and removed ${removed} stale ${removed === 1 ? "item" : "items"}` : ""
           }${skipped ? `, skipped ${skipped}${skippedReasonText}.` : "."}`,
         );
+      } else if (skipped === 0) {
+        toast.success("Materials are up to date.");
       } else {
         const skippedReasonText = formatSkippedMaterialReasons(skippedReasons);
         toast.error(
@@ -3324,6 +3600,39 @@ function ProjectDesignBoardsPage() {
                     ))}
                   </select>
                 </label>
+                {canEditDesignBoards && activePageMaterialsSyncStatus === "current" && (
+                  <div
+                    className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"
+                    title={`Last sent ${formatLastUpdated(activePage.materialsSyncedAt)}`}
+                  >
+                    Materials current
+                  </div>
+                )}
+                {canEditDesignBoards && activePageMaterialsSyncStatus === "changed" && (
+                  <button
+                    type="button"
+                    onClick={() => setMaterialsChangesOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 transition hover:border-amber-500 hover:bg-amber-100"
+                    title={`Last sent ${formatLastUpdated(activePage.materialsSyncedAt)}`}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Changed since Materials send
+                  </button>
+                )}
+                {canEditDesignBoards && activePageMaterialsSyncStatus === "not-tracked" && (
+                  <div className="rounded-full border border-stone-300 bg-stone-50 px-3 py-1 text-xs font-medium text-stone-700">
+                    Send page once to track Materials changes
+                  </div>
+                )}
+                {canEditDesignBoards && changedMaterialsPages.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => selectPage(changedMaterialsPages[0].id)}
+                    className="text-xs font-medium text-amber-900 underline-offset-4 hover:underline"
+                  >
+                    {changedMaterialsPages.length} pages need Materials update
+                  </button>
+                )}
                 {canEditDesignBoards && boardMissingInfoCount > 0 && (
                   <button
                     type="button"
@@ -3893,6 +4202,8 @@ function ProjectDesignBoardsPage() {
                   const pageCanMoveRight = index < pages.length - 1;
                   const pageCanDelete = pages.length > 1;
                   const pageHidden = page.hidden === true;
+                  const pageMaterialsStatus =
+                    materialsSyncStatusByPageId.get(page.id) ?? "not-applicable";
                   return (
                     <div
                       key={page.id}
@@ -3919,6 +4230,22 @@ function ProjectDesignBoardsPage() {
                         <div className="pointer-events-none absolute bottom-1 left-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-amber-900">
                           Hidden
                         </div>
+                      )}
+                      {canEditDesignBoards && pageMaterialsStatus === "changed" && (
+                        <div
+                          className="pointer-events-none absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded border border-amber-300 bg-amber-50 text-amber-900 shadow-sm"
+                          title="Changed since this page was sent to Materials"
+                          aria-label="Changed since this page was sent to Materials"
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                        </div>
+                      )}
+                      {canEditDesignBoards && pageMaterialsStatus === "not-tracked" && (
+                        <div
+                          className="pointer-events-none absolute left-1 top-1 h-2.5 w-2.5 rounded-full border border-stone-400 bg-white shadow-sm"
+                          title="Send this page once to track Materials changes"
+                          aria-label="Materials change tracking has not started for this page"
+                        />
                       )}
                       {canEditDesignBoards && (
                         <div className="pointer-events-none absolute right-1 top-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
@@ -4015,6 +4342,40 @@ function ProjectDesignBoardsPage() {
               </div>
             </div>
           </div>
+
+          <Dialog open={materialsChangesOpen} onOpenChange={setMaterialsChangesOpen}>
+            <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-display text-3xl font-normal">
+                  Materials Changes
+                </DialogTitle>
+                <DialogDescription>
+                  {activePage.title || `Board ${selectedPageIndex + 1}`} since Materials were last
+                  sent {formatLastUpdated(activePage.materialsSyncedAt)}.
+                </DialogDescription>
+              </DialogHeader>
+
+              {!activePage.materialsSyncSnapshot ? (
+                <div className="border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-700">
+                  Detailed change history starts after this page is sent to Materials again. The
+                  page is still correctly marked as changed.
+                </div>
+              ) : activePageMaterialsChanges.length ? (
+                <ul className="divide-y divide-stone-200 border-y border-stone-200">
+                  {activePageMaterialsChanges.map((change, index) => (
+                    <li key={`${index}-${change}`} className="flex gap-3 py-3 text-sm leading-6">
+                      <AlertTriangle className="mt-1 h-4 w-4 shrink-0 text-amber-700" />
+                      <span>{change}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-sm text-stone-600">
+                  No material-relevant differences were found.
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
           <Dialog
             open={pageTransferOpen}
@@ -7915,6 +8276,51 @@ function normalizeBoardVersion(value: unknown): BoardVersion | null {
   };
 }
 
+function normalizePageMaterialsSyncSnapshot(value: unknown): PageMaterialsSyncSnapshot | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const snapshot = value as Partial<PageMaterialsSyncSnapshot>;
+  if (snapshot.version !== 1 || !Array.isArray(snapshot.materialImages)) return undefined;
+  const nullableString = (entry: unknown) => (typeof entry === "string" ? entry : null);
+  const materialImages = snapshot.materialImages
+    .filter(
+      (item): item is PageMaterialsSyncImageSnapshot =>
+        Boolean(item && typeof item === "object" && typeof item.id === "string" && item.id),
+    )
+    .map((item) => ({
+      id: item.id,
+      src: nullableString(item.src),
+      label: nullableString(item.label),
+      notes: nullableString(item.notes),
+      link: nullableString(item.link),
+      materialLinkCleared: item.materialLinkCleared === true,
+      productId: nullableString(item.productId),
+      productName: nullableString(item.productName),
+      finish: nullableString(item.finish),
+      materialRoomId: nullableString(item.materialRoomId),
+      materialCategory: nullableString(item.materialCategory),
+      materialQuantity:
+        typeof item.materialQuantity === "number" ? item.materialQuantity : null,
+      materialFinish: nullableString(item.materialFinish),
+      materialDimensions: nullableString(item.materialDimensions),
+      materialInfoNotNeeded: item.materialInfoNotNeeded === true,
+      materialInfoSkipApproved: item.materialInfoSkipApproved === true,
+      materialExcludeFromMaterials: item.materialExcludeFromMaterials === true,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  return {
+    version: 1,
+    title: typeof snapshot.title === "string" ? snapshot.title : "",
+    roomId: nullableString(snapshot.roomId),
+    hidden: snapshot.hidden === true,
+    roomApprovalStatus:
+      snapshot.roomApprovalStatus === "approved" || snapshot.roomApprovalStatus === "declined"
+        ? snapshot.roomApprovalStatus
+        : null,
+    materialImages,
+  };
+}
+
 function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null {
   if (!value || typeof value !== "object") return null;
   const page = value as Partial<BoardPage>;
@@ -7932,6 +8338,15 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
       )
     : undefined;
   const presentationVisible = page.presentationVisible === true;
+  const materialsSyncFingerprint =
+    typeof page.materialsSyncFingerprint === "string" && page.materialsSyncFingerprint
+      ? page.materialsSyncFingerprint
+      : undefined;
+  const materialsSyncSnapshot = normalizePageMaterialsSyncSnapshot(page.materialsSyncSnapshot);
+  const materialsSyncedAt =
+    typeof page.materialsSyncedAt === "string" && page.materialsSyncedAt
+      ? page.materialsSyncedAt
+      : undefined;
   const elements = Array.isArray(page.elements)
     ? page.elements
         .map(normalizeBoardElement)
@@ -7945,6 +8360,9 @@ function normalizeBoardPage(value: unknown, pageIndex: number): BoardPage | null
     roomApprovalStatus,
     declinedMaterialItems,
     presentationVisible: hidden ? false : presentationVisible,
+    materialsSyncFingerprint,
+    materialsSyncSnapshot,
+    materialsSyncedAt,
     elements,
   };
 }
@@ -7998,6 +8416,9 @@ function createTransferredBoardPage(
     roomApprovalStatus: undefined,
     declinedMaterialItems: undefined,
     presentationVisible: false,
+    materialsSyncFingerprint: undefined,
+    materialsSyncSnapshot: undefined,
+    materialsSyncedAt: undefined,
     elements: sourcePage.elements.map((element) => ({
       ...element,
       id: crypto.randomUUID(),
