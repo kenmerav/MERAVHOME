@@ -155,6 +155,10 @@ type ScrapedRow = {
     price?: string;
     unit_cost?: string;
     shipping?: string;
+    carton_coverage_sq_ft?: number;
+    carton_coverage_source_url?: string;
+    carton_coverage_source_text?: string;
+    carton_coverage_confidence?: "exact" | "review" | "missing";
     error?: string;
   };
 };

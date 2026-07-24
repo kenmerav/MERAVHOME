@@ -229,6 +229,11 @@ export interface Product {
   price: string | null;
   unit_cost: string | null;
   shipping: string | null;
+  carton_coverage_sq_ft?: number | null;
+  carton_coverage_source_url?: string | null;
+  carton_coverage_source_text?: string | null;
+  carton_coverage_confidence?: "exact" | "review" | "missing" | "manual" | null;
+  carton_coverage_scraped_at?: string | null;
   description: string | null;
   has_sample: boolean;
   created_at: string;

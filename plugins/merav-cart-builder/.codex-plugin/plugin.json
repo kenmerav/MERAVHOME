@@ -1,19 +1,21 @@
 {
   "name": "merav-cart-builder",
-  "version": "0.1.0",
-  "description": "Safely turn prepared MERAVHOME Studio Spec Book runs into retailer carts with @Chrome.",
+  "version": "0.2.0",
+  "description": "Safely turn prepared MERAVHOME Studio Spec Book runs into retailer carts and draft-only rep emails.",
   "author": {
     "name": "MERAV Interiors"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Merav Cart Builder",
-    "shortDescription": "Build retailer carts from Studio Spec Books",
-    "longDescription": "Retrieves one secure, short-lived Studio procurement run, guides exact product and option matching with @Chrome, and reports each result back to Studio without authorizing checkout.",
+    "shortDescription": "Build carts and draft rep emails",
+    "longDescription": "Retrieves one secure, short-lived Studio procurement run, creates Studio-frozen rep-email drafts through a tool with no Send operation, guides exact product and option matching with @Chrome, and reports each result back to Studio without authorizing checkout.",
     "developerName": "MERAV Interiors",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
-    "defaultPrompt": ["Use Merav Cart Builder and @Chrome to process my prepared Studio cart run."],
+    "defaultPrompt": [
+      "Use Merav Cart Builder to create draft-only rep emails and use @Chrome to process my prepared Studio cart run."
+    ],
     "brandColor": "#2F352E"
   },
   "mcpServers": "./.mcp.json"

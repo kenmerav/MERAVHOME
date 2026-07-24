@@ -36,6 +36,7 @@ import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-remi
 import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
+import { Route as ApiScrapeCartonCoverageRouteImport } from './routes/api/scrape-carton-coverage'
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
@@ -43,6 +44,8 @@ import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/proje
 import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
 import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
 import { Route as ApiProcurementMcpRouteImport } from './routes/api/procurement-mcp'
+import { Route as ApiProcurementGmailCallbackRouteImport } from './routes/api/procurement-gmail-callback'
+import { Route as ApiProcurementEmailRouteImport } from './routes/api/procurement-email'
 import { Route as ApiPresentationBoardRouteImport } from './routes/api/presentation-board'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
@@ -224,6 +227,11 @@ const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
   path: '/api/scrape-materials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiScrapeCartonCoverageRoute = ApiScrapeCartonCoverageRouteImport.update({
+  id: '/api/scrape-carton-coverage',
+  path: '/api/scrape-carton-coverage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRemoveDesignBoardBackgroundRoute =
   ApiRemoveDesignBoardBackgroundRouteImport.update({
     id: '/api/remove-design-board-background',
@@ -259,6 +267,17 @@ const ApiProcurementRunsRoute = ApiProcurementRunsRouteImport.update({
 const ApiProcurementMcpRoute = ApiProcurementMcpRouteImport.update({
   id: '/api/procurement-mcp',
   path: '/api/procurement-mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProcurementGmailCallbackRoute =
+  ApiProcurementGmailCallbackRouteImport.update({
+    id: '/api/procurement-gmail-callback',
+    path: '/api/procurement-gmail-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiProcurementEmailRoute = ApiProcurementEmailRouteImport.update({
+  id: '/api/procurement-email',
+  path: '/api/procurement-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPresentationBoardRoute = ApiPresentationBoardRouteImport.update({
@@ -515,6 +534,8 @@ export interface FileRoutesByFullPath {
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/procurement-email': typeof ApiProcurementEmailRoute
+  '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-management': typeof ApiProjectManagementRoute
@@ -522,6 +543,7 @@ export interface FileRoutesByFullPath {
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
+  '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
@@ -594,6 +616,8 @@ export interface FileRoutesByTo {
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/procurement-email': typeof ApiProcurementEmailRoute
+  '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-management': typeof ApiProjectManagementRoute
@@ -601,6 +625,7 @@ export interface FileRoutesByTo {
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
+  '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
@@ -674,6 +699,8 @@ export interface FileRoutesById {
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
+  '/api/procurement-email': typeof ApiProcurementEmailRoute
+  '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-management': typeof ApiProjectManagementRoute
@@ -681,6 +708,7 @@ export interface FileRoutesById {
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
+  '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
@@ -755,6 +783,8 @@ export interface FileRouteTypes {
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/procurement-email'
+    | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
     | '/api/project-management'
@@ -762,6 +792,7 @@ export interface FileRouteTypes {
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
+    | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/shared-design-board'
@@ -834,6 +865,8 @@ export interface FileRouteTypes {
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/procurement-email'
+    | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
     | '/api/project-management'
@@ -841,6 +874,7 @@ export interface FileRouteTypes {
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
+    | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/shared-design-board'
@@ -913,6 +947,8 @@ export interface FileRouteTypes {
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
+    | '/api/procurement-email'
+    | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
     | '/api/project-management'
@@ -920,6 +956,7 @@ export interface FileRouteTypes {
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
+    | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
     | '/api/scrape-url'
     | '/api/shared-design-board'
@@ -993,6 +1030,8 @@ export interface RootRouteChildren {
   ApiMyTodosRoute: typeof ApiMyTodosRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiPresentationBoardRoute: typeof ApiPresentationBoardRoute
+  ApiProcurementEmailRoute: typeof ApiProcurementEmailRoute
+  ApiProcurementGmailCallbackRoute: typeof ApiProcurementGmailCallbackRoute
   ApiProcurementMcpRoute: typeof ApiProcurementMcpRoute
   ApiProcurementRunsRoute: typeof ApiProcurementRunsRoute
   ApiProjectManagementRoute: typeof ApiProjectManagementRoute
@@ -1000,6 +1039,7 @@ export interface RootRouteChildren {
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
+  ApiScrapeCartonCoverageRoute: typeof ApiScrapeCartonCoverageRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiSharedDesignBoardRoute: typeof ApiSharedDesignBoardRoute
@@ -1237,6 +1277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiScrapeMaterialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/scrape-carton-coverage': {
+      id: '/api/scrape-carton-coverage'
+      path: '/api/scrape-carton-coverage'
+      fullPath: '/api/scrape-carton-coverage'
+      preLoaderRoute: typeof ApiScrapeCartonCoverageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/remove-design-board-background': {
       id: '/api/remove-design-board-background'
       path: '/api/remove-design-board-background'
@@ -1284,6 +1331,20 @@ declare module '@tanstack/react-router' {
       path: '/api/procurement-mcp'
       fullPath: '/api/procurement-mcp'
       preLoaderRoute: typeof ApiProcurementMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-gmail-callback': {
+      id: '/api/procurement-gmail-callback'
+      path: '/api/procurement-gmail-callback'
+      fullPath: '/api/procurement-gmail-callback'
+      preLoaderRoute: typeof ApiProcurementGmailCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-email': {
+      id: '/api/procurement-email'
+      path: '/api/procurement-email'
+      fullPath: '/api/procurement-email'
+      preLoaderRoute: typeof ApiProcurementEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/presentation-board': {
@@ -1617,6 +1678,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMyTodosRoute: ApiMyTodosRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiPresentationBoardRoute: ApiPresentationBoardRoute,
+  ApiProcurementEmailRoute: ApiProcurementEmailRoute,
+  ApiProcurementGmailCallbackRoute: ApiProcurementGmailCallbackRoute,
   ApiProcurementMcpRoute: ApiProcurementMcpRoute,
   ApiProcurementRunsRoute: ApiProcurementRunsRoute,
   ApiProjectManagementRoute: ApiProjectManagementRoute,
@@ -1624,6 +1687,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProjectTodosRoute: ApiProjectTodosRoute,
   ApiProjectsRoute: ApiProjectsRoute,
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,
+  ApiScrapeCartonCoverageRoute: ApiScrapeCartonCoverageRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiSharedDesignBoardRoute: ApiSharedDesignBoardRoute,
