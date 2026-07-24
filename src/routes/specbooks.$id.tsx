@@ -24,9 +24,9 @@ import { toast } from "sonner";
 import {
   canDownloadSpecBookPdf,
   canEditSpecBook,
+  canUseProcurementCartBuilder,
   canUpdateSpecOrderingForRole,
   canViewProjectSurface,
-  isStudioTeamRole,
   specBookVisibilityForRole,
 } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -517,7 +517,7 @@ export function SpecBookDocument({
           </div>
         </div>
 
-        {!publicView && profile?.is_active && isStudioTeamRole(profile.role) && (
+        {!publicView && canUseProcurementCartBuilder(profile) && (
           <ProcurementCartBuilder project={project} rooms={rooms} items={items} />
         )}
 
