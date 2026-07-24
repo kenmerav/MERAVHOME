@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { cleanUuid } from "@/lib/ids";
-import { isStudioTeamRole } from "@/lib/permissions";
+import { canUseProcurementCartBuilder } from "@/lib/permissions";
 import {
   closeProcurementRun,
   createProcurementRun,
@@ -22,7 +22,7 @@ function json(data: unknown, status = 200) {
   });
 }
 
-async function requireStudioTeam(request: Request) {
+async function requireKenCartBuilderUser(request: Request) {
   const header = request.headers.get("authorization") ?? "";
   const token = header.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { error: json({ error: "Sign in to prepare cart runs." }, 401) };
@@ -32,12 +32,12 @@ async function requireStudioTeam(request: Request) {
   }
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("user_profiles")
-    .select("id,role,is_active")
+    .select("id,email,is_active")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (profileError) throw profileError;
-  if (!profile?.is_active || !isStudioTeamRole(profile.role)) {
-    return { error: json({ error: "Cart runs are available to the Studio team only." }, 403) };
+  if (!canUseProcurementCartBuilder(profile)) {
+    return { error: json({ error: "Cart Builder is available to Ken only." }, 403) };
   }
   return { user: userData.user };
 }
@@ -63,7 +63,7 @@ export const Route = createFileRoute("/api/procurement-runs")({
     handlers: {
       GET: async ({ request }) => {
         try {
-          const access = await requireStudioTeam(request);
+          const access = await requireKenCartBuilderUser(request);
           if ("error" in access) return access.error;
           const url = new URL(request.url);
           const runId = cleanUuid(url.searchParams.get("runId"));
@@ -77,7 +77,7 @@ export const Route = createFileRoute("/api/procurement-runs")({
       },
       POST: async ({ request }) => {
         try {
-          const access = await requireStudioTeam(request);
+          const access = await requireKenCartBuilderUser(request);
           if ("error" in access) return access.error;
           const body = (await request.json()) as {
             action?: "create" | "retry" | "reissue";
@@ -112,7 +112,7 @@ export const Route = createFileRoute("/api/procurement-runs")({
       },
       PATCH: async ({ request }) => {
         try {
-          const access = await requireStudioTeam(request);
+          const access = await requireKenCartBuilderUser(request);
           if ("error" in access) return access.error;
           const body = (await request.json()) as {
             action?: "cancel" | "expire";

@@ -8,7 +8,7 @@ import {
   type CartonCoverageResult,
 } from "@/lib/cartonCoverage";
 import { cleanUuid } from "@/lib/ids";
-import { isStudioTeamRole } from "@/lib/permissions";
+import { canUseProcurementCartBuilder } from "@/lib/permissions";
 
 const admin = supabaseAdmin as any;
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
@@ -39,7 +39,7 @@ function normalizeHttpUrl(value: string, baseUrl: string) {
   }
 }
 
-async function requireStudioTeam(request: Request) {
+async function requireKenCartBuilderUser(request: Request) {
   const token = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return { error: json({ error: "Sign in to scrape product coverage." }, 401) };
   const { data: userData, error: userError } = await admin.auth.getUser(token);
@@ -48,13 +48,13 @@ async function requireStudioTeam(request: Request) {
   }
   const { data: profile, error: profileError } = await admin
     .from("user_profiles")
-    .select("role,is_active")
+    .select("email,is_active")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (profileError) throw profileError;
-  if (!profile?.is_active || !isStudioTeamRole(profile.role)) {
+  if (!canUseProcurementCartBuilder(profile)) {
     return {
-      error: json({ error: "Product scraping is available to the Studio team only." }, 403),
+      error: json({ error: "Cart Builder product scraping is available to Ken only." }, 403),
     };
   }
   return { user: userData.user };
@@ -204,7 +204,7 @@ export const Route = createFileRoute("/api/scrape-carton-coverage")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const access = await requireStudioTeam(request);
+          const access = await requireKenCartBuilderUser(request);
           if ("error" in access) return access.error;
           const body = (await request.json()) as {
             material_item_id?: string;
