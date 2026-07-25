@@ -223,6 +223,7 @@ export interface RenderingStudioAsset {
   elevation_id: string;
   asset_type: RenderingStudioAssetType;
   filename: string;
+  storage_bucket?: string;
   storage_path: string;
   url: string;
   mime_type: string;
@@ -243,12 +244,20 @@ export interface RenderingStudioElevation {
   materials: Array<Record<string, unknown>>;
   approval_status: string;
   review_status: string;
+  workflow_status?: string;
+  expected_cad_filename?: string | null;
+  expected_render_filename?: string | null;
+  expected_sheet_filename?: string | null;
+  correction_note?: string | null;
+  source_page_number?: number | null;
+  current_revision_number?: number;
   presentation_order: number;
   presentation_mode: RenderingStudioPresentationMode;
   presentation_visible: boolean;
   created_at: string;
   updated_at: string;
   assets: RenderingStudioAsset[];
+  revisions?: Array<Record<string, unknown>>;
   room?: Pick<Room, "id" | "name"> | null;
 }
 
@@ -674,6 +683,26 @@ export const db = {
 
   /* RENDERING STUDIO ELEVATIONS */
   listRenderingStudioElevations: async (projectId: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (accessToken) {
+      try {
+        const response = await fetch(
+          `/api/rendering-studio?projectId=${encodeURIComponent(projectId)}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          },
+        );
+        if (response.ok) {
+          const body = (await response.json()) as {
+            elevations?: RenderingStudioElevation[];
+          };
+          if (Array.isArray(body.elevations)) return body.elevations;
+        }
+      } catch {
+        // The legacy direct query remains available until the workflow migration is applied.
+      }
+    }
     const { data, error } = await supabase
       .from("rendering_studio_elevations" as any)
       .select("*, room:rooms(id,name), assets:rendering_studio_assets(*)")
@@ -685,9 +714,7 @@ export const db = {
   },
   updateRenderingStudioElevation: async (
     id: string,
-    patch: Partial<
-      Pick<RenderingStudioElevation, "presentation_mode" | "presentation_visible">
-    >,
+    patch: Partial<Pick<RenderingStudioElevation, "presentation_mode" | "presentation_visible">>,
   ) => {
     const { data, error } = await supabase
       .from("rendering_studio_elevations" as any)

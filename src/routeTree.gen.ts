@@ -37,6 +37,7 @@ import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-de
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiScrapeCartonCoverageRouteImport } from './routes/api/scrape-carton-coverage'
+import { Route as ApiRenderingStudioRouteImport } from './routes/api/rendering-studio'
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
@@ -69,6 +70,7 @@ import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
+import { Route as ProjectsIdRenderingStudioRouteImport } from './routes/projects.$id.rendering-studio'
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
 import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
@@ -232,6 +234,11 @@ const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
 const ApiScrapeCartonCoverageRoute = ApiScrapeCartonCoverageRouteImport.update({
   id: '/api/scrape-carton-coverage',
   path: '/api/scrape-carton-coverage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRenderingStudioRoute = ApiRenderingStudioRouteImport.update({
+  id: '/api/rendering-studio',
+  path: '/api/rendering-studio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiRemoveDesignBoardBackgroundRoute =
@@ -402,6 +409,12 @@ const ProjectsIdRenderingsRoute = ProjectsIdRenderingsRouteImport.update({
   path: '/projects/$id/renderings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdRenderingStudioRoute =
+  ProjectsIdRenderingStudioRouteImport.update({
+    id: '/projects/$id/rendering-studio',
+    path: '/projects/$id/rendering-studio',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsIdPresentationRoute = ProjectsIdPresentationRouteImport.update({
   id: '/projects/$id/presentation',
   path: '/projects/$id/presentation',
@@ -558,6 +571,7 @@ export interface FileRoutesByFullPath {
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
+  '/api/rendering-studio': typeof ApiRenderingStudioRoute
   '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
@@ -599,6 +613,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
+  '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
   '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id/': typeof ProjectsIdIndexRoute
@@ -642,6 +657,7 @@ export interface FileRoutesByTo {
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
+  '/api/rendering-studio': typeof ApiRenderingStudioRoute
   '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
@@ -683,6 +699,7 @@ export interface FileRoutesByTo {
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
+  '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
   '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id': typeof ProjectsIdIndexRoute
@@ -727,6 +744,7 @@ export interface FileRoutesById {
   '/api/project-todos': typeof ApiProjectTodosRoute
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
+  '/api/rendering-studio': typeof ApiRenderingStudioRoute
   '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
@@ -768,6 +786,7 @@ export interface FileRoutesById {
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
+  '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
   '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id/': typeof ProjectsIdIndexRoute
@@ -813,6 +832,7 @@ export interface FileRouteTypes {
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
+    | '/api/rendering-studio'
     | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
     | '/api/scrape-url'
@@ -854,6 +874,7 @@ export interface FileRouteTypes {
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
+    | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
     | '/specbooks/public/$id'
     | '/projects/$id/'
@@ -897,6 +918,7 @@ export interface FileRouteTypes {
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
+    | '/api/rendering-studio'
     | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
     | '/api/scrape-url'
@@ -938,6 +960,7 @@ export interface FileRouteTypes {
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
+    | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
     | '/specbooks/public/$id'
     | '/projects/$id'
@@ -981,6 +1004,7 @@ export interface FileRouteTypes {
     | '/api/project-todos'
     | '/api/projects'
     | '/api/remove-design-board-background'
+    | '/api/rendering-studio'
     | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
     | '/api/scrape-url'
@@ -1022,6 +1046,7 @@ export interface FileRouteTypes {
     | '/projects/$id/financials'
     | '/projects/$id/materials'
     | '/projects/$id/presentation'
+    | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
     | '/specbooks/public/$id'
     | '/projects/$id/'
@@ -1066,6 +1091,7 @@ export interface RootRouteChildren {
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
+  ApiRenderingStudioRoute: typeof ApiRenderingStudioRoute
   ApiScrapeCartonCoverageRoute: typeof ApiScrapeCartonCoverageRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
@@ -1107,6 +1133,7 @@ export interface RootRouteChildren {
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
+  ProjectsIdRenderingStudioRoute: typeof ProjectsIdRenderingStudioRoute
   ProjectsIdRenderingsRoute: typeof ProjectsIdRenderingsRoute
   SpecbooksPublicIdRoute: typeof SpecbooksPublicIdRoute
   ProjectsIdIndexRoute: typeof ProjectsIdIndexRoute
@@ -1309,6 +1336,13 @@ declare module '@tanstack/react-router' {
       path: '/api/scrape-carton-coverage'
       fullPath: '/api/scrape-carton-coverage'
       preLoaderRoute: typeof ApiScrapeCartonCoverageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rendering-studio': {
+      id: '/api/rendering-studio'
+      path: '/api/rendering-studio'
+      fullPath: '/api/rendering-studio'
+      preLoaderRoute: typeof ApiRenderingStudioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/remove-design-board-background': {
@@ -1535,6 +1569,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdRenderingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id/rendering-studio': {
+      id: '/projects/$id/rendering-studio'
+      path: '/projects/$id/rendering-studio'
+      fullPath: '/projects/$id/rendering-studio'
+      preLoaderRoute: typeof ProjectsIdRenderingStudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/presentation': {
       id: '/projects/$id/presentation'
       path: '/projects/$id/presentation'
@@ -1730,6 +1771,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProjectTodosRoute: ApiProjectTodosRoute,
   ApiProjectsRoute: ApiProjectsRoute,
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,
+  ApiRenderingStudioRoute: ApiRenderingStudioRoute,
   ApiScrapeCartonCoverageRoute: ApiScrapeCartonCoverageRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
@@ -1772,6 +1814,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
+  ProjectsIdRenderingStudioRoute: ProjectsIdRenderingStudioRoute,
   ProjectsIdRenderingsRoute: ProjectsIdRenderingsRoute,
   SpecbooksPublicIdRoute: SpecbooksPublicIdRoute,
   ProjectsIdIndexRoute: ProjectsIdIndexRoute,
