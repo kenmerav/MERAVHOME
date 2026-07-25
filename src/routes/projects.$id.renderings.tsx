@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type MaterialItem } from "@/lib/db";
+import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type MaterialItem, type RenderingStudioElevation } from "@/lib/db";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,44 @@ import { materialImageUrl } from "@/lib/materialImages";
 import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
+import { ImportRenderingPdfDialog } from "@/components/ImportRenderingPdfDialog";
+import { ImportRenderingPackageDialog } from "@/components/ImportRenderingPackageDialog";
+import {
+  renderingStudioElevationSlideKeys,
+  renderingStudioElevationSlidePrefix,
+  type RenderingStudioAssetType,
+} from "@/lib/renderingStudioPackage";
+
+type RenderingStudioSlideLayout =
+  | "side-by-side"
+  | "autocad"
+  | "rendering"
+  | "final-sheet"
+  | "rendering-with-cad-corner"
+  | "cad-with-rendering-corner";
+
+type RenderingStudioSlideConfig = {
+  slideKey: string;
+  layout: RenderingStudioSlideLayout;
+};
+
+const renderingStudioSlideLayouts: Array<{
+  value: RenderingStudioSlideLayout;
+  label: string;
+}> = [
+  { value: "final-sheet", label: "Final presentation sheet" },
+  { value: "side-by-side", label: "AutoCAD + rendering side-by-side" },
+  {
+    value: "rendering-with-cad-corner",
+    label: "Rendering prominent + AutoCAD upper right",
+  },
+  {
+    value: "cad-with-rendering-corner",
+    label: "AutoCAD prominent + rendering upper right",
+  },
+  { value: "rendering", label: "Rendering only" },
+  { value: "autocad", label: "AutoCAD only" },
+];
 
 async function persistRoomImageUrl(roomId: string, kind: "sketchup" | "rendering", value: string, fileName?: string) {
   if (!value.startsWith("data:image/")) return value.trim();
@@ -50,9 +88,14 @@ function ProjectRenderingsPage() {
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
   });
+  const { data: renderingStudioElevations = [] } = useQuery({
+    queryKey: ["renderingStudioElevations", id],
+    queryFn: () => db.listRenderingStudioElevations(id),
+  });
 
   const [busy, setBusy] = useState(false);
   const [renderingMode, setRenderingMode] = useState<RenderingFidelityMode>("standard");
+  const [savingStudioSlideKey, setSavingStudioSlideKey] = useState<string | null>(null);
 
   // Build per-room data
   const byRoom = useMemo(() => {
@@ -66,6 +109,16 @@ function ProjectRenderingsPage() {
     }
     return map;
   }, [rooms, allImages]);
+  const sketchupsByRoom = useMemo(
+    () =>
+      new Map(
+        rooms.map((room) => [
+          room.id,
+          byRoom.get(room.id)?.sketchups ?? [],
+        ]),
+      ),
+    [rooms, byRoom],
+  );
 
   const totals = useMemo(() => {
     let sk = 0, done = 0, pending = 0, failed = 0;
@@ -86,13 +139,40 @@ function ProjectRenderingsPage() {
     () => buildApprovedRenderingSlideKeys(rooms, byRoom),
     [rooms, byRoom],
   );
+  const renderingStudioSlideConfigsByElevationId = useMemo(
+    () =>
+      buildRenderingStudioSlideConfigsByElevationId(
+        renderingStudioElevations,
+        sharedBoard?.board_state,
+      ),
+    [renderingStudioElevations, sharedBoard?.board_state],
+  );
+  const renderingStudioSlideKeysByElevationId = useMemo(
+    () =>
+      new Map(
+        Array.from(renderingStudioSlideConfigsByElevationId.entries()).map(
+          ([elevationId, configs]) => [
+            elevationId,
+            configs.map((config) => config.slideKey),
+          ],
+        ),
+      ),
+    [renderingStudioSlideConfigsByElevationId],
+  );
+  const availablePresentationSlideKeys = useMemo(
+    () => [
+      ...approvedPresentationSlideKeys,
+      ...Array.from(renderingStudioSlideKeysByElevationId.values()).flat(),
+    ],
+    [approvedPresentationSlideKeys, renderingStudioSlideKeysByElevationId],
+  );
   const presentationSlideOrder = useMemo(
     () =>
       buildPresentationSlideOrder(
         normalizePresentationSlideOrder(sharedBoard?.board_state),
-        approvedPresentationSlideKeys,
+        availablePresentationSlideKeys,
       ),
-    [approvedPresentationSlideKeys, sharedBoard?.board_state, sharedBoard?.updated_at],
+    [availablePresentationSlideKeys, sharedBoard?.board_state, sharedBoard?.updated_at],
   );
   const presentationPageBySlideKey = useMemo(
     () =>
@@ -114,7 +194,7 @@ function ProjectRenderingsPage() {
         : {};
     const latestOrder = buildPresentationSlideOrder(
       normalizePresentationSlideOrder(baseState),
-      approvedPresentationSlideKeys,
+      availablePresentationSlideKeys,
     );
     const currentIndex = latestOrder.indexOf(slideKey);
     const targetIndex = pageNumber - 1;
@@ -140,6 +220,159 @@ function ProjectRenderingsPage() {
     qc.setQueryData(["designBoard", id], saved);
     qc.invalidateQueries({ queryKey: ["designBoard", id] });
     toast.success("Presentation page updated");
+  };
+
+  const setStudioElevationPageLayout = async (
+    elevation: RenderingStudioElevation,
+    slideKey: string,
+    layout: RenderingStudioSlideLayout,
+  ) => {
+    if (savingStudioSlideKey) return;
+    setSavingStudioSlideKey(slideKey);
+    try {
+      const latestBoard = await db.getDesignBoard(id);
+      const baseState =
+        latestBoard?.board_state && typeof latestBoard.board_state === "object"
+          ? (latestBoard.board_state as Record<string, unknown>)
+          : {};
+      const configured = normalizeRenderingStudioSlideConfigs(baseState);
+      const currentConfigs =
+        configured[elevation.elevation_id] ?? defaultRenderingStudioSlideConfigs(elevation);
+      const nextState = {
+        ...baseState,
+        presentationStudioElevationSlides: {
+          ...configured,
+          [elevation.elevation_id]: currentConfigs.map((config) =>
+            config.slideKey === slideKey ? { ...config, layout } : config,
+          ),
+        },
+      };
+      const saved = latestBoard?.updated_at
+        ? await db.updateDesignBoardIfFresh(id, nextState, latestBoard.updated_at)
+        : await db.upsertDesignBoard(id, nextState);
+      if (!saved) throw new Error("The presentation changed while saving.");
+      qc.setQueryData(["designBoard", id], saved);
+      await qc.invalidateQueries({ queryKey: ["designBoard", id] });
+      toast.success("Presentation page layout updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update this page.");
+    } finally {
+      setSavingStudioSlideKey(null);
+    }
+  };
+
+  const addStudioElevationPage = async (elevation: RenderingStudioElevation) => {
+    if (savingStudioSlideKey) return;
+    const pendingKey = `add:${elevation.elevation_id}`;
+    setSavingStudioSlideKey(pendingKey);
+    try {
+      const latestBoard = await db.getDesignBoard(id);
+      const baseState =
+        latestBoard?.board_state && typeof latestBoard.board_state === "object"
+          ? (latestBoard.board_state as Record<string, unknown>)
+          : {};
+      const configured = normalizeRenderingStudioSlideConfigs(baseState);
+      const currentConfigs =
+        configured[elevation.elevation_id] ?? defaultRenderingStudioSlideConfigs(elevation);
+      const newSlide: RenderingStudioSlideConfig = {
+        slideKey: `${renderingStudioElevationSlidePrefix(
+          elevation.elevation_id,
+        )}custom-${crypto.randomUUID()}`,
+        layout: "side-by-side",
+      };
+      const nextConfigs = [...currentConfigs, newSlide];
+      const latestAvailableKeys = [
+        ...availablePresentationSlideKeys,
+        newSlide.slideKey,
+      ];
+      const nextOrder = buildPresentationSlideOrder(
+        normalizePresentationSlideOrder(baseState),
+        latestAvailableKeys,
+      ).filter((slideKey) => slideKey !== newSlide.slideKey);
+      const lastElevationPageIndex = nextOrder.reduce(
+        (lastIndex, slideKey, index) =>
+          currentConfigs.some((config) => config.slideKey === slideKey) ? index : lastIndex,
+        -1,
+      );
+      nextOrder.splice(
+        lastElevationPageIndex >= 0 ? lastElevationPageIndex + 1 : nextOrder.length,
+        0,
+        newSlide.slideKey,
+      );
+      const nextState = {
+        ...baseState,
+        presentationStudioElevationSlides: {
+          ...configured,
+          [elevation.elevation_id]: nextConfigs,
+        },
+        presentationSlideOrder: nextOrder,
+      };
+      const saved = latestBoard?.updated_at
+        ? await db.updateDesignBoardIfFresh(id, nextState, latestBoard.updated_at)
+        : await db.upsertDesignBoard(id, nextState);
+      if (!saved) throw new Error("The presentation changed while saving.");
+      qc.setQueryData(["designBoard", id], saved);
+      await qc.invalidateQueries({ queryKey: ["designBoard", id] });
+      toast.success("Presentation page added");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add a page.");
+    } finally {
+      setSavingStudioSlideKey(null);
+    }
+  };
+
+  const removeStudioElevationPage = async (
+    elevation: RenderingStudioElevation,
+    slideKey: string,
+  ) => {
+    if (savingStudioSlideKey) return;
+    const currentConfigs =
+      renderingStudioSlideConfigsByElevationId.get(elevation.elevation_id) ?? [];
+    if (currentConfigs.length <= 1) {
+      toast.error("Keep at least one presentation page for this elevation.");
+      return;
+    }
+    setSavingStudioSlideKey(slideKey);
+    try {
+      const latestBoard = await db.getDesignBoard(id);
+      const baseState =
+        latestBoard?.board_state && typeof latestBoard.board_state === "object"
+          ? (latestBoard.board_state as Record<string, unknown>)
+          : {};
+      const configured = normalizeRenderingStudioSlideConfigs(baseState);
+      const latestConfigs =
+        configured[elevation.elevation_id] ?? defaultRenderingStudioSlideConfigs(elevation);
+      const remainingConfigs = latestConfigs.filter((config) => config.slideKey !== slideKey);
+      if (remainingConfigs.length < 1) {
+        throw new Error("Keep at least one presentation page for this elevation.");
+      }
+      const nextState = {
+        ...baseState,
+        presentationStudioElevationSlides: {
+          ...configured,
+          [elevation.elevation_id]: remainingConfigs,
+        },
+        presentationSlideOrder: normalizePresentationSlideOrder(baseState).filter(
+          (currentKey) => currentKey !== slideKey,
+        ),
+        presentationHiddenSlideKeys: Array.isArray(baseState.presentationHiddenSlideKeys)
+          ? baseState.presentationHiddenSlideKeys.filter(
+              (currentKey) => currentKey !== slideKey,
+            )
+          : [],
+      };
+      const saved = latestBoard?.updated_at
+        ? await db.updateDesignBoardIfFresh(id, nextState, latestBoard.updated_at)
+        : await db.upsertDesignBoard(id, nextState);
+      if (!saved) throw new Error("The presentation changed while saving.");
+      qc.setQueryData(["designBoard", id], saved);
+      await qc.invalidateQueries({ queryKey: ["designBoard", id] });
+      toast.success("Presentation page removed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not remove this page.");
+    } finally {
+      setSavingStudioSlideKey(null);
+    }
   };
 
   const generateAll = async () => {
@@ -202,17 +435,20 @@ function ProjectRenderingsPage() {
                 </button>
               ))}
             </div>
-            <button
-              disabled={busy || totals.sk === 0}
-              onClick={generateAll}
-              className={cn(
-                "px-5 py-3 text-sm inline-flex items-center gap-2",
-                busy || totals.sk === 0 ? "bg-bone text-muted-foreground cursor-not-allowed" : "bg-ink text-primary-foreground hover:opacity-90"
-              )}
-            >
-              <Sparkles className="w-4 h-4" />
-              {busy ? "Generating…" : `Generate All Renderings (${totals.sk - totals.done})`}
-            </button>
+            <div className="flex flex-wrap justify-end gap-3">
+              <ImportRenderingPackageDialog projectId={id} />
+              <button
+                disabled={busy || totals.sk === 0}
+                onClick={generateAll}
+                className={cn(
+                  "px-5 py-3 text-sm inline-flex items-center gap-2",
+                  busy || totals.sk === 0 ? "bg-bone text-muted-foreground cursor-not-allowed" : "bg-ink text-primary-foreground hover:opacity-90"
+                )}
+              >
+                <Sparkles className="w-4 h-4" />
+                {busy ? "Generating…" : `Generate All Renderings (${totals.sk - totals.done})`}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -229,6 +465,20 @@ function ProjectRenderingsPage() {
           <Progress value={progress} />
         </div>
 
+        {renderingStudioElevations.length > 0 && (
+          <RenderingStudioElevationsSection
+            elevations={renderingStudioElevations}
+            savingSlideKey={savingStudioSlideKey}
+            slideConfigsByElevationId={renderingStudioSlideConfigsByElevationId}
+            presentationPageBySlideKey={presentationPageBySlideKey}
+            presentationPageOptions={presentationPageOptions}
+            onChangePageLayout={setStudioElevationPageLayout}
+            onAddPage={addStudioElevationPage}
+            onRemovePage={removeStudioElevationPage}
+            onSetPresentationPage={setRenderingPresentationPage}
+          />
+        )}
+
         {rooms.length === 0 ? (
           <div className="border border-dashed border-border py-20 text-center text-muted-foreground">
             Add rooms to your project to start uploading SketchUp images.
@@ -244,6 +494,8 @@ function ProjectRenderingsPage() {
                 renderings={byRoom.get(r.id)?.renderings ?? []}
                 disableActions={busy}
                 renderingMode={renderingMode}
+                allRooms={rooms}
+                sketchupsByRoom={sketchupsByRoom}
                 presentationPageBySlideKey={presentationPageBySlideKey}
                 presentationPageOptions={presentationPageOptions}
                 onSetPresentationPage={setRenderingPresentationPage}
@@ -256,6 +508,234 @@ function ProjectRenderingsPage() {
   );
 }
 
+function renderingStudioAsset(
+  elevation: RenderingStudioElevation,
+  assetType: RenderingStudioAssetType,
+) {
+  return elevation.assets.find((asset) => asset.asset_type === assetType) ?? null;
+}
+
+function RenderingStudioElevationsSection({
+  elevations,
+  savingSlideKey,
+  slideConfigsByElevationId,
+  presentationPageBySlideKey,
+  presentationPageOptions,
+  onChangePageLayout,
+  onAddPage,
+  onRemovePage,
+  onSetPresentationPage,
+}: {
+  elevations: RenderingStudioElevation[];
+  savingSlideKey: string | null;
+  slideConfigsByElevationId: Map<string, RenderingStudioSlideConfig[]>;
+  presentationPageBySlideKey: Map<string, number>;
+  presentationPageOptions: number[];
+  onChangePageLayout: (
+    elevation: RenderingStudioElevation,
+    slideKey: string,
+    layout: RenderingStudioSlideLayout,
+  ) => void;
+  onAddPage: (elevation: RenderingStudioElevation) => void;
+  onRemovePage: (elevation: RenderingStudioElevation, slideKey: string) => void;
+  onSetPresentationPage: (slideKey: string, pageNumber: number) => void;
+}) {
+  return (
+    <section className="mb-16 border-y border-border py-10">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="eyebrow">Imported package assets</div>
+          <h2 className="mt-1 font-display text-4xl">Rendering Studio Elevations</h2>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            AutoCAD source drawings, final AI renderings, and final presentation sheets remain
+            separate assets. Approved elevations are included in the project presentation.
+          </p>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {elevations.length} elevation{elevations.length === 1 ? "" : "s"} ·{" "}
+          {elevations.length * 3} expected assets
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        {elevations.map((elevation) => {
+          const autocad = renderingStudioAsset(elevation, "autocad");
+          const rendering = renderingStudioAsset(elevation, "final_rendering");
+          const finalSheet = renderingStudioAsset(elevation, "final_sheet");
+          const complete = Boolean(autocad && rendering && finalSheet);
+          const presentationPages =
+            slideConfigsByElevationId.get(elevation.elevation_id) ?? [];
+          return (
+            <article key={elevation.id} className="border border-border bg-background p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-ink">{elevation.sheet_number}</span>
+                    <span>·</span>
+                    <span>{elevation.elevation_id}</span>
+                    <span>·</span>
+                    <span>Order {elevation.presentation_order}</span>
+                    <span>·</span>
+                    <span>{elevation.room?.name || elevation.room_name}</span>
+                  </div>
+                  <h3 className="mt-2 font-display text-2xl">{elevation.title}</h3>
+                  <div className="mt-2 flex flex-wrap gap-3 text-[10px] uppercase tracking-wider">
+                    <span className="text-emerald-700">{elevation.approval_status}</span>
+                    <span className={complete ? "text-emerald-700" : "text-destructive"}>
+                      {complete ? "3 of 3 assets" : "Assets incomplete"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {elevation.materials.length} materials
+                    </span>
+                  </div>
+                </div>
+                <div className="w-full max-w-2xl border border-border bg-bone/25 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <Label className="eyebrow">Presentation pages</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Build the pages for this elevation in the order you want them shown.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onAddPage(elevation)}
+                      disabled={Boolean(savingSlideKey)}
+                      className="inline-flex h-9 items-center gap-2 border border-border bg-background px-3 text-xs hover:border-ink disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add another page
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {presentationPages.map((page, pageIndex) => {
+                      const currentPage =
+                        presentationPageBySlideKey.get(page.slideKey) ??
+                        presentationPageOptions[0] ??
+                        2;
+                      const isSaving =
+                        savingSlideKey === page.slideKey ||
+                        savingSlideKey === `add:${elevation.elevation_id}`;
+                      return (
+                        <div
+                          key={page.slideKey}
+                          className="grid gap-3 border border-border bg-background p-3 sm:grid-cols-[auto_minmax(0,1fr)_8rem_auto] sm:items-end"
+                        >
+                          <div className="flex h-9 w-9 items-center justify-center bg-ink text-sm font-medium text-primary-foreground">
+                            {pageIndex + 1}
+                          </div>
+                          <div>
+                            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                              Page {pageIndex + 1} layout
+                            </Label>
+                            <Select
+                              value={page.layout}
+                              disabled={isSaving}
+                              onValueChange={(value) =>
+                                onChangePageLayout(
+                                  elevation,
+                                  page.slideKey,
+                                  value as RenderingStudioSlideLayout,
+                                )
+                              }
+                            >
+                              <SelectTrigger
+                                className="mt-1 bg-background"
+                                aria-label={`Layout for ${elevation.title} page ${pageIndex + 1}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {renderingStudioSlideLayouts.map((layout) => (
+                                  <SelectItem key={layout.value} value={layout.value}>
+                                    {layout.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                              Goes on
+                            </Label>
+                            <Select
+                              value={String(currentPage)}
+                              disabled={isSaving}
+                              onValueChange={(value) =>
+                                onSetPresentationPage(page.slideKey, Number(value))
+                              }
+                            >
+                              <SelectTrigger
+                                className="mt-1 bg-background"
+                                aria-label={`Presentation position for ${elevation.title} page ${pageIndex + 1}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {presentationPageOptions.map((pageNumber) => (
+                                  <SelectItem key={pageNumber} value={String(pageNumber)}>
+                                    Page {pageNumber}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <button
+                            type="button"
+                            title={`Remove ${elevation.title} page ${pageIndex + 1}`}
+                            aria-label={`Remove ${elevation.title} page ${pageIndex + 1}`}
+                            onClick={() => onRemovePage(elevation, page.slideKey)}
+                            disabled={presentationPages.length <= 1 || isSaving}
+                            className="flex h-9 w-9 items-center justify-center border border-border text-muted-foreground hover:border-destructive hover:text-destructive disabled:cursor-not-allowed disabled:opacity-30"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                {[
+                  { asset: autocad, label: "AutoCAD Source Drawing" },
+                  { asset: rendering, label: "Final AI Rendering" },
+                  { asset: finalSheet, label: "Final Presentation Sheet" },
+                ].map(({ asset, label }) => (
+                  <div key={label} className="min-w-0 border border-border bg-bone/30 p-3">
+                    <div className="eyebrow mb-2">{label}</div>
+                    {asset ? (
+                      <>
+                        <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-white">
+                          <img
+                            src={normalizeSupabaseImageUrl(asset.url)}
+                            alt={`${elevation.title} — ${label}`}
+                            className="h-full w-full object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                        <div className="mt-2 truncate text-[11px] text-muted-foreground" title={asset.filename}>
+                          {asset.filename}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex aspect-[4/3] items-center justify-center text-xs text-destructive">
+                        Missing asset
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* ─────────── Per-room section ─────────── */
 function RoomRenderingSection({
   room,
@@ -264,6 +744,8 @@ function RoomRenderingSection({
   renderings,
   disableActions,
   renderingMode,
+  allRooms,
+  sketchupsByRoom,
   presentationPageBySlideKey,
   presentationPageOptions,
   onSetPresentationPage,
@@ -274,12 +756,20 @@ function RoomRenderingSection({
   renderings: RoomImage[];
   disableActions: boolean;
   renderingMode: RenderingFidelityMode;
+  allRooms: Array<{ id: string; name: string }>;
+  sketchupsByRoom: Map<string, RoomImage[]>;
   presentationPageBySlideKey: Map<string, number>;
   presentationPageOptions: number[];
   onSetPresentationPage: (slideKey: string, pageNumber: number) => void;
 }) {
   const qc = useQueryClient();
   const done = sketchups.filter(s => renderings.some(r => r.linked_sketchup_id === s.id && r.status === "complete")).length;
+  const standaloneRenderings = [...renderings]
+    .filter((rendering) => !rendering.linked_sketchup_id)
+    .sort((a, b) => {
+      const sortDifference = (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      return sortDifference || String(a.created_at || a.id).localeCompare(String(b.created_at || b.id));
+    });
 
   return (
     <section id={`room-${room.id}`} className="scroll-mt-24">
@@ -291,15 +781,20 @@ function RoomRenderingSection({
         <div className="flex items-center gap-3">
           <AddSketchupDialog roomId={room.id} projectId={projectId} />
           <AddExternalRenderingDialog roomId={room.id} projectId={projectId} sketchups={sketchups} renderings={renderings} />
+          <ImportRenderingPdfDialog
+            projectId={projectId}
+            rooms={allRooms}
+            sketchupsByRoom={sketchupsByRoom}
+          />
           <Link to="/projects/$id/rooms/$roomId" params={{ id: projectId, roomId: room.id }} className="text-xs text-muted-foreground hover:text-ink underline">
             Open room
           </Link>
         </div>
       </div>
 
-      {sketchups.length === 0 ? (
+      {sketchups.length === 0 && standaloneRenderings.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6">No SketchUp images yet for {room.name}. Add as many perspectives or elevations as you need.</p>
-      ) : (
+      ) : sketchups.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {sketchups.map(sk => (
             <SketchupCard
@@ -316,6 +811,39 @@ function RoomRenderingSection({
               qc={qc}
             />
           ))}
+        </div>
+      ) : null}
+
+      {standaloneRenderings.length > 0 && (
+        <div className={cn("mt-6", sketchups.length > 0 && "border-t border-border pt-6")}>
+          <div className="eyebrow mb-3">Standalone Renderings</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {standaloneRenderings.map((rendering) => (
+              <RenderingTile
+                key={rendering.id}
+                rendering={rendering}
+                sketchup={null}
+                renderings={standaloneRenderings}
+                projectId={projectId}
+                roomId={room.id}
+                renderingMode={renderingMode}
+                presentationOrderControl={
+                  renderingCanShowInPresentation(rendering)
+                    ? {
+                        slideKey: buildRenderingSlideKey(room.id, rendering.id),
+                        pageNumber:
+                          presentationPageBySlideKey.get(
+                            buildRenderingSlideKey(room.id, rendering.id),
+                          ) ?? 2,
+                        pageOptions: presentationPageOptions,
+                        onChange: onSetPresentationPage,
+                      }
+                    : undefined
+                }
+                qc={qc}
+              />
+            ))}
+          </div>
         </div>
       )}
     </section>
@@ -488,7 +1016,7 @@ function RenderingTile({
   qc,
 }: {
   rendering: RoomImage;
-  sketchup: RoomImage;
+  sketchup?: RoomImage | null;
   renderings: RoomImage[];
   projectId: string;
   roomId: string;
@@ -548,19 +1076,25 @@ function RenderingTile({
   const download = () => {
     const a = document.createElement("a");
     a.href = rendering.url;
-    a.download = `rendering-${rendering.id}.png`;
+    const extension = rendering.url.match(/\.(jpe?g|png|webp)(?:\?|$)/i)?.[1] || "png";
+    a.download = `rendering-${rendering.id}.${extension}`;
     a.click();
   };
   const setReviewStatus = async (next: RenderingReviewStatus) => {
     await update({ review_status: next, is_approved: next === "approved" });
   };
   const setPresentationPage = (value: string) => {
+    if (value === "hidden") {
+      void update({ presentation_visible: false });
+      return;
+    }
     const pageNumber = Number(value);
     if (!presentationOrderControl || !Number.isFinite(pageNumber)) return;
     presentationOrderControl.onChange(presentationOrderControl.slideKey, pageNumber);
   };
   const createRevision = async () => {
     if (revising) return;
+    if (!sketchup) return toast.error("Link a SketchUp source before creating an AI revision");
     const notes = revisionNotes.trim();
     if (!notes) return toast.error("Add the revision notes first");
     setRevising(true);
@@ -607,7 +1141,15 @@ function RenderingTile({
 
   return (
     <div className="group relative aspect-[4/3] bg-bone overflow-hidden">
-      <img src={normalizeSupabaseImageUrl(rendering.url)} alt="" className="w-full h-full object-cover" loading="lazy" />
+      <img
+        src={normalizeSupabaseImageUrl(rendering.url)}
+        alt=""
+        className={cn(
+          "h-full w-full",
+          rendering.url.includes("/rendering-imports/") ? "object-contain" : "object-cover",
+        )}
+        loading="lazy"
+      />
       <div className="absolute top-1 right-1 bg-background/90 text-[9px] uppercase tracking-wider px-1.5 py-0.5">
         V{version}
       </div>
@@ -624,6 +1166,7 @@ function RenderingTile({
               <SelectValue aria-label={`Presentation page ${presentationOrderControl.pageNumber}`} />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="hidden">Not in Presentation</SelectItem>
               {presentationOrderControl.pageOptions.map((pageNumber) => (
                 <SelectItem key={pageNumber} value={String(pageNumber)}>
                   Page {pageNumber}
@@ -633,6 +1176,17 @@ function RenderingTile({
           </Select>
         </div>
       )}
+      {!presentationOrderControl &&
+        reviewStatus === "approved" &&
+        rendering.presentation_visible === false && (
+          <button
+            type="button"
+            onClick={() => void update({ presentation_visible: true })}
+            className="absolute left-1 top-1 z-20 h-7 bg-background/95 px-2 text-[10px] shadow-sm hover:bg-background"
+          >
+            + Presentation
+          </button>
+        )}
       {reviewStatus && (
         <div className="absolute bottom-1 left-1 right-1 text-[9px] uppercase tracking-wider bg-background/85 text-ink px-1.5 py-0.5 text-center truncate">
           {reviewLabel(reviewStatus)}
@@ -686,6 +1240,7 @@ function RenderingTile({
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="hidden">Not in Presentation</SelectItem>
                         {presentationOrderControl.pageOptions.map((pageNumber) => (
                           <SelectItem key={pageNumber} value={String(pageNumber)}>
                             Page {pageNumber}
@@ -704,6 +1259,16 @@ function RenderingTile({
                     />
                     Approved
                   </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={rendering.presentation_visible !== false}
+                      onChange={(event) =>
+                        update({ presentation_visible: event.target.checked })
+                      }
+                    />
+                    Show in Presentation
+                  </label>
                 </div>
               </div>
               {(rendering.revision_notes || rendering.revision_parent_id) && (
@@ -716,6 +1281,7 @@ function RenderingTile({
                 notes={rendering.team_notes}
                 onSave={(notes) => update({ team_notes: notes })}
               />
+              {sketchup && (
               <div className="border border-border p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <GitBranch className="w-4 h-4" />
@@ -747,9 +1313,12 @@ function RenderingTile({
                   {revising ? "Starting revision..." : "Create Revision"}
                 </button>
               </div>
+              )}
             </DialogContent>
           </Dialog>
-          <button title="Revise" onClick={() => setOpen(true)} className="bg-background/95 p-1.5"><GitBranch className="w-3 h-3" /></button>
+          {sketchup && (
+            <button title="Revise" onClick={() => setOpen(true)} className="bg-background/95 p-1.5"><GitBranch className="w-3 h-3" /></button>
+          )}
           <button title="Favorite" onClick={() => update({ is_favorite: !rendering.is_favorite })} className="bg-background/95 p-1.5">
             <Star className="w-3 h-3" fill={rendering.is_favorite ? "currentColor" : "none"} />
           </button>
@@ -1013,12 +1582,103 @@ function renderingCanShowInPresentation(rendering: RoomImage) {
   return (
     rendering.kind === "rendering" &&
     rendering.status === "complete" &&
+    rendering.presentation_visible !== false &&
     (rendering.is_approved === true || rendering.review_status === "approved")
   );
 }
 
 function buildRenderingSlideKey(roomId: string, renderingId: string) {
   return `room:${roomId}:view:${renderingId}`;
+}
+
+function isRenderingStudioSlideLayout(value: unknown): value is RenderingStudioSlideLayout {
+  return renderingStudioSlideLayouts.some((option) => option.value === value);
+}
+
+function normalizeRenderingStudioSlideConfigs(
+  boardState: unknown,
+): Record<string, RenderingStudioSlideConfig[]> {
+  if (!boardState || typeof boardState !== "object") return {};
+  const configured = (boardState as Record<string, unknown>).presentationStudioElevationSlides;
+  if (!configured || typeof configured !== "object") return {};
+
+  return Object.fromEntries(
+    Object.entries(configured as Record<string, unknown>)
+      .map(([elevationId, value]) => {
+        if (!elevationId || !Array.isArray(value)) return [elevationId, []] as const;
+        const prefix = renderingStudioElevationSlidePrefix(elevationId);
+        const seen = new Set<string>();
+        const configs = value
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") return null;
+            const current = entry as Record<string, unknown>;
+            if (
+              typeof current.slideKey !== "string" ||
+              !current.slideKey.startsWith(prefix) ||
+              seen.has(current.slideKey) ||
+              !isRenderingStudioSlideLayout(current.layout)
+            ) {
+              return null;
+            }
+            seen.add(current.slideKey);
+            return {
+              slideKey: current.slideKey,
+              layout: current.layout,
+            } satisfies RenderingStudioSlideConfig;
+          })
+          .filter((entry): entry is RenderingStudioSlideConfig => Boolean(entry));
+        return [elevationId, configs] as const;
+      })
+      .filter(([, configs]) => configs.length > 0),
+  );
+}
+
+function renderingStudioLayoutForSlideKey(
+  slideKey: string,
+): RenderingStudioSlideLayout {
+  if (slideKey.endsWith(":side-by-side")) return "side-by-side";
+  if (slideKey.endsWith(":cad")) return "autocad";
+  if (slideKey.endsWith(":render")) return "rendering";
+  return "final-sheet";
+}
+
+function defaultRenderingStudioSlideConfigs(
+  elevation: RenderingStudioElevation,
+): RenderingStudioSlideConfig[] {
+  return renderingStudioElevationSlideKeys(
+    elevation.elevation_id,
+    elevation.presentation_mode,
+  ).map((slideKey) => ({
+    slideKey,
+    layout: renderingStudioLayoutForSlideKey(slideKey),
+  }));
+}
+
+function buildRenderingStudioSlideConfigsByElevationId(
+  elevations: RenderingStudioElevation[],
+  boardState: unknown,
+) {
+  const configuredSlides = normalizeRenderingStudioSlideConfigs(boardState);
+  const slideConfigsByElevationId = new Map<string, RenderingStudioSlideConfig[]>();
+
+  elevations.forEach((elevation) => {
+    const approved =
+      elevation.presentation_visible !== false &&
+      (elevation.approval_status.toLowerCase() === "approved" ||
+        elevation.review_status.toLowerCase() === "approved");
+    if (!approved) {
+      slideConfigsByElevationId.set(elevation.elevation_id, []);
+      return;
+    }
+
+    const stored = configuredSlides[elevation.elevation_id];
+    slideConfigsByElevationId.set(
+      elevation.elevation_id,
+      stored?.length ? stored : defaultRenderingStudioSlideConfigs(elevation),
+    );
+  });
+
+  return slideConfigsByElevationId;
 }
 
 function buildApprovedRenderingSlideKeys(
@@ -1059,11 +1719,16 @@ function normalizePresentationSlideOrder(boardState: unknown) {
 
 function buildPresentationSlideOrder(savedOrder: string[], approvedRenderingSlideKeys: string[]) {
   const approvedSet = new Set(approvedRenderingSlideKeys);
-  const ordered = savedOrder.filter(
-    (slideKey) => slideKey === "cover" || !slideKey.startsWith("room:") || approvedSet.has(slideKey),
-  );
+  const ordered = [
+    "cover",
+    ...savedOrder.filter(
+      (slideKey) =>
+        slideKey !== "cover" &&
+        ((!slideKey.startsWith("room:") && !slideKey.startsWith("studio-elevation:")) ||
+          approvedSet.has(slideKey)),
+    ),
+  ];
   const orderedSet = new Set(ordered);
-  if (!orderedSet.has("cover")) ordered.unshift("cover");
   for (const slideKey of approvedRenderingSlideKeys) {
     if (!orderedSet.has(slideKey)) {
       ordered.push(slideKey);

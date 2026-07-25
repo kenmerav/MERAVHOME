@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/productCategories";
+import type {
+  RenderingStudioAssetType,
+  RenderingStudioPresentationMode,
+} from "@/lib/renderingStudioPackage";
 
 export { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory };
 
@@ -212,6 +216,40 @@ export interface RoomImage {
   revision_number: number;
   error_message: string | null;
   created_at?: string;
+}
+
+export interface RenderingStudioAsset {
+  id: string;
+  elevation_id: string;
+  asset_type: RenderingStudioAssetType;
+  filename: string;
+  storage_path: string;
+  url: string;
+  mime_type: string;
+  file_size: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RenderingStudioElevation {
+  id: string;
+  project_id: string;
+  package_id: string;
+  room_id: string;
+  elevation_id: string;
+  sheet_number: string;
+  room_name: string;
+  title: string;
+  materials: Array<Record<string, unknown>>;
+  approval_status: string;
+  review_status: string;
+  presentation_order: number;
+  presentation_mode: RenderingStudioPresentationMode;
+  presentation_visible: boolean;
+  created_at: string;
+  updated_at: string;
+  assets: RenderingStudioAsset[];
+  room?: Pick<Room, "id" | "name"> | null;
 }
 
 export interface Product {
@@ -537,10 +575,19 @@ export const db = {
     design_notes?: string;
   }) => (await supabase.from("projects").insert(p).select().single()).data as Project | null,
   updateProject: async (id: string, p: Partial<Project>) =>
-    (await supabase.from("projects").update(p as any).eq("id", id).select().single())
-      .data as Project | null,
+    (
+      await supabase
+        .from("projects")
+        .update(p as any)
+        .eq("id", id)
+        .select()
+        .single()
+    ).data as Project | null,
   markProjectOpened: async (id: string) =>
-    supabase.from("projects").update({ last_opened_at: new Date().toISOString() } as any).eq("id", id),
+    supabase
+      .from("projects")
+      .update({ last_opened_at: new Date().toISOString() } as any)
+      .eq("id", id),
 
   /* PROJECT DOCUMENTS */
   listProjectDocuments: async (projectId: string) =>
@@ -562,7 +609,10 @@ export const db = {
         .single()
     ).data as ProjectDocument | null,
   deleteProjectDocument: async (id: string) =>
-    supabase.from("project_documents" as any).delete().eq("id", id),
+    supabase
+      .from("project_documents" as any)
+      .delete()
+      .eq("id", id),
 
   /* ROOMS */
   listRooms: async (projectId: string) =>
@@ -620,6 +670,33 @@ export const db = {
       .in("room_id", ids)
       .order("sort_order");
     return (data ?? []) as RoomImage[];
+  },
+
+  /* RENDERING STUDIO ELEVATIONS */
+  listRenderingStudioElevations: async (projectId: string) => {
+    const { data, error } = await supabase
+      .from("rendering_studio_elevations" as any)
+      .select("*, room:rooms(id,name), assets:rendering_studio_assets(*)")
+      .eq("project_id", projectId)
+      .order("presentation_order")
+      .order("created_at");
+    if (error) throw error;
+    return (data ?? []) as RenderingStudioElevation[];
+  },
+  updateRenderingStudioElevation: async (
+    id: string,
+    patch: Partial<
+      Pick<RenderingStudioElevation, "presentation_mode" | "presentation_visible">
+    >,
+  ) => {
+    const { data, error } = await supabase
+      .from("rendering_studio_elevations" as any)
+      .update(patch as any)
+      .eq("id", id)
+      .select("*, room:rooms(id,name), assets:rendering_studio_assets(*)")
+      .single();
+    if (error) throw error;
+    return data as RenderingStudioElevation;
   },
 
   /* PRODUCT CATALOG (global) */
@@ -786,7 +863,7 @@ export const db = {
     return items.map((item) => ({
       ...item,
       room_product: item.product_id
-        ? roomProductMap.get(`${item.room_id}::${item.product_id}`) ?? null
+        ? (roomProductMap.get(`${item.room_id}::${item.product_id}`) ?? null)
         : null,
     }));
   },
@@ -817,23 +894,11 @@ export const db = {
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle())
       .data as Product | null,
   findProductsByUrlAndName: async (url: string, name: string) =>
-    (
-      await supabase
-        .from("products")
-        .select("*")
-        .eq("product_url", url)
-        .eq("name", name)
-        .limit(25)
-    ).data as Product[] | null,
+    (await supabase.from("products").select("*").eq("product_url", url).eq("name", name).limit(25))
+      .data as Product[] | null,
   findProductByUrlAndName: async (url: string, name: string) =>
-    (
-      await supabase
-        .from("products")
-        .select("*")
-        .eq("product_url", url)
-        .eq("name", name)
-        .limit(1)
-    ).data?.[0] as Product | null,
+    (await supabase.from("products").select("*").eq("product_url", url).eq("name", name).limit(1))
+      .data?.[0] as Product | null,
 
   /* FINANCIALS */
   listAllFinancialInvoices: async () =>
@@ -882,7 +947,9 @@ export const db = {
 
     let { data: created, error: invoiceError } = await insertInvoice(invoice);
     if (invoiceError?.code === "42703" && invoiceError.message?.includes("client_visible")) {
-      const { client_visible: _clientVisible, ...legacyInvoice } = invoice as typeof invoice & { client_visible?: boolean };
+      const { client_visible: _clientVisible, ...legacyInvoice } = invoice as typeof invoice & {
+        client_visible?: boolean;
+      };
       ({ data: created, error: invoiceError } = await insertInvoice(legacyInvoice));
     }
     if (invoiceError) throw invoiceError;
@@ -1046,7 +1113,9 @@ export const db = {
     (
       await supabase
         .from("design_board_versions" as any)
-        .select("version_id, design_board_id, project_id, created_at, created_by, save_type, save_reason")
+        .select(
+          "version_id, design_board_id, project_id, created_at, created_by, save_type, save_reason",
+        )
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .order("version_id", { ascending: false })
@@ -1078,7 +1147,8 @@ export const db = {
     entry: Pick<
       EmployeeTimeEntry,
       "user_id" | "work_date" | "hours" | "task_project" | "hourly_rate"
-    > & Pick<EmployeeTimeEntry, "project_id" | "todo_id">,
+    > &
+      Pick<EmployeeTimeEntry, "project_id" | "todo_id">,
   ) =>
     (
       await supabase
