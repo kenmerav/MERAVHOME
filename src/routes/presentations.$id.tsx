@@ -19,7 +19,13 @@ import {
   GripVertical,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type MaterialItem, type RoomImage } from "@/lib/db";
+import {
+  db,
+  type MaterialItem,
+  type RenderingStudioAsset,
+  type RenderingStudioElevation,
+  type RoomImage,
+} from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
 import { clientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -28,6 +34,11 @@ import { canViewProjectSurface } from "@/lib/permissions";
 import type { CSSProperties } from "react";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import {
+  renderingStudioElevationSlideKeys,
+  renderingStudioElevationSlidePrefix,
+  type RenderingStudioPresentationMode,
+} from "@/lib/renderingStudioPackage";
 
 export const Route = createFileRoute("/presentations/$id")({
   head: () => ({ meta: [{ title: "Presentation — MERAV Studio" }] }),
@@ -101,6 +112,12 @@ type PresentationPickPatch = {
 type PresentationBaseSlide =
   | { kind: "cover"; slideKey: string }
   | {
+      kind: "studio-elevation";
+      slideKey: string;
+      elevation: RenderingStudioElevation;
+      layout: RenderingStudioSlideLayout;
+    }
+  | {
       kind: "view";
       slideKey: string;
       room: any;
@@ -130,6 +147,33 @@ type PresentationSlideDraft =
       slotId?: string;
       page: PresentationBoardPage;
     };
+
+type RenderingStudioSlideLayout =
+  | "side-by-side"
+  | "autocad"
+  | "rendering"
+  | "final-sheet"
+  | "rendering-with-cad-corner"
+  | "cad-with-rendering-corner";
+
+type PresentationStudioElevationSlideConfig = {
+  slideKey: string;
+  layout: RenderingStudioSlideLayout;
+};
+
+type PresentationStudioElevationSlides = Record<string, PresentationStudioElevationSlideConfig[]>;
+
+const renderingStudioSlideLayouts: Array<{
+  value: RenderingStudioSlideLayout;
+  label: string;
+}> = [
+  { value: "final-sheet", label: "Final presentation sheet" },
+  { value: "side-by-side", label: "AutoCAD + rendering side-by-side" },
+  { value: "rendering-with-cad-corner", label: "Rendering prominent + AutoCAD upper right" },
+  { value: "cad-with-rendering-corner", label: "AutoCAD prominent + rendering upper right" },
+  { value: "rendering", label: "Rendering only" },
+  { value: "autocad", label: "AutoCAD only" },
+];
 
 const DESIGN_BOARD_PRESENTATION_WIDTH = 1400;
 const DESIGN_BOARD_PRESENTATION_HEIGHT = 900;
@@ -169,7 +213,7 @@ function buildRoomData(
   selections: any[],
   materials: MaterialItem[],
 ): RoomData {
-  const approvedRenders = images
+  const allApprovedRenders = images
     .filter(
       (i) =>
         i.kind === "rendering" &&
@@ -177,6 +221,9 @@ function buildRoomData(
         (i.is_approved === true || i.review_status === "approved"),
     )
     .sort(compareRenderingPageOrder);
+  const approvedRenders = allApprovedRenders.filter(
+    (rendering) => rendering.presentation_visible !== false,
+  );
   const sketchups = images.filter((i) => i.kind === "sketchup");
   const fallbackSketch = room.presentation_sketchup_image_id
     ? sketchups.find((image) => image.id === room.presentation_sketchup_image_id) || sketchups[0]
@@ -204,7 +251,7 @@ function buildRoomData(
         views.push({ sketch: s, visible: s.presentation_visible !== false });
     }
   }
-  if (views.length === 0)
+  if (views.length === 0 && allApprovedRenders.length === 0)
     views.push({ sketch: fallbackSketch, visible: fallbackSketch?.presentation_visible !== false });
   const orderedApprovedRenders = views
     .map((view) => view.hero)
@@ -353,6 +400,52 @@ function normalizePresentationHiddenSlideKeys(boardState: unknown) {
   });
 }
 
+function isRenderingStudioSlideLayout(value: unknown): value is RenderingStudioSlideLayout {
+  return renderingStudioSlideLayouts.some((option) => option.value === value);
+}
+
+function normalizePresentationStudioElevationSlides(
+  boardState: unknown,
+): PresentationStudioElevationSlides {
+  if (!boardState || typeof boardState !== "object") return {};
+  const candidate = boardState as { presentationStudioElevationSlides?: unknown };
+  if (
+    !candidate.presentationStudioElevationSlides ||
+    typeof candidate.presentationStudioElevationSlides !== "object"
+  ) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(candidate.presentationStudioElevationSlides as Record<string, unknown>)
+      .map(([elevationId, value]) => {
+        if (!elevationId || !Array.isArray(value)) return [elevationId, []] as const;
+        const seen = new Set<string>();
+        const slides = value
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") return null;
+            const current = entry as Partial<PresentationStudioElevationSlideConfig>;
+            if (
+              typeof current.slideKey !== "string" ||
+              !current.slideKey.startsWith(renderingStudioElevationSlidePrefix(elevationId)) ||
+              seen.has(current.slideKey) ||
+              !isRenderingStudioSlideLayout(current.layout)
+            ) {
+              return null;
+            }
+            seen.add(current.slideKey);
+            return {
+              slideKey: current.slideKey,
+              layout: current.layout,
+            } satisfies PresentationStudioElevationSlideConfig;
+          })
+          .filter((entry): entry is PresentationStudioElevationSlideConfig => Boolean(entry));
+        return [elevationId, slides] as const;
+      })
+      .filter(([, slides]) => slides.length > 0),
+  );
+}
+
 function normalizePresentationRenderingOverrides(boardState: unknown) {
   if (!boardState || typeof boardState !== "object") return {};
   const candidate = boardState as { presentationRenderingOverrides?: unknown };
@@ -492,13 +585,16 @@ function applyPresentationSlidePickLabels(room: any, picks?: PresentationSlidePi
 }
 
 function applyPresentationSlideOrder(slides: PresentationSlideDraft[], order: string[]) {
-  if (!order.length) return slides;
-  const slideByKey = new Map(slides.map((slide) => [slide.slideKey, slide]));
+  const cover = slides.find((slide) => slide.kind === "cover");
+  const contentSlides = slides.filter((slide) => slide.kind !== "cover");
+  if (!order.length) return cover ? [cover, ...contentSlides] : contentSlides;
+  const slideByKey = new Map(contentSlides.map((slide) => [slide.slideKey, slide]));
   const ordered = order
     .map((slideKey) => slideByKey.get(slideKey))
     .filter((slide): slide is PresentationSlideDraft => Boolean(slide));
   const orderedKeys = new Set(ordered.map((slide) => slide.slideKey));
-  return [...ordered, ...slides.filter((slide) => !orderedKeys.has(slide.slideKey))];
+  const remaining = contentSlides.filter((slide) => !orderedKeys.has(slide.slideKey));
+  return cover ? [cover, ...ordered, ...remaining] : [...ordered, ...remaining];
 }
 
 function numberPresentationSlides(slides: PresentationSlideDraft[]) {
@@ -518,6 +614,54 @@ function numberPresentationSlides(slides: PresentationSlideDraft[]) {
 function buildViewSlideKey(roomId: string, view: RoomData["views"][number], viewIndex: number) {
   const imageId = view.hero?.id ?? view.sketch?.id ?? `view-${viewIndex + 1}`;
   return `room:${roomId}:view:${imageId}`;
+}
+
+function renderingStudioLayoutForSlideKey(slideKey: string): RenderingStudioSlideLayout {
+  if (slideKey.endsWith(":side-by-side")) return "side-by-side";
+  if (slideKey.endsWith(":cad")) return "autocad";
+  if (slideKey.endsWith(":render")) return "rendering";
+  return "final-sheet";
+}
+
+function defaultRenderingStudioSlideConfigs(
+  elevation: RenderingStudioElevation,
+): PresentationStudioElevationSlideConfig[] {
+  return renderingStudioElevationSlideKeys(
+    elevation.elevation_id,
+    elevation.presentation_mode as RenderingStudioPresentationMode,
+  ).map((slideKey) => ({
+    slideKey,
+    layout: renderingStudioLayoutForSlideKey(slideKey),
+  }));
+}
+
+function buildRenderingStudioSlides(
+  elevations: RenderingStudioElevation[],
+  configuredSlides: PresentationStudioElevationSlides,
+) {
+  return [...elevations]
+    .filter(
+      (elevation) =>
+        elevation.presentation_visible !== false &&
+        (elevation.approval_status.toLowerCase() === "approved" ||
+          elevation.review_status.toLowerCase() === "approved"),
+    )
+    .sort(
+      (a, b) =>
+        a.presentation_order - b.presentation_order || a.elevation_id.localeCompare(b.elevation_id),
+    )
+    .flatMap((elevation) => {
+      const slides = configuredSlides[elevation.elevation_id] ?? defaultRenderingStudioSlideConfigs(elevation);
+      return slides.map(
+        (configuredSlide) =>
+          ({
+            kind: "studio-elevation",
+            slideKey: configuredSlide.slideKey,
+            elevation,
+            layout: configuredSlide.layout,
+          }) satisfies PresentationBaseSlide,
+      );
+    });
 }
 
 type PresentationImageLayout =
@@ -587,6 +731,21 @@ function boardPageHasRenderableContent(page: PresentationBoardPage) {
 function presentationSlideLabel(slide: PresentationSlide) {
   if (slide.kind === "cover") return "Cover";
   if (slide.kind === "board-page") return `Extra Page · ${slide.page.title}`;
+  if (slide.kind === "studio-elevation") {
+    const suffix =
+      slide.layout === "autocad"
+        ? "AutoCAD"
+        : slide.layout === "rendering"
+          ? "Rendering"
+          : slide.layout === "final-sheet"
+            ? "Final Sheet"
+            : slide.layout === "rendering-with-cad-corner"
+              ? "Rendering + AutoCAD Corner"
+              : slide.layout === "cad-with-rendering-corner"
+                ? "AutoCAD + Rendering Corner"
+                : "AutoCAD + Rendering";
+    return `${slide.elevation.sheet_number} · ${slide.elevation.title} · ${suffix}`;
+  }
   const viewLabel = slide.viewCount > 1 ? ` · View ${slide.viewIndex + 1}` : "";
   return `${slide.room.name}${viewLabel}`;
 }
@@ -634,6 +793,10 @@ function PresentationPage() {
   const { data: rooms = [] } = useQuery({
     queryKey: ["rooms", projectId],
     queryFn: async () => (await db.listRooms(projectId)) ?? [],
+  });
+  const { data: renderingStudioElevations = [] } = useQuery({
+    queryKey: ["renderingStudioElevations", projectId],
+    queryFn: () => db.listRenderingStudioElevations(projectId),
   });
   const { data: materialItems = [] } = useQuery({
     queryKey: ["materialItems", projectId],
@@ -708,6 +871,10 @@ function PresentationPage() {
   const presentationHiddenSlideKeySet = useMemo(
     () => new Set(presentationHiddenSlideKeys),
     [presentationHiddenSlideKeys],
+  );
+  const presentationStudioElevationSlides = useMemo(
+    () => normalizePresentationStudioElevationSlides(sharedBoard?.board_state),
+    [sharedBoard?.board_state],
   );
   const presentationRenderingOverrides = useMemo(
     () => normalizePresentationRenderingOverrides(sharedBoard?.board_state),
@@ -1122,8 +1289,14 @@ function PresentationPage() {
         });
       });
     });
+    list.push(
+      ...buildRenderingStudioSlides(
+        renderingStudioElevations,
+        presentationStudioElevationSlides,
+      ),
+    );
     return list;
-  }, [roomData]);
+  }, [presentationStudioElevationSlides, renderingStudioElevations, roomData]);
 
   const slotsByAfterKey = useMemo(() => {
     const next = new Map<string, PresentationExtraPageSlot[]>();
@@ -1214,6 +1387,27 @@ function PresentationPage() {
     [savePresentationSlideOrder, slides],
   );
 
+  const movePresentationSlideToPage = useCallback(
+    async (slideKey: string, pageNumber: number) => {
+      const currentIndex = slides.findIndex((item) => item.slideKey === slideKey);
+      const targetIndex = pageNumber - 1;
+      if (
+        currentIndex <= 0 ||
+        targetIndex <= 0 ||
+        targetIndex >= slides.length ||
+        currentIndex === targetIndex
+      ) {
+        return;
+      }
+
+      const nextSlides = [...slides];
+      const [moved] = nextSlides.splice(currentIndex, 1);
+      nextSlides.splice(targetIndex, 0, moved);
+      await savePresentationSlideOrder(nextSlides.map((item) => item.slideKey));
+    },
+    [savePresentationSlideOrder, slides],
+  );
+
   const [presenting, setPresenting] = useState(false);
   const [slide, setSlide] = useState(0);
   const [editingPicks, setEditingPicks] = useState(false);
@@ -1226,7 +1420,164 @@ function PresentationPage() {
   const [dragOverSlideKey, setDragOverSlideKey] = useState<string | null>(null);
   const [reorderDragSlideKey, setReorderDragSlideKey] = useState<string | null>(null);
   const [reorderDragOverSlideKey, setReorderDragOverSlideKey] = useState<string | null>(null);
+  const [savingStudioSlideKey, setSavingStudioSlideKey] = useState<string | null>(null);
   const exportSlideRefs = useRef(new Map<string, HTMLDivElement>());
+
+  const updateStudioElevationSlideLayout = useCallback(
+    async (
+      currentSlide: Extract<PresentationSlide, { kind: "studio-elevation" }>,
+      layout: RenderingStudioSlideLayout,
+    ) => {
+      if (savingStudioSlideKey) return;
+      setSavingStudioSlideKey(currentSlide.slideKey);
+      try {
+        const latestBoard = await db.getDesignBoard(projectId);
+        const baseState =
+          latestBoard?.board_state && typeof latestBoard.board_state === "object"
+            ? (latestBoard.board_state as Record<string, unknown>)
+            : {};
+        const configured = normalizePresentationStudioElevationSlides(baseState);
+        const currentConfigs =
+          configured[currentSlide.elevation.elevation_id] ??
+          defaultRenderingStudioSlideConfigs(currentSlide.elevation);
+        const nextState = {
+          ...baseState,
+          presentationStudioElevationSlides: {
+            ...configured,
+            [currentSlide.elevation.elevation_id]: currentConfigs.map((config) =>
+              config.slideKey === currentSlide.slideKey ? { ...config, layout } : config,
+            ),
+          },
+        };
+        const saved = latestBoard?.updated_at
+          ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+          : await db.upsertDesignBoard(projectId, nextState);
+        if (!saved) throw new Error("The presentation changed while saving. Please try again.");
+        qc.setQueryData(["designBoard", projectId], saved);
+        await qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+        toast.success("Elevation page layout updated");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not update this page.");
+      } finally {
+        setSavingStudioSlideKey(null);
+      }
+    },
+    [projectId, qc, savingStudioSlideKey],
+  );
+
+  const addStudioElevationSlideAfter = useCallback(
+    async (currentSlide: Extract<PresentationSlide, { kind: "studio-elevation" }>) => {
+      if (savingStudioSlideKey) return;
+      setSavingStudioSlideKey(currentSlide.slideKey);
+      try {
+        const latestBoard = await db.getDesignBoard(projectId);
+        const baseState =
+          latestBoard?.board_state && typeof latestBoard.board_state === "object"
+            ? (latestBoard.board_state as Record<string, unknown>)
+            : {};
+        const configured = normalizePresentationStudioElevationSlides(baseState);
+        const currentConfigs =
+          configured[currentSlide.elevation.elevation_id] ??
+          defaultRenderingStudioSlideConfigs(currentSlide.elevation);
+        const insertIndex = currentConfigs.findIndex(
+          (config) => config.slideKey === currentSlide.slideKey,
+        );
+        const newSlide: PresentationStudioElevationSlideConfig = {
+          slideKey: `${renderingStudioElevationSlidePrefix(
+            currentSlide.elevation.elevation_id,
+          )}custom-${crypto.randomUUID()}`,
+          layout: "side-by-side",
+        };
+        const nextConfigs = [...currentConfigs];
+        nextConfigs.splice(insertIndex >= 0 ? insertIndex + 1 : nextConfigs.length, 0, newSlide);
+
+        const currentOrder = allSlides.map((item) => item.slideKey);
+        const orderIndex = currentOrder.indexOf(currentSlide.slideKey);
+        currentOrder.splice(
+          orderIndex >= 0 ? orderIndex + 1 : currentOrder.length,
+          0,
+          newSlide.slideKey,
+        );
+        const nextState = {
+          ...baseState,
+          presentationStudioElevationSlides: {
+            ...configured,
+            [currentSlide.elevation.elevation_id]: nextConfigs,
+          },
+          presentationSlideOrder: currentOrder,
+        };
+        const saved = latestBoard?.updated_at
+          ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+          : await db.upsertDesignBoard(projectId, nextState);
+        if (!saved) throw new Error("The presentation changed while saving. Please try again.");
+        qc.setQueryData(["designBoard", projectId], saved);
+        await qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+        toast.success("Side-by-side elevation page added");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not add an elevation page.");
+      } finally {
+        setSavingStudioSlideKey(null);
+      }
+    },
+    [allSlides, projectId, qc, savingStudioSlideKey],
+  );
+
+  const removeStudioElevationSlide = useCallback(
+    async (currentSlide: Extract<PresentationSlide, { kind: "studio-elevation" }>) => {
+      if (savingStudioSlideKey) return;
+      setSavingStudioSlideKey(currentSlide.slideKey);
+      try {
+        const latestBoard = await db.getDesignBoard(projectId);
+        const baseState =
+          latestBoard?.board_state && typeof latestBoard.board_state === "object"
+            ? (latestBoard.board_state as Record<string, unknown>)
+            : {};
+        const configured = normalizePresentationStudioElevationSlides(baseState);
+        const currentConfigs =
+          configured[currentSlide.elevation.elevation_id] ??
+          defaultRenderingStudioSlideConfigs(currentSlide.elevation);
+        if (currentConfigs.length <= 1) {
+          toast.error("Keep at least one page for this approved elevation.");
+          return;
+        }
+        const remainingConfigs = currentConfigs.filter(
+          (config) => config.slideKey !== currentSlide.slideKey,
+        );
+        const currentIndex = allSlides.findIndex((item) => item.slideKey === currentSlide.slideKey);
+        const fallbackAfterSlideKey = allSlides[Math.max(0, currentIndex - 1)]?.slideKey ?? "cover";
+        const nextState = {
+          ...baseState,
+          presentationStudioElevationSlides: {
+            ...configured,
+            [currentSlide.elevation.elevation_id]: remainingConfigs,
+          },
+          presentationSlideOrder: allSlides
+            .map((item) => item.slideKey)
+            .filter((slideKey) => slideKey !== currentSlide.slideKey),
+          presentationHiddenSlideKeys: normalizePresentationHiddenSlideKeys(baseState).filter(
+            (slideKey) => slideKey !== currentSlide.slideKey,
+          ),
+          presentationExtraPages: normalizePresentationExtraPageSlots(baseState).map((slot) =>
+            slot.afterSlideKey === currentSlide.slideKey
+              ? { ...slot, afterSlideKey: fallbackAfterSlideKey }
+              : slot,
+          ),
+        };
+        const saved = latestBoard?.updated_at
+          ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+          : await db.upsertDesignBoard(projectId, nextState);
+        if (!saved) throw new Error("The presentation changed while saving. Please try again.");
+        qc.setQueryData(["designBoard", projectId], saved);
+        await qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+        toast.success("Elevation page removed");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not remove this page.");
+      } finally {
+        setSavingStudioSlideKey(null);
+      }
+    },
+    [allSlides, projectId, qc, savingStudioSlideKey],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || presenting) return;
@@ -1396,6 +1747,12 @@ function PresentationPage() {
               pageIndex={current.pageIndex}
               pageCount={current.pageCount}
             />
+          ) : current.kind === "studio-elevation" ? (
+            <RenderingStudioElevationSlide
+              project={project}
+              elevation={current.elevation}
+              layout={current.layout}
+            />
           ) : (
             <RoomSlide
               project={project}
@@ -1468,10 +1825,13 @@ function PresentationPage() {
                   {reorderPickerOpen && (
                     <div className="absolute right-0 top-full z-30 mt-2 w-[360px] border border-border bg-white p-2 shadow-xl">
                       <div className="max-h-[60vh] overflow-y-auto">
-                        {allSlides.map((item, index) => {
+                        {allSlides.map((item) => {
                           const isCover = item.kind === "cover";
                           const isHidden = presentationHiddenSlideKeySet.has(item.slideKey);
                           const canDragRow = !isCover && !isHidden;
+                          const visiblePageIndex = slides.findIndex(
+                            (slide) => slide.slideKey === item.slideKey,
+                          );
                           const isRowTarget =
                             reorderDragOverSlideKey === item.slideKey &&
                             reorderDragSlideKey !== item.slideKey;
@@ -1526,10 +1886,38 @@ function PresentationPage() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-xs text-muted-foreground">Page {index + 1}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {isHidden
+                                    ? "Not in presentation"
+                                    : `Page ${visiblePageIndex + 1}`}
+                                </div>
                               </div>
                               {!isCover && (
                                 <div className="flex shrink-0 items-center gap-1">
+                                  {!isHidden && (
+                                    <select
+                                      value={String(visiblePageIndex + 1)}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onChange={(event) => {
+                                        event.stopPropagation();
+                                        void movePresentationSlideToPage(
+                                          item.slideKey,
+                                          Number(event.target.value),
+                                        );
+                                      }}
+                                      className="border border-border bg-white px-2 py-1 text-[10px] uppercase tracking-[0.1em] text-ink"
+                                      aria-label={`Page number for ${presentationSlideLabel(item)}`}
+                                    >
+                                      {slides.slice(1).map((_, pageIndex) => {
+                                        const pageNumber = pageIndex + 2;
+                                        return (
+                                          <option key={pageNumber} value={String(pageNumber)}>
+                                            Page {pageNumber}
+                                          </option>
+                                        );
+                                      })}
+                                    </select>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={(event) => {
@@ -1639,6 +2027,12 @@ function PresentationPage() {
                   pageIndex={current.pageIndex}
                   pageCount={current.pageCount}
                 />
+              ) : current.kind === "studio-elevation" ? (
+                <RenderingStudioElevationSlide
+                  project={project}
+                  elevation={current.elevation}
+                  layout={current.layout}
+                />
               ) : (
                 <RoomSlide
                   project={project}
@@ -1733,9 +2127,83 @@ function PresentationPage() {
                       aria-label={`Drag ${presentationSlideLabel(current)} to reorder`}
                     >
                       <GripVertical className="h-4 w-4" />
-                      Page {slides.findIndex((item) => item.slideKey === current.slideKey) + 1}
+                      Drag Page
                     </button>
-                    <div className="flex items-center gap-2">
+                    <label className="sr-only" htmlFor={`presentation-page-${current.slideKey}`}>
+                      Presentation page number
+                    </label>
+                    <select
+                      id={`presentation-page-${current.slideKey}`}
+                      value={String(
+                        slides.findIndex((item) => item.slideKey === current.slideKey) + 1,
+                      )}
+                      onChange={(event) =>
+                        void movePresentationSlideToPage(
+                          current.slideKey,
+                          Number(event.target.value),
+                        )
+                      }
+                      className="h-9 border border-border bg-white px-3 text-xs uppercase tracking-[0.12em] text-ink"
+                      aria-label={`Page number for ${presentationSlideLabel(current)}`}
+                    >
+                      {slides.slice(1).map((_, index) => {
+                        const pageNumber = index + 2;
+                        return (
+                          <option key={pageNumber} value={String(pageNumber)}>
+                            Page {pageNumber}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {current.kind === "studio-elevation" && (
+                        <>
+                          <label className="sr-only" htmlFor={`studio-layout-${current.slideKey}`}>
+                            Elevation page layout
+                          </label>
+                          <select
+                            id={`studio-layout-${current.slideKey}`}
+                            value={current.layout}
+                            disabled={savingStudioSlideKey !== null}
+                            onChange={(event) =>
+                              void updateStudioElevationSlideLayout(
+                                current,
+                                event.target.value as RenderingStudioSlideLayout,
+                              )
+                            }
+                            className="h-9 max-w-[310px] border border-border bg-white px-3 text-xs text-ink disabled:opacity-50"
+                            aria-label={`Layout for ${presentationSlideLabel(current)}`}
+                          >
+                            {renderingStudioSlideLayouts.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={savingStudioSlideKey !== null}
+                            onClick={() => void addStudioElevationSlideAfter(current)}
+                            className="inline-flex h-9 items-center gap-2 border border-border bg-white px-3 text-xs uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+                          >
+                            <Plus className="h-4 w-4" /> Add Page After
+                          </button>
+                          {allSlides.filter(
+                            (slide) =>
+                              slide.kind === "studio-elevation" &&
+                              slide.elevation.elevation_id === current.elevation.elevation_id,
+                          ).length > 1 && (
+                            <button
+                              type="button"
+                              disabled={savingStudioSlideKey !== null}
+                              onClick={() => void removeStudioElevationSlide(current)}
+                              className="inline-flex h-9 items-center gap-2 border border-red-200 bg-white px-3 text-xs uppercase tracking-[0.12em] text-red-600 transition-colors hover:border-red-300 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" /> Remove Page
+                            </button>
+                          )}
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={() => void updatePresentationSlideHidden(current.slideKey, true)}
@@ -1823,6 +2291,12 @@ function PresentationPage() {
                       editingText ? (patch) => updateSlideText(current.room.id, patch) : undefined
                     }
                   />
+                ) : current.kind === "studio-elevation" ? (
+                  <RenderingStudioElevationSlide
+                    project={project}
+                    elevation={current.elevation}
+                    layout={current.layout}
+                  />
                 ) : (
                   <DesignBoardSpread
                     project={project}
@@ -1848,6 +2322,139 @@ function PresentationPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function renderingStudioPresentationAsset(
+  elevation: RenderingStudioElevation,
+  assetType: RenderingStudioAsset["asset_type"],
+) {
+  return elevation.assets.find((asset) => asset.asset_type === assetType) ?? null;
+}
+
+function RenderingStudioElevationSlide({
+  project,
+  elevation,
+  layout,
+}: {
+  project: any;
+  elevation: RenderingStudioElevation;
+  layout: RenderingStudioSlideLayout;
+}) {
+  const autocad = renderingStudioPresentationAsset(elevation, "autocad");
+  const rendering = renderingStudioPresentationAsset(elevation, "final_rendering");
+  const finalSheet = renderingStudioPresentationAsset(elevation, "final_sheet");
+  const materialNames = elevation.materials
+    .map((material) => (typeof material.name === "string" ? material.name.trim() : ""))
+    .filter(Boolean);
+
+  const assetPanel = (
+    asset: RenderingStudioAsset | null,
+    label: string,
+    assetType: RenderingStudioAsset["asset_type"],
+    className = "",
+  ) => (
+    <div
+      data-rendering-studio-asset={assetType}
+      className={`flex min-h-0 flex-1 flex-col border border-[#d8d2c8] bg-[#f7f4ef] ${className}`}
+    >
+      <div className="border-b border-[#d8d2c8] bg-white px-5 py-3 text-[11px] uppercase tracking-[0.22em] text-[#6e6963]">
+        {label}
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
+        {asset ? (
+          <img
+            src={normalizeSupabaseImageUrl(asset.url)}
+            alt={`${elevation.title} — ${label}`}
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <div className="text-sm text-red-600">Missing {label}</div>
+        )}
+      </div>
+    </div>
+  );
+
+  const cornerLayout = (
+    prominent: RenderingStudioAsset | null,
+    prominentLabel: string,
+    prominentType: RenderingStudioAsset["asset_type"],
+    corner: RenderingStudioAsset | null,
+    cornerLabel: string,
+    cornerType: RenderingStudioAsset["asset_type"],
+  ) => (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,2.25fr)_minmax(240px,0.75fr)] gap-5">
+      {assetPanel(prominent, prominentLabel, prominentType)}
+      <div className="flex min-h-0 flex-col">
+        {assetPanel(corner, cornerLabel, cornerType, "max-h-[52%]")}
+        <div className="flex-1" aria-hidden="true" />
+      </div>
+    </div>
+  );
+
+  const body =
+    layout === "side-by-side" ? (
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-5">
+        {assetPanel(autocad, "AutoCAD Source Drawing", "autocad")}
+        {assetPanel(rendering, "Final AI Rendering", "final_rendering")}
+      </div>
+    ) : layout === "rendering-with-cad-corner" ? (
+      cornerLayout(
+        rendering,
+        "Final AI Rendering",
+        "final_rendering",
+        autocad,
+        "AutoCAD Source Drawing",
+        "autocad",
+      )
+    ) : layout === "cad-with-rendering-corner" ? (
+      cornerLayout(
+        autocad,
+        "AutoCAD Source Drawing",
+        "autocad",
+        rendering,
+        "Final AI Rendering",
+        "final_rendering",
+      )
+    ) : layout === "autocad" ? (
+      assetPanel(autocad, "AutoCAD Source Drawing", "autocad")
+    ) : layout === "rendering" ? (
+      assetPanel(rendering, "Final AI Rendering", "final_rendering")
+    ) : (
+      assetPanel(finalSheet, "Final Presentation Sheet", "final_sheet")
+    );
+
+  return (
+    <section
+      data-rendering-studio-elevation={elevation.elevation_id}
+      data-rendering-studio-layout={layout}
+      className="flex h-full min-h-[600px] w-full flex-col bg-white p-[clamp(1.5rem,3vw,3.25rem)] text-ink"
+    >
+      <header className="mb-5 flex shrink-0 items-end justify-between gap-6 border-b border-[#d8d2c8] pb-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.24em] text-[#77716a]">
+            {elevation.room?.name || elevation.room_name} · {elevation.sheet_number} ·{" "}
+            {elevation.elevation_id}
+          </div>
+          <h2 className="mt-2 font-display text-[clamp(2rem,3.3vw,3.75rem)] leading-none">
+            {elevation.title}
+          </h2>
+        </div>
+        <div className="shrink-0 text-right text-[10px] uppercase tracking-[0.2em] text-[#8b847d]">
+          <div>{project?.name}</div>
+          <div className="mt-1">Rendering Studio Elevation</div>
+        </div>
+      </header>
+
+      {body}
+
+      {materialNames.length > 0 && layout !== "final-sheet" && (
+        <footer className="mt-4 shrink-0 border-t border-[#d8d2c8] pt-3 text-[10px] leading-4 text-[#77716a]">
+          <span className="mr-2 uppercase tracking-[0.18em]">Materials</span>
+          {materialNames.join(" · ")}
+        </footer>
+      )}
+    </section>
   );
 }
 

@@ -55,6 +55,8 @@ import { Route as ApiMarvinFathomWebhookRouteImport } from './routes/api/marvin-
 import { Route as ApiMarvinCronRouteImport } from './routes/api/marvin-cron'
 import { Route as ApiMarvinRouteImport } from './routes/api/marvin'
 import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
+import { Route as ApiImportRenderingPdfRouteImport } from './routes/api/import-rendering-pdf'
+import { Route as ApiImportRenderingPackageRouteImport } from './routes/api/import-rendering-package'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
@@ -326,6 +328,17 @@ const ApiMarkFinancialPaymentDueRoute =
     path: '/api/mark-financial-payment-due',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiImportRenderingPdfRoute = ApiImportRenderingPdfRouteImport.update({
+  id: '/api/import-rendering-pdf',
+  path: '/api/import-rendering-pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImportRenderingPackageRoute =
+  ApiImportRenderingPackageRouteImport.update({
+    id: '/api/import-rendering-package',
+    path: '/api/import-rendering-package',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiImportMaterialsPdfRoute = ApiImportMaterialsPdfRouteImport.update({
   id: '/api/import-materials-pdf',
   path: '/api/import-materials-pdf',
@@ -525,6 +538,8 @@ export interface FileRoutesByFullPath {
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
+  '/api/import-rendering-package': typeof ApiImportRenderingPackageRoute
+  '/api/import-rendering-pdf': typeof ApiImportRenderingPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/marvin': typeof ApiMarvinRoute
   '/api/marvin-cron': typeof ApiMarvinCronRoute
@@ -607,6 +622,8 @@ export interface FileRoutesByTo {
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
+  '/api/import-rendering-package': typeof ApiImportRenderingPackageRoute
+  '/api/import-rendering-pdf': typeof ApiImportRenderingPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/marvin': typeof ApiMarvinRoute
   '/api/marvin-cron': typeof ApiMarvinCronRoute
@@ -690,6 +707,8 @@ export interface FileRoutesById {
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
+  '/api/import-rendering-package': typeof ApiImportRenderingPackageRoute
+  '/api/import-rendering-pdf': typeof ApiImportRenderingPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/marvin': typeof ApiMarvinRoute
   '/api/marvin-cron': typeof ApiMarvinCronRoute
@@ -774,6 +793,8 @@ export interface FileRouteTypes {
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
+    | '/api/import-rendering-package'
+    | '/api/import-rendering-pdf'
     | '/api/mark-financial-payment-due'
     | '/api/marvin'
     | '/api/marvin-cron'
@@ -856,6 +877,8 @@ export interface FileRouteTypes {
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
+    | '/api/import-rendering-package'
+    | '/api/import-rendering-pdf'
     | '/api/mark-financial-payment-due'
     | '/api/marvin'
     | '/api/marvin-cron'
@@ -938,6 +961,8 @@ export interface FileRouteTypes {
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
+    | '/api/import-rendering-package'
+    | '/api/import-rendering-pdf'
     | '/api/mark-financial-payment-due'
     | '/api/marvin'
     | '/api/marvin-cron'
@@ -1021,6 +1046,8 @@ export interface RootRouteChildren {
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
+  ApiImportRenderingPackageRoute: typeof ApiImportRenderingPackageRoute
+  ApiImportRenderingPdfRoute: typeof ApiImportRenderingPdfRoute
   ApiMarkFinancialPaymentDueRoute: typeof ApiMarkFinancialPaymentDueRoute
   ApiMarvinRoute: typeof ApiMarvinRoute
   ApiMarvinCronRoute: typeof ApiMarvinCronRoute
@@ -1410,6 +1437,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMarkFinancialPaymentDueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/import-rendering-pdf': {
+      id: '/api/import-rendering-pdf'
+      path: '/api/import-rendering-pdf'
+      fullPath: '/api/import-rendering-pdf'
+      preLoaderRoute: typeof ApiImportRenderingPdfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/import-rendering-package': {
+      id: '/api/import-rendering-package'
+      path: '/api/import-rendering-package'
+      fullPath: '/api/import-rendering-package'
+      preLoaderRoute: typeof ApiImportRenderingPackageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/import-materials-pdf': {
       id: '/api/import-materials-pdf'
       path: '/api/import-materials-pdf'
@@ -1669,6 +1710,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
+  ApiImportRenderingPackageRoute: ApiImportRenderingPackageRoute,
+  ApiImportRenderingPdfRoute: ApiImportRenderingPdfRoute,
   ApiMarkFinancialPaymentDueRoute: ApiMarkFinancialPaymentDueRoute,
   ApiMarvinRoute: ApiMarvinRoute,
   ApiMarvinCronRoute: ApiMarvinCronRoute,

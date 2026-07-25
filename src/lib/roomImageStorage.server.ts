@@ -74,3 +74,27 @@ export async function uploadRoomImageFromDataUrl({
   return { publicUrl: data.publicUrl, path };
 }
 
+export async function uploadRoomImageBufferAtPath({
+  buffer,
+  contentType,
+  path,
+}: {
+  buffer: Buffer;
+  contentType: "image/png" | "image/jpeg" | "image/webp";
+  path: string;
+}) {
+  await ensureRoomImageBucket();
+  if (buffer.byteLength > ROOM_IMAGE_LIMIT) {
+    throw new Error("Extracted page is larger than the 20 MB room image limit.");
+  }
+
+  const { error } = await supabaseAdmin.storage.from(ROOM_IMAGE_BUCKET).upload(path, buffer, {
+    contentType,
+    cacheControl: "31536000",
+    upsert: false,
+  });
+  if (error && !/already exists|duplicate/i.test(error.message)) throw error;
+
+  const { data } = supabaseAdmin.storage.from(ROOM_IMAGE_BUCKET).getPublicUrl(path);
+  return { publicUrl: data.publicUrl, path, alreadyExisted: Boolean(error) };
+}
