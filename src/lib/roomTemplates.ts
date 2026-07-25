@@ -243,12 +243,17 @@ const BATHROOM: ItemTemplate[] = [
   { label: "Toilet Paper Holder", category: "Hardware" },
 ];
 
+const POWDER_BATHROOM: ItemTemplate[] = BATHROOM.filter(
+  (item) => !["Shower Tile", "Shower System", "Shower Drain"].includes(item.label),
+);
+
 export function templateForRoomName(name: string): ItemTemplate[] {
   const n = name.trim().toLowerCase();
   if (n === "kitchen") return KITCHEN;
   if (n === "living room") return LIVING_ROOM;
   if (n === "dining room") return DINING_ROOM;
   if (n === "office") return BEDROOM_OFFICE;
+  if (n.includes("powder")) return POWDER_BATHROOM;
   if (n.includes("bathroom") || n.includes("bath")) return BATHROOM;
   if (n.includes("bedroom")) return BEDROOM_OFFICE;
   return []; // "Other" / custom rooms start empty

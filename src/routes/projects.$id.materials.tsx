@@ -20,6 +20,7 @@ import {
   PRODUCT_CATEGORIES,
   inferMaterialCategory,
   normalizeItemCategory,
+  templateForRoomName,
   toProductCategory,
 } from "@/lib/roomTemplates";
 import { buildClientProductName, clientProductName } from "@/lib/clientProductName";
@@ -217,6 +218,141 @@ function latestTimestamp(values: Array<string | null | undefined>) {
   return latestValue;
 }
 
+function normalizeMaterialSuggestionLabel(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function materialHasUserSelection(item: MaterialItem) {
+  return Boolean(
+    item.product_id ||
+      item.product ||
+      item.product_url?.trim() ||
+      item.image_url?.trim() ||
+      item.color?.trim() ||
+      item.quantity != null ||
+      item.notes?.trim() ||
+      item.cad_label?.trim() ||
+      item.ordered_by ||
+      item.ordered === true ||
+      item.source_board_id ||
+      item.source_board_page_id ||
+      item.source_board_element_id ||
+      item.scrape_error ||
+      item.room_product,
+  );
+}
+
+function isUntouchedTemplatePlaceholder(item: MaterialItem) {
+  return item.is_required && !item.not_needed && !materialHasUserSelection(item);
+}
+
+function materialSuggestionSearchText(item: MaterialItem) {
+  return normalizeMaterialSuggestionLabel(
+    [
+      item.item_label,
+      item.client_product_name,
+      item.category,
+      item.cad_label,
+      item.notes,
+      item.product?.name,
+      item.product?.subcategory,
+      item.product?.category,
+      item.product?.notes,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function materialCoversTemplateSuggestion(
+  item: MaterialItem,
+  suggestion: { label: string; category: string },
+) {
+  const suggestionKey = normalizeMaterialSuggestionLabel(suggestion.label);
+  const itemLabelKey = normalizeMaterialSuggestionLabel(item.item_label);
+  const text = materialSuggestionSearchText(item);
+  const category =
+    normalizeItemCategory(item.category) ??
+    inferMaterialCategory(`${item.item_label} ${item.product?.name ?? ""}`, item.product_url);
+  const has = (pattern: RegExp) => pattern.test(text);
+
+  if (itemLabelKey === suggestionKey) return true;
+
+  switch (suggestionKey) {
+    case "tile":
+      return category === "Tile & Stone";
+    case "shower tile":
+      return category === "Tile & Stone" && has(/\b(shower|showerwall|wet wall|tub surround)\b/);
+    case "countertop":
+    case "countertops":
+      return category === "Countertops" || has(/\b(countertop|countertops|counter top|slab)\b/);
+    case "sink":
+      return (
+        category === "Plumbing" &&
+        has(/\b(sink|basin|lavatory)\b/) &&
+        !has(/\b(sink|basin|lavatory)\s+drain\b/)
+      );
+    case "faucet":
+      return has(/\b(faucet|lavatory faucet|basin tap)\b/);
+    case "shower system":
+      return has(
+        /\b(shower system|shower trim|shower valve|shower head|rain head|hand shower)\b/,
+      );
+    case "shower drain":
+      return has(/\b(shower drain|linear drain)\b/);
+    case "sink drain":
+      return has(/\b(sink drain|basin drain|lavatory drain|pop up drain)\b/);
+    case "pendant":
+      return has(/\b(pendant|hanging light)\b/);
+    case "sconce":
+      return has(/\b(sconce|wall light)\b/);
+    case "lighting":
+      return category === "Lighting";
+    case "accent mirrors":
+      return category === "Accent Mirrors" || has(/\b(mirror|mirrors|medicine cabinet)\b/);
+    case "cabinet finish":
+    case "cabinetry finish":
+      return (
+        has(/\b(cabinet|cabinetry)\b/) &&
+        has(/\b(finish|paint|stain|color|colour)\b/)
+      );
+    case "cabinet hardware":
+      return (
+        has(/\b(cabinet hardware|cabinet knob|cabinet knobs|cabinet pull|cabinet pulls|knob|knobs|pull|pulls|latch|latches)\b/) &&
+        (!has(/\b(shower|shower door)\b/) || has(/\bcabinet\b/))
+      );
+    case "flooring":
+      return (
+        category === "Flooring" ||
+        (has(/\b(floor|flooring|floor tile|wood floor|carpet|rug)\b/) &&
+          !has(/\bshower floor\b/))
+      );
+    case "paint":
+      return category === "Paint" || has(/\b(paint|limewash|lime wash|wall finish)\b/);
+    case "towel hook":
+      return has(/\b(towel hook|robe hook|bath hook)\b/);
+    case "toilet paper holder":
+      return has(/\b(toilet paper holder|paper holder|tp holder)\b/);
+    default: {
+      const singularSuggestion = suggestionKey.replace(/ies$/, "y").replace(/s$/, "");
+      const singularItemLabel = itemLabelKey.replace(/ies$/, "y").replace(/s$/, "");
+      return singularItemLabel === singularSuggestion;
+    }
+  }
+}
+
+type MaterialSuggestion = {
+  key: string;
+  label: string;
+  category: string;
+  existingItem: MaterialItem | null;
+};
+
 function MaterialsPage() {
   const { id } = Route.useParams();
   const projectId = cleanUuid(id);
@@ -287,8 +423,13 @@ function MaterialsPage() {
   };
 
   const overall = useMemo(() => {
-    const total = items.length;
-    const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
+    const activeItems = items.filter(
+      (item) => !item.not_needed && !isUntouchedTemplatePlaceholder(item),
+    );
+    const total = activeItems.length;
+    const done = activeItems.filter(
+      (it) => it.product_url && it.product_url.trim().length > 0,
+    ).length;
     return { done, total };
   }, [items]);
   const lastUpdatedAt = useMemo(
@@ -671,9 +812,9 @@ function MaterialsPage() {
               Last updated {formatLastUpdated(lastUpdatedAt)}
             </div>
             <p className="text-sm text-muted-foreground mt-3 max-w-xl">
-              Fill in CAD label, product link, quantity, and color for every required item. Delete
-              anything you don't need. When you're ready, scrape every link to save products into
-              the catalog.
+              Only materials you have chosen appear below. Use each room&apos;s possible-item review
+              to add anything that may still be needed, then fill in its link, quantity, finish, and
+              other details.
             </p>
           </div>
           <div className="flex flex-col items-end gap-3">
@@ -774,18 +915,60 @@ function RoomMaterialsSection({
 }) {
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [activatedSuggestionKeys, setActivatedSuggestionKeys] = useState<string[]>([]);
   const [bulkOrderedBy, setBulkOrderedBy] = useState<MaterialItem["ordered_by"] | "none">("none");
   const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
-  const done = items.filter((it) => it.product_url && it.product_url.trim().length > 0).length;
-  const reselectionCount = items.filter((it) => isNeedsReselection(it)).length;
+  const activatedSuggestionKeySet = useMemo(
+    () => new Set(activatedSuggestionKeys),
+    [activatedSuggestionKeys],
+  );
+  const templateSuggestions = useMemo<MaterialSuggestion[]>(() => {
+    const chosenItems = items.filter(
+      (item) => !item.not_needed && !isUntouchedTemplatePlaceholder(item),
+    );
+    return templateForRoomName(room.name).flatMap((templateItem) => {
+      const key = normalizeMaterialSuggestionLabel(templateItem.label);
+      if (activatedSuggestionKeySet.has(key)) return [];
+      const matchingItems = items.filter(
+        (item) => normalizeMaterialSuggestionLabel(item.item_label) === key,
+      );
+      if (matchingItems.some((item) => item.not_needed)) return [];
+      if (chosenItems.some((item) => materialCoversTemplateSuggestion(item, templateItem))) {
+        return [];
+      }
+      return [
+        {
+          key,
+          label: templateItem.label,
+          category: templateItem.category,
+          existingItem:
+            matchingItems.find((item) => isUntouchedTemplatePlaceholder(item)) ?? null,
+        },
+      ];
+    });
+  }, [activatedSuggestionKeySet, items, room.name]);
+  const activeItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          !item.not_needed &&
+          (!isUntouchedTemplatePlaceholder(item) ||
+            activatedSuggestionKeySet.has(normalizeMaterialSuggestionLabel(item.item_label))),
+      ),
+    [activatedSuggestionKeySet, items],
+  );
+  const done = activeItems.filter(
+    (it) => it.product_url && it.product_url.trim().length > 0,
+  ).length;
+  const reselectionCount = activeItems.filter((it) => isNeedsReselection(it)).length;
   const sortedItems = useMemo(
     () =>
-      [...items]
+      [...activeItems]
         .filter((item) => approvalFilter === "all" || isNeedsReselection(item))
         .sort((a, b) =>
           a.item_label.localeCompare(b.item_label, undefined, { sensitivity: "base" }),
         ),
-    [approvalFilter, items],
+    [activeItems, approvalFilter],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const validSelectedIds = useMemo(
@@ -810,13 +993,96 @@ function RoomMaterialsSection({
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
+  const activateSuggestion = async (
+    suggestion: MaterialSuggestion,
+    productUrl: string | null,
+  ) => {
+    setActivatedSuggestionKeys((current) =>
+      current.includes(suggestion.key) ? current : [...current, suggestion.key],
+    );
+    if (suggestion.existingItem) {
+      await db.updateMaterialItem(suggestion.existingItem.id, {
+        is_required: false,
+        not_needed: false,
+        product_url: productUrl,
+        scrape_status: "pending",
+        scrape_error: null,
+      });
+    } else {
+      await db.bulkInsertMaterialItems([
+        {
+          room_id: room.id,
+          project_id: projectId,
+          item_label: suggestion.label,
+          client_product_name: buildClientProductName(room.name, suggestion.label),
+          category: suggestion.category,
+          is_required: false,
+          sort_order: items.length,
+          cad_label: null,
+          product_url: productUrl,
+          quantity: null,
+          color: null,
+          image_url: null,
+          notes: null,
+          not_needed: false,
+          product_id: null,
+          source_board_id: null,
+          source_board_page_id: null,
+          source_board_element_id: null,
+          ordered_by: null,
+          ordered: false,
+          scrape_status: "pending",
+          scrape_error: null,
+        },
+      ]);
+    }
+    invalidate();
+  };
+
+  const dismissSuggestion = async (suggestion: MaterialSuggestion) => {
+    setActivatedSuggestionKeys((current) =>
+      current.includes(suggestion.key) ? current : [...current, suggestion.key],
+    );
+    if (suggestion.existingItem) {
+      await db.updateMaterialItem(suggestion.existingItem.id, { not_needed: true });
+    } else {
+      await db.bulkInsertMaterialItems([
+        {
+          room_id: room.id,
+          project_id: projectId,
+          item_label: suggestion.label,
+          client_product_name: buildClientProductName(room.name, suggestion.label),
+          category: suggestion.category,
+          is_required: true,
+          sort_order: items.length,
+          cad_label: null,
+          product_url: null,
+          quantity: null,
+          color: null,
+          image_url: null,
+          notes: null,
+          not_needed: true,
+          product_id: null,
+          source_board_id: null,
+          source_board_page_id: null,
+          source_board_element_id: null,
+          ordered_by: null,
+          ordered: false,
+          scrape_status: "pending",
+          scrape_error: null,
+        },
+      ]);
+    }
+    invalidate();
+  };
+
   useEffect(() => {
     setSelectedIds((current) => current.filter((id) => sortedItems.some((item) => item.id === id)));
   }, [sortedItems]);
 
   const update = async (id: string, patch: Partial<MaterialItem>) => {
     if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
-    const currentItem = items.find((item) => item.id === id);
+    const currentItem = activeItems.find((item) => item.id === id);
     await db.updateMaterialItem(id, patch);
     if (
       typeof patch.category === "string" &&
@@ -866,7 +1132,7 @@ function RoomMaterialsSection({
 
     await db.updateRoom(room.id, { name } as Partial<Room>);
     await Promise.all(
-      items.map((item) =>
+      activeItems.map((item) =>
         db.updateMaterialItem(item.id, {
           client_product_name: buildClientProductName(name, item.item_label),
         }),
@@ -924,20 +1190,33 @@ function RoomMaterialsSection({
           <h2 className="font-display text-2xl">{room.name}</h2>
           <EditRoomNameButton currentName={room.name} onSave={renameRoom} />
           <span className="text-xs text-muted-foreground tracking-wide">
-            {done} of {items.length} completed
+            {done} of {activeItems.length} completed
           </span>
         </div>
-        <AddCustomItemButton
-          roomId={room.id}
-          roomName={room.name}
-          projectId={projectId}
-          sortStart={items.length}
-        />
+        <div className="flex items-center gap-2">
+          {templateSuggestions.length > 0 && (
+            <MaterialSuggestionReview
+              roomName={room.name}
+              suggestions={templateSuggestions}
+              onAdd={activateSuggestion}
+              onDismiss={dismissSuggestion}
+            />
+          )}
+          <AddCustomItemButton
+            roomId={room.id}
+            roomName={room.name}
+            projectId={projectId}
+            sortStart={items.length}
+          />
+        </div>
       </div>
 
-      {items.length === 0 ? (
+      {activeItems.length === 0 ? (
         <div className="px-6 py-10 text-sm text-muted-foreground">
-          No required items for this room. Add custom items above.
+          No materials added yet.
+          {templateSuggestions.length > 0
+            ? " Review the possible items above or add a custom item."
+            : " Add a custom item when you are ready."}
         </div>
       ) : (
         <div className="mobile-card-scroll">
@@ -1092,11 +1371,16 @@ function RoomMaterialsSection({
                             })
                           }
                         />
-                        {!it.is_required && (
+                        {!it.is_required &&
+                          !templateForRoomName(room.name).some(
+                            (templateItem) =>
+                              normalizeMaterialSuggestionLabel(templateItem.label) ===
+                              normalizeMaterialSuggestionLabel(it.item_label),
+                          ) && (
                           <span className="text-[10px] tracking-wider uppercase text-muted-foreground">
                             Custom
                           </span>
-                        )}
+                          )}
                         {it.product && (
                           <span className="text-[10px] tracking-wider uppercase text-emerald-700">
                             Scraped
@@ -1708,6 +1992,143 @@ function NotesPopover({ value, onSave }: { value: string; onSave: (v: string) =>
         >
           Save
         </button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MaterialSuggestionReview({
+  roomName,
+  suggestions,
+  onAdd,
+  onDismiss,
+}: {
+  roomName: string;
+  suggestions: MaterialSuggestion[];
+  onAdd: (suggestion: MaterialSuggestion, productUrl: string | null) => Promise<void>;
+  onDismiss: (suggestion: MaterialSuggestion) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [linksByKey, setLinksByKey] = useState<Record<string, string>>({});
+
+  if (suggestions.length === 0) return null;
+
+  const choose = async (suggestion: MaterialSuggestion, choice: "add" | "dismiss") => {
+    if (savingKey) return;
+    const productUrl = linksByKey[suggestion.key]?.trim() || null;
+    if (choice === "add" && productUrl) {
+      try {
+        const parsedUrl = new URL(productUrl);
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") throw new Error();
+      } catch {
+        toast.error("Paste the full product link, starting with http:// or https://.");
+        return;
+      }
+    }
+    setSavingKey(suggestion.key);
+    try {
+      if (choice === "add") {
+        await onAdd(suggestion, productUrl);
+        toast.success(
+          productUrl
+            ? `${suggestion.label} added to ${roomName} with its product link.`
+            : `${suggestion.label} added to ${roomName} for later selection.`,
+        );
+      } else {
+        await onDismiss(suggestion);
+        toast.success(`${suggestion.label} marked not needed for ${roomName}.`);
+      }
+      setLinksByKey((current) => {
+        const next = { ...current };
+        delete next[suggestion.key];
+        return next;
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error(`Could not save the ${suggestion.label} choice. Please try again.`);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !savingKey && setOpen(nextOpen)}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 hover:border-amber-500"
+        >
+          <Sparkles className="h-3 w-3" />
+          Review {suggestions.length} possible {suggestions.length === 1 ? "item" : "items"}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">
+            Possible items for {roomName}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Paste a product link to add it now, or leave the link blank to add a placeholder you can
+            finish later. Anything untouched will still be here the next time you open this list.
+          </p>
+          <div className="max-h-[60vh] divide-y divide-border overflow-y-auto border border-border">
+            {suggestions.map((suggestion) => {
+              const saving = savingKey === suggestion.key;
+              const productUrl = linksByKey[suggestion.key] ?? "";
+              return (
+                <div
+                  key={suggestion.key}
+                  className="grid gap-3 p-4 sm:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-ink">{suggestion.label}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {suggestion.category}
+                    </div>
+                  </div>
+                  <Input
+                    type="url"
+                    value={productUrl}
+                    disabled={savingKey !== null}
+                    onChange={(event) =>
+                      setLinksByKey((current) => ({
+                        ...current,
+                        [suggestion.key]: event.target.value,
+                      }))
+                    }
+                    placeholder="Paste product link"
+                    aria-label={`${suggestion.label} product link`}
+                    className="h-9"
+                  />
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={savingKey !== null}
+                      onClick={() => choose(suggestion, "add")}
+                      className="bg-ink px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
+                    >
+                      {saving ? "Saving…" : productUrl.trim() ? "Add with link" : "Add for later"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingKey !== null}
+                      onClick={() => choose(suggestion, "dismiss")}
+                      className="border border-border px-3 py-2 text-xs hover:border-ink disabled:opacity-50"
+                    >
+                      Not needed
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            {suggestions.length} possible {suggestions.length === 1 ? "item" : "items"} remaining
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
