@@ -4041,7 +4041,7 @@ function ProjectDesignBoardsPage() {
                             key={element.id}
                             element={element}
                             editable={canEditDesignBoards}
-                            showProductBadge={!isContractorRole(profile?.role)}
+                            showProductBadge={false}
                             cropMode={croppingElementId === element.id}
                             linkedProduct={
                               element.productId ? productById.get(element.productId) ?? null : null
