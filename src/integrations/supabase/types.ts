@@ -529,6 +529,7 @@ export type Database = {
           approval_show_quantity: boolean
           approval_show_vendor: boolean
           client_name: string
+          client_can_download_design_board_pdf: boolean
           client_can_download_construction_docs: boolean
           client_can_view_construction_docs: boolean
           client_can_view_design_boards: boolean
@@ -539,6 +540,7 @@ export type Database = {
           client_spec_show_ordering: boolean
           client_spec_show_pricing: boolean
           contractor_can_view_construction_docs: boolean
+          contractor_can_download_design_board_pdf: boolean
           contractor_can_view_design_boards: boolean
           contractor_can_view_presentations: boolean
           contractor_can_view_spec_book: boolean
@@ -570,6 +572,7 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name: string
+          client_can_download_design_board_pdf?: boolean
           client_can_download_construction_docs?: boolean
           client_can_view_construction_docs?: boolean
           client_can_view_design_boards?: boolean
@@ -580,6 +583,7 @@ export type Database = {
           client_spec_show_ordering?: boolean
           client_spec_show_pricing?: boolean
           contractor_can_view_construction_docs?: boolean
+          contractor_can_download_design_board_pdf?: boolean
           contractor_can_view_design_boards?: boolean
           contractor_can_view_presentations?: boolean
           contractor_can_view_spec_book?: boolean
@@ -611,6 +615,7 @@ export type Database = {
           approval_show_quantity?: boolean
           approval_show_vendor?: boolean
           client_name?: string
+          client_can_download_design_board_pdf?: boolean
           client_can_download_construction_docs?: boolean
           client_can_view_construction_docs?: boolean
           client_can_view_design_boards?: boolean
@@ -621,6 +626,7 @@ export type Database = {
           client_spec_show_ordering?: boolean
           client_spec_show_pricing?: boolean
           contractor_can_view_construction_docs?: boolean
+          contractor_can_download_design_board_pdf?: boolean
           contractor_can_view_design_boards?: boolean
           contractor_can_view_presentations?: boolean
           contractor_can_view_spec_book?: boolean

@@ -111,6 +111,7 @@ export interface Project {
   client_can_view_spec_book: boolean;
   client_can_view_presentations: boolean;
   client_can_view_design_boards: boolean;
+  client_can_download_design_board_pdf: boolean;
   client_can_view_construction_docs: boolean;
   client_can_download_construction_docs: boolean;
   client_can_download_spec_book_pdf: boolean;
@@ -120,6 +121,7 @@ export interface Project {
   contractor_can_view_spec_book: boolean;
   contractor_can_view_presentations: boolean;
   contractor_can_view_design_boards: boolean;
+  contractor_can_download_design_board_pdf: boolean;
   contractor_can_view_construction_docs: boolean;
   contractor_can_download_spec_book_pdf: boolean;
   contractor_spec_show_pricing: boolean;

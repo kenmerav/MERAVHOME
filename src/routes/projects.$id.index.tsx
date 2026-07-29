@@ -1075,6 +1075,8 @@ function ProjectAccessDialog({
     client_can_view_spec_book: project.client_can_view_spec_book,
     client_can_view_presentations: project.client_can_view_presentations,
     client_can_view_design_boards: project.client_can_view_design_boards,
+    client_can_download_design_board_pdf:
+      project.client_can_download_design_board_pdf ?? false,
     client_can_view_construction_docs: project.client_can_view_construction_docs,
     client_can_download_construction_docs:
       project.client_can_download_construction_docs ?? false,
@@ -1085,6 +1087,8 @@ function ProjectAccessDialog({
     contractor_can_view_spec_book: project.contractor_can_view_spec_book,
     contractor_can_view_presentations: project.contractor_can_view_presentations,
     contractor_can_view_design_boards: project.contractor_can_view_design_boards,
+    contractor_can_download_design_board_pdf:
+      project.contractor_can_download_design_board_pdf ?? false,
     contractor_can_view_construction_docs: project.contractor_can_view_construction_docs,
     contractor_can_download_spec_book_pdf: project.contractor_can_download_spec_book_pdf ?? false,
     contractor_spec_show_pricing: project.contractor_spec_show_pricing,
@@ -1098,6 +1102,8 @@ function ProjectAccessDialog({
       client_can_view_spec_book: project.client_can_view_spec_book,
       client_can_view_presentations: project.client_can_view_presentations,
       client_can_view_design_boards: project.client_can_view_design_boards,
+      client_can_download_design_board_pdf:
+        project.client_can_download_design_board_pdf ?? false,
       client_can_view_construction_docs: project.client_can_view_construction_docs,
       client_can_download_construction_docs:
         project.client_can_download_construction_docs ?? false,
@@ -1108,6 +1114,8 @@ function ProjectAccessDialog({
       contractor_can_view_spec_book: project.contractor_can_view_spec_book,
       contractor_can_view_presentations: project.contractor_can_view_presentations,
       contractor_can_view_design_boards: project.contractor_can_view_design_boards,
+      contractor_can_download_design_board_pdf:
+        project.contractor_can_download_design_board_pdf ?? false,
       contractor_can_view_construction_docs: project.contractor_can_view_construction_docs,
       contractor_can_download_spec_book_pdf: project.contractor_can_download_spec_book_pdf ?? false,
       contractor_spec_show_pricing: project.contractor_spec_show_pricing,
@@ -1160,6 +1168,7 @@ function ProjectAccessDialog({
               ["Spec Book Ready", form.client_can_view_spec_book, () => toggle("client_can_view_spec_book")],
               ["Presentations Ready", form.client_can_view_presentations, () => toggle("client_can_view_presentations")],
               ["Design Boards Ready", form.client_can_view_design_boards, () => toggle("client_can_view_design_boards")],
+              ["Can Download Design Board PDF", form.client_can_download_design_board_pdf, () => toggle("client_can_download_design_board_pdf")],
               ["Construction Docs Ready", form.client_can_view_construction_docs, () => toggle("client_can_view_construction_docs")],
               ["Can Download Construction Docs", form.client_can_download_construction_docs, () => toggle("client_can_download_construction_docs")],
               ["Can Download Spec Book PDF", form.client_can_download_spec_book_pdf, () => toggle("client_can_download_spec_book_pdf")],
@@ -1175,6 +1184,7 @@ function ProjectAccessDialog({
               ["Spec Book Ready", form.contractor_can_view_spec_book, () => toggle("contractor_can_view_spec_book")],
               ["Presentations Ready", form.contractor_can_view_presentations, () => toggle("contractor_can_view_presentations")],
               ["Design Boards Ready", form.contractor_can_view_design_boards, () => toggle("contractor_can_view_design_boards")],
+              ["Can Download Design Board PDF", form.contractor_can_download_design_board_pdf, () => toggle("contractor_can_download_design_board_pdf")],
               ["Construction Docs Ready", form.contractor_can_view_construction_docs, () => toggle("contractor_can_view_construction_docs")],
               ["Can Download Spec Book PDF", form.contractor_can_download_spec_book_pdf, () => toggle("contractor_can_download_spec_book_pdf")],
               ["Spec Shows Pricing", form.contractor_spec_show_pricing, () => toggle("contractor_spec_show_pricing")],

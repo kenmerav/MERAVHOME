@@ -93,6 +93,22 @@ export function canDownloadConstructionDocs(
   return isClientRole(profile.role) && project.client_can_download_construction_docs === true;
 }
 
+export function canDownloadDesignBoardPdf(
+  profile: Pick<UserProfile, "is_active" | "role"> | null | undefined,
+  project: Pick<
+    Project,
+    "client_can_download_design_board_pdf" | "contractor_can_download_design_board_pdf"
+  > | null | undefined,
+) {
+  if (!profile?.is_active || !project) return false;
+  if (isStudioTeamRole(profile.role)) return true;
+  if (isContractorRole(profile.role)) {
+    return project.contractor_can_download_design_board_pdf === true;
+  }
+  if (isClientRole(profile.role)) return project.client_can_download_design_board_pdf === true;
+  return false;
+}
+
 export type ProjectSurface = "specBook" | "presentations" | "designBoards" | "constructionDocs";
 
 export function canViewProjectSurface(

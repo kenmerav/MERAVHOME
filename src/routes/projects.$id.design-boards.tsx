@@ -62,7 +62,12 @@ import {
   toProductCategory,
   type ItemCategory,
 } from "@/lib/roomTemplates";
-import { canViewProjectSurface, isContractorRole, isStudioTeamRole } from "@/lib/permissions";
+import {
+  canDownloadDesignBoardPdf,
+  canViewProjectSurface,
+  isContractorRole,
+  isStudioTeamRole,
+} from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -735,6 +740,7 @@ function ProjectDesignBoardsPage() {
     canViewProjectSurface(profile, project, "designBoards");
   const canAskDesignBoardQuestion =
     profile?.is_active === true && isContractorRole(profile.role) && canViewDesignBoards;
+  const canDownloadBoardPdf = canDownloadDesignBoardPdf(profile, project);
   const {
     data: sharedBoard,
     isLoading: loadingSharedBoard,
@@ -3666,6 +3672,17 @@ function ProjectDesignBoardsPage() {
                   >
                     <MessageSquare className="h-3.5 w-3.5" />
                     Ask Question
+                  </button>
+                )}
+                {!canEditDesignBoards && canDownloadBoardPdf && (
+                  <button
+                    type="button"
+                    onClick={exportBoardPdf}
+                    disabled={exportingPdf || !pages.length}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-ink bg-white px-3 py-1 text-xs font-medium text-ink transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {exportingPdf ? "Preparing PDF..." : "Download PDF"}
                   </button>
                 )}
               </div>
