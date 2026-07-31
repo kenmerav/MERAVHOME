@@ -269,6 +269,7 @@ function RenderingStudioPage() {
   const queryClient = useQueryClient();
   const [sourceLabel, setSourceLabel] = useState("");
   const [uploadingSources, setUploadingSources] = useState(false);
+  const [extractingSourceId, setExtractingSourceId] = useState<string | null>(null);
   const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
   const [savingElevations, setSavingElevations] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
@@ -445,6 +446,22 @@ function RenderingStudioPage() {
       toast.error(error instanceof Error ? error.message : "Source removal failed.");
     } finally {
       setDeletingSourceId(null);
+    }
+  };
+
+  const extractSourcePages = async (source: StudioSource) => {
+    if (source.source_type !== "autocad_pdf" || extractingSourceId) return;
+    setExtractingSourceId(source.id);
+    try {
+      const result = await studioRequest<{ pageCount: number }>(id, "extract_autocad_pdf", {
+        sourceId: source.id,
+      });
+      toast.success(`Extracted ${result.pageCount} AutoCAD pages.`);
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "PDF pages could not be extracted.");
+    } finally {
+      setExtractingSourceId(null);
     }
   };
 
@@ -844,17 +861,34 @@ function RenderingStudioPage() {
                           {source.source_type.replaceAll("_", " ")}
                         </span>
                         {source.source_type === "autocad_pdf" && (
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 text-xs text-red-700 hover:text-red-900 disabled:opacity-50"
-                            aria-label={`Remove ${source.filename} and extracted pages`}
-                            title="Remove this PDF and its extracted pages"
-                            disabled={deletingSourceId !== null}
-                            onClick={() => removeSourceSet(source)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Remove PDF + pages
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-xs hover:text-foreground disabled:opacity-50"
+                              aria-label={`Extract pages from ${source.filename}`}
+                              title="Extract or refresh this PDF's AutoCAD pages"
+                              disabled={extractingSourceId !== null || deletingSourceId !== null}
+                              onClick={() => extractSourcePages(source)}
+                            >
+                              {extractingSourceId === source.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              )}
+                              Extract pages
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-xs text-red-700 hover:text-red-900 disabled:opacity-50"
+                              aria-label={`Remove ${source.filename} and extracted pages`}
+                              title="Remove this PDF and its extracted pages"
+                              disabled={extractingSourceId !== null || deletingSourceId !== null}
+                              onClick={() => removeSourceSet(source)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove PDF + pages
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
