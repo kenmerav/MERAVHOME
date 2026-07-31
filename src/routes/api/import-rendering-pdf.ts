@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { PDFParse } from "pdf-parse";
 import pdfWorkerSource from "pdfjs-dist/legacy/build/pdf.worker.mjs?raw";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { ensurePdfJsServerGlobals } from "@/lib/pdfJsServerGlobals";
 import {
   ROOM_IMAGE_BUCKET,
   uploadRoomImageBufferAtPath,
@@ -128,6 +129,7 @@ async function downloadSourcePdf(projectId: string, path: string) {
 }
 
 async function createPdfParser(data: Buffer) {
+  await ensurePdfJsServerGlobals();
   const { PDFParse } = await import("pdf-parse");
   PDFParse.setWorker(
     `data:text/javascript;base64,${Buffer.from(pdfWorkerSource).toString("base64")}`,
