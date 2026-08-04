@@ -815,7 +815,7 @@ export const db = {
     const { data: materialRows, error: materialError } = await supabase
       .from("material_items")
       .select(
-        "*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status))",
+        "*, product:products(*), room:rooms!material_items_room_id_fkey(*, project:projects(id, name, client_name, status))",
       )
       .not("product_id", "is", null)
       .order("updated_at", { ascending: false });
