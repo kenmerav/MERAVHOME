@@ -812,24 +812,37 @@ export const db = {
 
   /* PROCUREMENT */
   listProcurement: async () => {
-    const { data: materialRows, error: materialError } = await supabase
-      .from("material_items")
-      .select(
-        "*, product:products(*), room:rooms!material_items_room_id_fkey(*, project:projects(id, name, client_name, status))",
-      )
-      .not("product_id", "is", null)
-      .order("updated_at", { ascending: false });
-    if (materialError) throw materialError;
+    const pageSize = 1000;
+    const materialRows: any[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("material_items")
+        .select(
+          "*, product:products(*), room:rooms!material_items_room_id_fkey(*, project:projects(id, name, client_name, status))",
+        )
+        .not("product_id", "is", null)
+        .order("updated_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      materialRows.push(...(data ?? []));
+      if (!data || data.length < pageSize) break;
+    }
 
     // Keep legacy procurement IDs available so existing product invoices still
     // recognize their source rows. Materials remain the source of truth.
-    const { data: legacyRows, error: legacyError } = await supabase
-      .from("procurement_items")
-      .select(
-        "*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status)))",
-      )
-      .order("updated_at", { ascending: false });
-    if (legacyError) throw legacyError;
+    const legacyRows: any[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("procurement_items")
+        .select(
+          "*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status)))",
+        )
+        .order("updated_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      legacyRows.push(...(data ?? []));
+      if (!data || data.length < pageSize) break;
+    }
 
     const legacyItems = (legacyRows ?? []) as Array<
       ProcurementItem & {
