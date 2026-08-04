@@ -13,6 +13,7 @@ import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
 
 type ProcurementMaterialDetails = {
   id: string;
@@ -40,6 +41,20 @@ function externalHref(value?: string | null) {
     return `https://${trimmed}`;
   }
   return null;
+}
+
+function procurementVendor(item: {
+  material?: ProcurementMaterialDetails | null;
+  room_product?: {
+    product?: { product_url?: string | null; vendor?: string | null } | null;
+  } | null;
+}) {
+  const product = item.room_product?.product;
+  return (
+    inferVendorFromUrl(item.material?.product_url || product?.product_url) ||
+    product?.vendor ||
+    ""
+  );
 }
 
 function NeedsReselectionBadge() {
@@ -147,7 +162,7 @@ function ProcurementPage() {
   const vendorOptions = useMemo(() => {
     const set = new Set<string>();
     projectItems.forEach((item) => {
-      const vendor = item.room_product?.product?.vendor;
+      const vendor = procurementVendor(item);
       if (vendor) set.add(vendor);
     });
     return Array.from(set).sort();
@@ -189,7 +204,7 @@ function ProcurementPage() {
           return false;
         if (
           vendorFilters.length > 0 &&
-          (!product?.vendor || !vendorFilters.includes(product.vendor))
+          !vendorFilters.includes(procurementVendor(item))
         )
           return false;
         if (approvalFilter === "needs_reselection" && item.room_product?.approval_status !== "declined") {
@@ -545,7 +560,7 @@ function ProcurementPage() {
                     </td>
                     <td className="px-3 py-3 text-xs">
                       <EditableTextCell
-                        value={p?.vendor ?? ""}
+                        value={procurementVendor(item)}
                         disabled={!p?.id}
                         placeholder="Vendor"
                         onSave={(value) =>
