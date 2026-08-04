@@ -201,8 +201,12 @@ function ProcurementPage() {
     [approvalFilter, projectItems, roomFilters, categoryFilters, selectedInvoiceItemIds, vendorFilters],
   );
 
-  const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
-    await db.updateProcurement(id, { [key]: value });
+  const toggle = async (
+    materialItemId: string,
+    key: "ordered" | "received" | "installed",
+    value: boolean,
+  ) => {
+    await db.updateProcurement(materialItemId, { [key]: value });
     qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
@@ -630,7 +634,7 @@ function ProcurementPage() {
                         <div className="flex justify-center">
                           <button
                             disabled={needsReselection}
-                            onClick={() => toggle(item.id, k, !item[k])}
+                            onClick={() => m?.id && toggle(m.id, k, !item[k])}
                             className={cn(
                               "w-6 h-6 border flex items-center justify-center transition-colors",
                               needsReselection && "cursor-not-allowed opacity-40",

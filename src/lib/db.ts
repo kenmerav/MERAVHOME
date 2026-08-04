@@ -345,6 +345,9 @@ export interface MaterialItem {
   not_needed: boolean;
   ordered_by?: "Contractor" | "Merav" | "Client" | null;
   ordered?: boolean;
+  received?: boolean;
+  installed?: boolean;
+  procurement_notes?: string | null;
   product_id: string | null;
   source_board_id: string | null;
   source_board_page_id: string | null;
@@ -809,13 +812,27 @@ export const db = {
 
   /* PROCUREMENT */
   listProcurement: async () => {
-    const { data } = await supabase
+    const { data: materialRows, error: materialError } = await supabase
+      .from("material_items")
+      .select(
+        "*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status))",
+      )
+      .eq("not_needed", false)
+      .not("product_id", "is", null)
+      .order("updated_at", { ascending: false });
+    if (materialError) throw materialError;
+
+    // Keep legacy procurement IDs available so existing product invoices still
+    // recognize their source rows. Materials remain the source of truth.
+    const { data: legacyRows, error: legacyError } = await supabase
       .from("procurement_items")
       .select(
         "*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status)))",
       )
       .order("updated_at", { ascending: false });
-    const items = (data ?? []) as Array<
+    if (legacyError) throw legacyError;
+
+    const legacyItems = (legacyRows ?? []) as Array<
       ProcurementItem & {
         room_product: RoomProduct & {
           product: Product;
@@ -824,25 +841,53 @@ export const db = {
       }
     >;
 
-    // Enrich with material_item details (qty / color / link / cad)
-    const pairs = items
-      .map((i) => ({ room_id: i.room_product?.room?.id, product_id: i.room_product?.product?.id }))
-      .filter((p) => p.room_id && p.product_id);
-    if (pairs.length) {
-      const productIds = Array.from(new Set(pairs.map((p) => p.product_id!)));
-      const { data: mats } = await supabase
-        .from("material_items")
-        .select(
-          "id, room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes",
-        )
-        .in("product_id", productIds);
-      const matMap = new Map<string, any>();
-      (mats ?? []).forEach((m: any) => matMap.set(`${m.room_id}::${m.product_id}`, m));
-      items.forEach((i: any) => {
-        const key = `${i.room_product?.room?.id}::${i.room_product?.product?.id}`;
-        i.material = matMap.get(key) ?? null;
+    const legacyByPair = new Map<string, typeof legacyItems>();
+    legacyItems.forEach((item) => {
+      const roomId = item.room_product?.room?.id;
+      const productId = item.room_product?.product?.id;
+      if (!roomId || !productId) return;
+      const key = `${roomId}::${productId}`;
+      const matches = legacyByPair.get(key) ?? [];
+      matches.push(item);
+      legacyByPair.set(key, matches);
+    });
+
+    const items = (materialRows ?? [])
+      .filter((material: any) => material.product_id && material.product && material.room)
+      .map((material: any) => {
+        const key = `${material.room_id}::${material.product_id}`;
+        const legacy = legacyByPair.get(key)?.shift() ?? null;
+        const roomProduct = legacy?.room_product ?? {
+          id: `material-${material.id}`,
+          room_id: material.room_id,
+          product_id: material.product_id,
+          is_key_selection: false,
+          sort_order: material.sort_order ?? 0,
+          room_notes: null,
+          approved: false,
+          approval_status: "undecided" as ApprovalStatus,
+          approval_comment: null,
+          approval_updated_at: null,
+          approval_visible: true,
+        };
+
+        return {
+          id: legacy?.id ?? material.id,
+          room_product_id: roomProduct.id,
+          ordered: Boolean(material.ordered || legacy?.ordered),
+          received: Boolean(material.received || legacy?.received),
+          installed: Boolean(material.installed || legacy?.installed),
+          notes: material.procurement_notes ?? legacy?.notes ?? null,
+          updated_at: material.updated_at,
+          material,
+          room_product: {
+            ...roomProduct,
+            product: material.product,
+            room: material.room,
+          },
+        };
       });
-    }
+
     return items as Array<
       ProcurementItem & {
         room_product: RoomProduct & {
@@ -861,8 +906,17 @@ export const db = {
       }
     >;
   },
-  updateProcurement: async (id: string, p: Partial<ProcurementItem>) =>
-    supabase.from("procurement_items").update(p).eq("id", id),
+  updateProcurement: async (materialItemId: string, p: Partial<ProcurementItem>) => {
+    const patch: Record<string, unknown> = {};
+    if ("ordered" in p) patch.ordered = p.ordered;
+    if ("received" in p) patch.received = p.received;
+    if ("installed" in p) patch.installed = p.installed;
+    if ("notes" in p) patch.procurement_notes = p.notes;
+    return supabase
+      .from("material_items" as any)
+      .update(patch)
+      .eq("id", materialItemId);
+  },
 
   /* MATERIAL ITEMS (guided checklist) */
   listMaterialItemsByProject: async (projectId: string) => {
