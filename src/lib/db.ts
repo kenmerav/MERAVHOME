@@ -767,6 +767,15 @@ export const db = {
   },
   getProduct: async (id: string) =>
     (await supabase.from("products").select("*").eq("id", id).maybeSingle()).data as Product | null,
+  listProductsByUrl: async (productUrl: string) =>
+    (
+      await supabase
+        .from("products")
+        .select("*")
+        .eq("product_url", productUrl)
+        .order("updated_at", { ascending: false })
+        .limit(25)
+    ).data as Product[] | null,
   createProduct: async (
     p: Partial<Omit<Product, "id" | "created_at" | "updated_at">> &
       Pick<Product, "name" | "category">,

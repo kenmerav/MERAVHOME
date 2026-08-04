@@ -993,6 +993,47 @@ function RoomMaterialsSection({
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
 
+  const ensureProductConnection = async (item: MaterialItem, productUrl: string) => {
+    const url = productUrl.trim();
+    if (!url || item.product_id) return;
+
+    const matchingProducts = (await db.listProductsByUrl(url)) ?? [];
+    const normalizedColor = item.color?.trim().toLocaleLowerCase() ?? "";
+    const product =
+      matchingProducts.find((candidate) => {
+        const finish = candidate.finish?.trim().toLocaleLowerCase() ?? "";
+        return normalizedColor ? finish === normalizedColor : true;
+      }) ??
+      (await db.createProduct({
+        name: item.item_label.trim() || item.client_product_name?.trim() || "Untitled product",
+        ...productCategoryPatchForMaterialCategory(item.category),
+        product_url: url,
+        image_url: item.image_url || null,
+        finish: item.color || null,
+      }));
+
+    if (!product) throw new Error("Could not create the linked catalog product.");
+
+    const materialResult = await db.updateMaterialItem(item.id, {
+      product_id: product.id,
+      product_url: url,
+      not_needed: false,
+    });
+    if (materialResult.error) throw materialResult.error;
+
+    const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+    if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
+      await db.addRoomProduct({
+        room_id: room.id,
+        product_id: product.id,
+        is_key_selection: false,
+      });
+    }
+
+    qc.invalidateQueries({ queryKey: ["catalog"] });
+    qc.invalidateQueries({ queryKey: ["product", product.id] });
+  };
+
   const activateSuggestion = async (
     suggestion: MaterialSuggestion,
     productUrl: string | null,
@@ -1083,7 +1124,18 @@ function RoomMaterialsSection({
   const update = async (id: string, patch: Partial<MaterialItem>) => {
     if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
     const currentItem = activeItems.find((item) => item.id === id);
-    await db.updateMaterialItem(id, patch);
+    if (!currentItem) return toast.error("Could not find this material item.");
+
+    try {
+      const result = await db.updateMaterialItem(id, patch);
+      if (result.error) throw result.error;
+      if (typeof patch.product_url === "string" && patch.product_url.trim()) {
+        await ensureProductConnection(currentItem, patch.product_url);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save this material item.");
+      return;
+    }
     if (
       typeof patch.category === "string" &&
       currentItem?.product_id &&
