@@ -9,6 +9,7 @@ const MARVIN_EMAILS = new Set([
   "ken@meravinteriors.com",
   "katie@meravinteriors.com",
 ]);
+const PROCUREMENT_CART_BUILDER_EMAILS = new Set(["ken@meravinteriors.com"]);
 
 export const OVERALL_ADMIN_EMAILS = FINANCIAL_EMAILS;
 
@@ -21,6 +22,12 @@ export const canManageHours = canViewFinancials;
 
 export function canUseMarvin(profile?: Pick<UserProfile, "email" | "is_active"> | null) {
   return !!profile?.is_active && MARVIN_EMAILS.has(profile.email.toLowerCase());
+}
+
+export function canUseProcurementCartBuilder(
+  profile?: Pick<UserProfile, "email" | "is_active"> | null,
+) {
+  return !!profile?.is_active && PROCUREMENT_CART_BUILDER_EMAILS.has(profile.email.toLowerCase());
 }
 
 export function isContractorRole(role?: string | null) {

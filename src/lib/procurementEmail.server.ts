@@ -13,7 +13,7 @@ import {
   KEN_PROCUREMENT_EMAIL,
   type ProcurementEmailDraft,
 } from "@/lib/procurementCart";
-import { isStudioTeamRole } from "@/lib/permissions";
+import { canUseProcurementCartBuilder } from "@/lib/permissions";
 import { authorizeProcurementRun } from "@/lib/procurementRuns.server";
 
 const admin = supabaseAdmin as any;
@@ -48,8 +48,8 @@ export async function requireProcurementEmailUser(
     .eq("id", userData.user.id)
     .maybeSingle();
   if (profileError) throw profileError;
-  if (!profile?.is_active || !isStudioTeamRole(profile.role)) {
-    return { error: json({ error: "Procurement email is for the Studio team only." }, 403) };
+  if (!canUseProcurementCartBuilder(profile)) {
+    return { error: json({ error: "Procurement email is available to Ken only." }, 403) };
   }
   return {
     user: { id: userData.user.id, email: userData.user.email },
