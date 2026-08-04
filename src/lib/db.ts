@@ -817,7 +817,6 @@ export const db = {
       .select(
         "*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status))",
       )
-      .eq("not_needed", false)
       .not("product_id", "is", null)
       .order("updated_at", { ascending: false });
     if (materialError) throw materialError;
@@ -853,7 +852,10 @@ export const db = {
     });
 
     const items = (materialRows ?? [])
-      .filter((material: any) => material.product_id && material.product && material.room)
+      .filter(
+        (material: any) =>
+          !material.not_needed && material.product_id && material.product && material.room,
+      )
       .map((material: any) => {
         const key = `${material.room_id}::${material.product_id}`;
         const legacy = legacyByPair.get(key)?.shift() ?? null;
