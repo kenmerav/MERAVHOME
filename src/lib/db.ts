@@ -703,12 +703,20 @@ export const db = {
 
   /* PROCUREMENT */
   listProcurement: async () => {
-    const { data } = await supabase
-      .from("procurement_items")
-      .select(
-        "*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status)))",
-      )
-      .order("updated_at", { ascending: false });
+    const pageSize = 1000;
+    const data: any[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data: page, error } = await supabase
+        .from("procurement_items")
+        .select(
+          "*, room_product:room_products(*, product:products(*), room:rooms(*, project:projects(id, name, client_name, status)))",
+        )
+        .order("updated_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      data.push(...(page ?? []));
+      if ((page?.length ?? 0) < pageSize) break;
+    }
     const items = (data ?? []) as Array<
       ProcurementItem & {
         room_product: RoomProduct & {
@@ -724,14 +732,25 @@ export const db = {
       .filter((p) => p.room_id && p.product_id);
     if (pairs.length) {
       const productIds = Array.from(new Set(pairs.map((p) => p.product_id!)));
-      const { data: mats } = await supabase
-        .from("material_items")
-        .select(
-          "id, room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes",
-        )
-        .in("product_id", productIds);
+      const mats: any[] = [];
+      const productChunkSize = 200;
+      for (let start = 0; start < productIds.length; start += productChunkSize) {
+        const productIdChunk = productIds.slice(start, start + productChunkSize);
+        for (let from = 0; ; from += pageSize) {
+          const { data: page, error } = await supabase
+            .from("material_items")
+            .select(
+              "id, room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes",
+            )
+            .in("product_id", productIdChunk)
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          mats.push(...(page ?? []));
+          if ((page?.length ?? 0) < pageSize) break;
+        }
+      }
       const matMap = new Map<string, any>();
-      (mats ?? []).forEach((m: any) => matMap.set(`${m.room_id}::${m.product_id}`, m));
+      mats.forEach((m: any) => matMap.set(`${m.room_id}::${m.product_id}`, m));
       items.forEach((i: any) => {
         const key = `${i.room_product?.room?.id}::${i.room_product?.product?.id}`;
         i.material = matMap.get(key) ?? null;
