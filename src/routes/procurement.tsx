@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice } from "@/lib/db";
-import { AlertTriangle, Check, ChevronDown, ExternalLink } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
-import { formatMoney, normalizeMoneyInput, procurementTotals } from "@/lib/money";
+import { formatMoney, moneyValue, normalizeMoneyInput, procurementTotals } from "@/lib/money";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -210,12 +210,15 @@ function ProcurementPage() {
     qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
-  const updateProductMoney = async (
+  const updateProductPricing = async (
     productId: string,
-    key: "price" | "unit_cost" | "shipping",
-    value: string,
+    values: { price: string; unit_cost: string; shipping: string },
   ) => {
-    await db.updateProduct(productId, { [key]: normalizeMoneyInput(value) });
+    await db.updateProduct(productId, {
+      price: normalizeMoneyInput(values.price),
+      unit_cost: normalizeMoneyInput(values.unit_cost),
+      shipping: normalizeMoneyInput(values.shipping),
+    });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["product", productId] });
@@ -305,8 +308,8 @@ function ProcurementPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <MoneyStat label="Client Cost" value={money.client} />
-          <MoneyStat label="Costs" value={money.cost} />
+          <MoneyStat label="Client Price Total" value={money.client} />
+          <MoneyStat label="Studio Cost Total" value={money.cost} />
           <MoneyStat label="Tax" value={money.tax}>
             <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
               Rate
@@ -319,7 +322,7 @@ function ProcurementPage() {
               %
             </label>
           </MoneyStat>
-          <MoneyStat label="Shipping" value={money.shipping} />
+          <MoneyStat label="Shipping Total" value={money.shipping} />
           <MoneyStat label="Profit" value={money.profit} />
         </div>
 
@@ -464,9 +467,7 @@ function ProcurementPage() {
                 <th className="px-3 py-3 text-center w-[60px]">Qty</th>
                 <th className="px-3 py-3">Color</th>
                 <th className="px-3 py-3">Dimensions</th>
-                <th className="px-3 py-3 text-right">Client Price</th>
-                <th className="px-3 py-3 text-right">Unit Cost</th>
-                <th className="px-3 py-3 text-right">Shipping</th>
+                <th className="px-3 py-3 min-w-[190px]">Pricing</th>
                 <th className="px-3 py-3">Project · Room</th>
                 <th className="px-3 py-3 text-center w-[70px]">Ordered</th>
                 <th className="px-3 py-3 text-center w-[70px]">Received</th>
@@ -476,7 +477,7 @@ function ProcurementPage() {
             <tbody>
               {visibleItems.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="py-20 text-center text-sm text-muted-foreground">
+                  <td colSpan={11} className="py-20 text-center text-sm text-muted-foreground">
                     No procurement items for this view yet. Add products to a room to populate.
                   </td>
                 </tr>
@@ -604,25 +605,16 @@ function ProcurementPage() {
                         }
                       />
                     </td>
-                    <td className="px-3 py-3 text-right text-xs">
-                      <EditableMoneyCell
-                        value={p?.price ?? ""}
+                    <td className="px-3 py-3 text-xs">
+                      <PricingEditor
+                        productName={clientName}
+                        price={p?.price ?? ""}
+                        unitCost={p?.unit_cost ?? ""}
+                        shipping={p?.shipping ?? ""}
                         disabled={!p?.id}
-                        onSave={(value) => p?.id && updateProductMoney(p.id, "price", value)}
-                      />
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs">
-                      <EditableMoneyCell
-                        value={p?.unit_cost ?? ""}
-                        disabled={!p?.id}
-                        onSave={(value) => p?.id && updateProductMoney(p.id, "unit_cost", value)}
-                      />
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs">
-                      <EditableMoneyCell
-                        value={p?.shipping ?? ""}
-                        disabled={!p?.id}
-                        onSave={(value) => p?.id && updateProductMoney(p.id, "shipping", value)}
+                        onSave={(values) =>
+                          p?.id ? updateProductPricing(p.id, values) : Promise.resolve()
+                        }
                       />
                     </td>
                     <td className="px-3 py-3 text-xs text-muted-foreground">
@@ -659,63 +651,156 @@ function ProcurementPage() {
   );
 }
 
-function EditableMoneyCell({
-  value,
+function PricingEditor({
+  productName,
+  price,
+  unitCost,
+  shipping,
   disabled,
   onSave,
 }: {
-  value: string;
+  productName: string;
+  price: string;
+  unitCost: string;
+  shipping: string;
   disabled?: boolean;
-  onSave: (value: string) => Promise<void>;
+  onSave: (values: { price: string; unit_cost: string; shipping: string }) => Promise<void>;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(() => ({
+    price: moneyDraft(price),
+    unit_cost: moneyDraft(unitCost),
+    shipping: moneyDraft(shipping),
+  }));
 
   useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [editing, value]);
+    if (!open) {
+      setDraft({
+        price: moneyDraft(price),
+        unit_cost: moneyDraft(unitCost),
+        shipping: moneyDraft(shipping),
+      });
+    }
+  }, [open, price, shipping, unitCost]);
 
   const save = async () => {
-    const next = normalizeMoneyInput(draft) ?? "";
-    const current = normalizeMoneyInput(value) ?? "";
-    setEditing(false);
-    if (next === current) return;
-    await onSave(next);
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setEditing(true)}
-        className={cn(
-          "min-w-20 text-right underline-offset-4",
-          disabled ? "text-muted-foreground" : "hover:underline hover:text-ink",
-        )}
-        title={disabled ? undefined : "Click to edit"}
-      >
-        {normalizeMoneyInput(value) || "—"}
-      </button>
-    );
-  }
-
   return (
-    <input
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          setDraft(value);
-          setEditing(false);
-        }
-      }}
-      className="h-8 w-24 border border-input bg-background px-2 text-right text-xs"
-      placeholder="$0.00"
-    />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "min-w-[170px] border border-border bg-background px-3 py-2 text-left transition-colors",
+            disabled ? "cursor-not-allowed text-muted-foreground" : "hover:border-ink",
+          )}
+          title={disabled ? undefined : "Edit client price, studio cost, and shipping"}
+        >
+          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            <DollarSign className="h-3 w-3" /> Edit Pricing
+          </span>
+          <PricingSummary label="Client" value={price} />
+          <PricingSummary label="Studio Cost" value={unitCost} />
+          <PricingSummary label="Shipping" value={shipping} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-4" align="start">
+        <div className="mb-4">
+          <div className="eyebrow mb-1">Edit Pricing</div>
+          <div className="font-display text-lg leading-tight">{productName}</div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            These values also update the Product Catalog.
+          </p>
+        </div>
+        <div className="space-y-3">
+          <MoneyInput
+            label="Client Price"
+            value={draft.price}
+            onChange={(value) => setDraft((current) => ({ ...current, price: value }))}
+          />
+          <MoneyInput
+            label="Studio Cost"
+            value={draft.unit_cost}
+            onChange={(value) => setDraft((current) => ({ ...current, unit_cost: value }))}
+          />
+          <MoneyInput
+            label="Shipping"
+            value={draft.shipping}
+            onChange={(value) => setDraft((current) => ({ ...current, shipping: value }))}
+          />
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="h-9 border border-border px-4 text-xs"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="h-9 bg-ink px-4 text-xs text-primary-foreground disabled:opacity-60"
+          >
+            {saving ? "Saving..." : "Save Pricing"}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function moneyDraft(value: string) {
+  return value.replace(/[^0-9.-]/g, "");
+}
+
+function displayMoney(value: string) {
+  return value.trim() ? formatMoney(moneyValue(value)) : "—";
+}
+
+function PricingSummary({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="flex items-center justify-between gap-3 text-xs leading-5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-ink">{displayMoney(value)}</span>
+    </span>
+  );
+}
+
+function MoneyInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="eyebrow mb-1.5 block">{label}</span>
+      <span className="flex h-10 items-center border border-input bg-background focus-within:border-ink">
+        <span className="px-3 text-sm text-muted-foreground">$</span>
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          inputMode="decimal"
+          className="h-full min-w-0 flex-1 bg-transparent pr-3 text-right text-sm outline-none"
+          placeholder="0.00"
+        />
+      </span>
+    </label>
   );
 }
 
