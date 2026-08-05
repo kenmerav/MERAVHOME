@@ -740,7 +740,7 @@ export const db = {
           const { data: page, error } = await supabase
             .from("material_items")
             .select(
-              "id, room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes",
+              "id, room_id, product_id, client_product_name, quantity, color, product_url, cad_label, notes, ordered_by, ordered",
             )
             .in("product_id", productIdChunk)
             .range(from, from + pageSize - 1);
@@ -770,6 +770,8 @@ export const db = {
           product_url: string | null;
           cad_label: string | null;
           notes: string | null;
+          ordered_by: MaterialItem["ordered_by"];
+          ordered: boolean | null;
         } | null;
       }
     >;

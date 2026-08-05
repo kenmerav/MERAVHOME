@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
-import { db, type FinancialInvoice } from "@/lib/db";
+import { db, type FinancialInvoice, type MaterialItem } from "@/lib/db";
 import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +13,8 @@ import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { inferVendorFromUrl } from "@/lib/vendorInference";
+import { toast } from "sonner";
 
 type ProcurementMaterialDetails = {
   id: string;
@@ -21,7 +23,11 @@ type ProcurementMaterialDetails = {
   color: string | null;
   product_url: string | null;
   cad_label: string | null;
+  ordered_by: MaterialItem["ordered_by"];
+  ordered: boolean | null;
 };
+
+type OrderingFilter = "merav_queue" | "merav" | "unassigned" | "contractor" | "client" | "all";
 
 type ProductInvoiceSummary = {
   id: string;
@@ -40,6 +46,20 @@ function externalHref(value?: string | null) {
     return `https://${trimmed}`;
   }
   return null;
+}
+
+function procurementVendor(item: {
+  material?: ProcurementMaterialDetails | null;
+  room_product?: {
+    product?: { product_url?: string | null; vendor?: string | null } | null;
+  } | null;
+}) {
+  const product = item.room_product?.product;
+  return (
+    inferVendorFromUrl(item.material?.product_url || product?.product_url) ||
+    product?.vendor ||
+    ""
+  );
 }
 
 function NeedsReselectionBadge() {
@@ -68,6 +88,9 @@ function ProcurementPage() {
   const [vendorFilters, setVendorFilters] = useState<string[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState("__all");
   const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
+  const [orderingFilter, setOrderingFilter] = useState<OrderingFilter>("merav_queue");
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [bulkOrderedBy, setBulkOrderedBy] = useState<MaterialItem["ordered_by"] | "none">("Merav");
   const [taxRate, setTaxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -117,6 +140,8 @@ function ProcurementPage() {
     setVendorFilters([]);
     setInvoiceFilter("__all");
     setApprovalFilter("all");
+    setOrderingFilter("merav_queue");
+    setSelectedItemIds([]);
   }, [search.project]);
 
   const projectItems =
@@ -147,7 +172,7 @@ function ProcurementPage() {
   const vendorOptions = useMemo(() => {
     const set = new Set<string>();
     projectItems.forEach((item) => {
-      const vendor = item.room_product?.product?.vendor;
+      const vendor = procurementVendor(item);
       if (vendor) set.add(vendor);
     });
     return Array.from(set).sort();
@@ -189,21 +214,70 @@ function ProcurementPage() {
           return false;
         if (
           vendorFilters.length > 0 &&
-          (!product?.vendor || !vendorFilters.includes(product.vendor))
+          !vendorFilters.includes(procurementVendor(item))
         )
           return false;
         if (approvalFilter === "needs_reselection" && item.room_product?.approval_status !== "declined") {
           return false;
         }
+        const orderedBy = item.material?.ordered_by ?? null;
+        if (orderingFilter === "merav_queue" && orderedBy && orderedBy !== "Merav") return false;
+        if (orderingFilter === "merav" && orderedBy !== "Merav") return false;
+        if (orderingFilter === "unassigned" && orderedBy) return false;
+        if (orderingFilter === "contractor" && orderedBy !== "Contractor") return false;
+        if (orderingFilter === "client" && orderedBy !== "Client") return false;
         if (selectedInvoiceItemIds && !selectedInvoiceItemIds.has(item.id)) return false;
         return true;
       }),
-    [approvalFilter, projectItems, roomFilters, categoryFilters, selectedInvoiceItemIds, vendorFilters],
+    [approvalFilter, projectItems, roomFilters, categoryFilters, orderingFilter, selectedInvoiceItemIds, vendorFilters],
   );
 
-  const toggle = async (id: string, key: "ordered" | "received" | "installed", value: boolean) => {
-    await db.updateProcurement(id, { [key]: value });
+  const toggle = async (
+    item: (typeof procurementItems)[number],
+    key: "ordered" | "received" | "installed",
+    value: boolean,
+  ) => {
+    await db.updateProcurement(item.id, { [key]: value });
+    if (key === "ordered" && item.material?.id) {
+      await db.updateMaterialItem(item.material.id, { ordered: value });
+      qc.invalidateQueries({ queryKey: ["materialItems", item.room_product?.room?.project?.id] });
+    }
     qc.invalidateQueries({ queryKey: ["procurement"] });
+  };
+
+  const updateOrderedBy = async (
+    materialId: string,
+    value: MaterialItem["ordered_by"] | "none",
+  ) => {
+    await db.updateMaterialItem(materialId, {
+      ordered_by: value === "none" ? null : value,
+    });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
+    qc.invalidateQueries({ queryKey: ["materialItems"] });
+  };
+
+  const selectableVisibleIds = visibleItems
+    .filter((item) => item.material?.id)
+    .map((item) => item.id);
+  const allVisibleSelected =
+    selectableVisibleIds.length > 0 && selectableVisibleIds.every((id) => selectedItemIds.includes(id));
+
+  const applyBulkOrderedBy = async () => {
+    const selectedItems = visibleItems.filter(
+      (item) => selectedItemIds.includes(item.id) && item.material?.id,
+    );
+    if (!selectedItems.length) return toast.error("Select at least one item first.");
+    await Promise.all(
+      selectedItems.map((item) =>
+        db.updateMaterialItem(item.material!.id, {
+          ordered_by: bulkOrderedBy === "none" ? null : bulkOrderedBy,
+        }),
+      ),
+    );
+    setSelectedItemIds([]);
+    qc.invalidateQueries({ queryKey: ["procurement"] });
+    qc.invalidateQueries({ queryKey: ["materialItems"] });
+    toast.success(`Updated who is ordering ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}.`);
   };
 
   const updateProductPricing = async (
@@ -251,7 +325,7 @@ function ProcurementPage() {
   };
 
   const total = visibleItems.length;
-  const ordered = visibleItems.filter((i) => i.ordered).length;
+  const ordered = visibleItems.filter((i) => i.material?.ordered ?? i.ordered).length;
   const received = visibleItems.filter((i) => i.received).length;
   const installed = visibleItems.filter((i) => i.installed).length;
   const approvedVisibleItems = visibleItems.filter(
@@ -394,6 +468,24 @@ function ProcurementPage() {
               ))}
             </select>
           </div>
+          <div className="w-full sm:min-w-[230px] sm:w-auto">
+            <label className="eyebrow block mb-2">Who Is Ordering</label>
+            <select
+              value={orderingFilter}
+              onChange={(e) => {
+                setOrderingFilter(e.target.value as OrderingFilter);
+                setSelectedItemIds([]);
+              }}
+              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="merav_queue">MERAV Queue · MERAV + Not Set</option>
+              <option value="merav">MERAV Only</option>
+              <option value="unassigned">Not Assigned</option>
+              <option value="contractor">GC / Contractor</option>
+              <option value="client">Client</option>
+              <option value="all">All Items</option>
+            </select>
+          </div>
           {needsReselectionCount > 0 && (
             <div className="w-full sm:w-auto">
               <label className="eyebrow block mb-2">Approval</label>
@@ -453,10 +545,55 @@ function ProcurementPage() {
           </div>
         </div>
 
+        <div className="mb-3 flex flex-wrap items-center gap-3 border border-border bg-bone/25 px-4 py-3">
+          <label className="inline-flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={(event) =>
+                setSelectedItemIds(event.target.checked ? selectableVisibleIds : [])
+              }
+              className="h-4 w-4 accent-ink"
+            />
+            Select all filtered items
+          </label>
+          <span className="text-xs text-muted-foreground">{selectedItemIds.length} selected</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Assign Ordering
+            </label>
+            <select
+              value={bulkOrderedBy ?? "none"}
+              onChange={(event) =>
+                setBulkOrderedBy(
+                  event.target.value === "none"
+                    ? "none"
+                    : (event.target.value as MaterialItem["ordered_by"]),
+                )
+              }
+              className="h-9 border border-input bg-background px-3 text-xs"
+            >
+              <option value="Merav">MERAV</option>
+              <option value="Contractor">GC / Contractor</option>
+              <option value="Client">Client</option>
+              <option value="none">Not Assigned</option>
+            </select>
+            <button
+              type="button"
+              onClick={applyBulkOrderedBy}
+              disabled={selectedItemIds.length === 0}
+              className="h-9 bg-ink px-4 text-xs text-primary-foreground disabled:opacity-40"
+            >
+              Apply to Selected
+            </button>
+          </div>
+        </div>
+
         <div className="mobile-card-scroll border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] tracking-[0.15em] uppercase text-muted-foreground border-b border-border bg-bone/30">
+                <th className="px-3 py-3 w-[44px]"></th>
                 <th className="px-3 py-3 min-w-[240px]">Client Product Name</th>
                 <th className="px-3 py-3">Vendor</th>
                 <th className="px-3 py-3">Link</th>
@@ -465,6 +602,7 @@ function ProcurementPage() {
                 <th className="px-3 py-3">Dimensions</th>
                 <th className="px-3 py-3 min-w-[190px]">Pricing</th>
                 <th className="px-3 py-3">Project · Room</th>
+                <th className="px-3 py-3 min-w-[130px]">Ordered By</th>
                 <th className="px-3 py-3 text-center w-[70px]">Ordered</th>
                 <th className="px-3 py-3 text-center w-[70px]">Received</th>
                 <th className="px-3 py-3 text-center w-[70px]">Installed</th>
@@ -473,7 +611,7 @@ function ProcurementPage() {
             <tbody>
               {visibleItems.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="py-20 text-center text-sm text-muted-foreground">
+                  <td colSpan={13} className="py-20 text-center text-sm text-muted-foreground">
                     No procurement items for this view yet. Add products to a room to populate.
                   </td>
                 </tr>
@@ -493,6 +631,24 @@ function ProcurementPage() {
                 const needsReselection = item.room_product?.approval_status === "declined";
                 return (
                   <tr key={item.id} className={cn("border-b border-border align-top", needsReselection && "bg-red-50/35")}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedItemIds.includes(item.id)}
+                        disabled={!m?.id}
+                        onChange={(event) =>
+                          setSelectedItemIds((current) =>
+                            event.target.checked
+                              ? current.includes(item.id)
+                                ? current
+                                : [...current, item.id]
+                              : current.filter((id) => id !== item.id),
+                          )
+                        }
+                        className="h-4 w-4 accent-ink disabled:opacity-30"
+                        aria-label={`Select ${clientName}`}
+                      />
+                    </td>
                     <td className="px-3 py-3">
                       <div className="flex items-start gap-3 text-left">
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
@@ -546,7 +702,7 @@ function ProcurementPage() {
                     </td>
                     <td className="px-3 py-3 text-xs">
                       <EditableTextCell
-                        value={p?.vendor ?? ""}
+                        value={procurementVendor(item)}
                         disabled={!p?.id}
                         placeholder="Vendor"
                         onSave={(value) =>
@@ -617,21 +773,53 @@ function ProcurementPage() {
                       <div className="truncate max-w-[140px]">{r?.project?.name}</div>
                       <div className="text-ink truncate max-w-[140px]">{r?.name}</div>
                     </td>
+                    <td className="px-3 py-3 text-xs">
+                      <select
+                        value={m?.ordered_by ?? "none"}
+                        disabled={!m?.id}
+                        onChange={(event) =>
+                          m?.id
+                            ? updateOrderedBy(
+                                m.id,
+                                event.target.value === "none"
+                                  ? "none"
+                                  : (event.target.value as MaterialItem["ordered_by"]),
+                              )
+                            : undefined
+                        }
+                        className="h-8 w-full border border-input bg-background px-2 text-xs disabled:opacity-40"
+                      >
+                        <option value="none">Not set</option>
+                        <option value="Merav">MERAV</option>
+                        <option value="Contractor">GC / Contractor</option>
+                        <option value="Client">Client</option>
+                      </select>
+                    </td>
                     {(["ordered", "received", "installed"] as const).map((k) => (
                       <td key={k} className="px-3 py-3">
                         <div className="flex justify-center">
                           <button
                             disabled={needsReselection}
-                            onClick={() => toggle(item.id, k, !item[k])}
+                            onClick={() =>
+                              toggle(
+                                item,
+                                k,
+                                k === "ordered"
+                                  ? !(m?.ordered ?? item.ordered)
+                                  : !item[k],
+                              )
+                            }
                             className={cn(
                               "w-6 h-6 border flex items-center justify-center transition-colors",
                               needsReselection && "cursor-not-allowed opacity-40",
-                              item[k]
+                              (k === "ordered" ? (m?.ordered ?? item.ordered) : item[k])
                                 ? "bg-ink border-ink text-primary-foreground"
                                 : "border-border hover:border-ink",
                             )}
                           >
-                            {item[k] && <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                            {(k === "ordered" ? (m?.ordered ?? item.ordered) : item[k]) && (
+                              <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+                            )}
                           </button>
                         </div>
                       </td>
