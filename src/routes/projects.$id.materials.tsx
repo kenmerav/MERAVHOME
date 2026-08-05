@@ -818,6 +818,80 @@ function RoomMaterialsSection({
     if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
     const currentItem = items.find((item) => item.id === id);
     await db.updateMaterialItem(id, patch);
+
+    if (currentItem && Object.prototype.hasOwnProperty.call(patch, "product_url")) {
+      const nextUrl = patch.product_url?.trim() || null;
+      const previousProductId = cleanUuid(currentItem.product_id);
+
+      if (!nextUrl) {
+        if (previousProductId) {
+          await db.updateMaterialItem(id, { product_id: null, scrape_status: "pending" });
+          const stillUsedInRoom = items.some(
+            (item) => item.id !== id && item.product_id === previousProductId,
+          );
+          if (!stillUsedInRoom) {
+            const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+            const staleRoomProduct = roomProducts.find(
+              (roomProduct) => roomProduct.product_id === previousProductId,
+            );
+            if (staleRoomProduct) await db.removeRoomProduct(staleRoomProduct.id);
+          }
+        }
+      } else {
+        const normalizedColor = currentItem.color?.trim().toLocaleLowerCase() || null;
+        let product = products.find((candidate) => {
+          if (candidate.product_url?.trim() !== nextUrl) return false;
+          if (!normalizedColor) return true;
+          const candidateFinish = candidate.finish?.trim().toLocaleLowerCase() || null;
+          return !candidateFinish || candidateFinish === normalizedColor;
+        });
+
+        if (!product) {
+          product =
+            (await db.createProduct({
+              name: currentItem.item_label.trim() || "Untitled product",
+              category: toProductCategory(currentItem.category),
+              product_url: nextUrl,
+              image_url: currentItem.image_url || null,
+              finish: currentItem.color || null,
+            })) ?? undefined;
+        }
+
+        if (product) {
+          await db.updateMaterialItem(id, {
+            product_id: product.id,
+            product_url: nextUrl,
+            scrape_status: "pending",
+            scrape_error: null,
+            not_needed: false,
+          });
+
+          const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+          if (!roomProducts.some((roomProduct) => roomProduct.product_id === product!.id)) {
+            await db.addRoomProduct({
+              room_id: room.id,
+              product_id: product.id,
+              is_key_selection: false,
+            });
+          }
+
+          if (
+            previousProductId &&
+            previousProductId !== product.id &&
+            !items.some((item) => item.id !== id && item.product_id === previousProductId)
+          ) {
+            const staleRoomProduct = roomProducts.find(
+              (roomProduct) => roomProduct.product_id === previousProductId,
+            );
+            if (staleRoomProduct) await db.removeRoomProduct(staleRoomProduct.id);
+          }
+
+          qc.invalidateQueries({ queryKey: ["products"] });
+          qc.invalidateQueries({ queryKey: ["catalog"] });
+        }
+      }
+    }
+
     if (
       typeof patch.category === "string" &&
       currentItem?.product_id &&
