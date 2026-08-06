@@ -2623,18 +2623,10 @@ function SpreadSidebar({
   onToggleSidebarSection?: (section: PresentationSidebarSection, hidden: boolean) => void;
 }) {
   const editing = !!onPick;
-  const hiddenSectionSet = new Set(hiddenSections);
-  const showPalette = !hiddenSectionSet.has("palette");
-  const showCabinet = !hiddenSectionSet.has("cabinet");
-  const showCounter = !hiddenSectionSet.has("counter");
-  const showFaucet = !hiddenSectionSet.has("faucet");
   const activeComparisonImage = comparisonImage === undefined ? comparisonPresentationImage(view) : comparisonImage;
   const paletteItems = data.paletteMaterials
     .filter((material) => materialImageUrl(material))
     .slice(0, 4);
-  const hasCabinetry = !!data.cabinetProduct?.product || !!data.cabinetMaterial;
-  const hasCounter = !!data.counter;
-  const hasFaucet = !!data.faucet?.item_label || !!data.faucet?.product;
   const setPaletteSlot = (index: number, id: string) => {
     const ids = Array.from({ length: 4 }, (_, i) => data.paletteMaterials[i]?.id ?? "");
     ids[index] = id;
@@ -2691,40 +2683,7 @@ function SpreadSidebar({
         </Card>
       )}
 
-      {onPick && onToggleSidebarSection && (
-        <Card label="Section Visibility">
-          <div className="grid grid-cols-2 gap-2 print:hidden">
-            {([
-              ["palette", DEFAULT_PRESENTATION_SECTION_LABELS.palette],
-              ["cabinet", DEFAULT_PRESENTATION_SECTION_LABELS.cabinet],
-              ["counter", DEFAULT_PRESENTATION_SECTION_LABELS.counter],
-              ["faucet", DEFAULT_PRESENTATION_SECTION_LABELS.faucet],
-            ] as Array<[PresentationSidebarSection, string]>).map(([section, label]) => {
-              const hidden = hiddenSectionSet.has(section);
-              return (
-                <button
-                  key={section}
-                  type="button"
-                  onClick={() => onToggleSidebarSection(section, !hidden)}
-                  className={`border px-2 py-2 text-[10px] uppercase tracking-[0.12em] transition-colors ${
-                    hidden
-                      ? "border-border bg-background text-muted-foreground hover:border-ink hover:text-ink"
-                      : "border-ink bg-ink text-primary-foreground"
-                  }`}
-                  aria-pressed={!hidden}
-                >
-                  {hidden ? `Show ${label}` : `Hide ${label}`}
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {(showPalette || (showCabinet && (editing || hasCabinetry))) && (
-      <div className="grid grid-cols-2 gap-6 print:gap-3">
-        {showPalette && (
-        <Card
+      <Card
           label={
             <EditableSectionLabel
               value={room?.presentation_palette_label}
@@ -2764,124 +2723,7 @@ function SpreadSidebar({
               ))}
             </div>
           )}
-        </Card>
-        )}
-        {showCabinet && (editing || hasCabinetry) && (
-          <Card
-            label={
-              <EditableSectionLabel
-                value={room?.presentation_cabinet_label}
-                fallback={DEFAULT_PRESENTATION_SECTION_LABELS.cabinet}
-                editing={editing}
-                onChange={(value) => onPick?.({ presentation_cabinet_label: value })}
-              />
-            }
-          >
-            <Detail
-              product={data.cabinetMaterial ? undefined : data.cabinetProduct?.product}
-              fallbackImage={materialImageUrl(data.cabinetMaterial)}
-              fallbackName={
-                data.cabinetMaterial
-                  ? clientProductName(data.cabinetMaterial, { name: "" })
-                  : "Cabinet finish + hardware"
-              }
-              fallbackSub={data.cabinetMaterial?.product?.vendor || data.cabinetMaterial?.color}
-            />
-            {onPick && (
-              <PresentationPickSelect
-                value={data.cabinetMaterial?.id ?? ""}
-                materials={data.materials}
-                onChange={(id) => onPick({ presentation_cabinet_item_id: id || null })}
-              />
-            )}
-          </Card>
-        )}
-      </div>
-      )}
-
-      {((showCounter && (editing || hasCounter)) || (showFaucet && (editing || hasFaucet))) && (
-        <div className="grid grid-cols-2 gap-6 print:gap-3">
-          {showCounter && (editing || hasCounter) && (
-            <Card
-              label={
-                <EditableSectionLabel
-                  value={room?.presentation_counter_label}
-                  fallback={DEFAULT_PRESENTATION_SECTION_LABELS.counter}
-                  editing={editing}
-                  onChange={(value) => onPick?.({ presentation_counter_label: value })}
-                />
-              }
-            >
-              <div className="flex gap-3">
-                <div className="w-16 h-16 bg-bone overflow-hidden flex-shrink-0">
-                  {materialImageUrl(data.counter) && (
-                    <img
-                      src={normalizeSupabaseImageUrl(materialImageUrl(data.counter)!)}
-                      alt=""
-                      className="w-full h-full object-contain p-1"
-                    />
-                  )}
-                </div>
-                <div className="min-w-0 self-center">
-                  <div className="font-display text-sm leading-tight">
-                    {data.counter ? clientProductName(data.counter, { name: "" }) : "—"}
-                  </div>
-                  {(data.counter?.product?.name ||
-                    data.counter?.product?.vendor ||
-                    data.counter?.color) && (
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
-                      {[
-                        data.counter?.product?.name,
-                        data.counter?.product?.vendor,
-                        data.counter?.color,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {onPick && (
-                <PresentationPickSelect
-                  value={data.counter?.id ?? ""}
-                  materials={data.materials}
-                  onChange={(id) => onPick({ presentation_counter_item_id: id || null })}
-                />
-              )}
-            </Card>
-          )}
-          {showFaucet && (editing || hasFaucet) && (
-            <Card
-              label={
-                <EditableSectionLabel
-                  value={room?.presentation_faucet_label}
-                  fallback={DEFAULT_PRESENTATION_SECTION_LABELS.faucet}
-                  editing={editing}
-                  onChange={(value) => onPick?.({ presentation_faucet_label: value })}
-                />
-              }
-            >
-              <Detail
-                product={data.faucet?.product}
-                fallbackImage={materialImageUrl(data.faucet)}
-                fallbackName={
-                  data.faucet?.item_label
-                    ? clientProductName(data.faucet, { name: "" })
-                    : "Bridge faucet"
-                }
-                fallbackSub={data.faucet?.product?.vendor || data.faucet?.color}
-              />
-              {onPick && (
-                <PresentationPickSelect
-                  value={data.faucet?.item_label ? data.faucet.id : ""}
-                  materials={data.materials}
-                  onChange={(id) => onPick({ presentation_faucet_item_id: id || null })}
-                />
-              )}
-            </Card>
-          )}
-        </div>
-      )}
+      </Card>
     </div>
   );
 }
