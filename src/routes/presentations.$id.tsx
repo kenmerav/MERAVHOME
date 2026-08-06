@@ -2693,7 +2693,7 @@ function SpreadSidebar({
             />
           }
         >
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             {paletteItems.map((m) => (
               <div key={m.id} className="aspect-square bg-bone overflow-hidden">
                 {materialImageUrl(m) && (
@@ -2706,7 +2706,7 @@ function SpreadSidebar({
               </div>
             ))}
             {!paletteItems.length && (
-              <div className="col-span-2 text-[11px] text-muted-foreground">
+              <div className="col-span-4 text-[11px] text-muted-foreground">
                 No palette selections yet.
               </div>
             )}
