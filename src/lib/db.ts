@@ -833,7 +833,8 @@ export const db = {
       .from("material_items")
       .update(patch as any)
       .eq("product_id", productId),
-  deleteMaterialItem: async (id: string) => supabase.from("material_items").delete().eq("id", id),
+  deleteMaterialItem: async (id: string) =>
+    supabase.from("material_items").delete().eq("id", id).select("id"),
   findProductByUrl: async (url: string) =>
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle())
       .data as Product | null,

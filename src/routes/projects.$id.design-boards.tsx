@@ -2119,7 +2119,10 @@ function ProjectDesignBoardsPage() {
     scope: "page" | "board",
     options: { proceedWithMissing?: boolean } = {},
   ) => {
-    const unresolvedItems = materialInfoItemsForPages(targetPages);
+    // A hidden page is a cleanup request, not a material source. Processing its
+    // elements would protect their existing material rows from stale cleanup.
+    const pagesToSync = targetPages.filter((page) => !page.hidden);
+    const unresolvedItems = materialInfoItemsForPages(pagesToSync);
     if (unresolvedItems.length && !options.proceedWithMissing) {
       setPendingMaterialSend({ scope, pageIds: targetPages.map((page) => page.id) });
       toast.error(
@@ -2148,7 +2151,7 @@ function ProjectDesignBoardsPage() {
         }
       >();
 
-      for (const page of targetPages) {
+      for (const page of pagesToSync) {
         for (const element of page.elements) {
           if (element.type !== "image") continue;
           if (element.materialExcludeFromMaterials) continue;

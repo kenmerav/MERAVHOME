@@ -957,8 +957,14 @@ function RoomMaterialsSection({
     if (!confirm("Delete this item?")) return;
     const currentItem = items.find((item) => item.id === id);
     try {
-      const { error } = await db.deleteMaterialItem(id);
+      const { data, error } = await db.deleteMaterialItem(id);
       if (error) throw error;
+      if (!data?.some((deletedItem) => deletedItem.id === id)) {
+        const currentItems = await db.listMaterialItemsByProject(projectId);
+        if (currentItems.some((item) => item.id === id)) {
+          throw new Error("The database did not remove this item.");
+        }
+      }
       if (
         currentItem?.product_id &&
         !items.some((item) => item.id !== id && item.product_id === currentItem.product_id)
@@ -969,7 +975,10 @@ function RoomMaterialsSection({
         );
         if (staleRoomProduct) await db.removeRoomProduct(staleRoomProduct.id);
       }
-      invalidate();
+      qc.setQueryData<MaterialItem[]>(["materialItems", projectId], (current = []) =>
+        current.filter((item) => item.id !== id),
+      );
+      await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       toast.success("Removed from project materials.");
     } catch (error) {
       toast.error(
