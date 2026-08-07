@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch, X } from "lucide-react";
+import { ArrowLeft, Sparkles, Plus, Trash2, Star, RefreshCw, Download, Eye, EyeOff, CheckCircle2, Loader2, AlertCircle, Circle, Clock, GitBranch, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type RoomImage, type RenderingStatus, type RenderingReviewStatus, type RoomProduct, type MaterialItem } from "@/lib/db";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -280,6 +280,12 @@ function RoomRenderingSection({
 }) {
   const qc = useQueryClient();
   const done = sketchups.filter(s => renderings.some(r => r.linked_sketchup_id === s.id && r.status === "complete")).length;
+  const sketchupIds = new Set(sketchups.map((sketchup) => sketchup.id));
+  const unlinkedRenderings = sortRenderings(
+    renderings.filter(
+      (rendering) => !rendering.linked_sketchup_id || !sketchupIds.has(rendering.linked_sketchup_id),
+    ),
+  );
 
   return (
     <section id={`room-${room.id}`} className="scroll-mt-24">
@@ -316,6 +322,41 @@ function RoomRenderingSection({
               qc={qc}
             />
           ))}
+        </div>
+      )}
+
+      {unlinkedRenderings.length > 0 && (
+        <div className="mt-6 border-t border-border pt-4">
+          <div className="mb-3">
+            <div className="eyebrow">External / Unlinked Renderings</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              These renderings are not linked to a current SketchUp image. Hide one from the presentation or delete it here.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {unlinkedRenderings.map((rendering) => (
+              <RenderingTile
+                key={rendering.id}
+                rendering={rendering}
+                renderings={unlinkedRenderings}
+                projectId={projectId}
+                roomId={room.id}
+                renderingMode={renderingMode}
+                presentationOrderControl={
+                  renderingCanShowInPresentation(rendering)
+                    ? {
+                        slideKey: buildRenderingSlideKey(room.id, rendering.id),
+                        pageNumber:
+                          presentationPageBySlideKey.get(buildRenderingSlideKey(room.id, rendering.id)) ?? 2,
+                        pageOptions: presentationPageOptions,
+                        onChange: onSetPresentationPage,
+                      }
+                    : undefined
+                }
+                qc={qc}
+              />
+            ))}
+          </div>
         </div>
       )}
     </section>
@@ -488,7 +529,7 @@ function RenderingTile({
   qc,
 }: {
   rendering: RoomImage;
-  sketchup: RoomImage;
+  sketchup?: RoomImage;
   renderings: RoomImage[];
   projectId: string;
   roomId: string;
@@ -561,6 +602,7 @@ function RenderingTile({
   };
   const createRevision = async () => {
     if (revising) return;
+    if (!sketchup) return toast.error("Link this rendering to a SketchUp image before creating a revision.");
     const notes = revisionNotes.trim();
     if (!notes) return toast.error("Add the revision notes first");
     setRevising(true);
@@ -611,6 +653,11 @@ function RenderingTile({
       <div className="absolute top-1 right-1 bg-background/90 text-[9px] uppercase tracking-wider px-1.5 py-0.5">
         V{version}
       </div>
+      {rendering.presentation_visible === false && (
+        <div className="absolute top-9 right-1 bg-background/90 text-[9px] uppercase tracking-wider px-1.5 py-0.5">
+          Hidden from presentation
+        </div>
+      )}
       {rendering.is_favorite && (
         <div className="absolute top-9 left-1 bg-brass text-ink p-1"><Star className="w-2.5 h-2.5" fill="currentColor" /></div>
       )}
@@ -716,7 +763,7 @@ function RenderingTile({
                 notes={rendering.team_notes}
                 onSave={(notes) => update({ team_notes: notes })}
               />
-              <div className="border border-border p-4 space-y-3">
+              {sketchup && <div className="border border-border p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <GitBranch className="w-4 h-4" />
                   <div>
@@ -746,10 +793,17 @@ function RenderingTile({
                 >
                   {revising ? "Starting revision..." : "Create Revision"}
                 </button>
-              </div>
+              </div>}
             </DialogContent>
           </Dialog>
-          <button title="Revise" onClick={() => setOpen(true)} className="bg-background/95 p-1.5"><GitBranch className="w-3 h-3" /></button>
+          {sketchup && <button title="Revise" onClick={() => setOpen(true)} className="bg-background/95 p-1.5"><GitBranch className="w-3 h-3" /></button>}
+          <button
+            title={rendering.presentation_visible === false ? "Show in presentation" : "Hide from presentation"}
+            onClick={() => update({ presentation_visible: rendering.presentation_visible === false })}
+            className="bg-background/95 p-1.5"
+          >
+            {rendering.presentation_visible === false ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+          </button>
           <button title="Favorite" onClick={() => update({ is_favorite: !rendering.is_favorite })} className="bg-background/95 p-1.5">
             <Star className="w-3 h-3" fill={rendering.is_favorite ? "currentColor" : "none"} />
           </button>
@@ -1013,6 +1067,7 @@ function renderingCanShowInPresentation(rendering: RoomImage) {
   return (
     rendering.kind === "rendering" &&
     rendering.status === "complete" &&
+    rendering.presentation_visible !== false &&
     (rendering.is_approved === true || rendering.review_status === "approved")
   );
 }

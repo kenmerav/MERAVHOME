@@ -176,6 +176,7 @@ function buildRoomData(
       (i) =>
         i.kind === "rendering" &&
         i.status === "complete" &&
+        i.presentation_visible !== false &&
         (i.is_approved === true || i.review_status === "approved"),
     )
     .sort(compareRenderingPageOrder);
