@@ -2078,14 +2078,22 @@ function PresentationImagePair({
       image: view.sketch,
     },
   ];
+  const availableImages = images.filter(({ image }) => Boolean(image));
+  const displayedImages = editing
+    ? images
+    : availableImages.length
+      ? availableImages
+      : [images[0]];
+  const singleImage = displayedImages.length === 1;
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-6 md:grid-cols-2 print:grid-cols-2">
-      {images.map(({ key, label, image }) => (
+    <div
+      className={`grid h-full min-h-0 grid-cols-1 gap-6 ${
+        singleImage ? "" : "md:grid-cols-2 print:grid-cols-2"
+      }`}
+    >
+      {displayedImages.map(({ key, label, image }) => (
         <div key={key} className="flex min-h-0 flex-col">
-          <div className="mb-2 text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            {label}
-          </div>
           <div className="min-h-0 flex-1 overflow-hidden bg-white">
             {image ? (
               <img
@@ -2095,7 +2103,7 @@ function PresentationImagePair({
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                {key === "rendering" ? "No elevation rendering yet" : "No SketchUp yet"}
+                No presentation image yet
               </div>
             )}
           </div>
