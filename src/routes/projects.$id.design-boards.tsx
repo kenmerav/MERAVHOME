@@ -2887,6 +2887,92 @@ function ProjectDesignBoardsPage() {
     broadcastPatch({ kind: "patch-page", pageId, patch: nextPatch });
   };
 
+  const setPageHidden = async (page: BoardPage, hidden: boolean) => {
+    updatePage(page.id, { hidden });
+    if (!hidden) return;
+
+    const sourceItems = materialItems.filter(
+      (item) => item.source_board_page_id === page.id,
+    );
+    if (!sourceItems.length) return;
+
+    const visiblePages = pages.filter((candidate) => candidate.id !== page.id && !candidate.hidden);
+    const removedMaterialIds = new Set<string>();
+    let removed = 0;
+    let relinked = 0;
+
+    try {
+      for (const item of sourceItems) {
+        const visibleReference = visiblePages
+          .flatMap((candidate) =>
+            candidate.elements.map((element) => ({ page: candidate, element })),
+          )
+          .find(
+            ({ element }) =>
+              element.type === "image" &&
+              !element.materialExcludeFromMaterials &&
+              element.materialItemId === item.id,
+          );
+
+        if (visibleReference) {
+          const { error } = await db.updateMaterialItem(item.id, {
+            source_board_page_id: visibleReference.page.id,
+            source_board_element_id: visibleReference.element.id,
+          });
+          if (error) throw error;
+          relinked += 1;
+        } else {
+          const { error } = await db.deleteMaterialItem(item.id);
+          if (error) throw error;
+          removedMaterialIds.add(item.id);
+          removed += 1;
+        }
+      }
+
+      setElementsForPage(page.id, (current) =>
+        current.map((element) =>
+          element.materialItemId && sourceItems.some((item) => item.id === element.materialItemId)
+            ? { ...element, materialItemId: undefined }
+            : element,
+        ),
+      );
+
+      const roomProductIdsToRemove = new Set<string>();
+      for (const item of sourceItems) {
+        if (!removedMaterialIds.has(item.id) || !item.room_product?.id || !item.product_id) continue;
+        const stillUsed = materialItems.some(
+          (candidate) =>
+            candidate.id !== item.id &&
+            !removedMaterialIds.has(candidate.id) &&
+            candidate.room_id === item.room_id &&
+            candidate.product_id === item.product_id,
+        );
+        if (!stillUsed) roomProductIdsToRemove.add(item.room_product.id);
+      }
+      for (const roomProductId of roomProductIdsToRemove) {
+        await db.removeRoomProduct(roomProductId);
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
+        queryClient.invalidateQueries({ queryKey: ["procurement"] }),
+      ]);
+      toast.success(
+        removed
+          ? `Hidden page removed ${removed} project material${removed === 1 ? "" : "s"}.${
+              relinked ? ` Kept ${relinked} still used on visible pages.` : ""
+            }`
+          : "Hidden page materials are still used on visible pages, so they were kept.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? `The page was hidden, but its materials could not be updated: ${error.message}`
+          : "The page was hidden, but its materials could not be updated.",
+      );
+    }
+  };
+
   const updateActivePage = (patch: Partial<BoardPage>) => {
     updatePage(selectedPageId, patch);
   };
@@ -4251,11 +4337,7 @@ function ProjectDesignBoardsPage() {
                         <div className="pointer-events-none absolute right-1 top-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
                           <button
                             type="button"
-                            onClick={() =>
-                              updatePage(page.id, {
-                                hidden: !pageHidden,
-                              })
-                            }
+                            onClick={() => void setPageHidden(page, !pageHidden)}
                             className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded border border-stone-200 bg-white/95 text-stone-700 shadow-sm transition hover:border-ink hover:text-ink"
                             aria-label={`${pageHidden ? "Show" : "Hide"} ${page.title || `Board ${index + 1}`}`}
                             title={pageHidden ? "Show page" : "Hide page"}

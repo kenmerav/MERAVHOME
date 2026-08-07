@@ -955,21 +955,29 @@ function RoomMaterialsSection({
   const remove = async (id: string) => {
     if (!isUuid(id)) return toast.error("Could not delete this item because its ID is invalid.");
     if (!confirm("Delete this item?")) return;
-    const currentItem = activeItems.find((item) => item.id === id);
-    await db.deleteMaterialItem(id);
-    if (
-      currentItem?.product_id &&
-      !activeItems.some(
-        (item) => item.id !== id && item.product_id === currentItem.product_id,
-      )
-    ) {
-      const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
-      const staleRoomProduct = roomProducts.find(
-        (roomProduct) => roomProduct.product_id === currentItem.product_id,
+    const currentItem = items.find((item) => item.id === id);
+    try {
+      const { error } = await db.deleteMaterialItem(id);
+      if (error) throw error;
+      if (
+        currentItem?.product_id &&
+        !items.some((item) => item.id !== id && item.product_id === currentItem.product_id)
+      ) {
+        const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+        const staleRoomProduct = roomProducts.find(
+          (roomProduct) => roomProduct.product_id === currentItem.product_id,
+        );
+        if (staleRoomProduct) await db.removeRoomProduct(staleRoomProduct.id);
+      }
+      invalidate();
+      toast.success("Removed from project materials.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? `Could not delete this item: ${error.message}`
+          : "Could not delete this item.",
       );
-      if (staleRoomProduct) await db.removeRoomProduct(staleRoomProduct.id);
     }
-    invalidate();
   };
 
   const attachCatalogProduct = async (item: MaterialItem, productId: string | null) => {
