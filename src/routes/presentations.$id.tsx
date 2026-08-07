@@ -83,6 +83,8 @@ type PresentationExtraPageSlot = {
 
 type PresentationSidebarSection = "palette" | "cabinet" | "counter" | "faucet";
 
+type PresentationPageLayout = "images-with-materials" | "images-only";
+
 type PresentationSlidePicks = {
   presentation_palette_item_ids?: string[];
   presentation_cabinet_item_id?: string | null;
@@ -423,6 +425,25 @@ function normalizePresentationHiddenSections(boardState: unknown) {
   ) as Record<string, PresentationSidebarSection[]>;
 }
 
+function normalizePresentationPageLayout(
+  boardState: unknown,
+  projectName?: string | null,
+): PresentationPageLayout {
+  if (boardState && typeof boardState === "object") {
+    const candidate = boardState as { presentationPageLayout?: unknown };
+    if (
+      candidate.presentationPageLayout === "images-with-materials" ||
+      candidate.presentationPageLayout === "images-only"
+    ) {
+      return candidate.presentationPageLayout;
+    }
+  }
+
+  return typeof projectName === "string" && /charter\s*oak/i.test(projectName)
+    ? "images-only"
+    : "images-with-materials";
+}
+
 function applyPresentationRenderingOverrides(
   slides: PresentationSlideDraft[],
   overrides: Record<string, string>,
@@ -721,6 +742,10 @@ function PresentationPage() {
     () => normalizePresentationHiddenSections(sharedBoard?.board_state),
     [sharedBoard?.board_state, sharedBoard?.updated_at],
   );
+  const presentationPageLayout = useMemo(
+    () => normalizePresentationPageLayout(sharedBoard?.board_state, project?.name),
+    [project?.name, sharedBoard?.board_state, sharedBoard?.updated_at],
+  );
   const includedBoardPages = useMemo(
     () => designBoardPages.filter((page) => page.presentationVisible),
     [designBoardPages],
@@ -854,6 +879,35 @@ function PresentationPage() {
       return;
     }
     qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+  };
+
+  const updatePresentationPageLayout = async (layout: PresentationPageLayout) => {
+    const latestBoard = await db.getDesignBoard(projectId);
+    const baseState =
+      latestBoard?.board_state && typeof latestBoard.board_state === "object"
+        ? (latestBoard.board_state as Record<string, unknown>)
+        : {};
+    const nextState = {
+      ...baseState,
+      presentationPageLayout: layout,
+    };
+
+    const saved = latestBoard?.updated_at
+      ? await db.updateDesignBoardIfFresh(projectId, nextState, latestBoard.updated_at)
+      : await db.upsertDesignBoard(projectId, nextState);
+
+    if (!saved) {
+      toast.error("Presentation layout changed while saving. Please try again.");
+      qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      return;
+    }
+
+    qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+    toast.success(
+      layout === "images-only"
+        ? "All room pages now show side-by-side images only"
+        : "Material palettes restored to room pages",
+    );
   };
 
   const updateViewVisibility = async (roomId: string, imageId: string, visible: boolean) => {
@@ -1411,6 +1465,7 @@ function PresentationPage() {
               viewIndex={current.viewIndex}
               viewCount={current.viewCount}
               hiddenSections={presentationHiddenSections[current.slideKey] ?? []}
+              pageLayout={presentationPageLayout}
             />
           )}
         </div>
@@ -1573,6 +1628,27 @@ function PresentationPage() {
                 >
                   <Type className="w-4 h-4" /> {editingText ? "Done Text" : "Edit Text"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void updatePresentationPageLayout(
+                      presentationPageLayout === "images-only"
+                        ? "images-with-materials"
+                        : "images-only",
+                    )
+                  }
+                  className={`inline-flex items-center gap-2 px-5 py-2.5 border text-sm transition-colors ${
+                    presentationPageLayout === "images-only"
+                      ? "border-ink bg-ink text-primary-foreground"
+                      : "border-border text-ink hover:border-ink"
+                  }`}
+                  aria-pressed={presentationPageLayout === "images-only"}
+                  title="Show the elevation rendering and SketchUp side by side without material palettes"
+                >
+                  {presentationPageLayout === "images-only"
+                    ? "Images Only · On"
+                    : "Images Only"}
+                </button>
               </>
             )}
             <button
@@ -1654,6 +1730,7 @@ function PresentationPage() {
                   viewIndex={current.viewIndex}
                   viewCount={current.viewCount}
                   hiddenSections={presentationHiddenSections[current.slideKey] ?? []}
+                  pageLayout={presentationPageLayout}
                 />
               )}
             </div>
@@ -1771,6 +1848,7 @@ function PresentationPage() {
                     viewIndex={current.viewIndex}
                     viewCount={current.viewCount}
                     hiddenSections={presentationHiddenSections[current.slideKey] ?? []}
+                    pageLayout={presentationPageLayout}
                     onToggleSidebarSection={
                       editingPicks
                         ? (section, hidden) =>
@@ -1973,6 +2051,82 @@ function PresentationBrandMark({ className = "" }: { className?: string }) {
   );
 }
 
+function PresentationImagePair({
+  roomName,
+  data,
+  view,
+  editing = false,
+  onUpdateViewSketch,
+  onUpdateViewRendering,
+}: {
+  roomName: string;
+  data: RoomData;
+  view: RoomData["views"][number];
+  editing?: boolean;
+  onUpdateViewSketch?: (sketchupId: string | null) => void;
+  onUpdateViewRendering?: (renderingId: string) => void;
+}) {
+  const images = [
+    {
+      key: "rendering",
+      label: "Elevation Rendering",
+      image: view.hero,
+    },
+    {
+      key: "sketchup",
+      label: "SketchUp",
+      image: view.sketch,
+    },
+  ];
+
+  return (
+    <div className="grid h-full min-h-0 grid-cols-1 gap-6 md:grid-cols-2 print:grid-cols-2">
+      {images.map(({ key, label, image }) => (
+        <div key={key} className="flex min-h-0 flex-col">
+          <div className="mb-2 text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            {label}
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden bg-white">
+            {image ? (
+              <img
+                src={normalizeSupabaseImageUrl(image.url)}
+                alt={`${roomName} ${label}`}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                {key === "rendering" ? "No elevation rendering yet" : "No SketchUp yet"}
+              </div>
+            )}
+          </div>
+          {editing && key === "rendering" && view.hero && onUpdateViewRendering && (
+            <div className="mt-3 print:hidden">
+              <ImagePickSelect
+                label="Elevation Rendering"
+                value={view.hero.id}
+                options={data.renderingOptions}
+                emptyLabel="Select rendering"
+                onChange={onUpdateViewRendering}
+              />
+            </div>
+          )}
+          {editing && key === "sketchup" && onUpdateViewSketch && (
+            <div className="mt-3 print:hidden">
+              <ImagePickSelect
+                label="SketchUp"
+                value={view.sketch?.id ?? ""}
+                options={data.sketchupOptions}
+                emptyLabel="Select SketchUp"
+                onChange={(id) => onUpdateViewSketch(id || null)}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RoomSlide({
   project,
   room,
@@ -1981,6 +2135,7 @@ function RoomSlide({
   viewIndex,
   viewCount,
   hiddenSections = [],
+  pageLayout = "images-with-materials",
 }: {
   project: any;
   room: any;
@@ -1989,7 +2144,27 @@ function RoomSlide({
   viewIndex: number;
   viewCount: number;
   hiddenSections?: PresentationSidebarSection[];
+  pageLayout?: PresentationPageLayout;
 }) {
+  if (pageLayout === "images-only") {
+    return (
+      <div className="relative flex h-full w-full flex-col bg-bone px-8 pb-24 pt-8 lg:px-12 lg:pb-28 lg:pt-12">
+        <div className="mb-4 shrink-0">
+          <div className="eyebrow text-[11px]">
+            {project.name} · {project.client_name}
+          </div>
+          <h2 className="mt-2 font-display text-4xl leading-tight text-ink lg:text-6xl">
+            {room.name}
+          </h2>
+        </div>
+        <div className="min-h-0 flex-1">
+          <PresentationImagePair roomName={room.name} data={data} view={view} />
+        </div>
+        <PresentationFooter />
+      </div>
+    );
+  }
+
   const primaryImage = primaryPresentationImage(view);
   return (
     <div className="relative w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone px-8 pt-8 pb-24 lg:px-12 lg:pt-12 lg:pb-28">
@@ -2456,6 +2631,7 @@ function RoomSpread({
   viewIndex,
   viewCount,
   hiddenSections = [],
+  pageLayout = "images-with-materials",
   anchor,
   onPick,
   onUpdateViewSketch,
@@ -2472,6 +2648,7 @@ function RoomSpread({
   viewIndex: number;
   viewCount: number;
   hiddenSections?: PresentationSidebarSection[];
+  pageLayout?: PresentationPageLayout;
   anchor?: string;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
@@ -2531,7 +2708,7 @@ function RoomSpread({
           </div>
           {(onChangeImageLayout || onToggleViewVisibility) && (
             <div className="print:hidden flex items-center gap-2">
-              {onChangeImageLayout && (
+              {onChangeImageLayout && pageLayout !== "images-only" && (
                 <>
                   <button
                     type="button"
@@ -2574,6 +2751,18 @@ function RoomSpread({
         </div>
       </div>
 
+      {pageLayout === "images-only" ? (
+        <div className="h-[680px] px-10 pb-28 lg:px-14 print:h-[600px] print:pb-24">
+          <PresentationImagePair
+            roomName={room.name}
+            data={data}
+            view={view}
+            editing={!!onPick}
+            onUpdateViewSketch={onUpdateViewSketch}
+            onUpdateViewRendering={onUpdateViewRendering}
+          />
+        </div>
+      ) : (
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-28 print:pb-24">
         <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
           {primaryImage ? (
@@ -2596,6 +2785,7 @@ function RoomSpread({
           onToggleSidebarSection={onToggleSidebarSection}
         />
       </div>
+      )}
       <PresentationFooter align="mainColumn" sidePaddingPx={56} />
     </section>
   );
