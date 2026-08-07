@@ -739,8 +739,8 @@ function SharedDashboardOverview({
 
   return (
     <section className="mb-12 space-y-8">
-      <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6">
-        <div className="border border-border bg-background p-6 lg:p-8">
+      <div className={`grid grid-cols-1 gap-6 ${isClientUser ? "" : "xl:grid-cols-[1.05fr_0.95fr]"}`}>
+        {!isClientUser && <div className="border border-border bg-background p-6 lg:p-8">
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <div className="eyebrow mb-2">To Do</div>
@@ -807,7 +807,7 @@ function SharedDashboardOverview({
               ))}
             </div>
           )}
-        </div>
+        </div>}
 
         <div className="border border-border bg-bone/20 p-6 lg:p-8">
           <div className="eyebrow mb-2">Shared Projects</div>
