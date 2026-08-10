@@ -206,7 +206,7 @@ export async function syncFinancialInvoiceToQuickBooks(invoiceId: string) {
   try {
     const customer = await getOrCreateCustomer(connection, invoice);
     const serviceItemId = await getOrCreateServiceItem(connection);
-    const quickBooksInvoiceId = await ensureQuickBooksInvoice(connection, invoice, customer, serviceItemId, paidTotal);
+    const quickBooksInvoiceId = await ensureQuickBooksInvoice(connection, invoice, customer, serviceItemId, paidRows, paidTotal);
 
     const quickBooksInvoice = await getQuickBooksInvoice(connection, quickBooksInvoiceId);
     // QuickBooks should only receive paid Studio phases, keeping P&L clean even outside cash-basis reports.
@@ -449,24 +449,32 @@ async function ensureQuickBooksInvoice(
   invoice: any,
   customer: { id: string; name: string },
   itemId: string,
+  paidRows: any[],
   paidTotal: number,
 ) {
   if (!invoice.quickbooks_invoice_id) {
-    return createQuickBooksInvoice(connection, invoice, customer, itemId, paidTotal);
+    return createQuickBooksInvoice(connection, invoice, customer, itemId, paidRows, paidTotal);
   }
 
   const existing = await getQuickBooksInvoice(connection, invoice.quickbooks_invoice_id);
   if (!existing) {
-    return createQuickBooksInvoice(connection, invoice, customer, itemId, paidTotal);
+    return createQuickBooksInvoice(connection, invoice, customer, itemId, paidRows, paidTotal);
   }
 
-  const salesLine = existing.Line?.find((line: any) => line.DetailType === "SalesItemLineDetail");
+  const salesLines = (existing.Line ?? []).filter((line: any) => line.DetailType === "SalesItemLineDetail");
+  const desiredBreakdown = paidRows.map((payment) => ({
+    description: quickBooksPaymentLabel(payment),
+    amount: roundMoney(Number(payment.amount || 0)),
+  }));
+  const currentBreakdown = salesLines.map((line: any) => ({
+    description: line.Description || "",
+    amount: roundMoney(Number(line.Amount || 0)),
+  }));
   const customerChanged = existing.CustomerRef?.value !== customer.id;
-  const amountChanged = roundMoney(Number(salesLine?.Amount ?? existing.TotalAmt ?? 0)) !== paidTotal;
-  const descriptionChanged = Boolean(salesLine) && salesLine.Description !== (invoice.file_name || "MERAV Studio invoice");
+  const breakdownChanged = JSON.stringify(currentBreakdown) !== JSON.stringify(desiredBreakdown);
 
-  if (customerChanged || amountChanged || descriptionChanged) {
-    await updateQuickBooksInvoice(connection, existing, invoice, customer, itemId, salesLine, paidTotal);
+  if (customerChanged || breakdownChanged) {
+    await updateQuickBooksInvoice(connection, existing, invoice, customer, itemId, salesLines, paidRows, paidTotal);
   }
 
   return existing.Id;
@@ -486,22 +494,13 @@ async function updateQuickBooksInvoice(
   studioInvoice: any,
   customer: { id: string; name: string },
   itemId: string,
-  salesLine: any,
+  existingSalesLines: any[],
+  paidRows: any[],
   paidTotal: number,
 ) {
   if (paidTotal <= 0) throw new Error("Paid total must be greater than $0 before it can be sent to QuickBooks.");
 
-  const line = {
-    ...(salesLine?.Id ? { Id: salesLine.Id } : {}),
-    Description: studioInvoice.file_name || "MERAV Studio invoice",
-    Amount: roundMoney(paidTotal),
-    DetailType: "SalesItemLineDetail",
-    SalesItemLineDetail: {
-      ItemRef: { value: itemId },
-      Qty: 1,
-      UnitPrice: roundMoney(paidTotal),
-    },
-  };
+  const lines = quickBooksInvoiceLines(itemId, paidRows, existingSalesLines);
 
   await quickBooksApi<{ Invoice: { Id: string } }>(connection, "invoice?operation=update", {
     method: "POST",
@@ -511,12 +510,19 @@ async function updateQuickBooksInvoice(
       sparse: true,
       CustomerRef: { value: customer.id, name: customer.name },
       PrivateNote: `Created from MERAV Studio invoice ${studioInvoice.id}`,
-      Line: [line],
+      Line: lines,
     }),
   });
 }
 
-async function createQuickBooksInvoice(connection: QuickBooksConnection, invoice: any, customer: { id: string; name: string }, itemId: string, paidTotal: number) {
+async function createQuickBooksInvoice(
+  connection: QuickBooksConnection,
+  invoice: any,
+  customer: { id: string; name: string },
+  itemId: string,
+  paidRows: any[],
+  paidTotal: number,
+) {
   if (paidTotal <= 0) throw new Error("Paid total must be greater than $0 before it can be sent to QuickBooks.");
 
   const data = await quickBooksApi<{ Invoice: { Id: string } }>(connection, "invoice", {
@@ -525,22 +531,32 @@ async function createQuickBooksInvoice(connection: QuickBooksConnection, invoice
       CustomerRef: { value: customer.id, name: customer.name },
       TxnDate: invoice.invoice_date || new Date().toISOString().slice(0, 10),
       PrivateNote: `Created from MERAV Studio invoice ${invoice.id}`,
-      Line: [
-        {
-          Description: invoice.file_name || "MERAV Studio invoice",
-          Amount: roundMoney(paidTotal),
-          DetailType: "SalesItemLineDetail",
-          SalesItemLineDetail: {
-            ItemRef: { value: itemId },
-            Qty: 1,
-            UnitPrice: roundMoney(paidTotal),
-          },
-        },
-      ],
+      Line: quickBooksInvoiceLines(itemId, paidRows),
     }),
   });
 
   return data.Invoice.Id;
+}
+
+function quickBooksInvoiceLines(itemId: string, paidRows: any[], existingLines: any[] = []) {
+  return paidRows.map((payment, index) => {
+    const amount = roundMoney(Number(payment.amount || 0));
+    return {
+      ...(existingLines[index]?.Id ? { Id: existingLines[index].Id } : {}),
+      Description: quickBooksPaymentLabel(payment),
+      Amount: amount,
+      DetailType: "SalesItemLineDetail",
+      SalesItemLineDetail: {
+        ItemRef: { value: itemId },
+        Qty: 1,
+        UnitPrice: amount,
+      },
+    };
+  });
+}
+
+function quickBooksPaymentLabel(payment: any) {
+  return (payment.label || "Studio payment").trim().slice(0, 4000);
 }
 
 async function createQuickBooksPayment(

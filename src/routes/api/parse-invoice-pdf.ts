@@ -31,22 +31,33 @@ function toIsoDate(value: string | null) {
 
 function parseInvoiceText(text: string) {
   const compact = text.replace(/\r/g, "");
-  const payments = Array.from(compact.matchAll(/^Due\s+(.+?):\s*\$?\s*([\d,]+(?:\.\d{2})?)/gim))
+  const paidAmount = moneyValue(firstMatch(compact, /Paid:\s*\$?\s*([\d,]+(?:\.\d{2})?)/i)) ?? 0;
+  const duePayments = Array.from(compact.matchAll(/^Due\s+(.+?):\s*\$?\s*([\d,]+(?:\.\d{2})?)/gim))
     .map((match, index) => ({
       label: `Due ${match[1].trim()}`,
       amount: moneyValue(match[2]) ?? 0,
       due_date: null as string | null,
       status: "due" as const,
       notes: null as string | null,
-      sort_order: index,
+      sort_order: index + (paidAmount > 0 ? 1 : 0),
     }));
+  const payments = paidAmount > 0
+    ? [{
+        label: "Previously Paid",
+        amount: paidAmount,
+        due_date: null as string | null,
+        status: "paid" as const,
+        notes: "Payment received before this invoice was uploaded (for example, Zelle or another external payment)." as string | null,
+        sort_order: 0,
+      }, ...duePayments]
+    : duePayments;
 
   return {
     client_name: firstMatch(compact, /Client:\s*(.+?)(?:\s+SERVICE INVOICE|\n)/i),
     provider_name: firstMatch(compact, /Provider:\s*(.+?)(?:\n|$)/i),
     invoice_date: toIsoDate(firstMatch(compact, /Date:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i)),
     total_amount: moneyValue(firstMatch(compact, /Total Design Fee:\s*\$?\s*([\d,]+(?:\.\d{2})?)/i)),
-    paid_amount: moneyValue(firstMatch(compact, /Paid:\s*\$?\s*([\d,]+(?:\.\d{2})?)/i)),
+    paid_amount: paidAmount,
     balance_due: moneyValue(firstMatch(compact, /Design Fee Due:\s*\$?\s*([\d,]+(?:\.\d{2})?)/i)),
     payments,
     raw_text: compact.trim(),

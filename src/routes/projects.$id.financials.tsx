@@ -1331,26 +1331,27 @@ function ServiceInvoicePreview({
   return (
     <div className="xl:sticky xl:top-6 self-start">
       <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] xl:grid-cols-1 gap-5">
-        <div className="bg-white border border-border p-5 text-black shadow-sm overflow-hidden">
-          <div className="text-center mb-8">
-            <div className="font-display text-[44px] sm:text-[58px] leading-none tracking-[-0.06em]">MERAV INTERIORS</div>
-            <div className="mt-3 text-[13px] tracking-[0.45em] text-neutral-500">BY KATIE ROBERTS</div>
+        <div className="bg-white p-3 text-black shadow-sm overflow-hidden sm:p-4">
+          <div className="border border-neutral-400 px-[3%] pb-[7%] pt-[1.5%]">
+          <div className="text-center mb-12">
+            <div className="font-display text-[46px] sm:text-[62px] leading-[0.85] tracking-[-0.065em]">MERAV INTERIORS</div>
+            <div className="mt-4 text-[12px] tracking-[0.4em] text-neutral-500">BY KATIE ROBERTS</div>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 text-[12px] mb-8">
-            <div className="space-y-10">
+          <div className="grid grid-cols-2 gap-10 text-[10px] mb-8 min-h-[150px]">
+            <div className="space-y-12">
               <div><strong>Client:</strong><span className="ml-8">{draft.clientName || "Client Name"}</span></div>
               <div>
                 <strong>Provider:</strong>
-                <div className="ml-24 -mt-4">
+                <div className="ml-20 -mt-3">
                   MERAV INTERIORS<br />
                   <span className="text-blue-700">katie@meravinteriors.com</span>
                 </div>
               </div>
             </div>
-            <div className="space-y-8">
-              <h3 className="font-serif text-2xl font-bold text-right">SERVICE INVOICE</h3>
-              <div className="grid grid-cols-[90px_1fr] gap-3">
+            <div>
+              <h3 className="font-serif text-xl font-bold text-right mb-8">SERVICE INVOICE</h3>
+              <div className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-10">
                 <strong>Date:</strong><span>{formatDateForInvoice(draft.invoiceDate)}</span>
                 <strong>Address:</strong>
                 <span>
@@ -1362,24 +1363,24 @@ function ServiceInvoicePreview({
             </div>
           </div>
 
-          <div className="space-y-10 mb-16">
+          <div className="space-y-10 mb-14">
             {sections.map((section) => (
-              <table key={section.kind} className="w-full border border-black text-[12px]">
+              <table key={section.kind} className="w-full border border-black text-[10px]">
                 <thead>
                   <tr className="bg-[#e9e7de]">
-                    <th colSpan={3} className="border-b border-black py-2 text-center font-bold">{section.title}</th>
+                    <th colSpan={3} className="border-b border-black py-2.5 text-center font-bold">{section.title}</th>
                   </tr>
                   <tr className="bg-[#e9e7de] text-left">
-                    <th className="border-r border-black border-b border-black py-2 px-1 w-[30%]">Location</th>
-                    <th className="border-r border-black border-b border-black py-2 px-1">Description</th>
-                    <th className="border-b border-black py-2 px-1 w-[18%]">Subtotal</th>
+                    <th className="border-r border-black border-b border-black py-2.5 px-1 w-[30%]">Location</th>
+                    <th className="border-r border-black border-b border-black py-2.5 px-1">Description</th>
+                    <th className="border-b border-black py-2.5 px-1 w-[14%]">Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="border-r border-black py-8 px-3 text-center font-bold">{section.location}</td>
-                    <td className="border-r border-black py-8 px-4 text-center">{section.description}</td>
-                    <td className="py-8 px-2 text-right">{formatMoney(section.amount)}</td>
+                    <td className="border-r border-black py-9 px-3 text-center font-bold">{section.location}</td>
+                    <td className="border-r border-black py-9 px-4 text-center">{section.description}</td>
+                    <td className="py-9 px-1 text-right">{formatMoney(section.amount)}</td>
                   </tr>
                   <tr>
                     <td className="border-r border-black"></td>
@@ -1391,28 +1392,31 @@ function ServiceInvoicePreview({
             ))}
           </div>
 
-          <div className="ml-auto max-w-[390px] text-[12px]">
-            <div className="flex items-center justify-end gap-2 mb-4">
-              <span className="font-bold text-xl">Total Design Fee:</span>
-              <span className="border border-black bg-[#e9e7de] px-4 py-3 font-bold text-lg">{formatMoney(fee)}</span>
+          <div className="ml-auto max-w-[315px] text-[10px]">
+            <div className="grid grid-cols-[1fr_110px] items-stretch mb-2">
+              <span className="self-center pr-1 text-right font-bold text-base">Total Design Fee:</span>
+              <span className="border border-black bg-[#e9e7de] px-2 py-3 text-right font-bold text-base">{formatMoney(fee)}</span>
             </div>
-            <div className="grid grid-cols-[1fr_130px] gap-x-3 gap-y-2 text-right mb-5">
+            <div className="grid grid-cols-[1fr_110px] gap-x-2 gap-y-1 text-right mb-5">
               <strong>Paid:</strong><span>{paid ? formatMoney(paid) : ""}</span>
               <strong className="underline">Design Fee Due:</strong><strong className="underline">{formatMoney(Math.max(fee - paid, 0))}</strong>
-              {phaseRows.filter((phase) => phase.amount > 0).map((phase) => (
-                <span key={phase.name}>Due {phase.name === "Project Start" ? "on" : "at"} {phase.name}:</span>
-              )).flatMap((label, index) => [label, <span key={`amount-${index}`}>{formatMoney(phaseRows.filter((phase) => phase.amount > 0)[index]?.amount ?? 0)}</span>])}
+              {phaseRows.filter((phase) => phase.amount > 0).flatMap((phase) => {
+                const emphasized = phase.name === draft.currentPhase;
+                return [
+                  <span key={`${phase.name}-label`} className={emphasized ? "font-bold" : undefined}>Due {phase.name === "Project Start" ? "on" : "at"} {phase.name}:</span>,
+                  <span key={`${phase.name}-amount`} className={emphasized ? "font-bold" : undefined}>{formatMoney(phase.amount)}</span>,
+                ];
+              })}
             </div>
-            <div className="grid grid-cols-[1fr_140px] border-2 border-black mb-10">
-              <div className="bg-[#e9e7de] text-center text-blue-700 underline font-bold py-1">
-                {draft.stripeLink ? "CLICK HERE TO PAY" : "CLICK HERE TO PAY"}
-              </div>
+            <div className="grid grid-cols-[1fr_110px] border-2 border-black mb-10">
+              <div className="bg-[#e9e7de] text-center text-blue-700 underline font-bold py-1">CLICK HERE TO PAY</div>
               <div className="bg-[#e9e7de] border-l border-black py-1 px-2 text-right font-bold">{formatMoney(selectedAmount)}</div>
             </div>
             <div className="space-y-10 italic">
               <div className="border-t border-black pt-2 flex justify-between"><span>Authorized by Client</span><span>Date</span></div>
               <div className="border-t border-black pt-2 flex justify-between"><span>Authorized by MERAV INTERIORS</span><span>Date</span></div>
             </div>
+          </div>
           </div>
         </div>
 
@@ -1646,7 +1650,7 @@ function buildServiceInvoiceHtml(
   payments: Array<{ label: string; amount: number; due_date: string | null; status: string; notes: string | null; sort_order: number }>,
 ) {
   const selectedAmount = payments.find((payment) => payment.label.includes(draft.currentPhase))?.amount ?? 0;
-  const paid = numberValue(draft.paid) ?? 0;
+  const paid = paidDesignFee(draft, fee);
   const address = addressLines(draft.projectAddress).map(escapeHtml).join("<br>");
   const sectionTables = invoiceDesignSections(draft).map((section) => `
     <table class="line-table">
@@ -1668,7 +1672,8 @@ function buildServiceInvoiceHtml(
     .filter((payment) => payment.amount > 0 && /^Phase \d+ - /.test(payment.label))
     .map((payment) => {
       const clean = payment.label.replace(/^Phase \d+ - /, "");
-      return `<div class="summary-row"><span>Due ${clean === "Project Start" ? "on" : "at"} ${escapeHtml(clean)}:</span><span>${formatMoney(payment.amount)}</span></div>`;
+      const currentClass = clean === draft.currentPhase ? " current-phase" : "";
+      return `<div class="summary-row${currentClass}"><span>Due ${clean === "Project Start" ? "on" : "at"} ${escapeHtml(clean)}:</span><span>${formatMoney(payment.amount)}</span></div>`;
     }).join("");
 
   return `<!doctype html>
@@ -1677,37 +1682,40 @@ function buildServiceInvoiceHtml(
   <meta charset="utf-8" />
   <title>${escapeHtml(draft.projectName || "Design Service Invoice")}</title>
   <style>
-    @page { size: letter; margin: 0.35in; }
-    body { margin: 0; font-family: Georgia, "Times New Roman", serif; color: #000; background: #fff; }
-    .page { width: 8.5in; min-height: 10.5in; padding: 0.15in 0.25in; box-sizing: border-box; }
-    .brand { text-align: center; margin: 0.05in 0 0.5in; }
-    .logo { font-size: 60px; line-height: 0.95; letter-spacing: -0.08em; font-weight: 400; }
-    .byline { margin-top: 16px; font-family: Arial, sans-serif; letter-spacing: 0.45em; color: #999; font-size: 15px; }
-    .top { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0.5in; font-size: 14px; margin-bottom: 0.35in; }
-    .provider { margin-top: 0.65in; }
-    .provider-row { display: grid; grid-template-columns: 0.75in 1fr; }
-    .title { text-align: right; font-size: 26px; font-weight: 700; margin-bottom: 0.35in; }
-    .meta { display: grid; grid-template-columns: 0.85in 1fr; gap: 0.14in; }
-    table { border-collapse: collapse; width: 100%; font-size: 14px; }
-    th, td { border: 1px solid #000; padding: 0.12in 0.08in; vertical-align: middle; }
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&display=swap');
+    @page { size: letter; margin: 0; }
+    html, body { width: 8.5in; min-height: 11in; }
+    body { margin: 0; font-family: "Times New Roman", Times, serif; color: #000; background: #fff; }
+    .page { width: 7in; min-height: 8.5in; margin: 0.5in auto 0; padding: 0.05in 0.17in 0.3in; border: 0.5px solid #9a9a9a; box-sizing: border-box; }
+    .brand { text-align: center; margin: 0 0 0.38in; }
+    .logo { font-family: "Cormorant Garamond", Georgia, serif; font-size: 58px; line-height: 0.86; letter-spacing: -0.065em; font-weight: 300; white-space: nowrap; }
+    .byline { margin-top: 17px; font-family: Arial, sans-serif; letter-spacing: 0.38em; color: #99958f; font-size: 12px; }
+    .top { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0.45in; min-height: 1.52in; font-size: 10px; margin-bottom: 0.18in; }
+    .provider { margin-top: 0.48in; }
+    .provider-row { display: grid; grid-template-columns: 0.76in 1fr; }
+    .title { text-align: right; font-size: 20px; font-weight: 700; margin-bottom: 0.22in; }
+    .meta { display: grid; grid-template-columns: 0.82in 1fr; row-gap: 0.35in; }
+    table { border-collapse: collapse; width: 100%; font-size: 10px; }
+    th, td { border: 1px solid #000; padding: 0.09in 0.03in; vertical-align: middle; }
     th { background: #e9e7de; text-align: left; }
     .center { text-align: center; }
     .right { text-align: right; }
     .line-table { table-layout: fixed; }
-    .line-table .item-row td { height: 0.7in; }
-    .line-table .subtotal-row td { height: 0.28in; padding: 0.08in; }
+    .line-table .item-row td { height: 0.62in; }
+    .line-table .subtotal-row td { height: 0.22in; padding: 0.06in 0.03in; }
     .line-table .subtotal-spacer { border: 0; height: 0; padding: 0; background: transparent; }
-    .line-table + .line-table { margin-top: 0.48in; }
-    .summary { width: 3.35in; margin-left: auto; margin-top: 0.32in; font-size: 14px; }
-    .fee-row { display: grid; grid-template-columns: 1fr 1.35in; align-items: stretch; margin-bottom: 0.16in; }
-    .fee-label { align-self: center; padding-right: 0.06in; text-align: right; font-size: 15px; }
-    .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.11in 0.08in; text-align: right; font-size: 20px; font-weight: 700; }
-    .summary-row { display: grid; grid-template-columns: 1fr 1.35in; text-align: right; gap: 0.06in; margin: 0.055in 0; }
-    .pay { display: grid; grid-template-columns: 1fr 1.35in; border: 2px solid #000; margin: 0.22in 0 0.55in; }
-    .pay div { background: #e9e7de; padding: 0.04in 0.08in; font-weight: 700; text-align: center; }
+    .line-table + .line-table { margin-top: 0.35in; }
+    .summary { width: 2.67in; margin-left: auto; margin-top: 0.5in; font-size: 10px; }
+    .fee-row { display: grid; grid-template-columns: 1fr 0.95in; align-items: stretch; margin-bottom: 0.05in; }
+    .fee-label { align-self: center; padding-right: 0.03in; text-align: right; font-size: 15px; }
+    .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.09in 0.03in; text-align: right; font-size: 15px; font-weight: 700; }
+    .summary-row { display: grid; grid-template-columns: 1fr 0.95in; text-align: right; gap: 0.03in; margin: 0.035in 0; }
+    .current-phase { font-weight: 700; }
+    .pay { display: grid; grid-template-columns: 1fr 0.95in; border: 2px solid #000; margin: 0.18in 0 0.42in; }
+    .pay div { background: #e9e7de; padding: 0.025in 0.03in; font-weight: 700; text-align: center; }
     .pay div + div { border-left: 1px solid #000; text-align: right; }
     .pay a { color: #00f; text-decoration: underline; }
-    .sig { margin-top: 0.38in; border-top: 1px solid #000; padding-top: 0.07in; display: flex; justify-content: space-between; font-style: italic; }
+    .sig { margin-top: 0.38in; border-top: 1px solid #000; padding: 0.03in 0.03in 0; display: flex; justify-content: space-between; font-size: 10px; font-style: italic; }
     a { color: #00f; }
   </style>
 </head>
@@ -1814,7 +1822,12 @@ function printHtmlAsPdf(html: string, fileName?: string | null) {
   target.document.write(html);
   target.document.close();
   target.document.title = invoicePdfFileName(fileName);
-  target.setTimeout(() => {
+  target.setTimeout(async () => {
+    try {
+      await target.document.fonts.ready;
+    } catch {
+      // The invoice can still print with the browser's fallback font.
+    }
     target.focus();
     target.print();
   }, 350);
