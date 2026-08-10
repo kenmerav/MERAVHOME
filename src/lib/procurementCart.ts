@@ -467,7 +467,8 @@ export function buildProcurementDraft(
     size: "",
     dimensions: text(product?.dimensions),
     otherRequirements: "",
-    expectedPrice: parseMoney(product?.price),
+    // Cart runs compare the retailer price against our cost, not the client-facing price.
+    expectedPrice: parseMoney(product?.unit_cost) ?? parseMoney(product?.price),
     imageUrl: text(item.image_url) || text(product?.image_url),
     notes: text(item.notes) || text(product?.notes),
     substitutionInstructions: "",

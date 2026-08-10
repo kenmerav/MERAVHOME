@@ -425,6 +425,7 @@ export async function updateAuthorizedProcurementItem(input: {
   observedProductTitle?: string | null;
   observedOptions?: Record<string, unknown> | null;
   observedPrice?: number | null;
+  observedShipping?: number | null;
   observedStockStatus?: string | null;
   cartUrl?: string | null;
   resultNotes?: string | null;
@@ -441,13 +442,35 @@ export async function updateAuthorizedProcurementItem(input: {
     throw new Error("Drafted status can only be recorded by Studio's create_retailer_draft tool.");
   }
 
+  const observedPrice = numeric(input.observedPrice);
+  const observedShipping = numeric(input.observedShipping);
+  if (input.status === "added" && item.product_id && observedPrice !== null) {
+    const pricingUpdate: { unit_cost: string; shipping?: string } = {
+      unit_cost: observedPrice.toFixed(2),
+    };
+    if (observedShipping !== null) pricingUpdate.shipping = observedShipping.toFixed(2);
+
+    // Price sync happens before the run item is finalized so a failed product update
+    // remains retryable instead of leaving an Added item with stale Studio pricing.
+    const { error: pricingError } = await admin
+      .from("products")
+      .update(pricingUpdate)
+      .eq("id", item.product_id);
+    if (pricingError) throw pricingError;
+  }
+
+  const observedOptions = {
+    ...(input.observedOptions ?? {}),
+    ...(observedShipping !== null ? { shipping: observedShipping } : {}),
+  };
+
   const { data: updated, error } = await admin
     .from("procurement_run_items")
     .update({
       status: input.status,
       observed_product_title: asNullableString(input.observedProductTitle),
-      observed_options: input.observedOptions ?? {},
-      observed_price: input.observedPrice ?? null,
+      observed_options: observedOptions,
+      observed_price: observedPrice,
       observed_availability: asNullableString(input.observedStockStatus),
       retailer_cart_url: asNullableString(input.cartUrl),
       result_notes: asNullableString(input.resultNotes),

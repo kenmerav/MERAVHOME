@@ -183,14 +183,25 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
     {
       title: "Update procurement item",
       description:
-        "Record the current retailer result for one product in the authorized cart run. This cannot edit the original Spec Book product.",
+        "Record the current retailer result for one product in the authorized cart run. A successfully added item's verified unit price updates Studio Cost; visible shipping updates Shipping. Client Price is never changed.",
       inputSchema: {
         run_authorization: z.string().min(32),
         run_item_id: z.string().uuid(),
         status: z.enum(PROCUREMENT_AGENT_UPDATE_STATUSES),
         observed_product_title: z.string().max(500).optional().nullable(),
         observed_options: z.record(z.unknown()).optional().default({}),
-        observed_price: z.number().nonnegative().optional().nullable(),
+        observed_price: z
+          .number()
+          .nonnegative()
+          .optional()
+          .nullable()
+          .describe("Verified retailer unit price, excluding quantity multiplication."),
+        observed_shipping: z
+          .number()
+          .nonnegative()
+          .optional()
+          .nullable()
+          .describe("Per-item shipping only when the retailer clearly displays it."),
         observed_stock_status: z.string().max(240).optional().nullable(),
         cart_url: z.string().url().optional().nullable(),
         result_notes: z.string().max(2000).optional().nullable(),
@@ -211,6 +222,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
       observed_product_title,
       observed_options,
       observed_price,
+      observed_shipping,
       observed_stock_status,
       cart_url,
       result_notes,
@@ -222,6 +234,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
         observedProductTitle: observed_product_title,
         observedOptions: observed_options,
         observedPrice: observed_price,
+        observedShipping: observed_shipping,
         observedStockStatus: observed_stock_status,
         cartUrl: cart_url,
         resultNotes: result_notes,
@@ -232,7 +245,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
         content: [
           {
             type: "text",
-            text: `Updated ${item.product_name} to ${itemStatusLabel(item.status)}.`,
+            text: `Updated ${item.product_name} to ${itemStatusLabel(item.status)}.${item.status === "added" && item.observed_price !== null ? " Studio Cost was updated from the verified retailer unit price." : ""}`,
           },
         ],
       };

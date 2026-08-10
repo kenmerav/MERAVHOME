@@ -109,6 +109,26 @@ describe("Spec Book selection and preflight", () => {
     expect(classifyProcurementDraft(draft)).toBe("ready");
   });
 
+  it("uses Studio Cost for cart price checks without replacing Client Price", () => {
+    const source = material();
+    const draft = buildProcurementDraft(
+      {
+        ...source,
+        product: {
+          ...source.product!,
+          price: "$349.00",
+          unit_cost: "$219.50",
+        },
+      },
+      { id: "33333333-3333-4333-8333-333333333333", name: "Mock Residence" },
+      { id: "22222222-2222-4222-8222-222222222222", name: "Kitchen" },
+      true,
+    );
+
+    expect(draft.expectedPrice).toBe(219.5);
+    expect(source.product?.price).toBe("$249.00");
+  });
+
   it.each([
     [{ productUrl: "" }, "missing_product_link"],
     [{ productUrl: "javascript:alert(1)" }, "invalid_link"],
