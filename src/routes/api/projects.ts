@@ -63,6 +63,11 @@ export const Route = createFileRoute("/api/projects")({
           await ensureOk(await supabaseAdmin.from("financial_invoices").delete().eq("project_id", project_id));
           await ensureOk(await supabaseAdmin.from("material_items").delete().eq("project_id", project_id));
 
+          // Remove board history before the board itself. The board DELETE trigger archives a
+          // final snapshot, which must run while its parent project still exists.
+          await ensureOk(await supabaseAdmin.from("design_board_versions" as any).delete().eq("project_id", project_id));
+          await ensureOk(await supabaseAdmin.from("design_boards" as any).delete().eq("project_id", project_id));
+
           if (roomProductIds.length) {
             await ensureOk(await supabaseAdmin.from("procurement_items").delete().in("room_product_id", roomProductIds));
           }
