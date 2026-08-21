@@ -28,10 +28,14 @@ export function procurementTotals(items: any[], taxRate: string | number = 0) {
       shipping: sum.shipping + moneyValue(product?.shipping) * qty,
     };
   }, { client: 0, cost: 0, shipping: 0 });
-  const tax = money.cost * ((Number(taxRate) || 0) / 100);
+  const subtotal = money.client;
+  const tax = subtotal * ((Number(taxRate) || 0) / 100);
+  const total = subtotal + tax + money.shipping;
   return {
     ...money,
+    subtotal,
     tax,
-    profit: money.client - money.cost - tax - money.shipping,
+    total,
+    profit: subtotal - money.cost,
   };
 }

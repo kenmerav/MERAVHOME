@@ -307,9 +307,8 @@ function ProcurementPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <MoneyStat label="Client Price Total" value={money.client} />
-          <MoneyStat label="Studio Cost Total" value={money.cost} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+          <MoneyStat label="Subtotal" value={money.subtotal} />
           <MoneyStat label="Tax" value={money.tax}>
             <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
               Rate
@@ -322,7 +321,9 @@ function ProcurementPage() {
               %
             </label>
           </MoneyStat>
-          <MoneyStat label="Shipping Total" value={money.shipping} />
+          <MoneyStat label="Shipping" value={money.shipping} />
+          <MoneyStat label="Client Total" value={money.total} />
+          <MoneyStat label="Studio Cost" value={money.cost} />
           <MoneyStat label="Profit" value={money.profit} />
         </div>
 
