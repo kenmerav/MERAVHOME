@@ -137,7 +137,7 @@ async function projectSnapshot(projectId: string) {
   const imagesResult = roomIds.length
     ? await supabaseAdmin
         .from("room_images")
-        .select("id,room_id,kind,url,caption,review_status,is_approved,revision_notes,role,updated_at")
+        .select("id,room_id,kind,url,caption,review_status,is_approved,revision_notes,role,created_at")
         .in("room_id", roomIds)
         .or("is_approved.eq.true,review_status.eq.approved")
     : { data: [], error: null };
