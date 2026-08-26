@@ -21,6 +21,8 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FlipHorizontal2,
+  FlipVertical2,
   Image as ImageIcon,
   LayoutTemplate,
   MessageSquare,
@@ -41,6 +43,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import {
   db,
@@ -110,6 +118,8 @@ type BoardElement = {
   width: number;
   height: number;
   rotation?: number;
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
   zIndex: number;
   src?: string;
   originalSrc?: string;
@@ -3004,6 +3014,20 @@ function ProjectDesignBoardsPage() {
     updateElement(selected.id, { rotation: nextRotation });
   };
 
+  const flipSelectedImages = (direction: "horizontal" | "vertical") => {
+    if (!selectedImageTargets.length) return;
+    const targetIds = new Set(selectedImageTargets.map((element) => element.id));
+    pushUndo();
+    setElements((current) =>
+      current.map((element) => {
+        if (!targetIds.has(element.id)) return element;
+        return direction === "horizontal"
+          ? { ...element, flipHorizontal: !element.flipHorizontal }
+          : { ...element, flipVertical: !element.flipVertical };
+      }),
+    );
+  };
+
   const toggleSelectedMaterialExclusion = () => {
     if (!selectedImageTargets.length) return;
     const targetIds = new Set(selectedImageTargets.map((element) => element.id));
@@ -3818,6 +3842,30 @@ function ProjectDesignBoardsPage() {
               >
                 <RotateCw className="h-4 w-4" /> Rotate
               </ToolbarButton>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={!selectedImageTargets.length}>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 border border-stone-300 bg-white px-4 py-2 text-sm text-ink transition hover:border-ink disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <FlipHorizontal2 className="h-4 w-4" /> Flip
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="rounded-none border-stone-300 bg-white p-1">
+                  <DropdownMenuItem
+                    onSelect={() => flipSelectedImages("horizontal")}
+                    className="rounded-none px-3 py-2"
+                  >
+                    <FlipHorizontal2 className="h-4 w-4" /> Flip horizontal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => flipSelectedImages("vertical")}
+                    className="rounded-none px-3 py-2"
+                  >
+                    <FlipVertical2 className="h-4 w-4" /> Flip vertical
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <ToolbarButton
                 onClick={removeSelectedBackground}
                 disabled={
@@ -5671,6 +5719,8 @@ function boardImageStyle(
   const crop = imageCropSettings(element);
   const transforms = [
     options.includeRotation ? `rotate(${element.rotation ?? 0}deg)` : "",
+    element.flipHorizontal ? "scaleX(-1)" : "",
+    element.flipVertical ? "scaleY(-1)" : "",
     crop.active && crop.zoom !== 1 ? `scale(${crop.zoom})` : "",
   ].filter(Boolean);
 
@@ -7062,6 +7112,7 @@ async function drawBoardImageForExport(ctx: CanvasRenderingContext2D, element: B
       ctx.save();
       ctx.translate(element.width / 2, element.height / 2);
       ctx.rotate(((element.rotation ?? 0) * Math.PI) / 180);
+      ctx.scale(element.flipHorizontal ? -1 : 1, element.flipVertical ? -1 : 1);
       ctx.translate(-element.width / 2, -element.height / 2);
       drawImageContain(ctx, image, 0, 0, element.width, element.height, element);
       ctx.restore();
@@ -7974,6 +8025,8 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "width",
     "height",
     "rotation",
+    "flipHorizontal",
+    "flipVertical",
     "zIndex",
     "src",
     "originalSrc",
@@ -8397,6 +8450,8 @@ function normalizeBoardElement(value: unknown): BoardElement | null {
     width: typeof element.width === "number" ? element.width : 240,
     height: typeof element.height === "number" ? element.height : 180,
     rotation: typeof element.rotation === "number" ? element.rotation : 0,
+    flipHorizontal: element.flipHorizontal === true,
+    flipVertical: element.flipVertical === true,
     zIndex: typeof element.zIndex === "number" ? element.zIndex : 10,
     visible: element.visible === false ? false : true,
   };
