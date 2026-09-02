@@ -955,7 +955,7 @@ function SpecSpreadsheetView({
             try {
               await downloadSpecSpreadsheetWorkbook(
                 projectName,
-                rows,
+                groups,
                 availableColumns.filter((column) => !hiddenColumns.has(column.key)),
               );
               toast.success("Excel spec book downloaded");
@@ -2111,36 +2111,65 @@ function spreadsheetGroupId(groupBy: "room" | "category", label: string, id?: st
 
 async function downloadSpecSpreadsheetWorkbook(
   projectName: string,
-  rows: SpecSpreadsheetRow[],
+  groups: Array<{ id: string; label: string; rows: SpecSpreadsheetRow[] }>,
   columns: Array<{ key: SpreadsheetColumnKey; label: string }>,
 ) {
   const { strToU8, zipSync } = await import("fflate");
   const imageColumnIndex = columns.findIndex((column) => column.key === "image");
-  const thumbnails = imageColumnIndex === -1 ? [] : await loadSpreadsheetThumbnails(rows);
   const createdAt = new Date().toISOString();
+  const lastColumn = excelColumnName(Math.max(columns.length - 1, 0));
+  const worksheetRows: string[] = [];
+  const groupHeaderRows: number[] = [];
+  const imageRows: Array<{ row: SpecSpreadsheetRow; sheetRowIndex: number }> = [];
+  let excelRow = 1;
 
-  const headerCells = columns
-    .map(
-      (column, index) =>
-        `<c r="${excelColumnName(index)}1" t="inlineStr" s="1"><is><t>${xmlEscape(column.label)}</t></is></c>`,
-    )
-    .join("");
-  const dataRows = rows
-    .map((row, rowIndex) => {
-      const excelRow = rowIndex + 2;
+  groups.forEach((group, groupIndex) => {
+    groupHeaderRows.push(excelRow);
+    worksheetRows.push(
+      `<row r="${excelRow}" ht="28" customHeight="1"><c r="A${excelRow}" t="inlineStr" s="3"><is><t>${xmlEscape(group.label)}</t></is></c></row>`,
+    );
+    excelRow += 1;
+
+    const headerCells = columns
+      .map(
+        (column, index) =>
+          `<c r="${excelColumnName(index)}${excelRow}" t="inlineStr" s="1"><is><t>${xmlEscape(column.label)}</t></is></c>`,
+      )
+      .join("");
+    worksheetRows.push(`<row r="${excelRow}" ht="24" customHeight="1">${headerCells}</row>`);
+    excelRow += 1;
+
+    group.rows.forEach((row) => {
       const cells = columns
         .map((column, columnIndex) => {
           const value = column.key === "image" ? "" : spreadsheetCellValue(row, column.key);
           return `<c r="${excelColumnName(columnIndex)}${excelRow}" t="inlineStr" s="2"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
         })
         .join("");
-      return `<row r="${excelRow}" ht="78" customHeight="1">${cells}</row>`;
-    })
-    .join("");
+      worksheetRows.push(`<row r="${excelRow}" ht="78" customHeight="1">${cells}</row>`);
+      imageRows.push({ row, sheetRowIndex: excelRow - 1 });
+      excelRow += 1;
+    });
+
+    if (groupIndex < groups.length - 1) {
+      worksheetRows.push(`<row r="${excelRow}" ht="10" customHeight="1"/>`);
+      excelRow += 1;
+    }
+  });
+
+  if (groups.length === 0) {
+    worksheetRows.push(
+      '<row r="1" ht="24" customHeight="1"><c r="A1" t="inlineStr" s="3"><is><t>No products selected</t></is></c></row>',
+    );
+    groupHeaderRows.push(1);
+    excelRow = 2;
+  }
+
+  const thumbnails = imageColumnIndex === -1 ? [] : await loadSpreadsheetThumbnails(imageRows);
   const columnWidths = columns
     .map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${spreadsheetColumnWidth(column.key)}" customWidth="1"/>`)
     .join("");
-  const lastCell = `${excelColumnName(Math.max(columns.length - 1, 0))}${Math.max(rows.length + 1, 1)}`;
+  const lastCell = `${lastColumn}${Math.max(excelRow - 1, 1)}`;
 
   const files: Record<string, Uint8Array> = {
     "[Content_Types].xml": strToU8(contentTypesXml(thumbnails.length > 0)),
@@ -2151,7 +2180,7 @@ async function downloadSpecSpreadsheetWorkbook(
     "xl/_rels/workbook.xml.rels": strToU8(workbookRelationshipsXml()),
     "xl/styles.xml": strToU8(workbookStylesXml()),
     "xl/worksheets/sheet1.xml": strToU8(
-      worksheetXml(columnWidths, headerCells, dataRows, lastCell, thumbnails.length > 0),
+      worksheetXml(columnWidths, worksheetRows.join(""), lastCell, groupHeaderRows, lastColumn, thumbnails.length > 0),
     ),
   };
 
@@ -2228,19 +2257,19 @@ type SpreadsheetThumbnail = {
   rowIndex: number;
 };
 
-async function loadSpreadsheetThumbnails(rows: SpecSpreadsheetRow[]) {
+async function loadSpreadsheetThumbnails(rows: Array<{ row: SpecSpreadsheetRow; sheetRowIndex: number }>) {
   const thumbnails: SpreadsheetThumbnail[] = [];
   const batchSize = 6;
   for (let start = 0; start < rows.length; start += batchSize) {
     const batch = rows.slice(start, start + batchSize);
     const results = await Promise.all(
-      batch.map(async (row, index) => {
+      batch.map(async ({ row, sheetRowIndex }) => {
         const imageUrl = normalizeSupabaseImageUrl(row.imageUrl).trim();
         if (!imageUrl) return null;
         try {
           return {
             bytes: await imageUrlToThumbnailPng(imageUrl),
-            rowIndex: start + index,
+            rowIndex: sheetRowIndex,
           };
         } catch {
           return null;
@@ -2386,38 +2415,51 @@ function workbookRelationshipsXml() {
 function workbookStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="2">
+  <fonts count="3">
     <font><sz val="10"/><name val="Aptos"/><family val="2"/></font>
     <font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="Aptos"/><family val="2"/></font>
+    <font><b/><color rgb="FF211E1A"/><sz val="14"/><name val="Aptos Display"/><family val="2"/></font>
   </fonts>
-  <fills count="3">
+  <fills count="4">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FF211E1A"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF2EFE9"/><bgColor indexed="64"/></patternFill></fill>
   </fills>
   <borders count="2">
     <border><left/><right/><top/><bottom/><diagonal/></border>
     <border><left style="thin"><color rgb="FFD8D3CB"/></left><right style="thin"><color rgb="FFD8D3CB"/></right><top style="thin"><color rgb="FFD8D3CB"/></top><bottom style="thin"><color rgb="FFD8D3CB"/></bottom><diagonal/></border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="3">
+  <cellXfs count="4">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 }
 
-function worksheetXml(columns: string, headerCells: string, dataRows: string, lastCell: string, hasImages: boolean) {
+function worksheetXml(
+  columns: string,
+  rows: string,
+  lastCell: string,
+  groupHeaderRows: number[],
+  lastColumn: string,
+  hasImages: boolean,
+) {
+  const mergedGroups = groupHeaderRows
+    .map((row) => `<mergeCell ref="A${row}:${lastColumn}${row}"/>`)
+    .join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <dimension ref="A1:${lastCell}"/>
-  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <sheetFormatPr defaultRowHeight="18"/>
   <cols>${columns}</cols>
-  <sheetData><row r="1" ht="24" customHeight="1">${headerCells}</row>${dataRows}</sheetData>
-  <autoFilter ref="A1:${lastCell}"/>
+  <sheetData>${rows}</sheetData>
+  <mergeCells count="${groupHeaderRows.length}">${mergedGroups}</mergeCells>
   ${hasImages ? '<drawing r:id="rId1"/>' : ""}
 </worksheet>`;
 }
@@ -2432,7 +2474,7 @@ function worksheetRelationshipsXml() {
 function drawingXml(thumbnails: SpreadsheetThumbnail[], imageColumnIndex: number) {
   const anchors = thumbnails
     .map((thumbnail, index) => {
-      const rowIndex = thumbnail.rowIndex + 1;
+      const rowIndex = thumbnail.rowIndex;
       return `<xdr:oneCellAnchor>
   <xdr:from><xdr:col>${imageColumnIndex}</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>${rowIndex}</xdr:row><xdr:rowOff>47625</xdr:rowOff></xdr:from>
   <xdr:ext cx="914400" cy="914400"/>
