@@ -1684,7 +1684,7 @@ function buildServiceInvoiceHtml(
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&display=swap');
     @page { size: letter; margin: 0; }
-    html, body { width: 8.5in; min-height: 11in; }
+    html, body { width: 8.5in; min-height: 11in; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { margin: 0; font-family: "Times New Roman", Times, serif; color: #000; background: #fff; }
     .page { width: 7in; min-height: 8.5in; margin: 0.5in auto 0; padding: 0.05in 0.17in 0.3in; border: 0.5px solid #9a9a9a; box-sizing: border-box; }
     .brand { text-align: center; margin: 0 0 0.38in; }
@@ -1821,6 +1821,14 @@ function printHtmlAsPdf(html: string, fileName?: string | null) {
   target.document.open();
   target.document.write(html);
   target.document.close();
+  const printColorStyle = target.document.createElement("style");
+  printColorStyle.textContent = `
+    html, body, *, *::before, *::after {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  `;
+  target.document.head.appendChild(printColorStyle);
   target.document.title = invoicePdfFileName(fileName);
   target.setTimeout(async () => {
     try {
