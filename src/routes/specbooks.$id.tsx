@@ -788,6 +788,7 @@ function SpecSpreadsheetView({
     [hideInternalProductDetails, showLinks, showOrdering, showPricing],
   );
   const [hiddenColumns, setHiddenColumns] = useState<Set<SpreadsheetColumnKey>>(new Set());
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
   const visibleColumns = useMemo(
     () => availableColumns.filter((column) => !hiddenColumns.has(column.key)).map((column) => column.key),
     [availableColumns, hiddenColumns],
@@ -948,16 +949,25 @@ function SpecSpreadsheetView({
         </details>
         <button
           type="button"
-          onClick={() =>
-            downloadSpecSpreadsheetCsv(
-              projectName,
-              rows,
-              availableColumns.filter((column) => !hiddenColumns.has(column.key)),
-            )
-          }
+          disabled={isDownloadingExcel}
+          onClick={async () => {
+            setIsDownloadingExcel(true);
+            try {
+              await downloadSpecSpreadsheetWorkbook(
+                projectName,
+                rows,
+                availableColumns.filter((column) => !hiddenColumns.has(column.key)),
+              );
+              toast.success("Excel spec book downloaded");
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : "Could not create the Excel spec book");
+            } finally {
+              setIsDownloadingExcel(false);
+            }
+          }}
           className="inline-flex h-10 items-center gap-2 border border-border px-3 text-sm hover:border-ink"
         >
-          <Download className="w-4 h-4" /> Download CSV
+          <Download className="w-4 h-4" /> {isDownloadingExcel ? "Preparing Excel..." : "Download Excel"}
         </button>
         {canEditProducts && (
           <div className="text-xs text-muted-foreground">
@@ -2099,30 +2109,79 @@ function spreadsheetGroupId(groupBy: "room" | "category", label: string, id?: st
   return `sheet-${groupBy}-${slug(label || "other")}${id ? `-${id.slice(0, 6)}` : ""}`;
 }
 
-function downloadSpecSpreadsheetCsv(
+async function downloadSpecSpreadsheetWorkbook(
   projectName: string,
   rows: SpecSpreadsheetRow[],
   columns: Array<{ key: SpreadsheetColumnKey; label: string }>,
 ) {
-  const csv = [
-    columns.map((column) => csvCell(column.label)).join(","),
-    ...rows.map((row) => columns.map((column) => csvCell(spreadsheetCsvValue(row, column.key))).join(",")),
-  ].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const { strToU8, zipSync } = await import("fflate");
+  const imageColumnIndex = columns.findIndex((column) => column.key === "image");
+  const thumbnails = imageColumnIndex === -1 ? [] : await loadSpreadsheetThumbnails(rows);
+  const createdAt = new Date().toISOString();
+
+  const headerCells = columns
+    .map(
+      (column, index) =>
+        `<c r="${excelColumnName(index)}1" t="inlineStr" s="1"><is><t>${xmlEscape(column.label)}</t></is></c>`,
+    )
+    .join("");
+  const dataRows = rows
+    .map((row, rowIndex) => {
+      const excelRow = rowIndex + 2;
+      const cells = columns
+        .map((column, columnIndex) => {
+          const value = column.key === "image" ? "" : spreadsheetCellValue(row, column.key);
+          return `<c r="${excelColumnName(columnIndex)}${excelRow}" t="inlineStr" s="2"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
+        })
+        .join("");
+      return `<row r="${excelRow}" ht="78" customHeight="1">${cells}</row>`;
+    })
+    .join("");
+  const columnWidths = columns
+    .map((column, index) => `<col min="${index + 1}" max="${index + 1}" width="${spreadsheetColumnWidth(column.key)}" customWidth="1"/>`)
+    .join("");
+  const lastCell = `${excelColumnName(Math.max(columns.length - 1, 0))}${Math.max(rows.length + 1, 1)}`;
+
+  const files: Record<string, Uint8Array> = {
+    "[Content_Types].xml": strToU8(contentTypesXml(thumbnails.length > 0)),
+    "_rels/.rels": strToU8(rootRelationshipsXml()),
+    "docProps/app.xml": strToU8(appPropertiesXml()),
+    "docProps/core.xml": strToU8(corePropertiesXml(createdAt)),
+    "xl/workbook.xml": strToU8(workbookXml()),
+    "xl/_rels/workbook.xml.rels": strToU8(workbookRelationshipsXml()),
+    "xl/styles.xml": strToU8(workbookStylesXml()),
+    "xl/worksheets/sheet1.xml": strToU8(
+      worksheetXml(columnWidths, headerCells, dataRows, lastCell, thumbnails.length > 0),
+    ),
+  };
+
+  if (thumbnails.length > 0) {
+    files["xl/worksheets/_rels/sheet1.xml.rels"] = strToU8(worksheetRelationshipsXml());
+    files["xl/drawings/drawing1.xml"] = strToU8(drawingXml(thumbnails, imageColumnIndex));
+    files["xl/drawings/_rels/drawing1.xml.rels"] = strToU8(drawingRelationshipsXml(thumbnails));
+    thumbnails.forEach((thumbnail, index) => {
+      files[`xl/media/image${index + 1}.png`] = thumbnail.bytes;
+    });
+  }
+
+  const archive = zipSync(files, { level: 6 });
+  const blob = new Blob([new Uint8Array(archive)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${sanitizeSpecFileName(projectName)}-spec-book.csv`;
+  a.download = `${sanitizeSpecFileName(projectName)}-spec-book.xlsx`;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-function spreadsheetCsvValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey) {
+function spreadsheetCellValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey) {
   switch (key) {
     case "image":
-      return spreadsheetImageFormula(row.imageUrl);
+      return "";
     case "room":
       return row.room;
     case "category":
@@ -2164,14 +2223,241 @@ function spreadsheetCsvValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey)
   }
 }
 
-function spreadsheetImageFormula(imageUrl: string) {
-  const normalizedUrl = normalizeSupabaseImageUrl(imageUrl).trim();
-  if (!normalizedUrl) return "";
-  return `=IMAGE("${normalizedUrl.replace(/"/g, '""')}")`;
+type SpreadsheetThumbnail = {
+  bytes: Uint8Array;
+  rowIndex: number;
+};
+
+async function loadSpreadsheetThumbnails(rows: SpecSpreadsheetRow[]) {
+  const thumbnails: SpreadsheetThumbnail[] = [];
+  const batchSize = 6;
+  for (let start = 0; start < rows.length; start += batchSize) {
+    const batch = rows.slice(start, start + batchSize);
+    const results = await Promise.all(
+      batch.map(async (row, index) => {
+        const imageUrl = normalizeSupabaseImageUrl(row.imageUrl).trim();
+        if (!imageUrl) return null;
+        try {
+          return {
+            bytes: await imageUrlToThumbnailPng(imageUrl),
+            rowIndex: start + index,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    results.forEach((result) => {
+      if (result) thumbnails.push(result);
+    });
+  }
+  return thumbnails;
 }
 
-function csvCell(value: string) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+async function imageUrlToThumbnailPng(imageUrl: string) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(imageUrl, { signal: controller.signal });
+    if (!response.ok) throw new Error("Image download failed");
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+    const size = 96;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image conversion failed");
+    const scale = Math.min(size / bitmap.width, size / bitmap.height);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    context.drawImage(bitmap, Math.round((size - width) / 2), Math.round((size - height) / 2), width, height);
+    bitmap.close();
+    const thumbnail = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("Image conversion failed"))), "image/png");
+    });
+    return new Uint8Array(await thumbnail.arrayBuffer());
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function excelColumnName(index: number) {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+function spreadsheetColumnWidth(key: SpreadsheetColumnKey) {
+  const widths: Partial<Record<SpreadsheetColumnKey, number>> = {
+    image: 16,
+    room: 20,
+    category: 18,
+    item: 22,
+    cad: 12,
+    clientProductName: 28,
+    productName: 30,
+    vendor: 22,
+    finish: 18,
+    color: 18,
+    quantity: 9,
+    dimensions: 24,
+    sku: 16,
+    clientPrice: 14,
+    orderedBy: 15,
+    ordered: 11,
+    link: 38,
+    notes: 36,
+    status: 15,
+  };
+  return widths[key] ?? 18;
+}
+
+function xmlEscape(value: string) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function contentTypesXml(hasImages: boolean) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${hasImages ? '<Default Extension="png" ContentType="image/png"/>' : ""}
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  ${hasImages ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ""}
+</Types>`;
+}
+
+function rootRelationshipsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+}
+
+function appPropertiesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>MERAV Studio</Application>
+</Properties>`;
+}
+
+function corePropertiesXml(createdAt: string) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>MERAV Studio</dc:creator>
+  <cp:lastModifiedBy>MERAV Studio</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${createdAt}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${createdAt}</dcterms:modified>
+</cp:coreProperties>`;
+}
+
+function workbookXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Spec Book" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+}
+
+function workbookRelationshipsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+}
+
+function workbookStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="10"/><name val="Aptos"/><family val="2"/></font>
+    <font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="Aptos"/><family val="2"/></font>
+  </fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF211E1A"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="thin"><color rgb="FFD8D3CB"/></left><right style="thin"><color rgb="FFD8D3CB"/></right><top style="thin"><color rgb="FFD8D3CB"/></top><bottom style="thin"><color rgb="FFD8D3CB"/></bottom><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="3">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+}
+
+function worksheetXml(columns: string, headerCells: string, dataRows: string, lastCell: string, hasImages: boolean) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:${lastCell}"/>
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+  <cols>${columns}</cols>
+  <sheetData><row r="1" ht="24" customHeight="1">${headerCells}</row>${dataRows}</sheetData>
+  <autoFilter ref="A1:${lastCell}"/>
+  ${hasImages ? '<drawing r:id="rId1"/>' : ""}
+</worksheet>`;
+}
+
+function worksheetRelationshipsXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`;
+}
+
+function drawingXml(thumbnails: SpreadsheetThumbnail[], imageColumnIndex: number) {
+  const anchors = thumbnails
+    .map((thumbnail, index) => {
+      const rowIndex = thumbnail.rowIndex + 1;
+      return `<xdr:oneCellAnchor>
+  <xdr:from><xdr:col>${imageColumnIndex}</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>${rowIndex}</xdr:row><xdr:rowOff>47625</xdr:rowOff></xdr:from>
+  <xdr:ext cx="914400" cy="914400"/>
+  <xdr:pic>
+    <xdr:nvPicPr><xdr:cNvPr id="${index + 1}" name="Product image ${index + 1}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>
+    <xdr:blipFill><a:blip r:embed="rId${index + 1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
+    <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></xdr:spPr>
+  </xdr:pic>
+  <xdr:clientData/>
+</xdr:oneCellAnchor>`;
+    })
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${anchors}</xdr:wsDr>`;
+}
+
+function drawingRelationshipsXml(thumbnails: SpreadsheetThumbnail[]) {
+  const relationships = thumbnails
+    .map(
+      (_, index) =>
+        `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${index + 1}.png"/>`,
+    )
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships}</Relationships>`;
 }
 
 function sanitizeSpecFileName(value: string) {
