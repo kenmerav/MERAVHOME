@@ -7127,17 +7127,6 @@ async function drawBoardImageForExport(ctx: CanvasRenderingContext2D, element: B
   if (!element.hideDetails && (element.label || element.productName)) {
     drawBoardImageLabelForExport(ctx, element);
   }
-
-  if (!element.hideDetails && element.productId) {
-    ctx.fillStyle = "#1f4e5f";
-    drawRoundedRect(ctx, 4, 4, 74, 24, 12);
-    ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "10px Montserrat, Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("PRODUCT", 41, 16);
-  }
 }
 
 function drawImageContain(
