@@ -540,25 +540,25 @@ function ServiceInvoicePreview({ draft }: { draft: ServiceInvoiceDraft }) {
       <div className="eyebrow mb-3">Live Preview</div>
       <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] xl:grid-cols-1 gap-5">
         <div className="bg-white p-3 text-black shadow-sm overflow-hidden sm:p-4">
-          <div className="border border-neutral-400 px-[3%] pb-[7%] pt-[1.5%]">
-          <div className="text-center mb-12">
-            <div className="font-display text-[46px] sm:text-[62px] leading-[0.85] tracking-[-0.065em]">MERAV INTERIORS</div>
-            <div className="mt-4 text-[12px] tracking-[0.4em] text-neutral-500">BY KATIE ROBERTS</div>
+          <div className="border border-neutral-400 px-[3%] pb-[7%] pt-[2%]">
+          <div className="mb-14 text-center">
+            <div className="whitespace-nowrap font-display text-[clamp(46px,6.4vw,69px)] font-light leading-[0.82] tracking-[-0.07em]">MERAV INTERIORS</div>
+            <div className="mt-3 text-[12px] tracking-[0.4em] text-neutral-500">BY KATIE ROBERTS</div>
           </div>
 
-          <div className="grid grid-cols-2 gap-10 text-[10px] mb-8 min-h-[150px]">
-            <div className="space-y-12">
-              <div><strong>Client:</strong><span className="ml-8">{draft.clientName || "Client Name"}</span></div>
-              <div>
+          <div className="mb-8 grid min-h-[118px] grid-cols-[1.1fr_0.9fr] gap-10 text-[10px]">
+            <div className="space-y-16">
+              <div className="grid grid-cols-[72px_1fr] gap-x-3"><strong>Client:</strong><span>{draft.clientName || "Client Name"}</span></div>
+              <div className="grid grid-cols-[72px_1fr] gap-x-3">
                 <strong>Provider:</strong>
-                <div className="ml-20 -mt-3">
+                <div>
                   MERAV INTERIORS<br />
                   <span className="text-blue-700">katie@meravinteriors.com</span>
                 </div>
               </div>
             </div>
             <div>
-              <h3 className="font-serif text-xl font-bold text-right mb-8">SERVICE INVOICE</h3>
+              <h3 className="mb-9 text-right font-serif text-xl font-bold">SERVICE INVOICE</h3>
               <div className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-10">
                 <strong>Date:</strong><span>{formatDateForInvoice(draft.invoiceDate)}</span>
                 <strong>Address:</strong>
@@ -819,14 +819,14 @@ function buildServiceInvoiceHtml(
     @page { size: letter; margin: 0; }
     html, body { width: 8.5in; min-height: 11in; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { margin: 0; font-family: "Times New Roman", Times, serif; color: #000; background: #fff; }
-    .page { width: 7in; min-height: 8.5in; margin: 0.5in auto 0; padding: 0.05in 0.17in 0.3in; border: 0.5px solid #9a9a9a; box-sizing: border-box; }
-    .brand { text-align: center; margin: 0 0 0.38in; }
-    .logo { font-family: "Cormorant Garamond", Georgia, serif; font-size: 58px; line-height: 0.86; letter-spacing: -0.065em; font-weight: 300; white-space: nowrap; }
-    .byline { margin-top: 17px; font-family: Arial, sans-serif; letter-spacing: 0.38em; color: #99958f; font-size: 12px; }
-    .top { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0.45in; min-height: 1.52in; font-size: 10px; margin-bottom: 0.18in; }
-    .provider { margin-top: 0.48in; }
+    .page { width: 7in; min-height: 8.5in; margin: 0.5in auto 0; padding: 0 0.17in 0.3in; border: 0.5px solid #9a9a9a; box-sizing: border-box; }
+    .brand { text-align: center; margin: 0 0 0.42in; }
+    .logo { font-family: "Cormorant Garamond", Georgia, serif; font-size: 69px; line-height: 0.82; letter-spacing: -0.07em; font-weight: 300; white-space: nowrap; }
+    .byline { margin-top: 10px; font-family: Arial, sans-serif; letter-spacing: 0.4em; color: #99958f; font-size: 12px; }
+    .top { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0.45in; min-height: 1.18in; font-size: 10px; margin-bottom: 0.18in; }
+    .provider { margin-top: 0.58in; }
     .provider-row { display: grid; grid-template-columns: 0.76in 1fr; }
-    .title { text-align: right; font-size: 20px; font-weight: 700; margin-bottom: 0.22in; }
+    .title { text-align: right; font-size: 20px; font-weight: 700; margin-bottom: 0.28in; }
     .meta { display: grid; grid-template-columns: 0.82in 1fr; row-gap: 0.35in; }
     table { border-collapse: collapse; width: 100%; font-size: 10px; }
     th, td { border: 1px solid #000; padding: 0.09in 0.03in; vertical-align: middle; }
