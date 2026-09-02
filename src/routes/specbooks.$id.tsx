@@ -2122,7 +2122,7 @@ function downloadSpecSpreadsheetCsv(
 function spreadsheetCsvValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey) {
   switch (key) {
     case "image":
-      return row.imageUrl;
+      return spreadsheetImageFormula(row.imageUrl);
     case "room":
       return row.room;
     case "category":
@@ -2162,6 +2162,12 @@ function spreadsheetCsvValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey)
     default:
       return "";
   }
+}
+
+function spreadsheetImageFormula(imageUrl: string) {
+  const normalizedUrl = normalizeSupabaseImageUrl(imageUrl).trim();
+  if (!normalizedUrl) return "";
+  return `=IMAGE("${normalizedUrl.replace(/"/g, '""')}")`;
 }
 
 function csvCell(value: string) {
