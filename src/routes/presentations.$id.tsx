@@ -2658,6 +2658,43 @@ function PresentationBrandMark({ className = "" }: { className?: string }) {
   );
 }
 
+function hasVisiblePresentationMaterials(
+  data: RoomData,
+  hiddenSections: PresentationSidebarSection[] = [],
+) {
+  const hiddenSectionSet = new Set(hiddenSections);
+  const hasPalette = data.paletteMaterials.some((material) => Boolean(materialImageUrl(material)));
+  const hasCabinetry = Boolean(data.cabinetProduct?.product || data.cabinetMaterial);
+  const hasCounter = Boolean(data.counter);
+  const hasFaucet = Boolean(data.faucet?.item_label || data.faucet?.product);
+
+  return (
+    (!hiddenSectionSet.has("palette") && hasPalette) ||
+    (!hiddenSectionSet.has("cabinet") && hasCabinetry) ||
+    (!hiddenSectionSet.has("counter") && hasCounter) ||
+    (!hiddenSectionSet.has("faucet") && hasFaucet)
+  );
+}
+
+function PresentationComparisonPanel({
+  comparisonImage,
+}: {
+  comparisonImage: NonNullable<ReturnType<typeof comparisonPresentationImage>>;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col border border-border bg-background p-4 lg:p-5 print:p-3">
+      <div className="eyebrow mb-3 shrink-0 text-[10px]">{comparisonImage.label}</div>
+      <div className="min-h-0 flex-1 overflow-hidden bg-bone">
+        <img
+          src={normalizeSupabaseImageUrl(comparisonImage.image.url)}
+          alt={comparisonImage.label}
+          className="h-full w-full object-contain"
+        />
+      </div>
+    </div>
+  );
+}
+
 function PresentationImagePair({
   roomName,
   data,
@@ -2773,9 +2810,22 @@ function RoomSlide({
   }
 
   const primaryImage = primaryPresentationImage(view);
+  const comparisonImage = comparisonPresentationImage(view);
+  const hasMaterials = hasVisiblePresentationMaterials(data, hiddenSections);
+  const expandedImageLayout = !hasMaterials;
   return (
-    <div className="relative w-full h-full grid lg:grid-cols-[1.6fr_1fr] gap-6 bg-bone px-8 pt-8 pb-24 lg:px-12 lg:pt-12 lg:pb-28">
-      <div className="flex flex-col min-h-0">
+    <div
+      className={`relative h-full w-full bg-bone px-8 pb-24 pt-8 lg:px-12 lg:pb-28 lg:pt-12 ${
+        expandedImageLayout && !comparisonImage
+          ? "flex flex-col"
+          : "grid gap-6 lg:grid-cols-[1.6fr_1fr]"
+      }`}
+    >
+      <div
+        className={`flex min-h-0 flex-col ${
+          expandedImageLayout && !comparisonImage ? "flex-1" : ""
+        }`}
+      >
         <div className="mb-4">
           <div className="eyebrow text-[11px]">
             {project.name} · {project.client_name}
@@ -2794,8 +2844,17 @@ function RoomSlide({
           )}
         </div>
       </div>
-      <SpreadSidebar data={data} room={room} view={view} hiddenSections={hiddenSections} />
-      <PresentationFooter align="mainColumn" sidePaddingPx={48} />
+      {expandedImageLayout ? (
+        comparisonImage ? (
+          <PresentationComparisonPanel comparisonImage={comparisonImage} />
+        ) : null
+      ) : (
+        <SpreadSidebar data={data} room={room} view={view} hiddenSections={hiddenSections} />
+      )}
+      <PresentationFooter
+        align={expandedImageLayout && !comparisonImage ? "center" : "mainColumn"}
+        sidePaddingPx={48}
+      />
     </div>
   );
 }
@@ -3269,6 +3328,9 @@ function RoomSpread({
   const comparisonImage = comparisonPresentationImage(view);
   const sketchupHero = viewUsesSketchupAsHero(view);
   const comparisonHidden = viewHidesComparisonImage(view);
+  const editingPicks = !!onPick;
+  const hasMaterials = hasVisiblePresentationMaterials(data, hiddenSections);
+  const expandedImageLayout = !editingPicks && !hasMaterials;
   const nextLargeLayout: PresentationImageLayout = sketchupHero
     ? comparisonHidden
       ? "ai-only"
@@ -3370,7 +3432,13 @@ function RoomSpread({
           />
         </div>
       ) : (
-      <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 px-10 lg:px-14 pb-28 print:pb-24">
+      <div
+        className={`px-10 pb-28 lg:px-14 print:pb-24 ${
+          expandedImageLayout && !comparisonImage
+            ? "block"
+            : "grid gap-6 lg:grid-cols-[1.6fr_1fr]"
+        }`}
+      >
         <div className="relative overflow-hidden aspect-[4/3] lg:aspect-auto lg:min-h-[640px] print:min-h-0 print:aspect-[4/3]">
           {primaryImage ? (
             <img src={normalizeSupabaseImageUrl(primaryImage.url)} alt={room.name} className="w-full h-full object-contain" />
@@ -3380,20 +3448,29 @@ function RoomSpread({
             </div>
           )}
         </div>
-        <SpreadSidebar
-          data={data}
-          room={room}
-          view={view}
-          comparisonImage={comparisonImage}
-          hiddenSections={hiddenSections}
-          onPick={onPick}
-          onUpdateViewSketch={onUpdateViewSketch}
-          onUpdateViewRendering={onUpdateViewRendering}
-          onToggleSidebarSection={onToggleSidebarSection}
-        />
+        {expandedImageLayout ? (
+          comparisonImage ? (
+            <PresentationComparisonPanel comparisonImage={comparisonImage} />
+          ) : null
+        ) : (
+          <SpreadSidebar
+            data={data}
+            room={room}
+            view={view}
+            comparisonImage={comparisonImage}
+            hiddenSections={hiddenSections}
+            onPick={onPick}
+            onUpdateViewSketch={onUpdateViewSketch}
+            onUpdateViewRendering={onUpdateViewRendering}
+            onToggleSidebarSection={onToggleSidebarSection}
+          />
+        )}
       </div>
       )}
-      <PresentationFooter align="mainColumn" sidePaddingPx={56} />
+      <PresentationFooter
+        align={expandedImageLayout && !comparisonImage ? "center" : "mainColumn"}
+        sidePaddingPx={56}
+      />
     </section>
   );
 }
