@@ -34,6 +34,7 @@ import {
   Type,
   Upload,
   WandSparkles,
+  X,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -4789,7 +4790,9 @@ function ProjectDesignBoardsPage() {
           <aside
             className={cn(
               "group fixed right-0 top-0 z-50 flex h-screen transition-transform duration-200 hover:translate-x-0 focus-within:translate-x-0 print:hidden",
-              toolsPinned ? "translate-x-0" : "translate-x-[360px]",
+              toolsPinned
+                ? "translate-x-0"
+                : "translate-x-[min(360px,calc(100vw-16px))]",
             )}
           >
             <div className="mt-32 flex h-32 w-12 items-center justify-center rounded-l-xl border border-r-0 border-stone-200 bg-white shadow-sm">
@@ -4801,7 +4804,17 @@ function ProjectDesignBoardsPage() {
                 Board Tools
               </button>
             </div>
-            <div className="h-full w-[360px] space-y-4 overflow-y-auto border-l border-stone-200 bg-white p-4 shadow-[-20px_0_60px_rgba(40,34,25,0.12)]">
+            <div className="h-full w-[min(360px,calc(100vw-16px))] space-y-4 overflow-y-auto border-l border-stone-200 bg-white p-4 shadow-[-20px_0_60px_rgba(40,34,25,0.12)]">
+              <div className="sticky top-0 z-20 -mx-4 -mt-4 flex justify-end border-b border-stone-200 bg-white px-4 py-3 md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setToolsPinned(false)}
+                  aria-label="Close board tools"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 shadow-sm transition-colors hover:border-stone-400 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
               <div>
                 <div className="eyebrow">Board Setup</div>
                 <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-stone-500">
