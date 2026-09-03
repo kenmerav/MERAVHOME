@@ -2141,10 +2141,7 @@ async function downloadSpecSpreadsheetWorkbook(
 
     group.rows.forEach((row) => {
       const cells = columns
-        .map((column, columnIndex) => {
-          const value = column.key === "image" ? "" : spreadsheetCellValue(row, column.key);
-          return `<c r="${excelColumnName(columnIndex)}${excelRow}" t="inlineStr" s="2"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
-        })
+        .map((column, columnIndex) => spreadsheetCellXml(row, column.key, columnIndex, excelRow))
         .join("");
       worksheetRows.push(`<row r="${excelRow}" ht="78" customHeight="1">${cells}</row>`);
       imageRows.push({ row, sheetRowIndex: excelRow - 1 });
@@ -2205,6 +2202,25 @@ async function downloadSpecSpreadsheetWorkbook(
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+function spreadsheetCellXml(
+  row: SpecSpreadsheetRow,
+  key: SpreadsheetColumnKey,
+  columnIndex: number,
+  excelRow: number,
+) {
+  const reference = `${excelColumnName(columnIndex)}${excelRow}`;
+  const value = key === "image" ? "" : spreadsheetCellValue(row, key);
+
+  if (key === "quantity" && value.trim() !== "") {
+    const quantity = Number(value);
+    if (Number.isFinite(quantity)) {
+      return `<c r="${reference}" s="2"><v>${quantity}</v></c>`;
+    }
+  }
+
+  return `<c r="${reference}" t="inlineStr" s="2"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
 }
 
 function spreadsheetCellValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey) {
