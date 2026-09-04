@@ -42,6 +42,8 @@ type ProcurementInvoiceItem = {
   } | null;
   material?: {
     client_product_name: string | null;
+    category: string | null;
+    image_url: string | null;
     quantity: number | null;
     color: string | null;
     product_url: string | null;
@@ -600,9 +602,9 @@ function makeDraft({
         name: material?.client_product_name || product?.name || "Product",
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",
-        category: product?.category || "",
+        category: material?.category || product?.category || "",
         approvalStatus: item.room_product?.approval_status || "undecided",
-        imageUrl: product?.image_url || "",
+        imageUrl: material?.image_url || product?.image_url || "",
         productUrl: material?.product_url || product?.product_url || "",
         finish: material?.color || product?.finish || "",
         dimensions: product?.dimensions || "",
