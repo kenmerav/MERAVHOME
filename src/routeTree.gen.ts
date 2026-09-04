@@ -35,8 +35,11 @@ import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/uplo
 import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
 import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
+import { Route as ApiScrapeProductsRouteImport } from './routes/api/scrape-products'
 import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
 import { Route as ApiScrapeCartonCoverageRouteImport } from './routes/api/scrape-carton-coverage'
+import { Route as ApiRoomDesignImageSourceRouteImport } from './routes/api/room-design-image-source'
+import { Route as ApiRoomDesignImageRouteImport } from './routes/api/room-design-image'
 import { Route as ApiRenderingStudioRouteImport } from './routes/api/rendering-studio'
 import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
 import { Route as ApiProjectsRouteImport } from './routes/api/projects'
@@ -70,6 +73,7 @@ import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dash
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
+import { Route as ProjectsIdRoomDesignRouteImport } from './routes/projects.$id.room-design'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
 import { Route as ProjectsIdRenderingStudioRouteImport } from './routes/projects.$id.rendering-studio'
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
@@ -227,6 +231,11 @@ const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
   path: '/api/scrape-url',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiScrapeProductsRoute = ApiScrapeProductsRouteImport.update({
+  id: '/api/scrape-products',
+  path: '/api/scrape-products',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
   id: '/api/scrape-materials',
   path: '/api/scrape-materials',
@@ -235,6 +244,17 @@ const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
 const ApiScrapeCartonCoverageRoute = ApiScrapeCartonCoverageRouteImport.update({
   id: '/api/scrape-carton-coverage',
   path: '/api/scrape-carton-coverage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRoomDesignImageSourceRoute =
+  ApiRoomDesignImageSourceRouteImport.update({
+    id: '/api/room-design-image-source',
+    path: '/api/room-design-image-source',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiRoomDesignImageRoute = ApiRoomDesignImageRouteImport.update({
+  id: '/api/room-design-image',
+  path: '/api/room-design-image',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiRenderingStudioRoute = ApiRenderingStudioRouteImport.update({
@@ -410,6 +430,11 @@ const SpecbooksPublicIdRoute = SpecbooksPublicIdRouteImport.update({
   path: '/specbooks/public/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdRoomDesignRoute = ProjectsIdRoomDesignRouteImport.update({
+  id: '/projects/$id/room-design',
+  path: '/projects/$id/room-design',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsIdRenderingsRoute = ProjectsIdRenderingsRouteImport.update({
   id: '/projects/$id/renderings',
   path: '/projects/$id/renderings',
@@ -579,8 +604,11 @@ export interface FileRoutesByFullPath {
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/rendering-studio': typeof ApiRenderingStudioRoute
+  '/api/room-design-image': typeof ApiRoomDesignImageRoute
+  '/api/room-design-image-source': typeof ApiRoomDesignImageSourceRoute
   '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
+  '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
@@ -622,6 +650,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
+  '/projects/$id/room-design': typeof ProjectsIdRoomDesignRoute
   '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id/': typeof ProjectsIdIndexRoute
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
@@ -666,8 +695,11 @@ export interface FileRoutesByTo {
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/rendering-studio': typeof ApiRenderingStudioRoute
+  '/api/room-design-image': typeof ApiRoomDesignImageRoute
+  '/api/room-design-image-source': typeof ApiRoomDesignImageSourceRoute
   '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
+  '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
@@ -709,6 +741,7 @@ export interface FileRoutesByTo {
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
+  '/projects/$id/room-design': typeof ProjectsIdRoomDesignRoute
   '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id': typeof ProjectsIdIndexRoute
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
@@ -754,8 +787,11 @@ export interface FileRoutesById {
   '/api/projects': typeof ApiProjectsRoute
   '/api/remove-design-board-background': typeof ApiRemoveDesignBoardBackgroundRoute
   '/api/rendering-studio': typeof ApiRenderingStudioRoute
+  '/api/room-design-image': typeof ApiRoomDesignImageRoute
+  '/api/room-design-image-source': typeof ApiRoomDesignImageSourceRoute
   '/api/scrape-carton-coverage': typeof ApiScrapeCartonCoverageRoute
   '/api/scrape-materials': typeof ApiScrapeMaterialsRoute
+  '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
@@ -797,6 +833,7 @@ export interface FileRoutesById {
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
+  '/projects/$id/room-design': typeof ProjectsIdRoomDesignRoute
   '/specbooks/public/$id': typeof SpecbooksPublicIdRoute
   '/projects/$id/': typeof ProjectsIdIndexRoute
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
@@ -843,8 +880,11 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/remove-design-board-background'
     | '/api/rendering-studio'
+    | '/api/room-design-image'
+    | '/api/room-design-image-source'
     | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
+    | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
     | '/api/studio-reminders'
@@ -886,6 +926,7 @@ export interface FileRouteTypes {
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
+    | '/projects/$id/room-design'
     | '/specbooks/public/$id'
     | '/projects/$id/'
     | '/projects/$id/rooms/$roomId'
@@ -930,8 +971,11 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/remove-design-board-background'
     | '/api/rendering-studio'
+    | '/api/room-design-image'
+    | '/api/room-design-image-source'
     | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
+    | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
     | '/api/studio-reminders'
@@ -973,6 +1017,7 @@ export interface FileRouteTypes {
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
+    | '/projects/$id/room-design'
     | '/specbooks/public/$id'
     | '/projects/$id'
     | '/projects/$id/rooms/$roomId'
@@ -1017,8 +1062,11 @@ export interface FileRouteTypes {
     | '/api/projects'
     | '/api/remove-design-board-background'
     | '/api/rendering-studio'
+    | '/api/room-design-image'
+    | '/api/room-design-image-source'
     | '/api/scrape-carton-coverage'
     | '/api/scrape-materials'
+    | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
     | '/api/studio-reminders'
@@ -1060,6 +1108,7 @@ export interface FileRouteTypes {
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
+    | '/projects/$id/room-design'
     | '/specbooks/public/$id'
     | '/projects/$id/'
     | '/projects/$id/rooms/$roomId'
@@ -1105,8 +1154,11 @@ export interface RootRouteChildren {
   ApiProjectsRoute: typeof ApiProjectsRoute
   ApiRemoveDesignBoardBackgroundRoute: typeof ApiRemoveDesignBoardBackgroundRoute
   ApiRenderingStudioRoute: typeof ApiRenderingStudioRoute
+  ApiRoomDesignImageRoute: typeof ApiRoomDesignImageRoute
+  ApiRoomDesignImageSourceRoute: typeof ApiRoomDesignImageSourceRoute
   ApiScrapeCartonCoverageRoute: typeof ApiScrapeCartonCoverageRoute
   ApiScrapeMaterialsRoute: typeof ApiScrapeMaterialsRoute
+  ApiScrapeProductsRoute: typeof ApiScrapeProductsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiSharedDesignBoardRoute: typeof ApiSharedDesignBoardRoute
   ApiStudioRemindersRoute: typeof ApiStudioRemindersRoute
@@ -1148,6 +1200,7 @@ export interface RootRouteChildren {
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
   ProjectsIdRenderingStudioRoute: typeof ProjectsIdRenderingStudioRoute
   ProjectsIdRenderingsRoute: typeof ProjectsIdRenderingsRoute
+  ProjectsIdRoomDesignRoute: typeof ProjectsIdRoomDesignRoute
   SpecbooksPublicIdRoute: typeof SpecbooksPublicIdRoute
   ProjectsIdIndexRoute: typeof ProjectsIdIndexRoute
   ProjectsIdRoomsRoomIdRoute: typeof ProjectsIdRoomsRoomIdRoute
@@ -1337,6 +1390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiScrapeUrlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/scrape-products': {
+      id: '/api/scrape-products'
+      path: '/api/scrape-products'
+      fullPath: '/api/scrape-products'
+      preLoaderRoute: typeof ApiScrapeProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/scrape-materials': {
       id: '/api/scrape-materials'
       path: '/api/scrape-materials'
@@ -1349,6 +1409,20 @@ declare module '@tanstack/react-router' {
       path: '/api/scrape-carton-coverage'
       fullPath: '/api/scrape-carton-coverage'
       preLoaderRoute: typeof ApiScrapeCartonCoverageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/room-design-image-source': {
+      id: '/api/room-design-image-source'
+      path: '/api/room-design-image-source'
+      fullPath: '/api/room-design-image-source'
+      preLoaderRoute: typeof ApiRoomDesignImageSourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/room-design-image': {
+      id: '/api/room-design-image'
+      path: '/api/room-design-image'
+      fullPath: '/api/room-design-image'
+      preLoaderRoute: typeof ApiRoomDesignImageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/rendering-studio': {
@@ -1582,6 +1656,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpecbooksPublicIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id/room-design': {
+      id: '/projects/$id/room-design'
+      path: '/projects/$id/room-design'
+      fullPath: '/projects/$id/room-design'
+      preLoaderRoute: typeof ProjectsIdRoomDesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/renderings': {
       id: '/projects/$id/renderings'
       path: '/projects/$id/renderings'
@@ -1793,8 +1874,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProjectsRoute: ApiProjectsRoute,
   ApiRemoveDesignBoardBackgroundRoute: ApiRemoveDesignBoardBackgroundRoute,
   ApiRenderingStudioRoute: ApiRenderingStudioRoute,
+  ApiRoomDesignImageRoute: ApiRoomDesignImageRoute,
+  ApiRoomDesignImageSourceRoute: ApiRoomDesignImageSourceRoute,
   ApiScrapeCartonCoverageRoute: ApiScrapeCartonCoverageRoute,
   ApiScrapeMaterialsRoute: ApiScrapeMaterialsRoute,
+  ApiScrapeProductsRoute: ApiScrapeProductsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiSharedDesignBoardRoute: ApiSharedDesignBoardRoute,
   ApiStudioRemindersRoute: ApiStudioRemindersRoute,
@@ -1837,6 +1921,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
   ProjectsIdRenderingStudioRoute: ProjectsIdRenderingStudioRoute,
   ProjectsIdRenderingsRoute: ProjectsIdRenderingsRoute,
+  ProjectsIdRoomDesignRoute: ProjectsIdRoomDesignRoute,
   SpecbooksPublicIdRoute: SpecbooksPublicIdRoute,
   ProjectsIdIndexRoute: ProjectsIdIndexRoute,
   ProjectsIdRoomsRoomIdRoute: ProjectsIdRoomsRoomIdRoute,

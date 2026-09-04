@@ -25,6 +25,7 @@ export type MaterialCategory =
   | "Fabric"
   | "Paint";
 export type ApprovalStatus = "undecided" | "approved" | "declined";
+export type DesignWorkflowVersion = "legacy" | "room_design_v2";
 
 export const MATERIAL_CATEGORIES: MaterialCategory[] = [
   "Cabinet Finish",
@@ -137,6 +138,28 @@ export interface Project {
   progress_override: number | null;
   health_override: "on_track" | "at_risk" | "critical" | "late" | null;
   health_override_reason: string | null;
+  /** Missing on deployments where the additive pilot migration has not been applied yet. */
+  design_workflow_version?: DesignWorkflowVersion;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudioFeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoomDesignWorkflowRecord {
+  id: string;
+  project_id: string;
+  room_id: string;
+  version: number;
+  state: Record<string, unknown>;
+  updated_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -587,7 +610,15 @@ export const db = {
     client_name: string;
     project_type: ProjectType;
     design_notes?: string;
-  }) => (await supabase.from("projects").insert(p).select().single()).data as Project | null,
+    design_workflow_version?: DesignWorkflowVersion;
+  }) =>
+    (
+      await supabase
+        .from("projects")
+        .insert(p as any)
+        .select()
+        .single()
+    ).data as Project | null,
   updateProject: async (id: string, p: Partial<Project>) =>
     (
       await supabase
@@ -602,6 +633,77 @@ export const db = {
       .from("projects")
       .update({ last_opened_at: new Date().toISOString() } as any)
       .eq("id", id),
+
+  /* ROOM DESIGN V2 PILOT */
+  getStudioFeatureFlag: async (key: string) =>
+    (
+      await supabase
+        .from("studio_feature_flags" as any)
+        .select("*")
+        .eq("key", key)
+        .maybeSingle()
+    ).data as StudioFeatureFlag | null,
+  listRoomDesignWorkflows: async (projectId: string) =>
+    (
+      await supabase
+        .from("room_design_workflows" as any)
+        .select("*")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+    ).data as RoomDesignWorkflowRecord[] | null,
+  getRoomDesignWorkflow: async (projectId: string, roomId: string) =>
+    (
+      await supabase
+        .from("room_design_workflows" as any)
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("room_id", roomId)
+        .maybeSingle()
+    ).data as RoomDesignWorkflowRecord | null,
+  upsertRoomDesignWorkflow: async (
+    projectId: string,
+    roomId: string,
+    state: Record<string, unknown>,
+    updatedBy?: string | null,
+  ) => {
+    const { data, error } = await supabase
+      .from("room_design_workflows" as any)
+      .upsert(
+        {
+          project_id: projectId,
+          room_id: roomId,
+          version: 1,
+          state,
+          updated_by: updatedBy ?? null,
+        } as any,
+        { onConflict: "project_id,room_id" },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data as RoomDesignWorkflowRecord;
+  },
+  appendRoomDesignEvent: async (
+    projectId: string,
+    roomId: string | null,
+    eventType: string,
+    details: Record<string, unknown>,
+    createdBy: string,
+  ) => {
+    const { data, error } = await supabase
+      .from("room_design_events" as any)
+      .insert({
+        project_id: projectId,
+        room_id: roomId,
+        event_type: eventType,
+        details,
+        created_by: createdBy,
+      } as any)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 
   /* PROJECT DOCUMENTS */
   listProjectDocuments: async (projectId: string) =>

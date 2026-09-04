@@ -1,9 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, FileText, Plus, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { db, type ApprovalStatus, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct } from "@/lib/db";
+import { db, type ApprovalStatus, type DesignWorkflowVersion, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct, type UserProfile } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canViewFinancials, isStudioTeamRole } from "@/lib/permissions";
+import { canManageStudio, canViewFinancials, isStudioTeamRole } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
@@ -1137,6 +1137,7 @@ function getApprovalStatus(item: Pick<RoomProduct, "approval_status" | "approved
 
 export function NewProjectDialog() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
@@ -1146,6 +1147,17 @@ export function NewProjectDialog() {
   const [invoiceId, setInvoiceId] = useState("");
   const [timelineId, setTimelineId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [designWorkflow, setDesignWorkflow] = useState<DesignWorkflowVersion>("legacy");
+  const { data: profile } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
+    enabled: open,
+  });
+  const { data: roomDesignFlag } = useQuery({
+    queryKey: ["studioFeatureFlag", "room_design_v2"],
+    queryFn: () => db.getStudioFeatureFlag("room_design_v2"),
+    enabled: open && canManageStudio(profile as UserProfile | null),
+  });
   const { data: unattachedInvoices = [] } = useQuery({
     queryKey: ["financialInvoices", "unattached"],
     queryFn: async () => (await db.listUnattachedFinancialInvoices()) ?? [],
@@ -1161,7 +1173,7 @@ export function NewProjectDialog() {
     setSelected(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
 
   const reset = () => {
-    setName(""); setClient(""); setNotes(""); setSelected([]); setOthers([]); setInvoiceId(""); setTimelineId("");
+    setName(""); setClient(""); setNotes(""); setSelected([]); setOthers([]); setInvoiceId(""); setTimelineId(""); setDesignWorkflow("legacy");
   };
 
   const submit = async () => {
@@ -1176,6 +1188,7 @@ export function NewProjectDialog() {
         client_name: client.trim(),
         project_type: "Whole Home",
         design_notes: notes.trim() || undefined,
+        design_workflow_version: designWorkflow,
       });
       if (!p) throw new Error("Could not create project");
       if (invoiceId) {
@@ -1185,14 +1198,17 @@ export function NewProjectDialog() {
         await db.attachProjectTimelineToProject(timelineId, p.id);
       }
 
-      // Create rooms + seed material_items for each
+      let firstRoomId = "";
+      // The legacy path keeps its existing seeded Materials checklist. Room Design V2 starts clean
+      // and creates real products only after the user gathers or adds them to the shared board.
       for (let i = 0; i < roomNames.length; i++) {
         const rn = roomNames[i];
         const room = await db.createRoom({ project_id: p.id, name: rn });
         if (!room) continue;
+        if (!firstRoomId) firstRoomId = room.id;
         await db.updateRoom(room.id, { sort_order: i });
         const tpl = templateForRoomName(rn);
-        if (tpl.length > 0) {
+        if (designWorkflow === "legacy" && tpl.length > 0) {
           await db.bulkInsertMaterialItems(
             tpl.map((t, idx) => ({
               room_id: room.id,
@@ -1211,7 +1227,7 @@ export function NewProjectDialog() {
               product_id: null,
               scrape_status: "pending",
               scrape_error: null,
-            })),
+            })) as any,
           );
         }
       }
@@ -1225,6 +1241,13 @@ export function NewProjectDialog() {
       qc.invalidateQueries({ queryKey: ["projectTimelines", p.id] });
       setOpen(false);
       reset();
+      if (designWorkflow === "room_design_v2" && firstRoomId) {
+        await navigate({
+          to: "/projects/$id/room-design",
+          params: { id: p.id },
+          search: { roomId: firstRoomId, manualBoard: undefined, stage: undefined },
+        });
+      }
     } catch (e: any) {
       toast.error(e?.message || "Could not create project");
     } finally {
@@ -1258,6 +1281,33 @@ export function NewProjectDialog() {
             <Label className="eyebrow">Project Notes</Label>
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Client priorities, scope, references…" />
           </div>
+
+          {canManageStudio(profile as UserProfile | null) && roomDesignFlag?.enabled === true && (
+            <div className="space-y-3 border border-border bg-bone/25 p-4">
+              <Label className="eyebrow">Design process</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setDesignWorkflow("legacy")}
+                  className={designWorkflow === "legacy" ? "border border-ink bg-background p-3 text-left" : "border border-border bg-background p-3 text-left"}
+                >
+                  <span className="block text-sm font-medium">Current process</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">The same project setup Studio uses today.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesignWorkflow("room_design_v2")}
+                  className={designWorkflow === "room_design_v2" ? "border border-ink bg-background p-3 text-left" : "border border-border bg-background p-3 text-left"}
+                >
+                  <span className="block text-sm font-medium">New Room Design pilot</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">Links, concept sourcing, board handoff, and rendering.</span>
+                </button>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                This choice applies only to this new project. Existing projects are not changed.
+              </p>
+            </div>
+          )}
 
           {unattachedInvoices.length > 0 && (
             <div className="space-y-1.5">

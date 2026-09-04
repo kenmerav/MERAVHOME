@@ -258,6 +258,18 @@ function ProjectDetailPage() {
                 currentUrl={project.cover_image_url}
                 allImages={allImages}
               />
+              {project.design_workflow_version === "room_design_v2" &&
+                canManageStudio(profile) &&
+                rooms[0] && (
+                  <Link
+                    to="/projects/$id/room-design"
+                    params={{ id }}
+                    search={{ roomId: rooms[0].id, manualBoard: undefined, stage: undefined }}
+                    className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-2.5 text-sm text-primary-foreground transition-colors hover:bg-ink/90 sm:flex-none"
+                  >
+                    <LayoutTemplate className="h-4 w-4" /> Room Design
+                  </Link>
+                )}
               <Link
                 to="/projects/$id/design-boards"
                 params={{ id }}

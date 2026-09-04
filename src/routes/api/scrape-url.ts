@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
+import { requireRoomDesignPilotAccess } from "@/lib/roomDesignAuth.server";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const SCRAPE_TIMEOUT_MS = 15000;
@@ -55,7 +56,18 @@ export const Route = createFileRoute("/api/scrape-url")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          const { url } = (await request.json()) as { url?: string };
+          const { url, projectId, roomId } = (await request.json()) as {
+            url?: string;
+            projectId?: string;
+            roomId?: string;
+          };
+          if (projectId || roomId) {
+            if (!projectId || !roomId) {
+              return json({ error: "projectId and roomId are required together." }, 400);
+            }
+            const access = await requireRoomDesignPilotAccess(request, { projectId, roomId });
+            if ("error" in access) return access.error;
+          }
           if (!url || !/^https?:\/\//.test(url)) {
             return json({ error: "Enter a valid product URL first." }, 400);
           }

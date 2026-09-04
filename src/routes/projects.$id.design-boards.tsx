@@ -72,6 +72,7 @@ import {
   type ItemCategory,
 } from "@/lib/roomTemplates";
 import {
+  canManageStudio,
   canDownloadDesignBoardPdf,
   canViewProjectSurface,
   isContractorRole,
@@ -3607,6 +3608,22 @@ function ProjectDesignBoardsPage() {
                 Last updated {formatLastUpdated(sharedBoard?.updated_at ?? project.updated_at)}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
+                {project.design_workflow_version === "room_design_v2" &&
+                  canManageStudio(profile) &&
+                  (activePage.roomId || rooms[0]?.id) && (
+                    <Link
+                      to="/projects/$id/room-design"
+                      params={{ id }}
+                      search={{
+                        roomId: activePage.roomId || rooms[0].id,
+                        manualBoard: "ready",
+                        stage: undefined,
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full border border-ink bg-ink px-3 py-1 text-xs text-white"
+                    >
+                      Return to Room Design <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
                   {onlineUsers.length
                     ? `${onlineUsers.length} online`
