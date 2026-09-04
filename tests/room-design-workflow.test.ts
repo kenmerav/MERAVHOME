@@ -4,6 +4,7 @@ import {
   normalizeRoomDesignWorkflowState,
   type RoomDesignSelection,
 } from "@/lib/roomDesignWorkflow";
+import { SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
 
 function selection(
   id: string,
@@ -143,5 +144,72 @@ describe("Room Design V2 workflow normalization", () => {
     expect(normalized.links).toEqual([]);
     expect(normalized.selections).toEqual([]);
     expect(normalized.version).toBe(1);
+  });
+
+  it("keeps a saved catalog choice attached to its checklist item", () => {
+    const normalized = normalizeRoomDesignWorkflowState(
+      {
+        links: [
+          {
+            id: "faucet",
+            category: "Faucet",
+            url: "https://vendor.example.com/faucet",
+            group: "Plumbing",
+            quantity: 1,
+            notes: "",
+            productId: "catalog-product-id",
+            catalogProductName: "Saved Faucet",
+          },
+        ],
+      },
+      {
+        method: "links",
+        stage: 0,
+        links: [],
+        linksRoomName: "Kitchen",
+        selections: [],
+        conceptImageUrl: "",
+        roomImageUrl: "",
+        floorPlanImageUrl: "",
+        sketchupImageUrl: "",
+        completedRenderImageUrl: "",
+        boardReady: false,
+        renderReady: false,
+        materialsSent: false,
+      },
+    );
+
+    expect(normalized.links[0]).toMatchObject({
+      productId: "catalog-product-id",
+      catalogProductName: "Saved Faucet",
+    });
+  });
+});
+
+describe("Room Design V2 checklist templates", () => {
+  it("keeps independently selected product types in separate rows", () => {
+    const kitchen = SELECTION_ROOM_TEMPLATES.find((room) => room.key === "kitchen")!;
+    const primaryBathroom = SELECTION_ROOM_TEMPLATES.find(
+      (room) => room.key === "primary-bathroom",
+    )!;
+    const kitchenLabels = kitchen.items.map((item) => item.label);
+    const bathroomLabels = primaryBathroom.items.map((item) => item.label);
+
+    expect(kitchenLabels).toEqual(
+      expect.arrayContaining([
+        "Baseboard",
+        "Casing",
+        "Doors",
+        "Door hardware",
+        "Cabinet layout",
+        "Appliance layout",
+      ]),
+    );
+    expect(kitchenLabels).not.toContain("Baseboard + casing");
+    expect(kitchenLabels).not.toContain("Doors + door hardware");
+    expect(kitchenLabels).not.toContain("Cabinet + appliance layout");
+    expect(bathroomLabels).toEqual(
+      expect.arrayContaining(["Baseboard", "Casing", "Doors", "Door hardware"]),
+    );
   });
 });

@@ -33,6 +33,8 @@ export type RoomDesignLink = {
   group: string;
   quantity: number;
   notes: string;
+  productId?: string;
+  catalogProductName?: string;
   custom?: boolean;
   saveToTemplate?: boolean;
 };
@@ -121,6 +123,8 @@ export function normalizeRoomDesignWorkflowState(
             group: string(item.group) || "Architecture / Other",
             quantity: positiveNumber(item.quantity, 1),
             notes: string(item.notes),
+            productId: optionalString(item.productId),
+            catalogProductName: optionalString(item.catalogProductName),
             custom: item.custom === true,
             saveToTemplate: item.saveToTemplate === true,
           },

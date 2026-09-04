@@ -249,21 +249,27 @@ type ProjectRenderRoom = RoomWorkflowDraft & {
 const STEPS = ["Start", "Selections", "Design Board", "Render", "Approve", "Studio Outputs"];
 
 const GENERIC_ROOM_ITEMS = [
-  "Flooring + transitions",
+  "Flooring",
+  "Transitions",
   "Wall finish",
   "Ceiling finish",
   "Lighting",
   "Window treatments",
-  "Furniture / fixtures",
-  "Hardware + accessories",
+  "Furniture",
+  "Fixtures",
+  "Hardware",
+  "Accessories",
 ];
 
 const POWDER_BATHROOM_ITEMS = [
-  "Flooring + transitions",
+  "Flooring",
+  "Transitions",
   "Wall finish",
   "Ceiling finish",
-  "Baseboard + casing",
-  "Doors + door hardware",
+  "Baseboard",
+  "Casing",
+  "Doors",
+  "Door hardware",
   "Vanity layout",
   "Vanity construction + door style",
   "Vanity finish",
@@ -277,8 +283,11 @@ const POWDER_BATHROOM_ITEMS = [
   "Mirror",
   "Vanity sconces",
   "Decorative ceiling lighting",
-  "Bath accessories + hooks",
-  "Switches, outlets + plates",
+  "Bath accessories",
+  "Hooks",
+  "Switches",
+  "Outlets",
+  "Wall plates",
 ];
 
 function itemKey(label: string) {
@@ -287,6 +296,45 @@ function itemKey(label: string) {
     .replace(/\+/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+const LEGACY_LINK_SPLITS: Record<string, string[]> = {
+  "Flooring + transitions": ["Flooring", "Transitions"],
+  "Baseboard + casing": ["Baseboard", "Casing"],
+  "Doors + door hardware": ["Doors", "Door hardware"],
+  "General / recessed lighting": ["General lighting", "Recessed lighting"],
+  "Switches, outlets + plates": ["Switches", "Outlets", "Wall plates"],
+  "Cabinet + appliance layout": ["Cabinet layout", "Appliance layout"],
+  "Drain / disposal / flange / air switch": [
+    "Sink drain",
+    "Garbage disposal",
+    "Sink flange",
+    "Air switch",
+  ],
+  "Open shelving / rails": ["Open shelving", "Shelf rails"],
+  "Sconces / accent lighting": ["Sconces", "Accent lighting"],
+  "Under-cabinet / interior lighting": ["Under-cabinet lighting", "Cabinet interior lighting"],
+  "Countertop / island power": ["Countertop power", "Island power"],
+  "Bath accessories + hooks": ["Bath accessories", "Hooks"],
+  "Furniture / fixtures": ["Furniture", "Fixtures"],
+  "Hardware + accessories": ["Hardware", "Accessories"],
+};
+
+function splitLegacyBlankLinks(links: DemoLink[]) {
+  return links.flatMap((link) => {
+    const replacements = LEGACY_LINK_SPLITS[link.category];
+    const hasWork =
+      Boolean(link.url.trim() || link.productId || link.catalogProductName || link.notes.trim()) ||
+      link.quantity !== 1 ||
+      link.saveToTemplate === true;
+    if (!replacements || hasWork) return [link];
+    return replacements.map((category) => ({
+      ...link,
+      id: itemKey(category),
+      category,
+      group: classifyBoardGroup(category),
+    }));
+  });
 }
 
 function linksForRoom(roomName: string): DemoLink[] {
@@ -326,6 +374,8 @@ function swatchForGroup(group: BoardGroup) {
 }
 
 function catalogSectionForItem(label: string, group: BoardGroup): ItemCategory {
+  if (/\bair switch\b/i.test(label)) return "Plumbing";
+  if (/\b(hardware|switches?|outlets?|wall plates?|hooks?)\b/i.test(label)) return "Hardware";
   const inferred = inferMaterialCategory(label);
   if (inferred !== "Other") return inferred;
   if (group === "Cabinetry / Millwork") return "Cabinetry";
@@ -408,7 +458,7 @@ function createSavedRoomWorkflowDraft(
 
   return {
     method: normalized.method,
-    links: normalized.links as DemoLink[],
+    links: splitLegacyBlankLinks(normalized.links as DemoLink[]),
     linksRoomName: normalized.linksRoomName,
     selections: normalized.selections as DemoSelection[],
     conceptPreview: normalized.conceptImageUrl,
@@ -1736,20 +1786,42 @@ function CatalogPickerButton({
   const [search, setSearch] = useState("");
   const section = catalogSectionForItem(item.category, item.group);
   const { data: catalog = [], isLoading } = useQuery({
-    queryKey: ["catalog", search],
-    queryFn: async () => (await db.listCatalog(search)) ?? [],
+    queryKey: ["roomDesignCatalog"],
+    queryFn: async () => (await db.listCatalog()) ?? [],
     enabled: open,
   });
+  const searchTerms = useMemo(
+    () =>
+      search
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((term) => term.length > 1),
+    [search],
+  );
   const products = useMemo(
     () =>
       catalog
         .filter((product) => productMatchesItemCategory(product, section))
+        .filter((product) => {
+          if (!searchTerms.length) return true;
+          const haystack = [
+            product.name,
+            product.vendor,
+            product.subcategory,
+            product.finish,
+            product.sku,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return searchTerms.some((term) => haystack.includes(term));
+        })
         .sort((left, right) => {
           const score =
             catalogMatchScore(right, item.category) - catalogMatchScore(left, item.category);
           return score || right.updated_at.localeCompare(left.updated_at);
         }),
-    [catalog, item.category, section],
+    [catalog, item.category, searchTerms, section],
   );
 
   return (
@@ -1919,7 +1991,7 @@ function StartStep(props: {
       id: "links",
       eyebrow: "Checklist workflow",
       title: "Start with Product Links",
-      body: "Paste room links once, gather product details, and auto-compose a first board.",
+      body: "Paste product links or choose saved catalog items, then auto-compose a first board.",
       icon: Link2,
     },
     {
