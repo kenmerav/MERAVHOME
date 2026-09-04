@@ -1063,6 +1063,7 @@ export const db = {
         };
         material?: {
           client_product_name: string | null;
+          category: string | null;
           id: string;
           quantity: number | null;
           color: string | null;

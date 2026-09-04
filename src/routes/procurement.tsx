@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 type ProcurementMaterialDetails = {
   id: string;
   client_product_name: string | null;
+  category: string | null;
   quantity: number | null;
   color: string | null;
   image_url: string | null;
@@ -139,7 +140,7 @@ function ProcurementPage() {
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
     projectItems.forEach((item) => {
-      const category = item.room_product?.product?.category;
+      const category = item.material?.category || item.room_product?.product?.category;
       if (category) set.add(category);
     });
     return Array.from(set).sort();
@@ -182,10 +183,11 @@ function ProcurementPage() {
       projectItems.filter((item) => {
         const product = item.room_product?.product;
         const room = item.room_product?.room;
+        const category = item.material?.category || product?.category;
         if (roomFilters.length > 0 && (!room?.id || !roomFilters.includes(room.id))) return false;
         if (
           categoryFilters.length > 0 &&
-          (!product?.category || !categoryFilters.includes(product.category))
+          (!category || !categoryFilters.includes(category))
         )
           return false;
         if (
@@ -494,7 +496,7 @@ function ProcurementPage() {
                 const imageUrl = m?.image_url || p?.image_url || null;
                 const clientName =
                   m?.client_product_name ||
-                  [r?.name, p?.category].filter(Boolean).join(" ") ||
+                  [r?.name, m?.category || p?.category].filter(Boolean).join(" ") ||
                   p?.name ||
                   "—";
                 const needsReselection = item.room_product?.approval_status === "declined";
