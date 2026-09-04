@@ -40,18 +40,14 @@ export async function requireRoomDesignPilotAccess(
   }
 
   if (scope?.projectId) {
-    const { data: project } = await supabaseAdmin
+    const { data: enrollment } = await supabaseAdmin
       // Generated client types are updated only after the reviewed migration is applied.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from("projects" as any)
-      .select("id,design_workflow_version")
-      .eq("id", scope.projectId)
+      .from("room_design_projects" as any)
+      .select("project_id")
+      .eq("project_id", scope.projectId)
       .maybeSingle();
-    if (
-      !project ||
-      (project as unknown as { design_workflow_version?: string }).design_workflow_version !==
-        "room_design_v2"
-    ) {
+    if (!enrollment) {
       return { error: json("This project is not enrolled in the Room Design pilot.", 403) };
     }
   }

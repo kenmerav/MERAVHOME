@@ -8,9 +8,8 @@ const migration = readFileSync(
 
 describe("Room Design V2 migration safety", () => {
   it("keeps every existing project on the legacy workflow", () => {
-    expect(migration).toMatch(
-      /ADD COLUMN IF NOT EXISTS design_workflow_version text NOT NULL DEFAULT 'legacy'/,
-    );
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.room_design_projects");
+    expect(migration).not.toMatch(/ALTER\s+TABLE\s+public\.projects/i);
     expect(migration).not.toMatch(/UPDATE\s+public\.projects/i);
   });
 

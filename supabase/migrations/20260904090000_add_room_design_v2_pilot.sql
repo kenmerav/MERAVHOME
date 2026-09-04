@@ -1,22 +1,9 @@
 -- Additive, project-scoped support for the Room Design V2 pilot.
--- Existing projects remain on the legacy workflow because the default is legacy.
+-- The pilot never alters the existing projects table. A project is enrolled only
+-- when it has a row in room_design_projects, so every existing project remains legacy.
 
-ALTER TABLE public.projects
-  ADD COLUMN IF NOT EXISTS design_workflow_version text NOT NULL DEFAULT 'legacy';
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'projects_design_workflow_version_check'
-      AND conrelid = 'public.projects'::regclass
-  ) THEN
-    ALTER TABLE public.projects
-      ADD CONSTRAINT projects_design_workflow_version_check
-      CHECK (design_workflow_version IN ('legacy', 'room_design_v2'));
-  END IF;
-END $$;
+SET lock_timeout TO '5s';
+SET statement_timeout TO '60s';
 
 CREATE TABLE IF NOT EXISTS public.studio_feature_flags (
   key text PRIMARY KEY,
@@ -39,6 +26,12 @@ DROP TRIGGER IF EXISTS studio_feature_flags_touch ON public.studio_feature_flags
 CREATE TRIGGER studio_feature_flags_touch
 BEFORE UPDATE ON public.studio_feature_flags
 FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.room_design_projects (
+  project_id uuid PRIMARY KEY REFERENCES public.projects(id) ON DELETE CASCADE,
+  created_by uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS public.room_design_workflows (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -70,10 +63,10 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM public.rooms room
-    JOIN public.projects project ON project.id = room.project_id
+    JOIN public.room_design_projects pilot ON pilot.project_id = room.project_id
     WHERE room.id = NEW.room_id
       AND room.project_id = NEW.project_id
-      AND project.design_workflow_version = 'room_design_v2'
+      AND pilot.project_id = NEW.project_id
   ) THEN
     RAISE EXCEPTION 'Room Design V2 workflow is not enabled for this project and room.';
   END IF;
@@ -99,20 +92,29 @@ CREATE TABLE IF NOT EXISTS public.room_design_events (
 CREATE INDEX IF NOT EXISTS room_design_events_project_created_idx
   ON public.room_design_events(project_id, created_at DESC);
 
-GRANT SELECT ON public.studio_feature_flags TO authenticated;
+GRANT SELECT ON public.studio_feature_flags, public.room_design_projects TO authenticated;
+GRANT INSERT, DELETE ON public.room_design_projects TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.room_design_workflows TO authenticated;
 GRANT SELECT, INSERT ON public.room_design_events TO authenticated;
-GRANT ALL ON public.studio_feature_flags, public.room_design_workflows, public.room_design_events
+GRANT ALL ON public.studio_feature_flags, public.room_design_projects, public.room_design_workflows, public.room_design_events
 TO service_role;
 
 ALTER TABLE public.studio_feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.room_design_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.room_design_workflows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.room_design_events ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "studio team reads feature flags" ON public.studio_feature_flags;
 CREATE POLICY "studio team reads feature flags"
 ON public.studio_feature_flags
-FOR SELECT USING (public.is_active_studio_team_member(auth.uid()));
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+);
 
 DROP POLICY IF EXISTS "admins update feature flags" ON public.studio_feature_flags;
 CREATE POLICY "admins update feature flags"
@@ -135,37 +137,114 @@ WITH CHECK (
   )
 );
 
+DROP POLICY IF EXISTS "studio team reads room design projects" ON public.room_design_projects;
+CREATE POLICY "studio team reads room design projects"
+ON public.room_design_projects
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+);
+
+DROP POLICY IF EXISTS "admins enroll room design projects" ON public.room_design_projects;
+CREATE POLICY "admins enroll room design projects"
+ON public.room_design_projects
+FOR INSERT WITH CHECK (
+  created_by = auth.uid()
+  AND EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role = 'Admin'
+  )
+);
+
+DROP POLICY IF EXISTS "admins remove room design projects" ON public.room_design_projects;
+CREATE POLICY "admins remove room design projects"
+ON public.room_design_projects
+FOR DELETE USING (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role = 'Admin'
+  )
+);
+
 DROP POLICY IF EXISTS "studio team reads room design workflows" ON public.room_design_workflows;
 CREATE POLICY "studio team reads room design workflows"
 ON public.room_design_workflows
-FOR SELECT USING (public.is_active_studio_team_member(auth.uid()));
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+);
 
 DROP POLICY IF EXISTS "studio team inserts room design workflows" ON public.room_design_workflows;
 CREATE POLICY "studio team inserts room design workflows"
 ON public.room_design_workflows
-FOR INSERT WITH CHECK (public.is_active_studio_team_member(auth.uid()));
+FOR INSERT WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+);
 
 DROP POLICY IF EXISTS "studio team updates room design workflows" ON public.room_design_workflows;
 CREATE POLICY "studio team updates room design workflows"
 ON public.room_design_workflows
-FOR UPDATE USING (public.is_active_studio_team_member(auth.uid()))
-WITH CHECK (public.is_active_studio_team_member(auth.uid()));
+FOR UPDATE USING (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+);
 
 DROP POLICY IF EXISTS "studio team reads room design events" ON public.room_design_events;
 CREATE POLICY "studio team reads room design events"
 ON public.room_design_events
-FOR SELECT USING (public.is_active_studio_team_member(auth.uid()));
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
+);
 
 DROP POLICY IF EXISTS "studio team appends room design events" ON public.room_design_events;
 CREATE POLICY "studio team appends room design events"
 ON public.room_design_events
 FOR INSERT WITH CHECK (
-  public.is_active_studio_team_member(auth.uid())
+  EXISTS (
+    SELECT 1 FROM public.user_profiles profile
+    WHERE profile.id = auth.uid()
+      AND profile.is_active = true
+      AND profile.role IN ('Admin', 'Employee')
+  )
   AND created_by = auth.uid()
 );
 
-COMMENT ON COLUMN public.projects.design_workflow_version IS
-  'Per-project workflow gate. Existing projects remain legacy; Room Design V2 is opt-in.';
+COMMENT ON TABLE public.room_design_projects IS
+  'Opt-in Room Design V2 project enrollment. Projects without a row remain on the legacy workflow.';
 COMMENT ON TABLE public.room_design_workflows IS
   'Project-scoped Room Design V2 drafts and workflow state. Does not replace live design boards.';
 COMMENT ON TABLE public.room_design_events IS

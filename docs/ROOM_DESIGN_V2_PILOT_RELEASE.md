@@ -32,7 +32,8 @@ new column or tables as part of an incident response.
 
 ## Data boundaries
 
-- Existing projects receive `design_workflow_version = 'legacy'` and never enter the new route.
+- Existing projects are never modified. Only projects with an explicit row in the separate
+  `room_design_projects` enrollment table can enter the new route.
 - New pilot drafts live in `room_design_workflows`; they do not replace Materials or Design Boards.
 - “Populate Studio Design Board” replaces only pages generated for the same pilot room. Manual
   pages and every other room page are preserved.

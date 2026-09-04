@@ -164,6 +164,24 @@ export interface RoomDesignWorkflowRecord {
   updated_at: string;
 }
 
+async function addDesignWorkflowVersion<T extends Project>(projects: T[]) {
+  if (!projects.length) return projects;
+  const { data, error } = await supabase
+    .from("room_design_projects" as any)
+    .select("project_id")
+    .in(
+      "project_id",
+      projects.map((project) => project.id),
+    );
+  const enrolled = error
+    ? new Set<string>()
+    : new Set(((data ?? []) as Array<{ project_id: string }>).map((row) => row.project_id));
+  return projects.map((project) => ({
+    ...project,
+    design_workflow_version: enrolled.has(project.id) ? "room_design_v2" : "legacy",
+  })) as T[];
+}
+
 export type ProjectDocumentType =
   | "SketchUp Rendering"
   | "AI Rendering"
@@ -574,7 +592,9 @@ export const db = {
     }
 
     const result = await query;
-    if (!result.error) return result.data as Project[] | null;
+    if (!result.error) {
+      return addDesignWorkflowVersion((result.data ?? []) as Project[]);
+    }
     if (result.error.code !== "42703") return null;
 
     let fallback = baseQuery().order("updated_at", { ascending: false });
@@ -588,7 +608,8 @@ export const db = {
       fallback = fallback.in("id", assignedProjectIds);
     }
 
-    return (await fallback).data as Project[] | null;
+    const fallbackResult = await fallback;
+    return addDesignWorkflowVersion((fallbackResult.data ?? []) as Project[]);
   },
   getProject: async (id: string) => {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
@@ -602,8 +623,10 @@ export const db = {
       return null;
     }
 
-    return (await supabase.from("projects").select("*").eq("id", id).maybeSingle())
+    const project = (await supabase.from("projects").select("*").eq("id", id).maybeSingle())
       .data as Project | null;
+    if (!project) return null;
+    return (await addDesignWorkflowVersion([project]))[0] ?? null;
   },
   createProject: async (p: {
     name: string;
@@ -611,23 +634,41 @@ export const db = {
     project_type: ProjectType;
     design_notes?: string;
     design_workflow_version?: DesignWorkflowVersion;
-  }) =>
-    (
+  }) => {
+    const { design_workflow_version: workflow = "legacy", ...projectInput } = p;
+    const { data, error } = await supabase
+      .from("projects")
+      .insert(projectInput as any)
+      .select()
+      .single();
+    if (error) throw error;
+    const project = data as Project | null;
+    if (!project) return null;
+
+    if (workflow === "room_design_v2") {
+      const { data: userData } = await supabase.auth.getUser();
+      const { error: enrollmentError } = await supabase
+        .from("room_design_projects" as any)
+        .insert({ project_id: project.id, created_by: userData.user?.id ?? null } as any);
+      if (enrollmentError) {
+        await supabase.from("projects").delete().eq("id", project.id);
+        throw enrollmentError;
+      }
+    }
+
+    return { ...project, design_workflow_version: workflow } as Project;
+  },
+  updateProject: async (id: string, p: Partial<Project>) => {
+    const { design_workflow_version: _derivedWorkflow, ...projectUpdate } = p;
+    return (
       await supabase
         .from("projects")
-        .insert(p as any)
-        .select()
-        .single()
-    ).data as Project | null,
-  updateProject: async (id: string, p: Partial<Project>) =>
-    (
-      await supabase
-        .from("projects")
-        .update(p as any)
+        .update(projectUpdate as any)
         .eq("id", id)
         .select()
         .single()
-    ).data as Project | null,
+    ).data as Project | null;
+  },
   markProjectOpened: async (id: string) =>
     supabase
       .from("projects")
