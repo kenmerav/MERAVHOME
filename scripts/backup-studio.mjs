@@ -15,6 +15,11 @@ const PAGE_SIZE = 1000;
 const TABLE_PAGE_SIZES = {
   design_board_versions: 100,
 };
+const TABLE_ORDER_COLUMNS = {
+  // This table can be very large because every board edit creates a snapshot. Match the existing
+  // (project_id, created_at, version_id) index instead of forcing a global created_at sort.
+  design_board_versions: ["project_id", "created_at", "version_id"],
+};
 const MAX_SINGLE_UPLOAD_BYTES = 4.5 * 1024 * 1024 * 1024;
 
 function requireEnvironment() {
@@ -164,7 +169,9 @@ async function discoverPublicResources(supabaseUrl, serviceRoleKey) {
       return {
         name,
         snapshotColumn: properties.created_at ? "created_at" : null,
-        orderColumns: [properties.created_at ? "created_at" : null, identifier].filter(Boolean),
+        orderColumns:
+          TABLE_ORDER_COLUMNS[name] ??
+          [properties.created_at ? "created_at" : null, identifier].filter(Boolean),
       };
     })
     .filter((resource) => resource.name)
