@@ -19,6 +19,7 @@ type ProcurementMaterialDetails = {
   client_product_name: string | null;
   quantity: number | null;
   color: string | null;
+  image_url: string | null;
   product_url: string | null;
   cad_label: string | null;
 };
@@ -490,6 +491,7 @@ function ProcurementPage() {
                   .material;
                 const link = m?.product_url || p?.product_url || null;
                 const linkHref = externalHref(link);
+                const imageUrl = m?.image_url || p?.image_url || null;
                 const clientName =
                   m?.client_product_name ||
                   [r?.name, p?.category].filter(Boolean).join(" ") ||
@@ -507,18 +509,18 @@ function ProcurementPage() {
                               params={{ productId: p.id }}
                               title={`Open ${clientName}`}
                             >
-                              {p.image_url && (
+                              {imageUrl && (
                                 <img
-                                  src={normalizeSupabaseImageUrl(p.image_url)}
+                                  src={normalizeSupabaseImageUrl(imageUrl)}
                                   alt=""
                                   className="w-full h-full object-cover"
                                   loading="lazy"
                                 />
                               )}
                             </Link>
-                          ) : p?.image_url ? (
+                          ) : imageUrl ? (
                             <img
-                              src={normalizeSupabaseImageUrl(p.image_url)}
+                              src={normalizeSupabaseImageUrl(imageUrl)}
                               alt=""
                               className="w-full h-full object-cover"
                               loading="lazy"

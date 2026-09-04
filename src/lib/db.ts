@@ -1066,6 +1066,7 @@ export const db = {
           id: string;
           quantity: number | null;
           color: string | null;
+          image_url: string | null;
           product_url: string | null;
           cad_label: string | null;
           notes: string | null;
