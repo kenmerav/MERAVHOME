@@ -21,6 +21,7 @@ import {
   Palette,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Sparkles,
   Trash2,
@@ -39,6 +40,13 @@ import {
 } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { removeProductImageBackground } from "@/lib/backgroundRemovalClient";
@@ -65,6 +73,7 @@ import {
   scrapeProductUrl,
   type ScrapedProductData,
 } from "@/lib/productScrape";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { classifyBoardGroup, SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
 import { BOARD_GROUPS, type BoardGroup } from "@/lib/selectionTypes";
 import { cn } from "@/lib/utils";
@@ -72,6 +81,7 @@ import { inferVendorFromUrl } from "@/lib/vendorInference";
 import {
   db,
   type MaterialItem,
+  type Product,
   type Project,
   type Room,
   type RoomImage,
@@ -86,7 +96,12 @@ import {
   type RoomDesignWorkflowState,
 } from "@/lib/roomDesignWorkflow";
 import { canManageStudio } from "@/lib/permissions";
-import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
+import {
+  inferMaterialCategory,
+  productMatchesItemCategory,
+  toProductCategory,
+  type ItemCategory,
+} from "@/lib/roomTemplates";
 
 export const Route = createFileRoute("/projects/$id/room-design")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -99,7 +114,7 @@ export const Route = createFileRoute("/projects/$id/room-design")({
 });
 
 type StartMethod = "manual" | "links" | "concept";
-type SelectionSource = "Manual board" | "Product link" | "Concept match";
+type SelectionSource = "Manual board" | "Product link" | "Product catalog" | "Concept match";
 type SelectionState = "draft" | "selected" | "locked";
 type QuantityUnit =
   | "each"
@@ -191,6 +206,8 @@ type DemoLink = {
   group: BoardGroup;
   quantity: number;
   notes: string;
+  productId?: string;
+  catalogProductName?: string;
   custom?: boolean;
   saveToTemplate?: boolean;
 };
@@ -306,6 +323,28 @@ function swatchForGroup(group: BoardGroup) {
     "Architecture / Other": "linear-gradient(135deg,#ece8df,#c9c1b5)",
   };
   return swatches[group];
+}
+
+function catalogSectionForItem(label: string, group: BoardGroup): ItemCategory {
+  const inferred = inferMaterialCategory(label);
+  if (inferred !== "Other") return inferred;
+  if (group === "Cabinetry / Millwork") return "Cabinetry";
+  if (group === "Lighting") return "Lighting";
+  if (group === "Plumbing") return "Plumbing";
+  if (group === "Appliances") return "Appliances";
+  if (group === "Hardware") return "Hardware";
+  if (group === "Materials") return "Other";
+  if (group === "Feature / Decor") return "Accessories";
+  return "Other";
+}
+
+function catalogMatchScore(product: Product, itemLabel: string) {
+  const words = itemLabel
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2 && !["and", "finish", "decorative"].includes(word));
+  const haystack = `${product.name} ${product.subcategory ?? ""}`.toLowerCase();
+  return words.reduce((score, word) => score + (haystack.includes(word) ? 1 : 0), 0);
 }
 
 const EMPTY_GATHER_PROGRESS: GatherProgress = {
@@ -1074,7 +1113,9 @@ function RoomDesignWorkflow({
 
   const gatherLinks = async (failedOnly = false) => {
     const linkedItems = links.filter(
-      (link) => link.url.trim() && (!failedOnly || linkScrapeStates[link.id]?.status === "failed"),
+      (link) =>
+        (link.url.trim() || link.productId) &&
+        (!failedOnly || linkScrapeStates[link.id]?.status === "failed"),
     );
     if (!linkedItems.length) return;
 
@@ -1088,11 +1129,18 @@ function RoomDesignWorkflow({
     const catalogPairs = await Promise.all(
       linkedItems.map(
         async (link) =>
-          [link.url.trim(), (await db.listProductsByUrl(link.url.trim()))?.[0]] as const,
+          [
+            link.id,
+            link.productId
+              ? await db.getProduct(link.productId)
+              : (await db.listProductsByUrl(link.url.trim()))?.[0],
+          ] as const,
       ),
     );
-    const catalogByUrl = new Map(catalogPairs.filter((entry) => Boolean(entry[1])));
-    const linksNeedingScrape = linkedItems.filter((link) => !catalogByUrl.has(link.url.trim()));
+    const catalogByLinkId = new Map(catalogPairs.filter((entry) => Boolean(entry[1])));
+    const linksNeedingScrape = linkedItems.filter(
+      (link) => link.url.trim() && !catalogByLinkId.has(link.id),
+    );
     let batchResults: Awaited<ReturnType<typeof scrapeProductUrlsBatch>> = [];
     let batchError = "";
     if (linksNeedingScrape.length) {
@@ -1126,7 +1174,7 @@ function RoomDesignWorkflow({
       }));
 
       const batchResult = batchByUrl.get(link.url.trim());
-      const catalogProduct = catalogByUrl.get(link.url.trim());
+      const catalogProduct = catalogByLinkId.get(link.id);
       let scraped: ScrapedProductData = catalogProduct
         ? {
             name: catalogProduct.name,
@@ -1153,9 +1201,10 @@ function RoomDesignWorkflow({
         }
       }
       if (Object.keys(scraped).length) scrapeStatus = scrapedProductStatus(scraped);
-      const reviewMessage = Object.keys(scraped).length
-        ? productScrapeReviewMessage(link.url, link.category, scraped)
-        : "";
+      const reviewMessage =
+        Object.keys(scraped).length && !link.productId
+          ? productScrapeReviewMessage(link.url, link.category, scraped)
+          : "";
       if (reviewMessage) {
         scrapeStatus = "partial";
         scrapeError = reviewMessage;
@@ -1207,10 +1256,10 @@ function RoomDesignWorkflow({
         productName: scraped.name || `${link.category} selection`,
         vendor: scraped.vendor || fallbackVendor,
         finish: scraped.finish || "Finish needs review",
-        source: "Product link" as const,
+        source: link.productId ? ("Product catalog" as const) : ("Product link" as const),
         state: "selected" as const,
         swatch: swatchForGroup(link.group),
-        url: link.url,
+        url: link.url || catalogProduct?.product_url || undefined,
         group: link.group,
         quantity: link.quantity,
         quantityUnit: defaultQuantityUnit(link.category),
@@ -1674,6 +1723,129 @@ function WorkflowRail({ step, onStep }: { step: number; onStep: (step: number) =
   );
 }
 
+function CatalogPickerButton({
+  item,
+  disabled,
+  onSelect,
+}: {
+  item: DemoLink;
+  disabled: boolean;
+  onSelect: (product: Product) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const section = catalogSectionForItem(item.category, item.group);
+  const { data: catalog = [], isLoading } = useQuery({
+    queryKey: ["catalog", search],
+    queryFn: async () => (await db.listCatalog(search)) ?? [],
+    enabled: open,
+  });
+  const products = useMemo(
+    () =>
+      catalog
+        .filter((product) => productMatchesItemCategory(product, section))
+        .sort((left, right) => {
+          const score =
+            catalogMatchScore(right, item.category) - catalogMatchScore(left, item.category);
+          return score || right.updated_at.localeCompare(left.updated_at);
+        }),
+    [catalog, item.category, section],
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch("");
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          aria-label={`Choose ${item.category} from product catalog`}
+          className="w-full justify-center"
+        >
+          <BookOpen /> Catalog
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl font-normal">
+            Choose {item.category}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="border border-brass/35 bg-bone/35 px-3 py-2 text-xs text-muted-foreground">
+          Showing the <span className="font-medium text-ink">{section}</span> section first, with
+          the closest matches to {item.category.toLowerCase()} at the top.
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={`Search ${section.toLowerCase()}`}
+            className="pl-9"
+          />
+        </div>
+        <div className="max-h-[55vh] overflow-y-auto">
+          {isLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Loading catalog products…
+            </div>
+          ) : products.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(product);
+                    setOpen(false);
+                  }}
+                  className="flex min-w-0 gap-3 border border-border p-3 text-left transition hover:border-ink"
+                >
+                  <div className="h-20 w-20 shrink-0 overflow-hidden bg-bone">
+                    {product.image_url ? (
+                      <img
+                        src={normalizeSupabaseImageUrl(product.image_url)}
+                        alt=""
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] uppercase tracking-wider text-muted-foreground">
+                        No image
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 py-0.5">
+                    <div className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {product.vendor || section}
+                    </div>
+                    <div className="mt-1 line-clamp-2 font-display text-base leading-tight">
+                      {product.name}
+                    </div>
+                    <div className="mt-2 truncate text-xs text-muted-foreground">
+                      {product.finish || product.subcategory || "Saved catalog product"}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              No matching products are saved in this catalog section yet.
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function StartStep(props: {
   method: StartMethod;
   onMethod: (method: StartMethod) => void;
@@ -1824,12 +1996,15 @@ function StartStep(props: {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="eyebrow">{props.roomName} checklist</div>
-              <h3 className="mt-2 font-display text-3xl">Paste product links under each item</h3>
+              <h3 className="mt-2 font-display text-3xl">
+                Paste a product link or choose from the catalog
+              </h3>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground">
-                {props.links.length} categories · {props.links.filter((item) => item.url).length}{" "}
-                links ready
+                {props.links.length} categories ·{" "}
+                {props.links.filter((item) => item.url.trim() || item.productId).length} products
+                ready
               </span>
               <Button
                 variant="outline"
@@ -1918,7 +2093,7 @@ function StartStep(props: {
             {props.links.map((item) => (
               <div
                 key={item.id}
-                className="grid gap-2 py-3 md:grid-cols-[220px_76px_minmax(0,1fr)_32px] md:items-center"
+                className="grid gap-2 py-3 md:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px] md:items-center"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1936,6 +2111,11 @@ function StartStep(props: {
                     {item.group}
                     {item.notes ? ` · ${item.notes}` : ""}
                   </div>
+                  {item.productId && item.catalogProductName && (
+                    <div className="mt-1 truncate text-[10px] font-medium text-amber-800">
+                      Catalog: {item.catalogProductName}
+                    </div>
+                  )}
                 </div>
                 <Input
                   aria-label={`${item.category} quantity`}
@@ -1960,11 +2140,36 @@ function StartStep(props: {
                   onChange={(event) =>
                     props.onLinks(
                       props.links.map((link) =>
-                        link.id === item.id ? { ...link, url: event.target.value } : link,
+                        link.id === item.id
+                          ? {
+                              ...link,
+                              url: event.target.value,
+                              productId: undefined,
+                              catalogProductName: undefined,
+                            }
+                          : link,
                       ),
                     )
                   }
                   placeholder="Paste product link"
+                />
+                <CatalogPickerButton
+                  item={item}
+                  disabled={props.gathering}
+                  onSelect={(product) =>
+                    props.onLinks(
+                      props.links.map((link) =>
+                        link.id === item.id
+                          ? {
+                              ...link,
+                              productId: product.id,
+                              catalogProductName: product.name,
+                              url: product.product_url || "",
+                            }
+                          : link,
+                      ),
+                    )
+                  }
                 />
                 {item.custom ? (
                   <button
@@ -2050,7 +2255,9 @@ function StartStep(props: {
           <div className="mt-5 flex justify-end">
             <Button
               onClick={props.onGather}
-              disabled={props.gathering || !props.links.some((item) => item.url.trim())}
+              disabled={
+                props.gathering || !props.links.some((item) => item.url.trim() || item.productId)
+              }
             >
               {props.gathering ? <RefreshCw className="animate-spin" /> : <Sparkles />}
               {props.gathering
