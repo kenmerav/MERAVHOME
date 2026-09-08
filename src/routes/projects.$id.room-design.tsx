@@ -2811,19 +2811,7 @@ function BoardStep({
     );
     const boardSelections: DemoSelection[] = [];
     for (const selection of eligibleSelections) {
-      let boardImageUrl = cutouts[selection.id] || selection.imageUrl;
-      if (boardImageUrl && !cutouts[selection.id] && !isStudioMaterialSwatch(selection.category)) {
-        setPopulateState({
-          status: "saving",
-          message: `Removing the background from ${selection.category}…`,
-        });
-        try {
-          boardImageUrl = await onRemoveBackground(boardImageUrl);
-          setCutouts((current) => ({ ...current, [selection.id]: boardImageUrl! }));
-        } catch {
-          // Keep the original image when a vendor blocks image access or the free model fails.
-        }
-      }
+      const boardImageUrl = cutouts[selection.id] || selection.imageUrl;
       boardSelections.push({
         ...selection,
         originalImageUrl: selection.originalImageUrl || selection.imageUrl,
@@ -2835,21 +2823,32 @@ function BoardStep({
         status: "error",
         message: "Add at least one real product image before building the Studio board.",
       });
-      return;
+      return false;
     }
     setPopulateState({ status: "saving", message: "Adding this room to the Studio board…" });
     try {
       await onPopulateBoard(boardPagination.studio.pageCount, boardSelections);
       setPopulateState({
         status: "saved",
-        message: "This room is current on the shared Studio design board.",
+        message:
+          "This room is current on the shared Studio design board. Product backgrounds will finish cleaning inside the full editor.",
       });
+      return true;
     } catch (error) {
       setPopulateState({
         status: "error",
         message: error instanceof Error ? error.message : "The Studio board could not be updated.",
       });
+      return false;
     }
+  };
+
+  const openFullProjectBoard = async () => {
+    const saved = await populateCurrentRoomBoard();
+    if (!saved) return;
+    window.location.assign(
+      `/projects/${encodeURIComponent(projectId)}/design-boards?roomId=${encodeURIComponent(roomId)}`,
+    );
   };
 
   useEffect(() => {
@@ -3128,10 +3127,13 @@ function BoardStep({
                 ? "Update Studio Design Board"
                 : "Populate Studio Design Board"}
             </Button>
-            <Button size="sm" variant="outline" asChild>
-              <Link to="/projects/$id/design-boards" params={{ id: projectId }}>
-                Open Full Project Board <ExternalLink />
-              </Link>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void openFullProjectBoard()}
+              disabled={!selections.length || populateState.status === "saving"}
+            >
+              Open Full Project Board <ExternalLink />
             </Button>
             {!showFullProjectBoard && (
               <>
@@ -3443,10 +3445,12 @@ function BoardStep({
           an item to edit it.
         </p>
         {projectId && !projectId.startsWith("local-") && (
-          <Button variant="outline" asChild>
-            <Link to="/projects/$id/design-boards" params={{ id: projectId }}>
-              Open full manual editor <ExternalLink />
-            </Link>
+          <Button
+            variant="outline"
+            onClick={() => void openFullProjectBoard()}
+            disabled={!selections.length || populateState.status === "saving"}
+          >
+            Open full manual editor <ExternalLink />
           </Button>
         )}
       </div>

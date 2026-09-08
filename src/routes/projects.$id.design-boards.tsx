@@ -84,6 +84,9 @@ import { toast } from "sonner";
 type ImglyBackgroundModel = "isnet_fp16" | "isnet";
 
 export const Route = createFileRoute("/projects/$id/design-boards")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    roomId: typeof search.roomId === "string" ? search.roomId : undefined,
+  }),
   head: () => ({ meta: [{ title: "Design Boards — MERAV Studio" }] }),
   component: ProjectDesignBoardsPage,
 });
@@ -665,6 +668,7 @@ function inferredMaterialItemCategory(item: MaterialItem): ItemCategory {
 
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
+  const { roomId: requestedRoomId } = Route.useSearch();
   const queryClient = useQueryClient();
   const boardStripRef = useRef<HTMLDivElement | null>(null);
   const thumbnailStripRef = useRef<HTMLDivElement | null>(null);
@@ -1235,7 +1239,9 @@ function ProjectDesignBoardsPage() {
       const currentSelectedPageId = boardStateRef.current.selectedPageId;
       const remoteState = options?.preserveSelectedPage
         ? preserveBoardSelectedPage(normalizedRemoteState, currentSelectedPageId)
-        : openBoardStateOnFirstPage(normalizedRemoteState);
+        : requestedRoomId
+          ? openBoardStateOnRoom(normalizedRemoteState, requestedRoomId)
+          : openBoardStateOnFirstPage(normalizedRemoteState);
       const remoteJson = JSON.stringify(prepareBoardStateForSave(remoteState));
       applyingRemoteRef.current = true;
       boardStateRef.current = remoteState;
@@ -1247,7 +1253,7 @@ function ProjectDesignBoardsPage() {
       queryClient.setQueryData(["designBoard", id], remoteBoard);
       setSaveStatus("ready");
     },
-    [id, queryClient],
+    [id, queryClient, requestedRoomId],
   );
 
   const saveBoardStateSafely = useCallback(
@@ -3621,7 +3627,7 @@ function ProjectDesignBoardsPage() {
                       }}
                       className="inline-flex items-center gap-2 rounded-full border border-ink bg-ink px-3 py-1 text-xs text-white"
                     >
-                      Return to Room Design <ArrowRight className="h-3.5 w-3.5" />
+                      Back to Room Design <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                   )}
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600">
@@ -8186,6 +8192,16 @@ function openBoardStateOnFirstPage(state: BoardState): BoardState {
   return {
     ...normalized,
     selectedPageId: normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
+  };
+}
+
+function openBoardStateOnRoom(state: BoardState, roomId: string): BoardState {
+  const normalized = normalizeBoardState(state);
+  const roomPage = normalized.pages.find((page) => page.roomId === roomId);
+  return {
+    ...normalized,
+    selectedPageId:
+      roomPage?.id ?? normalized.pages[0]?.id ?? defaultBoardState().selectedPageId,
   };
 }
 

@@ -71,6 +71,41 @@ describe("Room Design V2 shared board merge", () => {
     expect(merged.pages.some((page) => page.id === "room-design-v2:kitchen:1")).toBe(true);
   });
 
+  it("replaces only a completely untouched starter page", () => {
+    const merged = mergeRoomDesignSelectionsIntoBoard({
+      boardState: {
+        pages: [
+          {
+            id: "board-1",
+            title: "Design Board 1",
+            roomId: null,
+            elements: [],
+          },
+          {
+            id: "primary-bedroom",
+            title: "Primary Bedroom",
+            roomId: "bedroom",
+            elements: [],
+          },
+        ],
+        selectedPageId: "board-1",
+        comments: [],
+      },
+      projectName: "Pilot Project",
+      roomId: "kitchen",
+      roomName: "Kitchen",
+      selections: [selection("faucet", "Faucet")],
+      pageCount: 1,
+    });
+
+    expect(merged.pages).toHaveLength(2);
+    expect(merged.pages.map((page) => page.id)).toEqual([
+      "primary-bedroom",
+      "room-design-v2:kitchen:1",
+    ]);
+    expect(merged.selectedPageId).toBe("room-design-v2:kitchen:1");
+  });
+
   it("replaces only that room's generated pages and keeps user-arranged positions", () => {
     const first = mergeRoomDesignSelectionsIntoBoard({
       boardState: { pages: [], selectedPageId: "" },
@@ -121,6 +156,53 @@ describe("Room Design V2 shared board merge", () => {
 
     expect(drain.width).toBeLessThan(mirror.width);
     expect(roughIn.height).toBeLessThan(mirror.height);
+  });
+
+  it("opens generated products immediately and queues fixture backgrounds in the full editor", () => {
+    const merged = mergeRoomDesignSelectionsIntoBoard({
+      boardState: null,
+      projectName: "Pilot Project",
+      roomId: "kitchen",
+      roomName: "Kitchen",
+      selections: [selection("faucet", "Faucet"), selection("floor", "Flooring")],
+      pageCount: 1,
+    });
+    const images = merged.pages[0].elements.filter((element) => element.type === "image");
+    const faucet = images.find((element) => element.label === "Faucet")!;
+    const flooring = images.find((element) => element.label === "Flooring")!;
+
+    expect(faucet.src).toBe("https://images.example.com/faucet.png");
+    expect(faucet.autoRemoveBackground).toBe(true);
+    expect(flooring.autoRemoveBackground).toBe(false);
+  });
+
+  it("preserves a full-editor background choice when the same room is synced again", () => {
+    const first = mergeRoomDesignSelectionsIntoBoard({
+      boardState: null,
+      projectName: "Pilot Project",
+      roomId: "kitchen",
+      roomName: "Kitchen",
+      selections: [selection("faucet", "Faucet")],
+      pageCount: 1,
+    });
+    const firstImage = first.pages[0].elements.find((element) => element.type === "image")!;
+    firstImage.src = "https://example.com/faucet-cutout.png";
+    firstImage.backgroundRemovedUrl = "https://example.com/faucet-cutout.png";
+    firstImage.autoRemoveBackground = false;
+
+    const second = mergeRoomDesignSelectionsIntoBoard({
+      boardState: first,
+      projectName: "Pilot Project",
+      roomId: "kitchen",
+      roomName: "Kitchen",
+      selections: [selection("faucet", "Faucet")],
+      pageCount: 1,
+    });
+    const secondImage = second.pages[0].elements.find((element) => element.type === "image")!;
+
+    expect(secondImage.src).toBe("https://example.com/faucet-cutout.png");
+    expect(secondImage.backgroundRemovedUrl).toBe("https://example.com/faucet-cutout.png");
+    expect(secondImage.autoRemoveBackground).toBe(false);
   });
 });
 

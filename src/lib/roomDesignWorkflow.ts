@@ -361,6 +361,19 @@ function normalizeBoardState(value: unknown): BoardState {
   };
 }
 
+function isUntouchedDefaultPage(state: BoardState, page: BoardPage) {
+  const hasPageComment = Array.isArray(state.comments)
+    ? state.comments.some((entry) => object(entry).pageId === page.id)
+    : false;
+  return (
+    page.id === "board-1" &&
+    page.title === "Design Board 1" &&
+    page.roomId === null &&
+    page.elements.length === 0 &&
+    !hasPageComment
+  );
+}
+
 export function mergeRoomDesignSelectionsIntoBoard({
   boardState,
   projectName,
@@ -394,7 +407,10 @@ export function mergeRoomDesignSelectionsIntoBoard({
     ),
   );
   const pageCountChanged = priorGeneratedPages.length > 0 && priorGeneratedPages.length !== count;
-  const retainedPages = base.pages.filter((page) => !isGeneratedRoomPage(page, roomId));
+  const retainedPages = base.pages.filter(
+    (page) =>
+      !isGeneratedRoomPage(page, roomId) && !isUntouchedDefaultPage(base, page),
+  );
   const generatedPages: BoardPage[] = Array.from({ length: count }, (_, pageIndex) => ({
     id: generatedPageId(roomId, pageIndex),
     title: `${roomName} — Design Board ${pageIndex + 1}`,
@@ -415,6 +431,19 @@ export function mergeRoomDesignSelectionsIntoBoard({
         const id = generatedElementId(roomId, selection.id);
         const existing = priorElements.get(id);
         const stockPlacement = placement(index, pageSelections.length, selection.category);
+        const originalSrc = selection.originalImageUrl || selection.imageUrl;
+        const hasPreparedCutout = Boolean(
+          selection.originalImageUrl && selection.originalImageUrl !== selection.imageUrl,
+        );
+        const sameSourceAsExisting = Boolean(existing && existing.originalSrc === originalSrc);
+        const existingSrc = typeof existing?.src === "string" ? existing.src : undefined;
+        const existingBackgroundRemovedUrl =
+          typeof existing?.backgroundRemovedUrl === "string" ? existing.backgroundRemovedUrl : null;
+        const shouldAutoRemoveBackground = hasPreparedCutout
+          ? false
+          : sameSourceAsExisting
+            ? existing?.autoRemoveBackground === true
+            : !isMaterialSwatch(selection.category);
         return {
           ...(existing ?? {}),
           id,
@@ -425,8 +454,17 @@ export function mergeRoomDesignSelectionsIntoBoard({
           height: !existing || pageCountChanged ? stockPlacement.height : existing.height,
           rotation: typeof existing?.rotation === "number" ? existing.rotation : 0,
           zIndex: typeof existing?.zIndex === "number" ? existing.zIndex : 10 + index,
-          src: selection.imageUrl!,
-          originalSrc: selection.originalImageUrl || selection.imageUrl,
+          src:
+            hasPreparedCutout || !sameSourceAsExisting
+              ? selection.imageUrl!
+              : existingSrc || selection.imageUrl!,
+          originalSrc,
+          backgroundRemovedUrl: hasPreparedCutout
+            ? selection.imageUrl
+            : sameSourceAsExisting
+              ? existingBackgroundRemovedUrl
+              : null,
+          autoRemoveBackground: shouldAutoRemoveBackground,
           label: selection.category,
           link: selection.url || "",
           productId: selection.productId ?? null,
@@ -460,6 +498,12 @@ export function mergeRoomDesignSelectionsIntoBoard({
   );
   const selectedPageId = generatedPages[0]?.id || base.selectedPageId || pages[0]?.id || "";
   return { ...base, pages, selectedPageId };
+}
+
+function isMaterialSwatch(category: string) {
+  return /flooring|wall finish|ceiling finish|vanity finish|countertop|backsplash|shower wall tile|shower floor tile/i.test(
+    category,
+  );
 }
 
 export function isRoomDesignGeneratedPageId(value: string) {
