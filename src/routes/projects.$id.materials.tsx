@@ -45,6 +45,7 @@ import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
+import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/projects/$id/materials")({
@@ -1010,6 +1011,7 @@ function RoomMaterialsSection({
         product_url: url,
         image_url: item.image_url || null,
         finish: item.color || null,
+        notes: CATALOG_NAME_PENDING_NOTE,
       }));
 
     if (!product) throw new Error("Could not create the linked catalog product.");

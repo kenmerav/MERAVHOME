@@ -766,6 +766,13 @@ function RoomDesignWorkflow({
     initialDraft.completedRenderPreview,
   );
   const [materialsSent, setMaterialsSent] = useState(initialDraft.materialsSent);
+  const linkedCatalogIdsKey = useMemo(
+    () =>
+      Array.from(new Set(links.map((link) => link.productId).filter(Boolean)))
+        .sort()
+        .join("|"),
+    [links],
+  );
   const [roomDrafts, setRoomDrafts] = useState<Record<string, RoomWorkflowDraft>>(() =>
     Object.fromEntries(
       initialRooms.map((room) => [
@@ -784,6 +791,28 @@ function RoomDesignWorkflow({
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualBoardHydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!linkedCatalogIdsKey) return;
+    let cancelled = false;
+    void db.listCatalog().then((catalog) => {
+      if (cancelled || !catalog) return;
+      const catalogNames = new Map(catalog.map((product) => [product.id, product.name]));
+      setLinks((current) => {
+        let changed = false;
+        const next = current.map((link) => {
+          const currentName = link.productId ? catalogNames.get(link.productId) : undefined;
+          if (!currentName || currentName === link.catalogProductName) return link;
+          changed = true;
+          return { ...link, catalogProductName: currentName };
+        });
+        return changed ? next : current;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedCatalogIdsKey]);
 
   const currentRoomDraft = (): RoomWorkflowDraft => ({
     method,

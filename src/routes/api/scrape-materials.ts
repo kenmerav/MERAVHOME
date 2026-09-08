@@ -5,6 +5,10 @@ import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
+import {
+  CATALOG_NAME_PENDING_NOTE,
+  shouldReplaceCatalogProductName,
+} from "@/lib/catalogProductName";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
@@ -920,7 +924,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             // Look up material item early so we have its category + room
             const { data: matItem } = await supabaseAdmin
               .from("material_items")
-              .select("id, room_id, category, color")
+              .select("id, room_id, category, color, item_label, client_product_name")
               .eq("id", materialItemId)
               .maybeSingle();
 
@@ -963,6 +967,18 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 .eq("id", productId)
                 .maybeSingle();
               const patch = fillBlankProductFields(existingProduct as any, payload);
+              if (
+                shouldReplaceCatalogProductName({
+                  existingName: existingProduct?.name,
+                  scrapedName: row.scraped.name,
+                  itemLabel: matItem?.item_label,
+                  clientProductName: matItem?.client_product_name,
+                  notes: existingProduct?.notes,
+                })
+              ) {
+                patch.name = row.scraped.name?.trim();
+                if (existingProduct?.notes === CATALOG_NAME_PENDING_NOTE) patch.notes = null;
+              }
               const sourceVendor = firstString(inferVendorFromUrl(row.url), row.scraped.vendor);
               if (sourceVendor && existingProduct?.vendor !== sourceVendor) {
                 patch.vendor = sourceVendor;

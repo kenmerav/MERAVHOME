@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, ExternalLink, ImagePlus, Save, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ExternalLink, ImagePlus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, SUBCATEGORIES, type Product, type ProductCategory } from "@/lib/db";
 import {
@@ -28,6 +28,8 @@ import { normalizeMoneyInput } from "@/lib/money";
 import { cleanUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
+import { scrapeProductUrl } from "@/lib/productScrape";
+import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 
 type SampleFilter = "Sample" | "No sample";
 type ProductCatalogSearch = {
@@ -96,6 +98,7 @@ function ProductPage() {
   });
   const [form, setForm] = useState<ProductForm | null>(null);
   const [displayCategory, setDisplayCategory] = useState<ItemCategory>("Lighting");
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -149,6 +152,35 @@ function ProductPage() {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
   const category = form.category as ProductCategory;
   const showSampleField = sampleAppliesToCategory(displayCategory);
+
+  const refreshFromProductLink = async () => {
+    const url = form.product_url?.trim();
+    if (!url) return toast.error("Add the product link first.");
+    setRefreshing(true);
+    try {
+      const scraped = await scrapeProductUrl(url, fetch, { maxAttempts: 4 });
+      setForm((current) =>
+        current
+          ? {
+              ...current,
+              name: scraped.name || current.name,
+              vendor: scraped.vendor || current.vendor || inferVendorFromUrl(url) || null,
+              image_url: scraped.image_url || current.image_url,
+              finish: scraped.finish || current.finish,
+              sku: scraped.sku || current.sku,
+              dimensions: scraped.dimensions || current.dimensions,
+              price: scraped.price || current.price,
+              notes: current.notes === CATALOG_NAME_PENDING_NOTE ? null : current.notes,
+            }
+          : current,
+      );
+      toast.success("Product details refreshed. Review them, then save.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not refresh product details.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const save = async () => {
     if (!form.name.trim()) return toast.error("Product name required");
@@ -346,12 +378,23 @@ function ProductPage() {
               />
             </div>
 
-            <button
-              onClick={save}
-              className="mt-8 inline-flex items-center gap-2 px-6 py-3 bg-ink text-primary-foreground text-sm"
-            >
-              <Save className="w-4 h-4" /> Save Product
-            </button>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <button
+                onClick={save}
+                disabled={refreshing}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" /> Save Product
+              </button>
+              <button
+                onClick={refreshFromProductLink}
+                disabled={refreshing || !form.product_url?.trim()}
+                className="inline-flex items-center gap-2 border border-border px-6 py-3 text-sm hover:border-ink disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Refreshing…" : "Refresh from Product Link"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

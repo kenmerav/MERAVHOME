@@ -6,6 +6,10 @@ import {
 } from "@/lib/roomDesignWorkflow";
 import { SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
 import { inferMaterialCategory, productDisplayCategory } from "@/lib/roomTemplates";
+import {
+  CATALOG_NAME_PENDING_NOTE,
+  shouldReplaceCatalogProductName,
+} from "@/lib/catalogProductName";
 
 function selection(
   id: string,
@@ -188,6 +192,41 @@ describe("Room Design V2 workflow normalization", () => {
 });
 
 describe("Room Design V2 checklist templates", () => {
+  it("replaces only temporary project labels with scraped catalog names", () => {
+    expect(
+      shouldReplaceCatalogProductName({
+        existingName: "Dining Room All Over Paint Color",
+        scrapedName: "Aura Interior Paint",
+      }),
+    ).toBe(true);
+    expect(
+      shouldReplaceCatalogProductName({
+        existingName: "Ceiling finish",
+        scrapedName: "Aura Interior Paint",
+        itemLabel: "Ceiling finish",
+      }),
+    ).toBe(true);
+    expect(
+      shouldReplaceCatalogProductName({
+        existingName: "Temporary selection",
+        scrapedName: "Aura Interior Paint",
+        notes: CATALOG_NAME_PENDING_NOTE,
+      }),
+    ).toBe(true);
+    expect(
+      shouldReplaceCatalogProductName({
+        existingName: "Roman Clay",
+        scrapedName: "Aura Interior Paint",
+      }),
+    ).toBe(false);
+    expect(
+      shouldReplaceCatalogProductName({
+        existingName: "Kitchen Faucet",
+        scrapedName: "Purist Faucet",
+      }),
+    ).toBe(false);
+  });
+
   it("routes wall and ceiling finishes to the Paint catalog section", () => {
     expect(inferMaterialCategory("Wall finish")).toBe("Paint");
     expect(inferMaterialCategory("Ceiling finish")).toBe("Paint");
