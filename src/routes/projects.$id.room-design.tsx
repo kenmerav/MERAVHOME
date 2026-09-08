@@ -374,6 +374,7 @@ function swatchForGroup(group: BoardGroup) {
 }
 
 function catalogSectionForItem(label: string, group: BoardGroup): ItemCategory {
+  if (/\b(wall finish|ceiling finish)\b/i.test(label)) return "Paint";
   if (/\bair switch\b/i.test(label)) return "Plumbing";
   if (/\b(hardware|switches?|outlets?|wall plates?|hooks?)\b/i.test(label)) return "Hardware";
   const inferred = inferMaterialCategory(label);

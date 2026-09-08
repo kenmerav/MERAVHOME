@@ -5,6 +5,7 @@ import {
   type RoomDesignSelection,
 } from "@/lib/roomDesignWorkflow";
 import { SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
+import { inferMaterialCategory } from "@/lib/roomTemplates";
 
 function selection(
   id: string,
@@ -187,6 +188,11 @@ describe("Room Design V2 workflow normalization", () => {
 });
 
 describe("Room Design V2 checklist templates", () => {
+  it("routes wall and ceiling finishes to the Paint catalog section", () => {
+    expect(inferMaterialCategory("Wall finish")).toBe("Paint");
+    expect(inferMaterialCategory("Ceiling finish")).toBe("Paint");
+  });
+
   it("keeps independently selected product types in separate rows", () => {
     const kitchen = SELECTION_ROOM_TEMPLATES.find((room) => room.key === "kitchen")!;
     const primaryBathroom = SELECTION_ROOM_TEMPLATES.find(
