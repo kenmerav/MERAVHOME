@@ -78,6 +78,13 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
 export function productDisplayCategory(product: ProductCategoryShape): ItemCategory {
   if (product.category === "Tile") return "Tile & Stone";
   if (product.category === "Countertops") return "Countertops";
+  if (product.category === "Hardware") {
+    const nameCategory = inferMaterialCategory(product.name, product.product_url);
+    if (nameCategory === "Doors Base & Case") return nameCategory;
+    if (["Base & Case", "Door Hardware", "Door Hinges"].includes(product.subcategory ?? "")) {
+      return "Doors Base & Case";
+    }
+  }
   const normalizedCategory = normalizeItemCategory(product.category);
   if (normalizedCategory) return normalizedCategory;
 

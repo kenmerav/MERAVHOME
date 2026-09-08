@@ -14,7 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,16 +51,38 @@ export const Route = createFileRoute("/catalog_/$productId")({
     category: isItemCategory(search.category) ? search.category : undefined,
     vendor: typeof search.vendor === "string" && search.vendor.trim() ? search.vendor : undefined,
     sample: isSampleFilter(search.sample) ? search.sample : undefined,
-    project: typeof search.project === "string" && search.project.trim() ? search.project : undefined,
+    project:
+      typeof search.project === "string" && search.project.trim() ? search.project : undefined,
   }),
   component: ProductPage,
 });
 
-type ProductForm = Pick<Product,
-  "name" | "category" | "subcategory" | "vendor" | "product_url" | "image_url" | "finish" | "sku" | "dimensions" | "price" | "unit_cost" | "shipping" | "notes" | "description" | "has_sample"
+type ProductForm = Pick<
+  Product,
+  | "name"
+  | "category"
+  | "subcategory"
+  | "vendor"
+  | "product_url"
+  | "image_url"
+  | "finish"
+  | "sku"
+  | "dimensions"
+  | "price"
+  | "unit_cost"
+  | "shipping"
+  | "notes"
+  | "description"
+  | "has_sample"
 >;
 
 const PRODUCT_IMAGE_BUCKET = "product-images";
+
+function defaultSubcategoryForDisplayCategory(category: ItemCategory): string {
+  if (category === "Doors Base & Case") return "Base & Case";
+  const productCategory = toProductCategory(category);
+  return SUBCATEGORIES[productCategory][0];
+}
 
 function ProductPage() {
   const { productId } = Route.useParams();
@@ -92,12 +120,33 @@ function ProductPage() {
     }
   }, [product]);
 
-  if (!safeProductId) return <AppShell><div className="p-16 text-muted-foreground">Product not found.</div></AppShell>;
-  if (isLoading) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
-  if (!product) return <AppShell><div className="p-16 text-muted-foreground">Product not found.</div></AppShell>;
-  if (!form) return <AppShell><div className="p-16 text-muted-foreground">Loading…</div></AppShell>;
+  if (!safeProductId)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Product not found.</div>
+      </AppShell>
+    );
+  if (isLoading)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading…</div>
+      </AppShell>
+    );
+  if (!product)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Product not found.</div>
+      </AppShell>
+    );
+  if (!form)
+    return (
+      <AppShell>
+        <div className="p-16 text-muted-foreground">Loading…</div>
+      </AppShell>
+    );
 
-  const update = (patch: Partial<ProductForm>) => setForm((prev) => prev ? { ...prev, ...patch } : prev);
+  const update = (patch: Partial<ProductForm>) =>
+    setForm((prev) => (prev ? { ...prev, ...patch } : prev));
   const category = form.category as ProductCategory;
   const showSampleField = sampleAppliesToCategory(displayCategory);
 
@@ -125,7 +174,7 @@ function ProductPage() {
     await db.updateMaterialItemsByProduct(safeProductId, {
       category: displayCategory,
     });
-    setForm((prev) => prev ? { ...prev, price, unit_cost, shipping } : prev);
+    setForm((prev) => (prev ? { ...prev, price, unit_cost, shipping } : prev));
     qc.invalidateQueries({ queryKey: ["product", safeProductId] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["materialItems"] });
@@ -136,7 +185,11 @@ function ProductPage() {
   return (
     <AppShell>
       <div className="page-pad max-w-[1400px]">
-        <Link to="/catalog" search={catalogSearch} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8">
+        <Link
+          to="/catalog"
+          search={catalogSearch}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink mb-8"
+        >
           <ArrowLeft className="w-3.5 h-3.5" /> Product Catalog
         </Link>
 
@@ -144,53 +197,124 @@ function ProductPage() {
           <div>
             <ProductImageEditor productId={safeProductId} form={form} onChange={update} />
             {form.product_url && (
-              <a href={form.product_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm hover:underline">
+              <a
+                href={form.product_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex items-center gap-2 text-sm hover:underline"
+              >
                 Vendor product page <ExternalLink className="w-3.5 h-3.5" />
               </a>
             )}
           </div>
 
           <div>
-            <div className="eyebrow mb-3">{displayCategory}{form.subcategory ? ` · ${form.subcategory}` : ""}</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl mb-10">{form.name || "Untitled Product"}</h1>
+            <div className="eyebrow mb-3">
+              {displayCategory}
+              {form.subcategory ? ` · ${form.subcategory}` : ""}
+            </div>
+            <h1 className="editorial-hero text-5xl lg:text-7xl mb-10">
+              {form.name || "Untitled Product"}
+            </h1>
 
             <div className="grid md:grid-cols-2 gap-4">
-              <Field label="Product Name" value={form.name} onChange={(value) => update({ name: value })} />
-              <Field label="Vendor" value={form.vendor ?? ""} onChange={(value) => update({ vendor: value })} />
+              <Field
+                label="Product Name"
+                value={form.name}
+                onChange={(value) => update({ name: value })}
+              />
+              <Field
+                label="Vendor"
+                value={form.vendor ?? ""}
+                onChange={(value) => update({ vendor: value })}
+              />
               <div>
                 <Label className="eyebrow">Category</Label>
-                <Select value={displayCategory} onValueChange={(value) => {
-                  const nextDisplayCategory = value as ItemCategory;
-                  const nextProductCategory = toProductCategory(nextDisplayCategory);
-                  setDisplayCategory(nextDisplayCategory);
-                  update({
-                    category: nextProductCategory,
-                    subcategory: SUBCATEGORIES[nextProductCategory][0],
-                    has_sample: sampleAppliesToCategory(nextDisplayCategory) ? form.has_sample : false,
-                  });
-                }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{ALL_CATEGORIES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                <Select
+                  value={displayCategory}
+                  onValueChange={(value) => {
+                    const nextDisplayCategory = value as ItemCategory;
+                    const nextProductCategory = toProductCategory(nextDisplayCategory);
+                    setDisplayCategory(nextDisplayCategory);
+                    update({
+                      category: nextProductCategory,
+                      subcategory: defaultSubcategoryForDisplayCategory(nextDisplayCategory),
+                      has_sample: sampleAppliesToCategory(nextDisplayCategory)
+                        ? form.has_sample
+                        : false,
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_CATEGORIES.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label className="eyebrow">Subcategory</Label>
-                <Select value={form.subcategory ?? SUBCATEGORIES[category][0]} onValueChange={(value) => update({ subcategory: value })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{SUBCATEGORIES[category].map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                <Select
+                  value={form.subcategory ?? SUBCATEGORIES[category][0]}
+                  onValueChange={(value) => update({ subcategory: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBCATEGORIES[category].map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
-              <Field label="Client Price" value={form.price ?? ""} onChange={(value) => update({ price: value })} />
-              <Field label="Unit Cost" value={form.unit_cost ?? ""} onChange={(value) => update({ unit_cost: value })} />
-              <Field label="Shipping" value={form.shipping ?? ""} onChange={(value) => update({ shipping: value })} />
-              <Field label="Dimensions" value={form.dimensions ?? ""} onChange={(value) => update({ dimensions: value })} />
-              <Field label="Finish" value={form.finish ?? ""} onChange={(value) => update({ finish: value })} />
-              <Field label="SKU" value={form.sku ?? ""} onChange={(value) => update({ sku: value })} />
+              <Field
+                label="Client Price"
+                value={form.price ?? ""}
+                onChange={(value) => update({ price: value })}
+              />
+              <Field
+                label="Unit Cost"
+                value={form.unit_cost ?? ""}
+                onChange={(value) => update({ unit_cost: value })}
+              />
+              <Field
+                label="Shipping"
+                value={form.shipping ?? ""}
+                onChange={(value) => update({ shipping: value })}
+              />
+              <Field
+                label="Dimensions"
+                value={form.dimensions ?? ""}
+                onChange={(value) => update({ dimensions: value })}
+              />
+              <Field
+                label="Finish"
+                value={form.finish ?? ""}
+                onChange={(value) => update({ finish: value })}
+              />
+              <Field
+                label="SKU"
+                value={form.sku ?? ""}
+                onChange={(value) => update({ sku: value })}
+              />
               {showSampleField && (
                 <div>
                   <Label className="eyebrow">Sample</Label>
-                  <Select value={form.has_sample ? "yes" : "no"} onValueChange={(value) => update({ has_sample: value === "yes" })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Select
+                    value={form.has_sample ? "yes" : "no"}
+                    onValueChange={(value) => update({ has_sample: value === "yes" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="yes">Sample</SelectItem>
                       <SelectItem value="no">No sample</SelectItem>
@@ -198,13 +322,34 @@ function ProductPage() {
                   </Select>
                 </div>
               )}
-              <Field label="Product URL" value={form.product_url ?? ""} onChange={(value) => update({ product_url: value })} className="md:col-span-2" />
-              <Field label="Image URL" value={form.image_url ?? ""} onChange={(value) => update({ image_url: value })} className="md:col-span-2" />
-              <LongField label="Notes" value={form.notes ?? ""} onChange={(value) => update({ notes: value })} />
-              <LongField label="Description" value={form.description ?? ""} onChange={(value) => update({ description: value })} />
+              <Field
+                label="Product URL"
+                value={form.product_url ?? ""}
+                onChange={(value) => update({ product_url: value })}
+                className="md:col-span-2"
+              />
+              <Field
+                label="Image URL"
+                value={form.image_url ?? ""}
+                onChange={(value) => update({ image_url: value })}
+                className="md:col-span-2"
+              />
+              <LongField
+                label="Notes"
+                value={form.notes ?? ""}
+                onChange={(value) => update({ notes: value })}
+              />
+              <LongField
+                label="Description"
+                value={form.description ?? ""}
+                onChange={(value) => update({ description: value })}
+              />
             </div>
 
-            <button onClick={save} className="mt-8 inline-flex items-center gap-2 px-6 py-3 bg-ink text-primary-foreground text-sm">
+            <button
+              onClick={save}
+              className="mt-8 inline-flex items-center gap-2 px-6 py-3 bg-ink text-primary-foreground text-sm"
+            >
               <Save className="w-4 h-4" /> Save Product
             </button>
           </div>
@@ -249,8 +394,14 @@ function ProductImageEditor({
 
     setWorking(true);
     try {
-      const extension = file.name.split(".").pop()?.toLowerCase() || file.type.split("/").pop() || "jpg";
-      const safeName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "product-image";
+      const extension =
+        file.name.split(".").pop()?.toLowerCase() || file.type.split("/").pop() || "jpg";
+      const safeName =
+        file.name
+          .replace(/\.[^/.]+$/, "")
+          .replace(/[^a-z0-9]+/gi, "-")
+          .replace(/^-|-$/g, "")
+          .toLowerCase() || "product-image";
       const path = `${productId}/${Date.now()}-${safeName}.${extension}`;
       const { error } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).upload(path, file, {
         cacheControl: "3600",
@@ -262,8 +413,8 @@ function ProductImageEditor({
       const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
       await syncImageUrl(data.publicUrl);
       toast.success("Product image updated");
-    } catch (e: any) {
-      toast.error(e?.message || "Unable to upload image.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Unable to upload image.");
     } finally {
       setWorking(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -278,8 +429,8 @@ function ProductImageEditor({
       await syncImageUrl(null);
       if (storagePath) await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([storagePath]);
       toast.success("Product image removed");
-    } catch (e: any) {
-      toast.error(e?.message || "Unable to remove image.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Unable to remove image.");
     } finally {
       setWorking(false);
     }
@@ -297,7 +448,10 @@ function ProductImageEditor({
       <button
         type="button"
         onClick={() => setOptionsOpen(true)}
-        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         disabled={working}
@@ -305,7 +459,11 @@ function ProductImageEditor({
         title="Edit product image"
       >
         {form.image_url ? (
-          <img src={normalizeSupabaseImageUrl(form.image_url)} alt={form.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
+          <img
+            src={normalizeSupabaseImageUrl(form.image_url)}
+            alt={form.name}
+            className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+          />
         ) : (
           <div className="w-full h-full grid place-items-center text-center text-sm text-muted-foreground">
             <div>
@@ -354,7 +512,9 @@ function ProductImageEditor({
               </span>
               <span>
                 <span className="block font-display text-xl">Replace image</span>
-                <span className="block text-sm text-muted-foreground">Upload a new screenshot or product photo.</span>
+                <span className="block text-sm text-muted-foreground">
+                  Upload a new screenshot or product photo.
+                </span>
               </span>
             </button>
 
@@ -373,7 +533,9 @@ function ProductImageEditor({
                 </span>
                 <span>
                   <span className="block font-display text-xl">Remove image</span>
-                  <span className="block text-sm text-destructive/75">Clear this product image from the catalog.</span>
+                  <span className="block text-sm text-destructive/75">
+                    Clear this product image from the catalog.
+                  </span>
                 </span>
               </button>
             )}
@@ -388,7 +550,17 @@ function ProductImageEditor({
   );
 }
 
-function Field({ label, value, onChange, className = "" }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {
+function Field({
+  label,
+  value,
+  onChange,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
   return (
     <div className={className}>
       <Label className="eyebrow">{label}</Label>
@@ -397,7 +569,15 @@ function Field({ label, value, onChange, className = "" }: { label: string; valu
   );
 }
 
-function LongField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function LongField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <div className="md:col-span-2">
       <Label className="eyebrow">{label}</Label>

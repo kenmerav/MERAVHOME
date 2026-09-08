@@ -5,7 +5,7 @@ import {
   type RoomDesignSelection,
 } from "@/lib/roomDesignWorkflow";
 import { SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
-import { inferMaterialCategory } from "@/lib/roomTemplates";
+import { inferMaterialCategory, productDisplayCategory } from "@/lib/roomTemplates";
 
 function selection(
   id: string,
@@ -191,6 +191,23 @@ describe("Room Design V2 checklist templates", () => {
   it("routes wall and ceiling finishes to the Paint catalog section", () => {
     expect(inferMaterialCategory("Wall finish")).toBe("Paint");
     expect(inferMaterialCategory("Ceiling finish")).toBe("Paint");
+  });
+
+  it("keeps baseboard products in Doors Base & Case after saving as hardware", () => {
+    expect(
+      productDisplayCategory({
+        category: "Hardware",
+        subcategory: "Base & Case",
+        name: "Baseboard",
+      }),
+    ).toBe("Doors Base & Case");
+    expect(
+      productDisplayCategory({
+        category: "Hardware",
+        subcategory: "Cabinet Pulls",
+        name: "Baseboard",
+      }),
+    ).toBe("Doors Base & Case");
   });
 
   it("keeps independently selected product types in separate rows", () => {
