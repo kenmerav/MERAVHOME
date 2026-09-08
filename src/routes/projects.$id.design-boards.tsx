@@ -3773,7 +3773,7 @@ function ProjectDesignBoardsPage() {
                   </select>
                   <DraftFontSizeInput
                     ariaLabel="Text font size"
-                    value={selected.fontSize ?? 24}
+                    value={boardTextFontSize(selected)}
                     className="w-16 border-l border-stone-200 pl-2 text-sm outline-none"
                     onCommit={(fontSize) => updateElement(selected.id, { fontSize })}
                   />
@@ -5178,6 +5178,13 @@ function LightweightPagePreview({ page, pageNumber }: { page: BoardPage; pageNum
   );
 }
 
+function boardTextFontSize(element: BoardElement) {
+  const savedFontSize = element.fontSize ?? 24;
+  return element.text?.trim().toUpperCase() === "MERAV INTERIORS"
+    ? Math.max(savedFontSize, 20)
+    : savedFontSize;
+}
+
 function LightweightPageElement({ element }: { element: BoardElement }) {
   if (element.visible === false) return null;
 
@@ -5212,7 +5219,7 @@ function LightweightPageElement({ element }: { element: BoardElement }) {
           className="flex h-full w-full items-center justify-center overflow-hidden whitespace-pre-wrap text-center uppercase leading-tight"
           style={{
             color: element.color ?? DEFAULT_BOARD_TEXT_COLOR,
-            fontSize: element.fontSize ?? 24,
+            fontSize: boardTextFontSize(element),
             letterSpacing: element.letterSpacing ?? 1,
             fontFamily: element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
           }}
@@ -5282,7 +5289,7 @@ function PageThumbnail({
                   className="flex h-full w-full items-center justify-center overflow-hidden text-center uppercase leading-tight"
                   style={{
                     color: element.color ?? DEFAULT_BOARD_TEXT_COLOR,
-                    fontSize: element.fontSize ?? 24,
+                    fontSize: boardTextFontSize(element),
                     letterSpacing: element.letterSpacing ?? 1,
                     fontFamily: element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
                   }}
@@ -5629,7 +5636,7 @@ function BoardObject({
             className="h-full w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-center uppercase leading-tight outline-none"
             style={{
               color: element.color ?? DEFAULT_BOARD_TEXT_COLOR,
-              fontSize: element.fontSize ?? 24,
+              fontSize: boardTextFontSize(element),
               letterSpacing: element.letterSpacing ?? 1,
               fontFamily: element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
             }}
@@ -6327,7 +6334,7 @@ function SelectedPanel({
             Font size
             <DraftFontSizeInput
               ariaLabel="Text font size"
-              value={selected.fontSize ?? 24}
+              value={boardTextFontSize(selected)}
               className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
               onCommit={(fontSize) => onUpdate({ fontSize })}
             />
@@ -7251,7 +7258,7 @@ function drawBoardTextForExport(ctx: CanvasRenderingContext2D, element: BoardEle
     element.width / 2,
     element.height / 2,
     element.width,
-    element.fontSize ?? 24,
+    boardTextFontSize(element),
     element.fontFamily ?? DEFAULT_BOARD_TEXT_FONT,
     element.color ?? DEFAULT_BOARD_TEXT_COLOR,
     "center",
