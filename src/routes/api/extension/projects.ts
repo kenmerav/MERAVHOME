@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Room Design pilot tables are server-only until generated Supabase types include the migration. */
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -35,11 +36,18 @@ export const Route = createFileRoute("/api/extension/projects")({
             return json({ error: "Extension project list is not authorized." }, 401);
           }
 
-          const { data, error } = await supabaseAdmin
-            .from("projects")
-            .select("id,name,client_name,status,updated_at")
-            .order("updated_at", { ascending: false });
+          const [{ data, error }, { data: pilotRows }] = await Promise.all([
+            supabaseAdmin
+              .from("projects")
+              .select("id,name,client_name,status,updated_at")
+              .order("updated_at", { ascending: false }),
+            supabaseAdmin.from("room_design_projects" as any).select("project_id"),
+          ]);
           if (error) throw error;
+
+          const roomDesignProjects = new Set(
+            ((pilotRows ?? []) as Array<{ project_id: string }>).map((row) => row.project_id),
+          );
 
           const projects = (data ?? [])
             .map((project) => ({
@@ -48,6 +56,7 @@ export const Route = createFileRoute("/api/extension/projects")({
               clientName: project.client_name,
               status: project.status,
               archived: project.status === "Complete",
+              roomDesignV2: roomDesignProjects.has(project.id),
             }))
             .sort((a, b) => Number(a.archived) - Number(b.archived));
 

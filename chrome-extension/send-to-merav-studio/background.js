@@ -35,7 +35,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "MERAV_SEND_CURRENT_TAB") {
-    sendCurrentTabToStudio(message.projectId, message.boardPageId)
+    sendCurrentTabToStudio({
+      projectId: message.projectId,
+      boardPageId: message.boardPageId,
+      destination: message.destination,
+      roomId: message.roomId,
+      requiredItemKey: message.requiredItemKey,
+      quantity: message.quantity,
+      colorFinish: message.colorFinish,
+    })
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => {
         const message = error instanceof Error ? error.message : "Could not send product.";
@@ -86,20 +94,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-async function sendCurrentTabToStudio(projectIdOverride, boardPageIdOverride) {
+async function sendCurrentTabToStudio(overrides = {}) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url) {
     throw new Error("Open a product page first.");
   }
-  return sendImageToStudio(
-    { pageUrl: tab.url, srcUrl: "" },
-    tab,
-    projectIdOverride,
-    boardPageIdOverride,
-  );
+  return sendImageToStudio({ pageUrl: tab.url, srcUrl: "" }, tab, overrides);
 }
 
-async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverride) {
+async function sendImageToStudio(info, tab, overrides = {}) {
   await updateProgress(8, "Starting MERAV import...");
   const settings = await chrome.storage.sync.get([
     "studioUrl",
@@ -107,10 +110,21 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
     "boardPageId",
     "extensionToken",
     "lastStudioProjectId",
+    "destinationByProject",
+    "roomByProject",
+    "itemByRoom",
+    "quantityByItem",
   ]);
   const studioUrl = normalizeStudioUrl(settings.studioUrl || DEFAULT_STUDIO_URL);
-  const projectId = projectIdOverride || settings.projectId || settings.lastStudioProjectId;
-  const boardPageId = boardPageIdOverride || settings.boardPageId || "";
+  const projectId = overrides.projectId || settings.projectId || settings.lastStudioProjectId;
+  const destination =
+    overrides.destination || settings.destinationByProject?.[projectId] || "design_board";
+  const boardPageId = overrides.boardPageId || settings.boardPageId || "";
+  const roomId = overrides.roomId || settings.roomByProject?.[projectId] || "";
+  const requiredItemKey = overrides.requiredItemKey || settings.itemByRoom?.[roomId] || "";
+  const storedQuantity = settings.quantityByItem?.[`${roomId}:${requiredItemKey}`];
+  const quantity = Number(overrides.quantity || storedQuantity || 1);
+  const colorFinish = String(overrides.colorFinish || "").trim();
   const extensionToken = settings.extensionToken;
 
   if (!projectId) {
@@ -118,6 +132,12 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
   }
   if (!extensionToken) {
     throw new Error("Click the extension icon and connect to MERAV Studio first.");
+  }
+  if (destination === "room_design" && !roomId) {
+    throw new Error("Open the extension and choose a Room Design room first.");
+  }
+  if (destination === "room_design" && !requiredItemKey) {
+    throw new Error("Open the extension and choose a product type first.");
   }
 
   await updateProgress(20, "Reading product details...");
@@ -129,9 +149,16 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
     ...pageExtraction,
     projectId,
     boardPageId,
+    destination,
+    roomId,
+    requiredItemKey,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
     imageUrl: pageExtraction.imageUrl || info.srcUrl,
     sourcePageUrl: pageExtraction.sourcePageUrl || info.pageUrl || tab.url,
   };
+  if (colorFinish) {
+    payload.product = { ...(payload.product || {}), colorFinish };
+  }
 
   if (!payload.imageUrl) throw new Error("Could not find the product image.");
   if (!payload.sourcePageUrl) throw new Error("Could not find the product URL.");
@@ -155,12 +182,20 @@ async function sendImageToStudio(info, tab, projectIdOverride, boardPageIdOverri
     body = await importProduct(studioUrl, extensionToken, { ...payload, imageDataUrl });
   }
 
+  if (destination === "room_design" && body.nextItemId) {
+    const itemByRoom = { ...(settings.itemByRoom || {}), [roomId]: body.nextItemId };
+    await chrome.storage.sync.set({ itemByRoom });
+  }
+
   const title = body.warning ? "Imported with review needed" : "Sent to MERAV Studio";
   const message =
     body.warning ||
-    (body.price
-      ? `Product added to the design board with price ${body.price}.`
-      : "Product added to the active design board page. Price was not found.");
+    body.message ||
+    (destination === "room_design"
+      ? "Product added to the room selections."
+      : body.price
+        ? `Product added to the design board with price ${body.price}.`
+        : "Product added to the active design board page. Price was not found.");
   await updateProgress(100, message, { done: true });
   notify(title, message);
   setTimeout(() => updateProgress(0, "", { clearBadge: true }), 1600);

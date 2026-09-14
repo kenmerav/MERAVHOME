@@ -92,6 +92,7 @@ import { Route as ApiQuickbooksDisconnectRouteImport } from './routes/api/quickb
 import { Route as ApiQuickbooksCustomersRouteImport } from './routes/api/quickbooks/customers'
 import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
 import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
+import { Route as ApiExtensionRoomDesignRouteImport } from './routes/api/extension/room-design'
 import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
 import { Route as ApiExtensionPricesRouteImport } from './routes/api/extension/prices'
 import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
@@ -531,6 +532,11 @@ const ApiQuickbooksCallbackRoute = ApiQuickbooksCallbackRouteImport.update({
   path: '/api/quickbooks/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiExtensionRoomDesignRoute = ApiExtensionRoomDesignRouteImport.update({
+  id: '/api/extension/room-design',
+  path: '/api/extension/room-design',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiExtensionProjectsRoute = ApiExtensionProjectsRouteImport.update({
   id: '/api/extension/projects',
   path: '/api/extension/projects',
@@ -632,6 +638,7 @@ export interface FileRoutesByFullPath {
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
+  '/api/extension/room-design': typeof ApiExtensionRoomDesignRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
@@ -723,6 +730,7 @@ export interface FileRoutesByTo {
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
+  '/api/extension/room-design': typeof ApiExtensionRoomDesignRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
@@ -815,6 +823,7 @@ export interface FileRoutesById {
   '/api/extension/import-product': typeof ApiExtensionImportProductRoute
   '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
+  '/api/extension/room-design': typeof ApiExtensionRoomDesignRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
@@ -908,6 +917,7 @@ export interface FileRouteTypes {
     | '/api/extension/import-product'
     | '/api/extension/prices'
     | '/api/extension/projects'
+    | '/api/extension/room-design'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
@@ -999,6 +1009,7 @@ export interface FileRouteTypes {
     | '/api/extension/import-product'
     | '/api/extension/prices'
     | '/api/extension/projects'
+    | '/api/extension/room-design'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
@@ -1090,6 +1101,7 @@ export interface FileRouteTypes {
     | '/api/extension/import-product'
     | '/api/extension/prices'
     | '/api/extension/projects'
+    | '/api/extension/room-design'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
@@ -1182,6 +1194,7 @@ export interface RootRouteChildren {
   ApiExtensionImportProductRoute: typeof ApiExtensionImportProductRoute
   ApiExtensionPricesRoute: typeof ApiExtensionPricesRoute
   ApiExtensionProjectsRoute: typeof ApiExtensionProjectsRoute
+  ApiExtensionRoomDesignRoute: typeof ApiExtensionRoomDesignRoute
   ApiQuickbooksCallbackRoute: typeof ApiQuickbooksCallbackRoute
   ApiQuickbooksConnectUrlRoute: typeof ApiQuickbooksConnectUrlRoute
   ApiQuickbooksCustomersRoute: typeof ApiQuickbooksCustomersRoute
@@ -1789,6 +1802,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiQuickbooksCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/extension/room-design': {
+      id: '/api/extension/room-design'
+      path: '/api/extension/room-design'
+      fullPath: '/api/extension/room-design'
+      preLoaderRoute: typeof ApiExtensionRoomDesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/extension/projects': {
       id: '/api/extension/projects'
       path: '/api/extension/projects'
@@ -1902,6 +1922,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiExtensionImportProductRoute: ApiExtensionImportProductRoute,
   ApiExtensionPricesRoute: ApiExtensionPricesRoute,
   ApiExtensionProjectsRoute: ApiExtensionProjectsRoute,
+  ApiExtensionRoomDesignRoute: ApiExtensionRoomDesignRoute,
   ApiQuickbooksCallbackRoute: ApiQuickbooksCallbackRoute,
   ApiQuickbooksConnectUrlRoute: ApiQuickbooksConnectUrlRoute,
   ApiQuickbooksCustomersRoute: ApiQuickbooksCustomersRoute,

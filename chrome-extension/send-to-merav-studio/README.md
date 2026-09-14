@@ -1,6 +1,21 @@
 # Send to MERAV Studio Chrome Extension
 
-This unpacked Chrome extension adds three product-sourcing flows:
+This unpacked Chrome extension adds two destinations and three product-capture methods.
+
+For a project enrolled in the **Room Design V2** pilot:
+
+1. Open a product page and click the extension.
+2. Choose the project, **Room Design Selections _NEW_**, room, product type, quantity, and an optional
+   color/finish override.
+3. Click **Add to Room Selections**.
+4. Studio reuses or creates the catalog product and fills that room selection. The existing design
+   board is populated later from Room Design, after the selections are reviewed.
+
+The extension gathers the current product page link, product name, price, dimensions, SKU, and
+image. It remembers the last room and advances to the next unfilled product type after a successful
+import.
+
+The existing direct-to-board workflow remains available as **Design Board Direct**:
 
 1. Right-click a product image.
 2. Choose **Send to MERAV Studio**.
@@ -19,8 +34,8 @@ Or:
 3. Choose a project and board page.
 4. Click **Send Current Product**.
 
-The extension remembers the last project and board page you selected, so right-click sends can run
-without opening Studio or asking again.
+The extension remembers the last destination, project, room/product type, or board page, so
+right-click sends can run without opening Studio or asking again.
 
 ## Setup
 
@@ -41,5 +56,8 @@ without opening Studio or asking again.
 
 - The extension never stores Supabase service-role keys.
 - Studio stores the original image and tries free background removal.
+- After saving or reusing the catalog product and image, Room Design imports update only the
+  selected room workflow. They do not write to Materials or the design board until the designer
+  uses the existing Studio handoff controls.
 - If background removal fails, Studio imports the original image and returns a review warning.
 - Product extraction priority is JSON-LD, Open Graph metadata, page HTML, then visible text.

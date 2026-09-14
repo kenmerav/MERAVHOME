@@ -114,6 +114,60 @@ export const SELECTION_ROOM_TEMPLATES: SelectionRoomTemplate[] = [
   },
 ];
 
+const GENERIC_ROOM_ITEM_LABELS = [
+  "Flooring",
+  "Transitions",
+  "Wall finish",
+  "Ceiling finish",
+  "Lighting",
+  "Window treatments",
+  "Furniture",
+  "Fixtures",
+  "Hardware",
+  "Accessories",
+];
+
+const POWDER_BATHROOM_ITEM_LABELS = [
+  "Flooring",
+  "Transitions",
+  "Wall finish",
+  "Ceiling finish",
+  "Baseboard",
+  "Casing",
+  "Doors",
+  "Door hardware",
+  "Vanity layout",
+  "Vanity construction + door style",
+  "Vanity finish",
+  "Vanity hardware",
+  "Countertop",
+  "Backsplash",
+  "Sink",
+  "Faucet",
+  "Sink drain",
+  "Toilet",
+  "Mirror",
+  "Vanity sconces",
+  "Decorative ceiling lighting",
+  "Bath accessories",
+  "Hooks",
+  "Switches",
+  "Outlets",
+  "Wall plates",
+];
+
+export function selectionItemsForRoom(roomName: string): RequiredSelection[] {
+  const template = SELECTION_ROOM_TEMPLATES.find((candidate) => {
+    if (/primary.*bath/i.test(roomName)) return candidate.key === "primary-bathroom";
+    if (/kitchen/i.test(roomName)) return candidate.key === "kitchen";
+    return candidate.name.toLowerCase() === roomName.toLowerCase();
+  });
+  const labels = /powder.*bath/i.test(roomName)
+    ? POWDER_BATHROOM_ITEM_LABELS
+    : (template?.items.map((requiredItem) => requiredItem.label) ?? GENERIC_ROOM_ITEM_LABELS);
+  return labels.map(item);
+}
+
 export function classifyBoardGroup(...values: Array<string | null | undefined>): BoardGroup {
   const text = values.filter(Boolean).join(" ").toLowerCase();
 

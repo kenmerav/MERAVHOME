@@ -74,7 +74,7 @@ import {
   type ScrapedProductData,
 } from "@/lib/productScrape";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
-import { classifyBoardGroup, SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
+import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
 import { BOARD_GROUPS, type BoardGroup } from "@/lib/selectionTypes";
 import { cn } from "@/lib/utils";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
@@ -248,48 +248,6 @@ type ProjectRenderRoom = RoomWorkflowDraft & {
 
 const STEPS = ["Start", "Selections", "Design Board", "Render", "Approve", "Studio Outputs"];
 
-const GENERIC_ROOM_ITEMS = [
-  "Flooring",
-  "Transitions",
-  "Wall finish",
-  "Ceiling finish",
-  "Lighting",
-  "Window treatments",
-  "Furniture",
-  "Fixtures",
-  "Hardware",
-  "Accessories",
-];
-
-const POWDER_BATHROOM_ITEMS = [
-  "Flooring",
-  "Transitions",
-  "Wall finish",
-  "Ceiling finish",
-  "Baseboard",
-  "Casing",
-  "Doors",
-  "Door hardware",
-  "Vanity layout",
-  "Vanity construction + door style",
-  "Vanity finish",
-  "Vanity hardware",
-  "Countertop",
-  "Backsplash",
-  "Sink",
-  "Faucet",
-  "Sink drain",
-  "Toilet",
-  "Mirror",
-  "Vanity sconces",
-  "Decorative ceiling lighting",
-  "Bath accessories",
-  "Hooks",
-  "Switches",
-  "Outlets",
-  "Wall plates",
-];
-
 function itemKey(label: string) {
   return label
     .toLowerCase()
@@ -338,16 +296,7 @@ function splitLegacyBlankLinks(links: DemoLink[]) {
 }
 
 function linksForRoom(roomName: string): DemoLink[] {
-  const template = SELECTION_ROOM_TEMPLATES.find((candidate) => {
-    if (/primary.*bath/i.test(roomName)) return candidate.key === "primary-bathroom";
-    if (/kitchen/i.test(roomName)) return candidate.key === "kitchen";
-    return candidate.name.toLowerCase() === roomName.toLowerCase();
-  });
-  const labels = /powder.*bath/i.test(roomName)
-    ? POWDER_BATHROOM_ITEMS
-    : (template?.items.map((item) => item.label) ?? GENERIC_ROOM_ITEMS);
-  return labels.map((category) => {
-    const id = itemKey(category);
+  return selectionItemsForRoom(roomName).map(({ key: id, label: category }) => {
     return {
       id,
       category,

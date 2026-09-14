@@ -1,8 +1,17 @@
 const DEFAULT_STUDIO_URL = "https://studio.meravinteriors.com";
+const LOCAL_ROOM_DESIGN_PREVIEW =
+  /^https?:$/.test(window.location.protocol) &&
+  new URLSearchParams(window.location.search).get("preview") === "room-design";
 
 let settings = {};
+let projects = [];
+let roomDesignData = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) {
+    renderLocalRoomDesignPreview();
+    return;
+  }
   settings = await chrome.storage.sync.get([
     "studioUrl",
     "projectId",
@@ -10,31 +19,274 @@ document.addEventListener("DOMContentLoaded", async () => {
     "boardPageByProject",
     "extensionToken",
     "lastStudioProjectId",
+    "destinationByProject",
+    "roomByProject",
+    "itemByRoom",
+    "quantityByItem",
   ]);
   await loadProjects();
   await loadPriceQueue();
 });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === "MERAV_IMPORT_PROGRESS") {
-    setProgress(message.percent, message.message);
-    if (message.done) {
-      window.setTimeout(() => setProgress(0, "", false), 1400);
+if (!LOCAL_ROOM_DESIGN_PREVIEW) {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "MERAV_IMPORT_PROGRESS") {
+      setProgress(message.percent, message.message);
+      if (message.done) {
+        window.setTimeout(() => setProgress(0, "", false), 1400);
+      }
     }
-  }
-  if (message?.type === "MERAV_PRICE_QUEUE_PROGRESS") {
-    renderPriceQueue(message.queue, message.message);
-  }
-});
+    if (message?.type === "MERAV_PRICE_QUEUE_PROGRESS") {
+      renderPriceQueue(message.queue, message.message);
+    }
+  });
+}
+
+function renderLocalRoomDesignPreview() {
+  const previewProject = {
+    id: "preview-project",
+    name: "TEST DESIGN PROCESS",
+    clientName: "Local preview",
+    roomDesignV2: true,
+  };
+  projects = [previewProject];
+  settings = {
+    projectId: previewProject.id,
+    destinationByProject: { [previewProject.id]: "room_design" },
+    roomByProject: { [previewProject.id]: "preview-kitchen" },
+    itemByRoom: { "preview-kitchen": "island-pendants" },
+  };
+  roomDesignData = {
+    selectedRoomId: "preview-kitchen",
+    rooms: [
+      { id: "preview-kitchen", name: "Kitchen" },
+      { id: "preview-primary-bath", name: "Primary Bathroom" },
+      { id: "preview-great-room", name: "Great Room" },
+    ],
+    items: [
+      { id: "flooring", label: "Flooring", filled: true, productName: "European Oak" },
+      { id: "transitions", label: "Transitions", filled: false, productName: "" },
+      { id: "wall-finish", label: "Wall finish", filled: false, productName: "" },
+      { id: "ceiling-finish", label: "Ceiling finish", filled: false, productName: "" },
+      { id: "baseboard", label: "Baseboard", filled: false, productName: "" },
+      { id: "casing", label: "Casing", filled: false, productName: "" },
+      { id: "doors", label: "Doors", filled: false, productName: "" },
+      { id: "door-hardware", label: "Door hardware", filled: false, productName: "" },
+      { id: "general-lighting", label: "General lighting", filled: false, productName: "" },
+      { id: "recessed-lighting", label: "Recessed lighting", filled: false, productName: "" },
+      { id: "switches", label: "Switches", filled: false, productName: "" },
+      { id: "outlets", label: "Outlets", filled: false, productName: "" },
+      { id: "wall-plates", label: "Wall plates", filled: false, productName: "" },
+      { id: "cabinet-layout", label: "Cabinet layout", filled: false, productName: "" },
+      { id: "appliance-layout", label: "Appliance layout", filled: false, productName: "" },
+      {
+        id: "cabinet-construction-and-door-style",
+        label: "Cabinet construction + door style",
+        filled: false,
+        productName: "",
+      },
+      { id: "cabinet-finish", label: "Cabinet finish", filled: false, productName: "" },
+      { id: "cabinet-hardware", label: "Cabinet hardware", filled: false, productName: "" },
+      {
+        id: "countertop",
+        label: "Countertop",
+        filled: true,
+        productName: "Taj Mahal Quartzite",
+      },
+      { id: "backsplash", label: "Backsplash", filled: false, productName: "" },
+      { id: "sink", label: "Sink", filled: false, productName: "" },
+      { id: "faucet", label: "Faucet", filled: false, productName: "" },
+      { id: "sink-drain", label: "Sink drain", filled: false, productName: "" },
+      { id: "garbage-disposal", label: "Garbage disposal", filled: false, productName: "" },
+      { id: "sink-flange", label: "Sink flange", filled: false, productName: "" },
+      { id: "air-switch", label: "Air switch", filled: false, productName: "" },
+      { id: "dishwasher", label: "Dishwasher", filled: false, productName: "" },
+      { id: "range-cooktop", label: "Range / cooktop", filled: false, productName: "" },
+      { id: "wall-oven-s", label: "Wall oven(s)", filled: false, productName: "" },
+      { id: "hood-insert", label: "Hood insert", filled: false, productName: "" },
+      {
+        id: "decorative-hood-shell",
+        label: "Decorative hood shell",
+        filled: false,
+        productName: "",
+      },
+      { id: "refrigerator", label: "Refrigerator", filled: false, productName: "" },
+      { id: "freezer", label: "Freezer", filled: false, productName: "" },
+      {
+        id: "microwave-drawer",
+        label: "Microwave / drawer",
+        filled: false,
+        productName: "",
+      },
+      {
+        id: "specialty-appliances",
+        label: "Specialty appliances",
+        filled: false,
+        productName: "",
+      },
+      { id: "pot-filler", label: "Pot filler", filled: false, productName: "" },
+      { id: "open-shelving", label: "Open shelving", filled: false, productName: "" },
+      { id: "shelf-rails", label: "Shelf rails", filled: false, productName: "" },
+      { id: "island-pendants", label: "Island pendants", filled: false, productName: "" },
+      { id: "sconces", label: "Sconces", filled: false, productName: "" },
+      { id: "accent-lighting", label: "Accent lighting", filled: false, productName: "" },
+      {
+        id: "under-cabinet-lighting",
+        label: "Under-cabinet lighting",
+        filled: false,
+        productName: "",
+      },
+      {
+        id: "cabinet-interior-lighting",
+        label: "Cabinet interior lighting",
+        filled: false,
+        productName: "",
+      },
+      { id: "countertop-power", label: "Countertop power", filled: false, productName: "" },
+      { id: "island-power", label: "Island power", filled: false, productName: "" },
+    ],
+  };
+  roomDesignData.itemsByRoom = {
+    "preview-kitchen": roomDesignData.items,
+    "preview-primary-bath": localPreviewItems([
+      "Flooring",
+      "Transitions",
+      "Wall finish",
+      "Ceiling finish",
+      "Baseboard",
+      "Casing",
+      "Doors",
+      "Door hardware",
+      "Vanity layout",
+      "Vanity construction + door style",
+      "Vanity finish",
+      "Vanity hardware",
+      "Countertop",
+      "Backsplash",
+      "Sink(s)",
+      "Faucet(s)",
+      "Sink drain(s)",
+      "Shower wall tile",
+      "Shower floor tile",
+      "Shower system",
+      "Shower drain",
+      "Freestanding tub",
+      "Tub filler",
+      "Toilet",
+      "Mirror(s)",
+      "Vanity sconces",
+      "Decorative ceiling lighting",
+      "Bath accessories",
+      "Hooks",
+      "Switches",
+      "Outlets",
+      "Wall plates",
+    ]),
+    "preview-great-room": localPreviewItems([
+      "Flooring",
+      "Transitions",
+      "Wall finish",
+      "Ceiling finish",
+      "Lighting",
+      "Window treatments",
+      "Furniture",
+      "Fixtures",
+      "Hardware",
+      "Accessories",
+    ]),
+  };
+  setConnectionVisible(false);
+  renderSelect(projects, previewProject.id);
+  renderDestinationSelect(true, "room_design");
+  document.getElementById("roomDesignFields").hidden = false;
+  document.getElementById("boardFields").hidden = true;
+  document.getElementById("send").textContent = "Add to Room Selections";
+  renderRoomSelect(roomDesignData.rooms, roomDesignData.selectedRoomId);
+  renderRequiredItems(roomDesignData.items, "island-pendants");
+  restoreQuantity(roomDesignData.selectedRoomId, "island-pendants");
+  document.querySelectorAll("button").forEach((button) => {
+    button.disabled = true;
+  });
+  setStatus("Local preview only — no Studio data will be changed.");
+}
+
+function localPreviewItems(labels) {
+  return labels.map((label) => ({
+    id: label
+      .toLowerCase()
+      .replace(/\+/g, " and ")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, ""),
+    label,
+    filled: false,
+    productName: "",
+  }));
+}
 
 document.getElementById("projectSelect").addEventListener("change", async (event) => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
   const projectId = event.target.value;
   await chrome.storage.sync.set({ projectId });
   settings.projectId = projectId;
-  await loadBoardPages(projectId);
+  await configureProject(projectId);
+});
+
+document.getElementById("destinationSelect").addEventListener("change", async (event) => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
+  const projectId = document.getElementById("projectSelect").value;
+  const destination = event.target.value;
+  const destinationByProject = { ...(settings.destinationByProject || {}) };
+  if (projectId) destinationByProject[projectId] = destination;
+  settings.destinationByProject = destinationByProject;
+  await chrome.storage.sync.set({ destinationByProject });
+  await showDestination(projectId, destination);
+});
+
+document.getElementById("roomSelect").addEventListener("change", async (event) => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) {
+    roomDesignData.selectedRoomId = event.target.value;
+    roomDesignData.items = roomDesignData.itemsByRoom?.[event.target.value] || [];
+    const selectedItemId = roomDesignData.items.find((item) => !item.filled)?.id || "";
+    renderRequiredItems(roomDesignData.items, selectedItemId);
+    restoreQuantity(event.target.value, selectedItemId);
+    return;
+  }
+  const projectId = document.getElementById("projectSelect").value;
+  const roomId = event.target.value;
+  const roomByProject = { ...(settings.roomByProject || {}) };
+  if (projectId) roomByProject[projectId] = roomId;
+  settings.roomByProject = roomByProject;
+  await chrome.storage.sync.set({ roomByProject });
+  await loadRoomDesign(projectId, roomId);
+});
+
+document.getElementById("requiredItemSelect").addEventListener("change", async (event) => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
+  const roomId = document.getElementById("roomSelect").value;
+  const itemByRoom = { ...(settings.itemByRoom || {}) };
+  if (roomId) itemByRoom[roomId] = event.target.value;
+  settings.itemByRoom = itemByRoom;
+  await chrome.storage.sync.set({ itemByRoom });
+  restoreQuantity(roomId, event.target.value);
+});
+
+document.getElementById("quantityInput").addEventListener("change", async (event) => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
+  const roomId = document.getElementById("roomSelect").value;
+  const itemId = document.getElementById("requiredItemSelect").value;
+  if (!roomId || !itemId) return;
+  const quantity = Math.max(0.01, Number(event.target.value) || 1);
+  event.target.value = String(quantity);
+  const quantityByItem = {
+    ...(settings.quantityByItem || {}),
+    [`${roomId}:${itemId}`]: quantity,
+  };
+  settings.quantityByItem = quantityByItem;
+  await chrome.storage.sync.set({ quantityByItem });
 });
 
 document.getElementById("boardPageSelect").addEventListener("change", async (event) => {
+  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
   const boardPageId = event.target.value;
   const projectId = document.getElementById("projectSelect").value;
   const boardPageByProject = { ...(settings.boardPageByProject || {}) };
@@ -46,14 +298,27 @@ document.getElementById("boardPageSelect").addEventListener("change", async (eve
 
 document.getElementById("send").addEventListener("click", async () => {
   const projectId = document.getElementById("projectSelect").value;
+  const destination = document.getElementById("destinationSelect").value;
   const boardPageId = document.getElementById("boardPageSelect").value;
+  const roomId = document.getElementById("roomSelect").value;
+  const requiredItemKey = document.getElementById("requiredItemSelect").value;
+  const quantity = Number(document.getElementById("quantityInput").value) || 1;
+  const colorFinish = document.getElementById("colorFinishInput").value.trim();
   const status = document.getElementById("status");
   if (!projectId) {
     setStatus("Choose a project first.", true);
     return;
   }
-  if (!boardPageId) {
+  if (destination === "design_board" && !boardPageId) {
     setStatus("Choose a board page first.", true);
+    return;
+  }
+  if (destination === "room_design" && !roomId) {
+    setStatus("Choose a room first.", true);
+    return;
+  }
+  if (destination === "room_design" && !requiredItemKey) {
+    setStatus("Choose a product type first.", true);
     return;
   }
 
@@ -64,16 +329,40 @@ document.getElementById("send").addEventListener("click", async () => {
       type: "MERAV_SEND_CURRENT_TAB",
       projectId,
       boardPageId,
+      destination,
+      roomId,
+      requiredItemKey,
+      quantity,
+      colorFinish,
     });
     if (!response?.ok) throw new Error(response?.error || "Could not send product.");
     status.classList.remove("error");
-    setProgress(100, response.warning || "Product sent to the design board.", true);
+    setProgress(
+      100,
+      response.warning ||
+        response.message ||
+        (destination === "room_design"
+          ? "Product added to the room selections."
+          : "Product sent to the design board."),
+      true,
+    );
+    if (destination === "room_design") {
+      document.getElementById("colorFinishInput").value = "";
+      document.getElementById("openRoom").hidden = false;
+      await loadRoomDesign(projectId, roomId, response.nextItemId || "");
+    }
   } catch (error) {
     setProgress(0, "", false);
     setStatus(error instanceof Error ? error.message : "Could not send product.", true);
   } finally {
     setSending(false);
   }
+});
+
+document.getElementById("openRoom").addEventListener("click", async () => {
+  if (!roomDesignData?.openUrl) return;
+  const studioUrl = normalizeStudioUrl(settings.studioUrl);
+  await chrome.tabs.create({ url: `${studioUrl}${roomDesignData.openUrl}` });
 });
 
 document.getElementById("fillMissing").addEventListener("click", () => startPriceQueue("missing"));
@@ -104,6 +393,8 @@ async function loadProjects() {
     setConnectionVisible(true);
     renderSelect([], "");
     renderBoardPageSelect([], "");
+    renderRoomSelect([], "");
+    renderRequiredItems([], "");
     setStatus("Connect to Studio first.", true);
     return;
   }
@@ -119,13 +410,17 @@ async function loadProjects() {
       throw new Error(body.error || `Could not load projects (${response.status}).`);
     }
 
+    projects = body.projects || [];
     const selectedProjectId = settings.projectId || settings.lastStudioProjectId || "";
-    renderSelect(body.projects || [], selectedProjectId);
-    const loadedPages = await loadBoardPages(selectedProjectId);
-    if (loadedPages !== false) setStatus("");
+    renderSelect(projects, selectedProjectId);
+    const configured = await configureProject(selectedProjectId);
+    if (configured !== false) setStatus("");
   } catch (error) {
+    projects = [];
     renderSelect([], "");
     renderBoardPageSelect([], "");
+    renderRoomSelect([], "");
+    renderRequiredItems([], "");
     setStatus(error instanceof Error ? error.message : "Could not load projects.", true);
   }
 }
@@ -190,6 +485,141 @@ function renderSelect(projects, selectedProjectId) {
   if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) {
     select.value = selectedProjectId;
   }
+}
+
+async function configureProject(projectId) {
+  const project = projects.find((candidate) => candidate.id === projectId);
+  const remembered = settings.destinationByProject?.[projectId];
+  const destination = project?.roomDesignV2
+    ? remembered === "design_board"
+      ? "design_board"
+      : "room_design"
+    : "design_board";
+  renderDestinationSelect(Boolean(project?.roomDesignV2), destination);
+  if (projectId) {
+    const destinationByProject = {
+      ...(settings.destinationByProject || {}),
+      [projectId]: destination,
+    };
+    settings.destinationByProject = destinationByProject;
+    await chrome.storage.sync.set({ destinationByProject });
+  }
+  return showDestination(projectId, destination);
+}
+
+function renderDestinationSelect(hasRoomDesign, selectedDestination) {
+  const select = document.getElementById("destinationSelect");
+  select.textContent = "";
+  if (hasRoomDesign) {
+    const roomDesign = document.createElement("option");
+    roomDesign.value = "room_design";
+    roomDesign.textContent = "Room Design Selections *NEW*";
+    select.appendChild(roomDesign);
+  }
+  const board = document.createElement("option");
+  board.value = "design_board";
+  board.textContent = "Design Board Direct";
+  select.appendChild(board);
+  select.value = hasRoomDesign ? selectedDestination : "design_board";
+}
+
+async function showDestination(projectId, destination) {
+  const roomDesign = destination === "room_design";
+  document.getElementById("roomDesignFields").hidden = !roomDesign;
+  document.getElementById("boardFields").hidden = roomDesign;
+  document.getElementById("openRoom").hidden = true;
+  document.getElementById("send").textContent = roomDesign
+    ? "Add to Room Selections"
+    : "Send Current Product";
+  if (!projectId) {
+    renderBoardPageSelect([], "");
+    renderRoomSelect([], "");
+    renderRequiredItems([], "");
+    return true;
+  }
+  return roomDesign ? loadRoomDesign(projectId) : loadBoardPages(projectId);
+}
+
+async function loadRoomDesign(projectId, requestedRoomId = "", preferredItemId = "") {
+  if (!projectId || !settings.extensionToken) {
+    renderRoomSelect([], "");
+    renderRequiredItems([], "");
+    return true;
+  }
+  try {
+    const rememberedRoomId = requestedRoomId || settings.roomByProject?.[projectId] || "";
+    const studioUrl = normalizeStudioUrl(settings.studioUrl);
+    const params = new URLSearchParams({ projectId });
+    if (rememberedRoomId) params.set("roomId", rememberedRoomId);
+    const response = await fetch(`${studioUrl}/api/extension/room-design?${params}`, {
+      headers: { Authorization: `Bearer ${settings.extensionToken}` },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.error) {
+      throw new Error(body.error || `Could not load Room Design (${response.status}).`);
+    }
+    roomDesignData = body;
+    const roomId = body.selectedRoomId || "";
+    renderRoomSelect(body.rooms || [], roomId);
+    const rememberedItemId = preferredItemId || settings.itemByRoom?.[roomId] || "";
+    const selectedItemId = (body.items || []).some((item) => item.id === rememberedItemId)
+      ? rememberedItemId
+      : (body.items || []).find((item) => !item.filled)?.id || body.items?.[0]?.id || "";
+    renderRequiredItems(body.items || [], selectedItemId);
+    const roomByProject = { ...(settings.roomByProject || {}), [projectId]: roomId };
+    const itemByRoom = { ...(settings.itemByRoom || {}), [roomId]: selectedItemId };
+    settings.roomByProject = roomByProject;
+    settings.itemByRoom = itemByRoom;
+    await chrome.storage.sync.set({ roomByProject, itemByRoom });
+    restoreQuantity(roomId, selectedItemId);
+    return true;
+  } catch (error) {
+    roomDesignData = null;
+    renderRoomSelect([], "");
+    renderRequiredItems([], "");
+    setStatus(error instanceof Error ? error.message : "Could not load Room Design.", true);
+    return false;
+  }
+}
+
+function renderRoomSelect(rooms, selectedRoomId) {
+  const select = document.getElementById("roomSelect");
+  select.textContent = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = rooms.length ? "Choose a room" : "No rooms available";
+  select.appendChild(empty);
+  rooms.forEach((room) => {
+    const option = document.createElement("option");
+    option.value = room.id;
+    option.textContent = room.name;
+    select.appendChild(option);
+  });
+  if (rooms.some((room) => room.id === selectedRoomId)) select.value = selectedRoomId;
+}
+
+function renderRequiredItems(items, selectedItemId) {
+  const select = document.getElementById("requiredItemSelect");
+  select.textContent = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = items.length ? "Choose a product type" : "No product types available";
+  select.appendChild(empty);
+  items.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.filled
+      ? `${item.label} · ${item.productName || "Filled"}`
+      : item.label;
+    select.appendChild(option);
+  });
+  if (items.some((item) => item.id === selectedItemId)) select.value = selectedItemId;
+}
+
+function restoreQuantity(roomId, itemId) {
+  const item = roomDesignData?.items?.find((candidate) => candidate.id === itemId);
+  const remembered = settings.quantityByItem?.[`${roomId}:${itemId}`];
+  document.getElementById("quantityInput").value = String(remembered || item?.quantity || 1);
 }
 
 async function loadBoardPages(projectId) {

@@ -1,3 +1,5 @@
+import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
+
 export type RoomDesignMethod = "manual" | "links" | "concept";
 
 export type RoomDesignSelection = {
@@ -80,6 +82,157 @@ type BoardState = Record<string, unknown> & {
 };
 
 const PAGE_PREFIX = "room-design-v2";
+
+export function roomDesignDefaultQuantityUnit(category: string) {
+  if (/flooring|tile|backsplash/i.test(category)) return "sq ft";
+  if (/baseboard|casing|transition/i.test(category)) return "linear ft";
+  if (/countertop/i.test(category)) return "slab";
+  if (/wall finish|ceiling finish|vanity finish|paint/i.test(category)) return "gallon";
+  if (/shower system/i.test(category)) return "set";
+  return "each";
+}
+
+export function roomDesignDefaultWastePercent(category: string) {
+  if (/flooring|tile|backsplash/i.test(category)) return 10;
+  if (/baseboard|casing|transition/i.test(category)) return 5;
+  return 0;
+}
+
+function roomDesignGroupSwatch(group: string) {
+  const swatches: Record<string, string> = {
+    Materials: "linear-gradient(135deg,#e9e2d8,#b9ab98 48%,#f5f2ec 52%,#cdbfae)",
+    "Cabinetry / Millwork": "repeating-linear-gradient(90deg,#b7946f 0 7px,#c7a783 8px 13px)",
+    Plumbing: "linear-gradient(145deg,#f0ede5 0 35%,#97938a 36% 44%,#ded9cf 45% 66%,#77736c 67%)",
+    Lighting: "radial-gradient(circle,#f2dfba 0 24%,#b58a50 26% 34%,transparent 36%)",
+    Appliances: "linear-gradient(135deg,#d9d8d4,#777672 48%,#efeee9 50%,#999793)",
+    Hardware: "radial-gradient(circle,#b58a50 0 35%,#836236 36% 45%,transparent 47%)",
+    "Feature / Decor": "linear-gradient(135deg,#ccbca8,#8d7864)",
+    "Architecture / Other": "linear-gradient(135deg,#ece8df,#c9c1b5)",
+  };
+  return swatches[group] || swatches["Architecture / Other"];
+}
+
+export function createDefaultRoomDesignWorkflowState(roomName: string): RoomDesignWorkflowState {
+  return {
+    version: 1,
+    method: "links",
+    stage: 0,
+    links: selectionItemsForRoom(roomName).map((requiredItem) => ({
+      id: requiredItem.key,
+      category: requiredItem.label,
+      url: "",
+      group: classifyBoardGroup(requiredItem.label),
+      quantity: 1,
+      notes: "",
+    })),
+    linksRoomName: roomName,
+    selections: [],
+    conceptImageUrl: "",
+    roomImageUrl: "",
+    floorPlanImageUrl: "",
+    sketchupImageUrl: "",
+    completedRenderImageUrl: "",
+    boardReady: false,
+    renderReady: false,
+    materialsSent: false,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function mergeExtensionProductIntoRoomDesignWorkflow({
+  state,
+  itemKey,
+  product,
+}: {
+  state: RoomDesignWorkflowState;
+  itemKey: string;
+  product: {
+    id: string;
+    name: string;
+    vendor: string;
+    finish: string;
+    sourcePageUrl: string;
+    imageUrl: string;
+    originalImageUrl: string;
+    price: string;
+    sku: string;
+    dimensions: string;
+    quantity: number;
+  };
+}) {
+  const target = state.links.find((link) => link.id === itemKey);
+  if (!target) throw new Error("That product type is no longer available for this room.");
+
+  const selectionId = `link-${target.id}`;
+  const existingSelection = state.selections.find((selection) => selection.id === selectionId);
+  const nextSelection: RoomDesignSelection = {
+    ...existingSelection,
+    id: selectionId,
+    category: target.category,
+    productName: product.name,
+    vendor: product.vendor,
+    finish: product.finish || "Finish needs review",
+    source: "Product link",
+    state: "selected",
+    swatch: roomDesignGroupSwatch(target.group),
+    url: product.sourcePageUrl,
+    imageUrl: product.imageUrl,
+    originalImageUrl: product.originalImageUrl,
+    group: target.group,
+    quantity: product.quantity,
+    quantityUnit: existingSelection?.quantityUnit || roomDesignDefaultQuantityUnit(target.category),
+    wastePercent: existingSelection?.wastePercent ?? roomDesignDefaultWastePercent(target.category),
+    notes: target.notes || existingSelection?.notes,
+    price: product.price || undefined,
+    sku: product.sku || undefined,
+    dimensions: product.dimensions || undefined,
+    productId: product.id,
+    scrapeStatus: product.finish ? "complete" : "partial",
+    scrapeError: product.finish ? undefined : "Color/finish needs review.",
+    materialsSyncStatus: state.materialsSent ? "changed" : existingSelection?.materialsSyncStatus,
+  };
+  const selections = state.selections.some((selection) => selection.id === selectionId)
+    ? state.selections.map((selection) =>
+        selection.id === selectionId ? nextSelection : selection,
+      )
+    : [...state.selections, nextSelection];
+  const links = state.links.map((link) =>
+    link.id === target.id
+      ? {
+          ...link,
+          url: product.sourcePageUrl,
+          quantity: product.quantity,
+          productId: product.id,
+          catalogProductName: product.name,
+        }
+      : link,
+  );
+  const filled = new Set(
+    selections
+      .filter((selection) => selection.state !== "draft")
+      .map((selection) => selection.id.replace(/^link-/, "")),
+  );
+  const targetIndex = links.findIndex((link) => link.id === target.id);
+  const nextLinks = [...links.slice(targetIndex + 1), ...links.slice(0, targetIndex)];
+  const nextItem = nextLinks.find((link) => !filled.has(link.id)) ?? null;
+
+  return {
+    state: {
+      ...state,
+      method: "links" as const,
+      stage: 1,
+      links,
+      linksRoomName: state.linksRoomName || "Room",
+      selections,
+      boardReady: false,
+      renderReady: false,
+      updatedAt: new Date().toISOString(),
+    },
+    item: target,
+    nextItem,
+    replaced: Boolean(existingSelection),
+  };
+}
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -408,8 +561,7 @@ export function mergeRoomDesignSelectionsIntoBoard({
   );
   const pageCountChanged = priorGeneratedPages.length > 0 && priorGeneratedPages.length !== count;
   const retainedPages = base.pages.filter(
-    (page) =>
-      !isGeneratedRoomPage(page, roomId) && !isUntouchedDefaultPage(base, page),
+    (page) => !isGeneratedRoomPage(page, roomId) && !isUntouchedDefaultPage(base, page),
   );
   const generatedPages: BoardPage[] = Array.from({ length: count }, (_, pageIndex) => ({
     id: generatedPageId(roomId, pageIndex),

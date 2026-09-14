@@ -5,7 +5,7 @@
     <title>Send to MERAV Studio</title>
     <style>
       body {
-        width: 360px;
+        width: 390px;
         margin: 0;
         background: #f7f5ef;
         color: #17130f;
@@ -40,7 +40,8 @@
         letter-spacing: 0.16em;
         text-transform: uppercase;
       }
-      select {
+      select,
+      input {
         width: 100%;
         margin-top: 7px;
         box-sizing: border-box;
@@ -76,6 +77,19 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8px;
+      }
+      .destination-fields {
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid #ded9cd;
+        background: rgba(255, 255, 255, 0.62);
+      }
+      .destination-fields label:first-child {
+        margin-top: 0;
+      }
+      .destination-note {
+        margin: 7px 0 0;
+        font-size: 11px;
       }
       .status {
         min-height: 18px;
@@ -171,7 +185,7 @@
   <body>
     <main>
       <h1>Send to Studio</h1>
-      <p>Choose the destination once, then send products straight onto that design board page.</p>
+      <p>Source into Room Design, or send directly to an existing design board.</p>
       <div id="connection" class="connection">
         <p>Connect this extension to your MERAV Studio login before sending products.</p>
         <button id="connect" class="connect">Connect to Studio</button>
@@ -183,15 +197,58 @@
         </select>
       </label>
       <label>
-        Board Page
-        <select id="boardPageSelect">
-          <option value="">Choose a project first</option>
+        Send To
+        <select id="destinationSelect">
+          <option value="design_board">Design Board Direct</option>
         </select>
       </label>
+      <section id="roomDesignFields" class="destination-fields" hidden>
+        <label>
+          Room
+          <select id="roomSelect">
+            <option value="">Choose a project first</option>
+          </select>
+        </label>
+        <label>
+          Product Type
+          <select id="requiredItemSelect">
+            <option value="">Choose a room first</option>
+          </select>
+        </label>
+        <label>
+          Quantity
+          <input id="quantityInput" type="number" min="0.01" step="0.01" value="1" />
+        </label>
+        <label>
+          Color / Finish
+          <input
+            id="colorFinishInput"
+            type="text"
+            placeholder="Optional — e.g. Aged Brass"
+            autocomplete="off"
+          />
+        </label>
+        <p class="destination-note">
+          Studio gathers the current page link, product name, price, dimensions, SKU, and image,
+          then saves it to the catalog and this room selection.
+        </p>
+      </section>
+      <section id="boardFields" class="destination-fields">
+        <label>
+          Board Page
+          <select id="boardPageSelect">
+            <option value="">Choose a project first</option>
+          </select>
+        </label>
+        <p class="destination-note">
+          Uses the current manual workflow and adds the product directly to the selected page.
+        </p>
+      </section>
       <div class="row">
         <button id="send">Send Current Product</button>
         <button id="options" class="secondary">Settings</button>
       </div>
+      <button id="openRoom" class="secondary" hidden>Open Room in Studio</button>
       <section class="pricing">
         <h2>Product Pricing</h2>
         <div class="price-actions">

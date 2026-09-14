@@ -1,7 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Room Design pilot and design-board tables are server-only until generated Supabase types include their migrations. */
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
+import {
+  createDefaultRoomDesignWorkflowState,
+  mergeExtensionProductIntoRoomDesignWorkflow,
+  normalizeRoomDesignWorkflowState,
+} from "@/lib/roomDesignWorkflow";
 
 const PRODUCT_IMAGE_BUCKET = "product-images";
 const BACKGROUND_REMOVED_BUCKET = "background-removed-images";
@@ -55,6 +61,10 @@ type BoardState = {
 type ExtensionProductPayload = {
   projectId?: string;
   boardPageId?: string;
+  destination?: "design_board" | "room_design";
+  roomId?: string;
+  requiredItemKey?: string;
+  quantity?: number;
   sourcePageUrl?: string;
   imageUrl?: string;
   imageDataUrl?: string;
@@ -120,7 +130,10 @@ function compactObject<T extends Record<string, unknown>>(value: T) {
 function isSafeColorFinish(value: unknown) {
   const text = cleanText(value);
   if (!text || text.length > 80) return false;
-  const normalized = text.toLowerCase().replace(/[.\s_-]+/g, " ").trim();
+  const normalized = text
+    .toLowerCase()
+    .replace(/[.\s_-]+/g, " ")
+    .trim();
   const exactNonColors = new Set([
     "united states",
     "united states of america",
@@ -141,7 +154,9 @@ function isSafeColorFinish(value: unknown) {
     "out of stock",
   ]);
   if (exactNonColors.has(normalized)) return false;
-  if (/variant\s*filters?|clearvariantfilters|selectedvariant/i.test(normalized.replace(/\s+/g, ""))) {
+  if (
+    /variant\s*filters?|clearvariantfilters|selectedvariant/i.test(normalized.replace(/\s+/g, ""))
+  ) {
     return false;
   }
   if (
@@ -151,7 +166,9 @@ function isSafeColorFinish(value: unknown) {
   ) {
     return false;
   }
-  if (/\$|sku|item #|model|mpn|qty|quantity|dimensions|overall|width|height|depth|length/i.test(text)) {
+  if (
+    /\$|sku|item #|model|mpn|qty|quantity|dimensions|overall|width|height|depth|length/i.test(text)
+  ) {
     return false;
   }
   if (/\d+\s*(?:"|in\.?|inch|cm|mm|ft)\b/i.test(text)) return false;
@@ -313,7 +330,9 @@ function normalizeBoardState(value: unknown): BoardState {
             title: typeof typed.title === "string" ? typed.title : `Design Board ${index + 1}`,
             roomId: typeof typed.roomId === "string" && typed.roomId ? typed.roomId : null,
             elements: Array.isArray(typed.elements)
-              ? typed.elements.filter((element) => element && typeof element === "object") as BoardElement[]
+              ? (typed.elements.filter(
+                  (element) => element && typeof element === "object",
+                ) as BoardElement[])
               : [],
           };
         })
@@ -409,6 +428,107 @@ async function saveBoardWithRetry(projectId: string, updater: (state: BoardState
   throw new Error("Could not save design board because it changed at the same time. Try again.");
 }
 
+function normalizedRoomDesignState(roomName: string, value: unknown) {
+  const initial = createDefaultRoomDesignWorkflowState(roomName);
+  const { version: _version, updatedAt: _updatedAt, ...fallback } = initial;
+  const normalized = normalizeRoomDesignWorkflowState(value, fallback);
+  return normalized.links.length ? normalized : initial;
+}
+
+async function saveRoomDesignSelectionWithRetry({
+  projectId,
+  roomId,
+  requiredItemKey,
+  product,
+}: {
+  projectId: string;
+  roomId: string;
+  requiredItemKey: string;
+  product: Parameters<typeof mergeExtensionProductIntoRoomDesignWorkflow>[0]["product"];
+}) {
+  const [{ data: featureFlag }, { data: enrollment }, { data: room, error: roomError }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("studio_feature_flags" as any)
+        .select("enabled")
+        .eq("key", "room_design_v2")
+        .maybeSingle(),
+      supabaseAdmin
+        .from("room_design_projects" as any)
+        .select("project_id")
+        .eq("project_id", projectId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("rooms")
+        .select("id,name")
+        .eq("id", roomId)
+        .eq("project_id", projectId)
+        .maybeSingle(),
+    ]);
+  if (roomError) throw roomError;
+  if ((featureFlag as any)?.enabled !== true || !enrollment) {
+    throw new Error("This project is not using the new Room Design process.");
+  }
+  if (!room) throw new Error("That room does not belong to the selected project.");
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: workflow, error } = await supabaseAdmin
+      .from("room_design_workflows" as any)
+      .select("id,state,updated_at")
+      .eq("project_id", projectId)
+      .eq("room_id", roomId)
+      .maybeSingle();
+    if (error) throw error;
+
+    const currentState = normalizedRoomDesignState((room as any).name, (workflow as any)?.state);
+    const merged = mergeExtensionProductIntoRoomDesignWorkflow({
+      state: currentState,
+      itemKey: requiredItemKey,
+      product,
+    });
+
+    if (!workflow) {
+      const { error: insertError } = await supabaseAdmin
+        .from("room_design_workflows" as any)
+        .insert({
+          project_id: projectId,
+          room_id: roomId,
+          version: 1,
+          state: merged.state,
+          updated_by: null,
+        } as any);
+      if (insertError && /duplicate key|already exists/i.test(insertError.message)) continue;
+      if (insertError) throw insertError;
+    } else {
+      const { data: saved, error: updateError } = await supabaseAdmin
+        .from("room_design_workflows" as any)
+        .update({ state: merged.state, updated_by: null } as any)
+        .eq("id", (workflow as any).id)
+        .eq("updated_at", (workflow as any).updated_at)
+        .select("id")
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!saved) continue;
+    }
+
+    await supabaseAdmin.from("room_design_events" as any).insert({
+      project_id: projectId,
+      room_id: roomId,
+      event_type: "extension_selection_imported",
+      details: {
+        requiredItemKey,
+        requiredItemLabel: merged.item.category,
+        productId: product.id,
+        replaced: merged.replaced,
+      },
+      created_by: null,
+    } as any);
+
+    return merged;
+  }
+  throw new Error("Room Design changed at the same time. Open the room and try again.");
+}
+
 export const Route = createFileRoute("/api/extension/import-product")({
   server: {
     handlers: {
@@ -422,10 +542,27 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const payload = (await request.json()) as ExtensionProductPayload;
           const projectId = cleanText(payload.projectId);
           const boardPageId = cleanText(payload.boardPageId);
+          const destination =
+            payload.destination === "room_design" ? "room_design" : "design_board";
+          const roomId = cleanText(payload.roomId);
+          const requiredItemKey = cleanText(payload.requiredItemKey);
+          const quantity =
+            typeof payload.quantity === "number" &&
+            Number.isFinite(payload.quantity) &&
+            payload.quantity > 0
+              ? Math.round(payload.quantity * 100) / 100
+              : 1;
           const sourcePageUrl = normalizeUrl(payload.sourcePageUrl);
           const imageUrl = normalizeUrl(payload.imageUrl);
           const imageData = parseImageDataUrl(payload.imageDataUrl);
-          if (!projectId) return json({ error: "Choose a Studio project in the extension settings." }, 400);
+          if (!projectId)
+            return json({ error: "Choose a Studio project in the extension settings." }, 400);
+          if (destination === "room_design" && !roomId) {
+            return json({ error: "Choose a room before adding the product." }, 400);
+          }
+          if (destination === "room_design" && !requiredItemKey) {
+            return json({ error: "Choose a product type before adding the product." }, 400);
+          }
           if (!sourcePageUrl) return json({ error: "Product URL is required." }, 400);
           if (!imageUrl && !imageData) return json({ error: "Product image is required." }, 400);
 
@@ -439,7 +576,11 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const productData = payload.product ?? {};
           const productName =
             firstText(productData.name) || firstText(hostName(sourcePageUrl), "Imported product");
-          const vendor = firstText(productData.vendor, productData.manufacturer, hostName(sourcePageUrl));
+          const vendor = firstText(
+            productData.vendor,
+            productData.manufacturer,
+            hostName(sourcePageUrl),
+          );
           const rawFinish = firstText(productData.colorFinish);
           const finish = isSafeColorFinish(rawFinish) ? rawFinish : "";
           const dimensions = firstText(productData.dimensions);
@@ -537,9 +678,59 @@ export const Route = createFileRoute("/api/extension/import-product")({
                 .eq("id", (existingProduct as any).id)
                 .select()
                 .single()
-            : await supabaseAdmin.from("products").insert(productInsert as any).select().single();
+            : await supabaseAdmin
+                .from("products")
+                .insert(productInsert as any)
+                .select()
+                .single();
           if (productError || !product) {
             throw productError ?? new Error("Could not create product.");
+          }
+
+          const colorWarning =
+            rawFinish && !finish
+              ? `Product imported, but Studio skipped "${rawFinish}" because it did not look like a real color/finish.`
+              : !finish
+                ? "Product imported. Color/finish was not detected, so review it in Room Design or Board Tools."
+                : null;
+
+          if (destination === "room_design") {
+            const merged = await saveRoomDesignSelectionWithRetry({
+              projectId,
+              roomId,
+              requiredItemKey,
+              product: {
+                id: (product as any).id,
+                name: productName,
+                vendor: vendor || "",
+                finish,
+                sourcePageUrl,
+                imageUrl: imageForProduct,
+                originalImageUrl: originalUpload.publicUrl,
+                price: price || "",
+                sku,
+                dimensions,
+                quantity,
+              },
+            });
+            return json({
+              ok: true,
+              destination,
+              productId: (product as any).id,
+              roomId,
+              requiredItemKey,
+              requiredItemLabel: merged.item.category,
+              nextItemId: merged.nextItem?.id || null,
+              nextItemLabel: merged.nextItem?.category || null,
+              replaced: merged.replaced,
+              imageUrl: imageForProduct,
+              originalImageUrl: originalUpload.publicUrl,
+              backgroundRemovedUrl,
+              price: price || null,
+              warning: colorWarning,
+              message: `${productName} added to ${merged.item.category}.`,
+              openUrl: `/projects/${projectId}/room-design?roomId=${roomId}`,
+            });
           }
 
           const imageSize = fitBoardImage(payload.imageWidth, payload.imageHeight);
@@ -554,7 +745,11 @@ export const Route = createFileRoute("/api/extension/import-product")({
               pages: state.pages.map((page) => {
                 if (page.id !== selectedPageId) return page;
                 addedPageId = page.id;
-                const placement = nextBoardPlacement(page.elements, imageSize.width, imageSize.height);
+                const placement = nextBoardPlacement(
+                  page.elements,
+                  imageSize.width,
+                  imageSize.height,
+                );
                 const maxZ = Math.max(0, ...page.elements.map((element) => element.zIndex ?? 0));
                 const layer: BoardElement = {
                   id: layerId,
@@ -594,13 +789,9 @@ export const Route = createFileRoute("/api/extension/import-product")({
           // for design-board-heavy workflows.
           const thumbnailUrl = imageForProduct;
           const previewUrl = imageForProduct;
-          const colorWarning = rawFinish && !finish
-            ? `Product imported, but Studio skipped "${rawFinish}" because it did not look like a real color/finish.`
-            : !finish
-              ? "Product imported. Color/finish was not detected, so add it in Board Tools if needed."
-              : null;
           return json({
             ok: true,
+            destination,
             productId: (product as any).id,
             layerId,
             pageId: addedPageId,
