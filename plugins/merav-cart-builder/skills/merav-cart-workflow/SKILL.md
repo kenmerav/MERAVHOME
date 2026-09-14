@@ -56,6 +56,15 @@ browser. Use the separately installed `@Chrome` plugin for retailer pages.
   `needs_review`; do not add it.
 - If any required option is absent or ambiguous, set `needs_review`.
 - Record a changed observed price. Do not hide or silently accept the change.
+- After an exact item is verified in the cart, provide `verified_pricing` to
+  `update_procurement_item` when supported. Client price is the current public
+  retail selling price; Studio unit cost is our actual net cart price after item
+  discounts and before tax/shipping. Include price units, cart quantity, source
+  URLs, and evidence. Divide a line total by its quantity; never use the basket
+  total. Studio converts box/area pricing using the frozen carton coverage.
+- If either price is unverified, keep existing product prices and flag pricing
+  for review. Still record `added` when the cart addition was verified. Never
+  repeat an addition because a product-price update failed.
 - Use `out_of_stock`, `backordered`, `login_required`, `captcha_required`,
   `unsupported_retailer`, or `failed` when those conditions occur.
 - Never retry an item already marked `added` unless the user explicitly

@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { verifiedCartPricingSchema, cartPricingSync } from "@/lib/procurementPricing";
 import {
   buildProcurementEmailDrafts,
   calculateProcurementOrderQuantity,
@@ -24,6 +25,7 @@ const SAFETY_RULES = [
   "Never bypass a CAPTCHA or ask the user for a password; pause for the user to sign in.",
   `For Email rep items, use only Studio's create_retailer_draft tool. It creates a reviewable draft in ${KEN_PROCUREMENT_EMAIL} and has no Send operation.`,
   "Adding to a cart never authorizes purchasing.",
+  "After verifying an Added item, provide verified_pricing: public retail price for the client and actual discounted cart unit price for Studio. Exclude tax and shipping. Never use an unverified price or substitute a cart total for a unit price.",
 ] as const;
 
 type ProcurementMcpServices = {
@@ -183,25 +185,29 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
     {
       title: "Update procurement item",
       description:
-        "Record the current retailer result for one product in the authorized cart run. A successfully added item's verified unit price updates Studio Cost; visible shipping updates Shipping. Client Price is never changed.",
+        "Record a retailer result for one product in the authorized run. For an exact verified Added item, verified_pricing also updates the linked product's client retail price and Studio unit cost. Requirements, options, quantity, and ordering status are never changed.",
       inputSchema: {
         run_authorization: z.string().min(32),
         run_item_id: z.string().uuid(),
         status: z.enum(PROCUREMENT_AGENT_UPDATE_STATUSES),
         observed_product_title: z.string().max(500).optional().nullable(),
         observed_options: z.record(z.unknown()).optional().default({}),
-        observed_price: z
-          .number()
-          .nonnegative()
-          .optional()
-          .nullable()
-          .describe("Verified retailer unit price, excluding quantity multiplication."),
+        observed_price: z.number().nonnegative().optional().nullable(),
         observed_shipping: z
           .number()
+          .finite()
           .nonnegative()
           .optional()
           .nullable()
-          .describe("Per-item shipping only when the retailer clearly displays it."),
+          .describe(
+            "Per-item shipping only when clearly displayed. Kept separate from retail and cart unit cost; saved with verified_pricing.",
+          ),
+        verified_pricing: verifiedCartPricingSchema
+          .optional()
+          .nullable()
+          .describe(
+            "Only after Add to Cart is verified. Retail is the current public selling price, not the trade/account price or an unconfirmed crossed-out MSRP. Cart unit price is the actual net price we pay per piece/box, after item discounts and before tax/shipping. Include each price's unit and exact cart line quantity; Studio converts box/area prices using saved carton coverage.",
+          ),
         observed_stock_status: z.string().max(240).optional().nullable(),
         cart_url: z.string().url().optional().nullable(),
         result_notes: z.string().max(2000).optional().nullable(),
@@ -223,6 +229,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
       observed_options,
       observed_price,
       observed_shipping,
+      verified_pricing,
       observed_stock_status,
       cart_url,
       result_notes,
@@ -235,6 +242,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
         observedOptions: observed_options,
         observedPrice: observed_price,
         observedShipping: observed_shipping,
+        verifiedPricing: verified_pricing,
         observedStockStatus: observed_stock_status,
         cartUrl: cart_url,
         resultNotes: result_notes,
@@ -245,7 +253,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
         content: [
           {
             type: "text",
-            text: `Updated ${item.product_name} to ${itemStatusLabel(item.status)}.${item.status === "added" && item.observed_price !== null ? " Studio Cost was updated from the verified retailer unit price." : ""}`,
+            text: `Updated ${item.product_name} to ${itemStatusLabel(item.status)}.${cartPricingSync(item.observed_options)?.message ? ` ${cartPricingSync(item.observed_options)!.message}` : ""}`,
           },
         ],
       };

@@ -1,6 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- New server-only tables are intentionally untyped until Supabase types are regenerated after the migration is applied. */
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { canUseProcurementCartBuilder } from "@/lib/permissions";
+import {
+  verifiedProductPrices,
+  type VerifiedCartPricing,
+  type CartPricingSync,
+} from "@/lib/procurementPricing";
+import { syncCartProductPrices } from "@/lib/procurementPricing.server";
 import {
   buildCodexDeepLink,
   buildProcurementDraft,
@@ -415,6 +422,17 @@ export async function authorizeProcurementRun(runAuthorization: string) {
   }
   const run = await getProcurementRunResult(runId);
   if (!run) throw new Error("Authorized cart run no longer exists.");
+  const { data: owner, error: ownerError } = await admin
+    .from("user_profiles")
+    .select("email,is_active")
+    .eq("id", run.created_by)
+    .maybeSingle();
+  if (ownerError) throw ownerError;
+  if (!canUseProcurementCartBuilder(owner)) {
+    throw Object.assign(new Error("Cart Builder is available to Ken only."), {
+      code: "UNAUTHORIZED_RUN",
+    });
+  }
   return run;
 }
 
@@ -426,6 +444,7 @@ export async function updateAuthorizedProcurementItem(input: {
   observedOptions?: Record<string, unknown> | null;
   observedPrice?: number | null;
   observedShipping?: number | null;
+  verifiedPricing?: VerifiedCartPricing | null;
   observedStockStatus?: string | null;
   cartUrl?: string | null;
   resultNotes?: string | null;
@@ -442,27 +461,35 @@ export async function updateAuthorizedProcurementItem(input: {
     throw new Error("Drafted status can only be recorded by Studio's create_retailer_draft tool.");
   }
 
-  const observedPrice = numeric(input.observedPrice);
-  const observedShipping = numeric(input.observedShipping);
-  if (input.status === "added" && item.product_id && observedPrice !== null) {
-    const pricingUpdate: { unit_cost: string; shipping?: string } = {
-      unit_cost: observedPrice.toFixed(2),
-    };
-    if (observedShipping !== null) pricingUpdate.shipping = observedShipping.toFixed(2);
-
-    // Price sync happens before the run item is finalized so a failed product update
-    // remains retryable instead of leaving an Added item with stale Studio pricing.
-    const { error: pricingError } = await admin
-      .from("products")
-      .update(pricingUpdate)
-      .eq("id", item.product_id);
-    if (pricingError) throw pricingError;
-  }
-
-  const observedOptions = {
-    ...(input.observedOptions ?? {}),
-    ...(observedShipping !== null ? { shipping: observedShipping } : {}),
-  };
+  if (input.verifiedPricing && input.status !== "added")
+    throw new Error("Only a verified Added cart item can update product prices.");
+  if (input.verifiedPricing && item.requested_options.procurement_method === "email_rep")
+    throw new Error("An email draft cannot verify a retailer cart price.");
+  const prices = input.verifiedPricing ? verifiedProductPrices(item, input.verifiedPricing) : null;
+  const observedOptions = { ...item.observed_options, ...(input.observedOptions ?? {}) };
+  const shipping = input.observedShipping;
+  if (shipping != null && (!Number.isFinite(shipping) || shipping < 0))
+    throw new Error("Observed shipping must be a non-negative amount.");
+  if (shipping != null) observedOptions.shipping = shipping;
+  // Pricing sync state is server-owned, never accepted through arbitrary observed options.
+  delete observedOptions.cart_pricing;
+  if (item.observed_options.cart_pricing)
+    observedOptions.cart_pricing = item.observed_options.cart_pricing;
+  if (prices)
+    observedOptions.cart_pricing = {
+      state: "pending",
+      retail: prices.retail,
+      cost: prices.cost,
+      unit: prices.unit,
+      verified_pricing: prices.pricing,
+      message: "Cart addition recorded; saving verified prices.",
+    } satisfies CartPricingSync;
+  else if (input.status === "added" && !observedOptions.cart_pricing)
+    observedOptions.cart_pricing = {
+      state: "needs_review",
+      message:
+        "Added to cart, but both verified prices were not supplied. Existing product prices were kept.",
+    } satisfies CartPricingSync;
 
   const { data: updated, error } = await admin
     .from("procurement_run_items")
@@ -470,9 +497,10 @@ export async function updateAuthorizedProcurementItem(input: {
       status: input.status,
       observed_product_title: asNullableString(input.observedProductTitle),
       observed_options: observedOptions,
-      observed_price: observedPrice,
+      observed_price: prices?.cost ?? input.observedPrice ?? item.observed_price,
       observed_availability: asNullableString(input.observedStockStatus),
-      retailer_cart_url: asNullableString(input.cartUrl),
+      retailer_cart_url:
+        prices?.pricing.cart_url ?? asNullableString(input.cartUrl) ?? item.retailer_cart_url,
       result_notes: asNullableString(input.resultNotes),
     })
     .eq("id", input.runItemId)
@@ -480,6 +508,26 @@ export async function updateAuthorizedProcurementItem(input: {
     .select("*")
     .single();
   if (error) throw error;
+
+  if (prices) {
+    // Persist Added before updating prices so a price-write error cannot cause a
+    // duplicate retailer addition. Save retail and Studio cost together.
+    const sync = await syncCartProductPrices(admin, run.project_id, item, prices, shipping);
+    observedOptions.cart_pricing = sync;
+    const audit = await admin
+      .from("procurement_run_items")
+      .update({ observed_options: observedOptions })
+      .eq("id", input.runItemId)
+      .eq("run_id", run.id);
+    if (audit.error)
+      observedOptions.cart_pricing = {
+        ...sync,
+        state: "needs_review",
+        message:
+          "Cart addition is saved, but the pricing audit could not be saved. Check product prices before retrying; do not add this item again.",
+      };
+    updated.observed_options = observedOptions;
+  }
 
   if (run.status === "prepared") {
     await admin

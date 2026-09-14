@@ -246,6 +246,33 @@ describe("Merav Cart Builder MCP contract", () => {
     });
   });
 
+  it("advertises and forwards verified retail and cart pricing separately", async () => {
+    const { client, updateItem } = await setup();
+    const verified = {
+      cart_verified: true,
+      currency: "USD",
+      retail_unit_price: 259,
+      retail_price_unit: "pieces",
+      retail_price_url: item.product_url,
+      cart_unit_price: 199,
+      cart_price_unit: "pieces",
+      cart_quantity: 2,
+      cart_url: "https://shop.example.com/cart",
+      evidence: "Retail 259; exact cart line 2 at 199 each before tax.",
+    };
+    const result = await client.callTool({
+      name: "update_procurement_item",
+      arguments: {
+        run_authorization: token,
+        run_item_id: item.id,
+        status: "added",
+        verified_pricing: verified,
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(updateItem).toHaveBeenCalledWith(expect.objectContaining({ verifiedPricing: verified }));
+  });
+
   it("rejects malformed tool input before a write handler runs", async () => {
     const { client, updateItem } = await setup();
     const result = await client.callTool({

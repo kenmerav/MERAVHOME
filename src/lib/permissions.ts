@@ -11,6 +11,12 @@ const EA_WORKSPACE_EMAILS = new Set(MARVIN_EMAILS);
 
 export const OVERALL_ADMIN_EMAILS = FINANCIAL_EMAILS;
 
+export function canUseProcurementCartBuilder(
+  profile?: Pick<UserProfile, "email" | "is_active"> | null,
+) {
+  return !!profile?.is_active && profile.email.toLowerCase() === "ken@meravinteriors.com";
+}
+
 export function canViewFinancials(profile?: Pick<UserProfile, "email" | "is_active"> | null) {
   return !!profile?.is_active && FINANCIAL_EMAILS.has(profile.email.toLowerCase());
 }

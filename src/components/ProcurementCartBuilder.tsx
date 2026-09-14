@@ -14,6 +14,10 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { MaterialItem, Project, Room } from "@/lib/db";
+import { normalizeItemCategory } from "@/lib/roomTemplates";
+import { useLocalCartRunner } from "@/lib/localCartRunner";
+import { LocalCartRunnerPanel } from "@/components/LocalCartRunnerPanel";
+import { cartPricingSync } from "@/lib/procurementPricing";
 import {
   buildProcurementDraft,
   calculateProcurementOrderQuantity,
@@ -103,8 +107,11 @@ export function ProcurementCartBuilder({
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<ProcurementDraft[]>([]);
   const [busy, setBusy] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [sortBy, setSortBy] = useState("category");
   const [coverageScrapingIds, setCoverageScrapingIds] = useState<Set<string>>(new Set());
   const [preparedAccess, setPreparedAccess] = useState<PreparedAccess | null>(null);
+  const localRunner = useLocalCartRunner(project.id, open);
   const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
 
   useEffect(() => {
@@ -115,7 +122,14 @@ export function ProcurementCartBuilder({
         .map((item) => {
           const fresh = buildProcurementDraft(item, project, roomById.get(item.room_id), false);
           const existing = currentById.get(item.id);
-          return existing ? { ...fresh, ...existing, sourceExcluded: fresh.sourceExcluded } : fresh;
+          return existing
+            ? {
+                ...fresh,
+                ...existing,
+                expectedPrice: fresh.expectedPrice,
+                sourceExcluded: fresh.sourceExcluded,
+              }
+            : fresh;
         });
     });
   }, [items, project, roomById]);
@@ -131,6 +145,25 @@ export function ProcurementCartBuilder({
     enabled: open,
     refetchInterval: open ? 3_000 : false,
   });
+
+  const savedPriceUpdates = JSON.stringify(
+    (runsQuery.data ?? []).flatMap((run) =>
+      run.items
+        .filter((item) => cartPricingSync(item.observed_options)?.state === "synced")
+        .map((item) => [
+          item.id,
+          cartPricingSync(item.observed_options)?.retail,
+          cartPricingSync(item.observed_options)?.cost,
+        ]),
+    ),
+  );
+  useEffect(() => {
+    if (savedPriceUpdates === "[]") return;
+    void queryClient.invalidateQueries({ queryKey: ["materialItems", project.id] });
+    void queryClient.invalidateQueries({ queryKey: ["catalog"] });
+    void queryClient.invalidateQueries({ queryKey: ["product"] });
+    void queryClient.invalidateQueries({ queryKey: ["procurement"] });
+  }, [savedPriceUpdates, project.id, queryClient]);
 
   const draftEmailQuery = useQuery({
     queryKey: ["procurementEmailConnection"],
@@ -148,7 +181,44 @@ export function ProcurementCartBuilder({
       })),
     [drafts],
   );
+  const categoryById = useMemo(
+    () => new Map(items.map((item) => [item.id, normalizeItemCategory(item.category) || "Other"])),
+    [items],
+  );
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(drafts.map((draft) => categoryById.get(draft.specBookItemId) || "Other")),
+      ).sort(),
+    [drafts, categoryById],
+  );
+  const visibleDrafts = useMemo(
+    () =>
+      classifiedDrafts
+        .filter(
+          ({ draft }) =>
+            !categoryFilter || categoryById.get(draft.specBookItemId) === categoryFilter,
+        )
+        .sort((a, b) => {
+          const value = (draft: ProcurementDraft) =>
+            sortBy === "category"
+              ? categoryById.get(draft.specBookItemId) || "Other"
+              : sortBy === "room"
+                ? draft.roomName
+                : sortBy === "retailer"
+                  ? draft.vendor
+                  : draft.productName;
+          return (
+            value(a.draft).localeCompare(value(b.draft)) ||
+            a.draft.productName.localeCompare(b.draft.productName)
+          );
+        }),
+    [classifiedDrafts, categoryFilter, categoryById, sortBy],
+  );
   const selected = classifiedDrafts.filter(({ draft }) => draft.selected);
+  const hiddenSelectedCount = selected.filter(
+    ({ draft }) => categoryFilter && categoryById.get(draft.specBookItemId) !== categoryFilter,
+  ).length;
   const selectedReady = selected.filter(({ status }) => status === "ready");
   const selectedBlocked = selected.filter(({ status }) => status !== "ready");
   const selectedEmailCount = selectedReady.filter(
@@ -223,8 +293,27 @@ export function ProcurementCartBuilder({
     );
   };
 
-  const prepareRun = async () => {
+  const selectCategory = () => {
+    setDrafts((current) =>
+      current.map((draft) =>
+        categoryById.get(draft.specBookItemId) === categoryFilter && !draft.sourceExcluded
+          ? { ...draft, selected: true }
+          : draft,
+      ),
+    );
+  };
+
+  const startPreparedRun = async (access: PreparedAccess) => {
+    await localRunner.start({
+      runId: access.run.id,
+      authorization: access.runAuthorization,
+      expiresAt: access.run.expires_at,
+    });
+  };
+
+  const prepareRun = async (startImmediately = false) => {
     if (!selectedReady.length) return;
+    if (startImmediately && (!localRunner.ready || localRunner.active || localRunner.busy)) return;
     setBusy(true);
     try {
       const body = (await authenticatedRequest("/api/procurement-runs", {
@@ -254,6 +343,7 @@ export function ProcurementCartBuilder({
       setDrafts((current) => current.map((draft) => ({ ...draft, selected: false })));
       await queryClient.invalidateQueries({ queryKey: ["procurementRuns", project.id] });
       toast.success("Secure cart run prepared.");
+      if (startImmediately) await startPreparedRun(body);
     } catch (error) {
       const value = error as Error & { runId?: string };
       toast.error(value.runId ? `${value.message} Open the existing run below.` : value.message);
@@ -263,6 +353,10 @@ export function ProcurementCartBuilder({
   };
 
   const runAction = async (action: "retry" | "reissue", runId: string) => {
+    if (localRunner.active) {
+      toast.error("Stop the active local runner before retrying or refreshing run access.");
+      return;
+    }
     setBusy(true);
     try {
       const body = (await authenticatedRequest("/api/procurement-runs", {
@@ -284,6 +378,7 @@ export function ProcurementCartBuilder({
   const closeRun = async (action: "cancel" | "expire", runId: string) => {
     setBusy(true);
     try {
+      if (localRunner.active && localRunner.access?.runId === runId) await localRunner.stop();
       await authenticatedRequest("/api/procurement-runs", {
         method: "PATCH",
         body: JSON.stringify({ action, run_id: runId }),
@@ -345,11 +440,10 @@ export function ProcurementCartBuilder({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
               <p className="text-sm leading-6 text-muted-foreground">
-                Select purchase-ready Spec Book products, confirm exact requirements, then prepare a
-                one-hour run. Choose Online cart for Codex and{" "}
-                <span className="font-medium text-ink">@Chrome</span>, or Email rep to create a
-                reviewable draft through Studio&apos;s draft-only email tool. Checkout, payment, and
-                sending email always remain manual.
+                Select purchase-ready Spec Book products and confirm exact requirements. Choose
+                Online cart for Codex and <span className="font-medium text-ink">@Chrome</span>, or
+                Email rep to create a reviewable draft through Studio&apos;s draft-only email tool.
+                Checkout, payment, and sending email always remain manual.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -371,6 +465,133 @@ export function ProcurementCartBuilder({
               </button>
             </div>
           </div>
+
+          <LocalCartRunnerPanel runner={localRunner} />
+          <div className="mt-5 border border-border bg-white p-4">
+            <h3 className="font-medium">Ready to build your carts</h3>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
+              <li>
+                Select products below and review their quantities and exact options. Start with one
+                item for a test.
+              </li>
+              <li>
+                With the local runner connected, click{" "}
+                <strong className="text-ink">Build Carts</strong>.
+              </li>
+              <li>Follow progress and answer any questions here in Studio.</li>
+            </ol>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Run access lasts one hour. Checkout and sending emails remain manual. The manual Codex
+              handoff is also available below the product list.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm" role="status">
+                <strong>{selected.length} selected</strong> · {selectedReady.length} ready
+                {selectedBlocked.length > 0 && (
+                  <span className="text-amber-800">
+                    {" "}
+                    · {selectedBlocked.length} blocked and will not run
+                  </span>
+                )}
+                {hiddenSelectedCount > 0 && (
+                  <span className="block text-muted-foreground">
+                    {hiddenSelectedCount} selected in other categories; ready items are also
+                    included.
+                  </span>
+                )}
+                {draftEmailMissing && (
+                  <span className="block text-amber-800">
+                    Connect Ken&apos;s draft email before preparing Email rep items.
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => prepareRun(true)}
+                disabled={
+                  busy ||
+                  localRunner.busy ||
+                  localRunner.active ||
+                  !localRunner.ready ||
+                  !selectedReady.length ||
+                  draftEmailMissing
+                }
+                className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {busy ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                Build Carts
+              </button>
+            </div>
+          </div>
+
+          {preparedAccess && (
+            <div className="mt-6 border border-emerald-300 bg-emerald-50 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="eyebrow text-emerald-800">Run prepared</div>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-emerald-950">
+                    This selection is saved for one hour. Use Build These Carts to start it on this
+                    computer. If the local runner is unavailable, use the manual Codex handoff
+                    below. Nothing starts checkout or sends an email.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreparedAccess(null)}
+                  className="text-emerald-900"
+                  aria-label="Dismiss prepared run"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    startPreparedRun(preparedAccess).catch((error) =>
+                      toast.error(
+                        error instanceof Error ? error.message : "Could not start carts.",
+                      ),
+                    )
+                  }
+                  disabled={
+                    !localRunner.ready ||
+                    localRunner.busy ||
+                    localRunner.active ||
+                    (localRunner.run?.id === preparedAccess.run.id &&
+                      ["finished", "stopped", "failed", "interrupted"].includes(
+                        localRunner.run.status,
+                      ))
+                  }
+                  className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-40"
+                >
+                  <ShoppingCart className="h-4 w-4" /> Build These Carts
+                </button>
+              </div>
+              <details className="mt-4 text-sm">
+                <summary className="cursor-pointer">Manual Codex handoff</summary>
+                <p className="mt-2 text-xs">
+                  Copy this prompt into a Codex task and press Send. Do not use both methods for the
+                  same run.
+                </p>
+                <div className="mt-3 rounded border border-emerald-300 bg-white p-3 text-xs leading-5 text-ink">
+                  {preparedAccess.prompt}
+                </div>
+                <button
+                  type="button"
+                  onClick={copyPrompt}
+                  disabled={localRunner.access?.runId === preparedAccess.run.id}
+                  className="mt-3 inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-40"
+                >
+                  <Copy className="h-4 w-4" /> Copy for Codex
+                </button>
+              </details>
+            </div>
+          )}
 
           <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-border bg-white p-4">
             <div>
@@ -398,9 +619,60 @@ export function ProcurementCartBuilder({
             </button>
           </div>
 
-          <div className="mt-6 overflow-x-auto border border-border bg-white">
+          <div className="mt-6 flex flex-wrap items-end gap-3">
+            <label className="text-xs font-medium">
+              Category
+              <select
+                aria-label="Cart category"
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                className="mt-1 block h-10 border border-input bg-white px-3 text-sm"
+              >
+                <option value="">All categories</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-medium">
+              Sort by
+              <select
+                aria-label="Sort cart products"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="mt-1 block h-10 border border-input bg-white px-3 text-sm"
+              >
+                <option value="category">Category</option>
+                <option value="room">Room</option>
+                <option value="retailer">Retailer</option>
+                <option value="product">Product name</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={selectCategory}
+              disabled={
+                !categoryFilter || !visibleDrafts.some(({ draft }) => !draft.sourceExcluded)
+              }
+              className="h-10 border border-border bg-white px-4 text-xs uppercase tracking-[0.14em] disabled:opacity-40"
+            >
+              Select category
+            </button>
+            <span className="py-2 text-xs text-muted-foreground">
+              Showing {visibleDrafts.length} of {drafts.length} products
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Select category adds all available items in that category to your selection. Excluded
+            items stay excluded; blocked items need review before they can run. Changing the filter
+            keeps your selections.
+          </p>
+
+          <div className="mt-3 max-h-[60vh] overflow-auto border border-border bg-white">
             <table className="min-w-[1920px] w-full text-sm">
-              <thead className="bg-bone/40 text-left">
+              <thead className="sticky top-0 z-10 bg-bone text-left">
                 <tr className="border-b border-border">
                   <th className="p-3">Buy</th>
                   <th className="p-3">Product</th>
@@ -420,7 +692,14 @@ export function ProcurementCartBuilder({
                 </tr>
               </thead>
               <tbody>
-                {classifiedDrafts.map(({ draft, status }) => (
+                {visibleDrafts.length === 0 && (
+                  <tr>
+                    <td colSpan={15} className="p-6 text-muted-foreground">
+                      No products in this category.
+                    </td>
+                  </tr>
+                )}
+                {visibleDrafts.map(({ draft, status }) => (
                   <tr key={draft.specBookItemId} className="border-b border-border/70 align-top">
                     <td className="p-3">
                       <input
@@ -448,6 +727,9 @@ export function ProcurementCartBuilder({
                         )}
                         <div>
                           <div className="font-medium">{draft.productName}</div>
+                          <div className="mt-1 text-xs font-medium">
+                            {categoryById.get(draft.specBookItemId) || "Other"}
+                          </div>
                           <div className="mt-1 text-xs text-muted-foreground">
                             {draft.roomName} · {draft.vendor || "Vendor not saved"}
                           </div>
@@ -736,7 +1018,7 @@ export function ProcurementCartBuilder({
             </div>
             <button
               type="button"
-              onClick={prepareRun}
+              onClick={() => prepareRun(false)}
               disabled={busy || !selectedReady.length || draftEmailMissing}
               className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -745,45 +1027,9 @@ export function ProcurementCartBuilder({
               ) : (
                 <Check className="h-4 w-4" />
               )}
-              Prepare Cart Run
+              Prepare for manual handoff
             </button>
           </div>
-
-          {preparedAccess && (
-            <div className="mt-6 border border-emerald-300 bg-emerald-50 p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="eyebrow text-emerald-800">Run prepared</div>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-emerald-950">
-                    The prompt includes one-hour run authorization. Copy it, return to Codex, paste
-                    it into a task, and press Send. Codex uses Merav Cart Builder, @Chrome, and
-                    Studio&apos;s dedicated draft-only email tool. Nothing starts checkout or sends
-                    an email.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPreparedAccess(null)}
-                  className="text-emerald-900"
-                  aria-label="Dismiss prepared run"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="mt-4 rounded border border-emerald-300 bg-white p-3 text-xs leading-5 text-ink">
-                {preparedAccess.prompt}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={copyPrompt}
-                  className="inline-flex items-center gap-2 bg-ink px-5 py-2.5 text-sm text-primary-foreground"
-                >
-                  <Copy className="h-4 w-4" /> Copy for Codex
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="mt-8">
             <div className="flex items-center justify-between gap-4">
@@ -941,6 +1187,12 @@ function RunResults({
                 <div className="divide-y divide-border border border-border">
                   {retailerItems.map((item) => {
                     const priceChanged = hasPriceChanged(item.expected_price, item.observed_price);
+                    const pricing = cartPricingSync(item.observed_options);
+                    const displayedOptions = Object.fromEntries(
+                      Object.entries(item.observed_options).filter(
+                        ([key]) => key !== "cart_pricing",
+                      ),
+                    );
                     const procurementMethod =
                       item.requested_options.procurement_method ?? "online_cart";
                     const quantityUnit = item.requested_options.quantity_unit ?? "pieces";
@@ -1037,6 +1289,22 @@ function RunResults({
                           </div>
                         </div>
                         <div className="text-xs leading-5">
+                          {pricing && (
+                            <div
+                              className={`mb-2 ${pricing.state === "synced" ? "text-emerald-800" : "text-amber-800"}`}
+                            >
+                              {pricing.retail != null && pricing.cost != null && (
+                                <div>
+                                  Client retail {formatPrice(pricing.retail)} · Studio cost{" "}
+                                  {formatPrice(pricing.cost)}
+                                  {pricing.unit
+                                    ? ` per ${pricing.unit === "square_feet" ? "sq ft" : pricing.unit === "boxes" ? "box" : "piece"}`
+                                    : ""}
+                                </div>
+                              )}
+                              <div>{pricing.message}</div>
+                            </div>
+                          )}
                           <div>
                             Expected {formatPrice(item.expected_price)} · Observed{" "}
                             <span className={priceChanged ? "font-semibold text-amber-800" : ""}>
@@ -1048,9 +1316,9 @@ function RunResults({
                               Observed: {item.observed_product_title}
                             </div>
                           )}
-                          {Object.keys(item.observed_options ?? {}).length > 0 && (
+                          {Object.keys(displayedOptions).length > 0 && (
                             <div className="mt-1 text-muted-foreground">
-                              Options: {JSON.stringify(item.observed_options)}
+                              Options: {JSON.stringify(displayedOptions)}
                             </div>
                           )}
                           {item.observed_availability && (
