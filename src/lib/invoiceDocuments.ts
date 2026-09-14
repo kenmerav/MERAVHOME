@@ -1,3 +1,5 @@
+import { supabaseImageTransformUrl } from "@/lib/local-assets";
+
 export function invoicePdfFileName(fileName?: string | null) {
   const safeName = (fileName || "Invoice").replace(/\.(html?|pdf)$/i, "").trim() || "Invoice";
   return `${safeName}.pdf`;
@@ -15,7 +17,7 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
   try {
     const blob = await (await fetch(documentUrl)).blob();
     if (isHtmlInvoice(blob, documentUrl)) {
-      const html = applyInvoicePaymentLink(await blob.text(), options.paymentUrl);
+      const html = optimizeInvoiceImages(applyInvoicePaymentLink(await blob.text(), options.paymentUrl));
       if (target) {
         target.document.open();
         target.document.write(html);
@@ -48,7 +50,10 @@ export async function downloadInvoiceDocument(documentUrl: string | null, fileNa
 
   const blob = await (await fetch(documentUrl)).blob();
   if (isHtmlInvoice(blob, documentUrl)) {
-    printHtmlAsPdf(applyInvoicePaymentLink(await blob.text(), options.paymentUrl), fileName);
+    printHtmlAsPdf(
+      optimizeInvoiceImages(applyInvoicePaymentLink(await blob.text(), options.paymentUrl)),
+      fileName,
+    );
     return;
   }
 
@@ -139,6 +144,27 @@ function removeEmbeddedPayRow(html: string) {
 
 function isHtmlInvoice(blob: Blob, documentUrl: string) {
   return blob.type.toLowerCase().includes("text/html") || /^data:text\/html/i.test(documentUrl) || /\.html?(?:$|\?)/i.test(documentUrl);
+}
+
+function optimizeInvoiceImages(html: string) {
+  if (typeof DOMParser === "undefined") return html;
+
+  const document = new DOMParser().parseFromString(html, "text/html");
+  document.querySelectorAll<HTMLImageElement>("img.product-image").forEach((image) => {
+    const source = image.getAttribute("src");
+    if (!source) return;
+    image.setAttribute(
+      "src",
+      supabaseImageTransformUrl(source, {
+        width: 240,
+        height: 240,
+        quality: 65,
+        resize: "contain",
+      }),
+    );
+  });
+
+  return `<!doctype html>\n${document.documentElement.outerHTML}`;
 }
 
 function escapeHtmlAttribute(value: string) {

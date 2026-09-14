@@ -2,7 +2,7 @@ import { FileText, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
-import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { normalizeSupabaseImageUrl, supabaseImageTransformUrl } from "@/lib/local-assets";
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -735,7 +735,7 @@ function buildProductInvoiceHtml(
         <div class="product-line">
           ${
             line.imageUrl
-              ? `<img class="product-image" src="${escapeHtml(normalizeSupabaseImageUrl(line.imageUrl))}" alt="${escapeHtml(line.name)}" />`
+              ? `<img class="product-image" src="${escapeHtml(invoiceThumbnailUrl(line.imageUrl))}" alt="${escapeHtml(line.name)}" />`
               : `<div class="product-image placeholder"></div>`
           }
           <div>
@@ -831,6 +831,15 @@ function buildProductInvoiceHtml(
   </main>
 </body>
 </html>`;
+}
+
+function invoiceThumbnailUrl(url: string) {
+  return supabaseImageTransformUrl(url, {
+    width: 240,
+    height: 240,
+    quality: 65,
+    resize: "contain",
+  });
 }
 
 function htmlDataUrl(html: string) {
