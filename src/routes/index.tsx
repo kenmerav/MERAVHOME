@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, FileText, Plus, Trash2, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileText, Plus, Search, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { db, type ApprovalStatus, type DesignWorkflowVersion, type FinancialInvoice, type Project, type ProjectTimeline, type Room, type RoomProduct, type UserProfile } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
@@ -205,11 +205,13 @@ function DashboardPage() {
           <div>
             <div className="eyebrow mb-3">{isClientUser ? "Client Portal" : "The Studio"}</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">{isSharedUser ? "Your Projects" : "Active Projects"}</h1>
-            <p className="mt-4 text-muted-foreground max-w-xl">
-              {isSharedUser
-                ? "Review what MERAV Studio has shared with you, including invoices, timelines, approvals, and project documents."
-                : "Every selection lives here once. Use it for presentations, spec books, and procurement."}
-            </p>
+            {isSharedUser ? (
+              <p className="mt-4 text-muted-foreground max-w-xl">
+                Review what MERAV Studio has shared with you, including invoices, timelines, approvals, and project documents.
+              </p>
+            ) : (
+              <ProjectQuickSearch projects={projects} loading={isLoading} />
+            )}
           </div>
           {!isSharedUser && <NewProjectDialog />}
         </div>
@@ -262,6 +264,113 @@ function DashboardPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function ProjectQuickSearch({ projects, loading }: { projects: Project[]; loading: boolean }) {
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = normalizedQuery
+    ? projects
+        .filter((project) =>
+          [
+            project.name,
+            project.client_name,
+            project.project_label,
+            project.project_type,
+            project.status,
+          ].some((value) => value?.toLowerCase().includes(normalizedQuery)),
+        )
+        .sort((a, b) => {
+          const aComplete = a.status === "Complete" ? 1 : 0;
+          const bComplete = b.status === "Complete" ? 1 : 0;
+          return aComplete - bComplete || a.name.localeCompare(b.name);
+        })
+        .slice(0, 8)
+    : [];
+  const showResults = focused && normalizedQuery.length > 0;
+
+  return (
+    <div
+      className="relative mt-5 w-full max-w-xl"
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}
+    >
+      <label htmlFor="dashboard-project-search" className="sr-only">
+        Search projects
+      </label>
+      <div className="flex h-12 items-center border border-border bg-background px-4 transition-colors focus-within:border-ink">
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <input
+          id="dashboard-project-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setQuery("");
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder={loading ? "Loading projects…" : "Search projects or clients"}
+          disabled={loading}
+          autoComplete="off"
+          className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm text-ink outline-none placeholder:text-muted-foreground disabled:cursor-wait"
+          aria-controls="dashboard-project-results"
+          aria-expanded={showResults}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-ink"
+            aria-label="Clear project search"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {showResults && (
+        <div
+          id="dashboard-project-results"
+          className="absolute left-0 right-0 top-full z-50 mt-2 max-h-96 overflow-y-auto border border-border bg-background shadow-xl"
+        >
+          {matches.length ? (
+            matches.map((project) => (
+              <Link
+                key={project.id}
+                to="/projects/$id"
+                params={{ id: project.id }}
+                onClick={() => {
+                  setQuery("");
+                  setFocused(false);
+                }}
+                className="group flex items-center justify-between gap-4 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-bone/50 focus:bg-bone/50 focus:outline-none"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-display text-lg leading-tight">
+                    {project.name}
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">
+                    {project.client_name || project.project_label || project.project_type}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <StatusBadge status={project.status} />
+                  <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-ink" />
+                </span>
+              </Link>
+            ))
+          ) : (
+            <div className="px-4 py-4 text-sm text-muted-foreground">No projects found.</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
