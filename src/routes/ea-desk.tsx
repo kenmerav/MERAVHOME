@@ -516,7 +516,7 @@ function EaOperationsWorkspace({
               <div className="eyebrow mb-1">Prepared work</div>
               <h3 className="font-display text-3xl">Agent action plans</h3>
             </div>
-            <div className="text-xs text-muted-foreground">Runs at 7:00, 12:00, 2:00, and 5:00</div>
+            <div className="text-xs text-muted-foreground">Runs at 7:00, 11:00, 2:00, and 5:00</div>
           </div>
           {loading ? (
             <div className="rounded-2xl border border-border bg-background p-10 text-sm text-muted-foreground">

@@ -98,4 +98,4 @@ Disconnecting Fathom deletes its webhook when possible and stops future imports.
 9. Run the scheduled briefing twice within one scheduled hour and confirm no duplicate sync job or task suggestion appears.
 10. Approve one suggestion and confirm only that action creates a real Project Command Center task.
 
-Vercel runs `/api/marvin-cron` daily at 7:00 AM, 12:00 PM, 2:00 PM, and 5:00 PM Phoenix time. The UTC schedules are `0 14 * * *`, `0 19 * * *`, `0 21 * * *`, and `0 0 * * *`. Vercel sends `CRON_SECRET` as the bearer token. The Phoenix date-and-hour key and unique sync-job record prevent duplicate delivery within the same scheduled window while allowing all four daily refreshes.
+Vercel runs `/api/marvin-cron` daily at 7:00 AM, 11:00 AM, 2:00 PM, and 5:00 PM Phoenix time. The UTC schedules are `0 14 * * *`, `0 18 * * *`, `0 21 * * *`, and `0 0 * * *`. Vercel sends `CRON_SECRET` as the bearer token. The Phoenix date-and-hour key and unique sync-job record prevent duplicate delivery within the same scheduled window while allowing all four daily refreshes.

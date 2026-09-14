@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/marvin-cron",
-      "schedule": "0 19 * * *"
+      "schedule": "0 18 * * *"
     },
     {
       "path": "/api/marvin-cron",
