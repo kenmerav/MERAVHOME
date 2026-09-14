@@ -18,6 +18,7 @@ import {
   Bell,
   BriefcaseBusiness,
   CalendarDays,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -75,6 +76,15 @@ type CalendarLoginNotice = {
   created_at: string;
 };
 
+type ConstructionDocumentLoginNotice = {
+  id: string;
+  project_document_id: string;
+  project_id: string;
+  project_name: string;
+  file_name: string;
+  created_at: string;
+};
+
 type SharedTodoNoticeSource = {
   id?: unknown;
   todo_id?: unknown;
@@ -101,6 +111,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [noticeKind, setNoticeKind] = useState<NoticeKind>("reminders");
   const [calendarNotices, setCalendarNotices] = useState<CalendarLoginNotice[]>([]);
   const [calendarNoticeOpen, setCalendarNoticeOpen] = useState(false);
+  const [constructionDocumentNotices, setConstructionDocumentNotices] = useState<
+    ConstructionDocumentLoginNotice[]
+  >([]);
+  const [constructionDocumentNoticeOpen, setConstructionDocumentNoticeOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -212,6 +226,36 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     void loadReminderNotices();
+    return () => {
+      active = false;
+    };
+  }, [loadingAuth, profile]);
+
+  useEffect(() => {
+    if (loadingAuth || !canUseEaWorkspace(profile)) return;
+    let active = true;
+
+    const loadConstructionDocumentNotices = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const response = await fetch("/api/construction-document-notifications", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(body.notifications) || !body.notifications.length) {
+          return;
+        }
+        if (!active) return;
+        setConstructionDocumentNotices(body.notifications as ConstructionDocumentLoginNotice[]);
+        setConstructionDocumentNoticeOpen(true);
+      } catch (error) {
+        console.warn("[AppShell] Unable to load construction document notices.", error);
+      }
+    };
+
+    void loadConstructionDocumentNotices();
     return () => {
       active = false;
     };
@@ -512,7 +556,102 @@ export function AppShell({ children }: { children: ReactNode }) {
           setCalendarNotices([]);
         }}
       />
+      <ConstructionDocumentLoginNoticeDialog
+        open={constructionDocumentNoticeOpen && !calendarNoticeOpen && !reminderNoticeOpen}
+        notices={constructionDocumentNotices}
+        onAcknowledged={() => {
+          setConstructionDocumentNoticeOpen(false);
+          setConstructionDocumentNotices([]);
+        }}
+      />
     </div>
+  );
+}
+
+function ConstructionDocumentLoginNoticeDialog({
+  open,
+  notices,
+  onAcknowledged,
+}: {
+  open: boolean;
+  notices: ConstructionDocumentLoginNotice[];
+  onAcknowledged: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const acknowledge = async () => {
+    if (saving || !notices.length) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Your Studio session expired. Sign in again.");
+      const response = await fetch("/api/construction-document-notifications", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_ids: notices.map((notice) => notice.id) }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "Unable to save this review.");
+      onAcknowledged();
+    } catch (acknowledgeError) {
+      setError(
+        acknowledgeError instanceof Error
+          ? acknowledgeError.message
+          : "Unable to save this review.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) void acknowledge();
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <div className="eyebrow mb-2">Construction documents</div>
+          <DialogTitle className="font-display text-4xl font-normal">
+            {notices.length === 1
+              ? "A new document was added"
+              : `${notices.length} new documents were added`}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          The EA filed these PDFs into the matching Studio projects. Nothing was sent externally.
+        </p>
+        <div className="max-h-[50vh] space-y-3 overflow-y-auto">
+          {notices.map((notice) => (
+            <div key={notice.id} className="border border-border bg-bone/20 p-4">
+              <div className="flex items-start gap-3">
+                <FileText className="mt-1 h-4 w-4 shrink-0 text-brass" />
+                <div className="min-w-0">
+                  <div className="font-medium text-ink">{notice.project_name}</div>
+                  <div className="mt-1 break-words text-sm text-muted-foreground">
+                    {notice.file_name}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {error && <p className="text-sm text-red-700">{error}</p>}
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void acknowledge()}
+          className="mt-2 inline-flex items-center justify-center bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Got it"}
+        </button>
+      </DialogContent>
+    </Dialog>
   );
 }
 

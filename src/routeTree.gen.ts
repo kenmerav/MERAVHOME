@@ -75,6 +75,7 @@ import { Route as ApiDrawingVerificationRouteImport } from './routes/api/drawing
 import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
 import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
+import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
@@ -448,6 +449,12 @@ const ApiCreateStripePaymentLinkRoute =
     path: '/api/create-stripe-payment-link',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiConstructionDocumentNotificationsRoute =
+  ApiConstructionDocumentNotificationsRouteImport.update({
+    id: '/api/construction-document-notifications',
+    path: '/api/construction-document-notifications',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
   id: '/api/client-dashboard',
   path: '/api/client-dashboard',
@@ -633,6 +640,7 @@ export interface FileRoutesByFullPath {
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
+  '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -733,6 +741,7 @@ export interface FileRoutesByTo {
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
+  '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -834,6 +843,7 @@ export interface FileRoutesById {
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
+  '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -936,6 +946,7 @@ export interface FileRouteTypes {
     | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
+    | '/api/construction-document-notifications'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
@@ -1036,6 +1047,7 @@ export interface FileRouteTypes {
     | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
+    | '/api/construction-document-notifications'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
@@ -1136,6 +1148,7 @@ export interface FileRouteTypes {
     | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
+    | '/api/construction-document-notifications'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
@@ -1237,6 +1250,7 @@ export interface RootRouteChildren {
   ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
   ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
+  ApiConstructionDocumentNotificationsRoute: typeof ApiConstructionDocumentNotificationsRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiDesignBoardCommentTodosRoute: typeof ApiDesignBoardCommentTodosRoute
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
@@ -1788,6 +1802,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCreateStripePaymentLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/construction-document-notifications': {
+      id: '/api/construction-document-notifications'
+      path: '/api/construction-document-notifications'
+      fullPath: '/api/construction-document-notifications'
+      preLoaderRoute: typeof ApiConstructionDocumentNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/client-dashboard': {
       id: '/api/client-dashboard'
       path: '/api/client-dashboard'
@@ -2029,6 +2050,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
   ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
+  ApiConstructionDocumentNotificationsRoute:
+    ApiConstructionDocumentNotificationsRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiDesignBoardCommentTodosRoute: ApiDesignBoardCommentTodosRoute,
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,

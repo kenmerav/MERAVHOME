@@ -711,6 +711,60 @@ async function sourceFile(source: any) {
   });
 }
 
+async function ensureConstructionDocumentLoginNotification(input: {
+  projectId: string;
+  projectDocumentId: string;
+  sourceId: string;
+  fileName: string;
+}) {
+  const { data: project, error: projectError } = await admin
+    .from("projects")
+    .select("id,name")
+    .eq("id", input.projectId)
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("The construction document project could not be found.");
+
+  const { data: notification, error: notificationError } = await admin
+    .from("studio_construction_document_notifications")
+    .upsert(
+      {
+        project_document_id: input.projectDocumentId,
+        project_id: input.projectId,
+        source_id: input.sourceId,
+        project_name: project.name,
+        file_name: input.fileName,
+      },
+      { onConflict: "project_document_id" },
+    )
+    .select("id")
+    .single();
+  if (notificationError) throw notificationError;
+
+  const { data: profiles, error: profileError } = await admin
+    .from("user_profiles")
+    .select("id,email")
+    .in("email", MARVIN_USER_EMAILS)
+    .eq("is_active", true);
+  if (profileError) throw profileError;
+  const recipients = (profiles ?? []).filter((profile: any) =>
+    MARVIN_USER_EMAILS.includes(String(profile.email || "").toLowerCase()),
+  );
+  if (!recipients.length) {
+    throw new Error("Ken, Katie, and Brynn notification profiles were not found.");
+  }
+  const { error: recipientError } = await admin
+    .from("studio_construction_document_notification_recipients")
+    .upsert(
+      recipients.map((profile: any) => ({
+        notification_id: notification.id,
+        user_id: profile.id,
+      })),
+      { onConflict: "notification_id,user_id" },
+    );
+  if (recipientError) throw recipientError;
+}
+
 async function promoteConstructionAttachment(
   source: any,
   projectId: string,
@@ -775,6 +829,20 @@ async function promoteConstructionAttachment(
       .select("*")
       .single();
     if (sourceError) throw sourceError;
+    try {
+      await ensureConstructionDocumentLoginNotification({
+        projectId,
+        projectDocumentId: document.id,
+        sourceId: updatedSource.id,
+        fileName: document.file_name || file.name,
+      });
+    } catch (notificationError) {
+      console.error(
+        "Marvin construction document notification failed",
+        document.id,
+        notificationError instanceof Error ? notificationError.message : notificationError,
+      );
+    }
     return { source: updatedSource, document };
   } catch (error) {
     await admin.storage.from(PROJECT_FILES_BUCKET).remove([storagePath]);
