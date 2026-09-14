@@ -1,5 +1,25 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Truck, Library, BookOpen, UserCog, LogOut, DollarSign, Menu, X, Clock, PanelLeftClose, PanelLeftOpen, ReceiptText, Bell, ListChecks } from "lucide-react";
+import {
+  LayoutDashboard,
+  FolderOpen,
+  LayoutTemplate,
+  Truck,
+  Library,
+  BookOpen,
+  UserCog,
+  LogOut,
+  DollarSign,
+  Menu,
+  X,
+  Clock,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ReceiptText,
+  Bell,
+  ContactRound,
+  BriefcaseBusiness,
+  CalendarDays,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -8,6 +28,7 @@ import type { UserProfile } from "@/lib/db";
 import {
   canLogHours,
   canManageStudio,
+  canUseEaWorkspace,
   canViewFinancials,
   canViewProcurement,
   canViewProductCatalog,
@@ -19,8 +40,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { to: "/ea-desk", label: "EA Desk", icon: BriefcaseBusiness },
   { to: "/projects", label: "Projects", icon: FolderOpen },
-  { to: "/project-management", label: "Project Management", icon: ListChecks },
+  { to: "/people-vendors", label: "People & Vendors", icon: ContactRound },
   { to: "/catalog", label: "Product Catalog", icon: Library },
   { to: "/presentations", label: "Presentation Boards", icon: LayoutTemplate },
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
@@ -44,6 +66,28 @@ type ReminderNotice = {
 
 type NoticeKind = "reminders" | "todos";
 
+type CalendarLoginNotice = {
+  id: string;
+  task_id: string | null;
+  calendar_name: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  location: string | null;
+  created_at: string;
+};
+
+type SharedTodoNoticeSource = {
+  id?: unknown;
+  todo_id?: unknown;
+  kind?: unknown;
+  title?: unknown;
+  notes?: unknown;
+  due_date?: unknown;
+  reminder_date?: unknown;
+  project_name?: unknown;
+};
+
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const navigate = useNavigate();
@@ -57,9 +101,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [reminderNotices, setReminderNotices] = useState<ReminderNotice[]>([]);
   const [reminderNoticeOpen, setReminderNoticeOpen] = useState(false);
   const [noticeKind, setNoticeKind] = useState<NoticeKind>("reminders");
+  const [calendarNotices, setCalendarNotices] = useState<CalendarLoginNotice[]>([]);
+  const [calendarNoticeOpen, setCalendarNoticeOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
+    let unsubscribeAuth: (() => void) | undefined;
 
     const loadSession = async () => {
       try {
@@ -71,12 +118,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           return;
         }
 
+        // Wait for the initial session lookup to finish before subscribing.
+        // Registering both operations in the same tick can deadlock older
+        // Supabase auth clients while they refresh an expiring session.
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+          if (active && !session) navigate({ to: "/login" });
+        });
+        unsubscribeAuth = () => authListener.subscription.unsubscribe();
+
         const { data: userProfile } = await withTimeout(
-          supabase
-            .from("user_profiles")
-            .select("*")
-            .eq("id", data.session.user.id)
-            .maybeSingle(),
+          supabase.from("user_profiles").select("*").eq("id", data.session.user.id).maybeSingle(),
           12000,
         );
         if (!active) return;
@@ -92,30 +143,36 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     loadSession();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) navigate({ to: "/login" });
-    });
 
     return () => {
       active = false;
-      authListener.subscription.unsubscribe();
+      unsubscribeAuth?.();
     };
   }, [navigate]);
 
   useEffect(() => {
     const isClientFinancials = loc.pathname.startsWith("/client/financials");
-    const isStudioFinancials = loc.pathname.startsWith("/procurement") || loc.pathname.startsWith("/financials") || (loc.pathname.includes("/financials") && !isClientFinancials);
+    const isStudioFinancials =
+      loc.pathname.startsWith("/procurement") ||
+      loc.pathname.startsWith("/financials") ||
+      (loc.pathname.includes("/financials") && !isClientFinancials);
     if (!loadingAuth && isStudioFinancials && !canViewFinancials(profile)) {
       navigate({ to: "/" });
     }
   }, [loadingAuth, loc.pathname, navigate, profile]);
 
   useEffect(() => {
-    if (
-      !loadingAuth &&
-      isSharedProjectRole(profile?.role) &&
-      loc.pathname.startsWith("/catalog")
-    ) {
+    if (!loadingAuth && isSharedProjectRole(profile?.role) && loc.pathname.startsWith("/catalog")) {
+      navigate({ to: "/" });
+    }
+  }, [loadingAuth, loc.pathname, navigate, profile]);
+
+  useEffect(() => {
+    const isEaWorkspace =
+      loc.pathname.startsWith("/ea-desk") ||
+      loc.pathname.startsWith("/people-vendors") ||
+      loc.pathname.endsWith("/operations");
+    if (!loadingAuth && isEaWorkspace && !canUseEaWorkspace(profile)) {
       navigate({ to: "/" });
     }
   }, [loadingAuth, loc.pathname, navigate, profile]);
@@ -140,14 +197,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!reminderMatchesProfile(reminder, profile)) return false;
           const reminderDate = reminder.reminder_date;
           const dueDate = reminder.due_date;
-          return (
-            (reminderDate && reminderDate <= today) ||
-            (dueDate && dueDate <= today)
-          );
+          return (reminderDate && reminderDate <= today) || (dueDate && dueDate <= today);
         });
         if (!active || dueReminders.length === 0) return;
 
-        const reminderIds = dueReminders.map((reminder) => reminder.id).sort().join(".");
+        const reminderIds = dueReminders
+          .map((reminder) => reminder.id)
+          .sort()
+          .join(".");
         const storageKey = `merav.reminder-notices.${profile?.id}.${today}.${reminderIds}`;
         if (window.localStorage.getItem(storageKey) === "seen") return;
         setNoticeKind("reminders");
@@ -159,6 +216,43 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     void loadReminderNotices();
+    return () => {
+      active = false;
+    };
+  }, [loadingAuth, profile]);
+
+  useEffect(() => {
+    const email = String(profile?.email || "").toLowerCase();
+    if (
+      loadingAuth ||
+      !profile ||
+      !["ken@meravinteriors.com", "katie@meravinteriors.com"].includes(email)
+    ) {
+      return;
+    }
+    let active = true;
+
+    const loadCalendarNotices = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const response = await fetch("/api/calendar-notifications", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(body.notifications) || !body.notifications.length) {
+          return;
+        }
+        if (!active) return;
+        setCalendarNotices(body.notifications as CalendarLoginNotice[]);
+        setCalendarNoticeOpen(true);
+      } catch (error) {
+        console.warn("[AppShell] Unable to load calendar notices.", error);
+      }
+    };
+
+    void loadCalendarNotices();
     return () => {
       active = false;
     };
@@ -187,17 +281,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         if (!res.ok || !Array.isArray(body.todos)) return;
 
         const today = localDateKey();
-        const dueTodos = body.todos
-          .filter((todo: any) => todo?.kind === "project_todo")
-          .filter((todo: any) => {
+        const dueTodos = (body.todos as SharedTodoNoticeSource[])
+          .filter((todo) => todo?.kind === "project_todo")
+          .filter((todo) => {
             const reminderDate = typeof todo.reminder_date === "string" ? todo.reminder_date : null;
             const dueDate = typeof todo.due_date === "string" ? todo.due_date : null;
-            return (
-              (reminderDate && reminderDate <= today) ||
-              (dueDate && dueDate <= today)
-            );
+            return (reminderDate && reminderDate <= today) || (dueDate && dueDate <= today);
           })
-          .map((todo: any) => ({
+          .map((todo) => ({
             id: String(todo.todo_id || todo.id),
             title: String(todo.title || "Project to-do"),
             notes: typeof todo.notes === "string" ? todo.notes : null,
@@ -209,7 +300,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           }));
         if (!active || dueTodos.length === 0) return;
 
-        const todoIds = dueTodos.map((todo: ReminderNotice) => todo.id).sort().join(".");
+        const todoIds = dueTodos
+          .map((todo: ReminderNotice) => todo.id)
+          .sort()
+          .join(".");
         const storageKey = `merav.shared-todo-notices.${profile.id}.${today}.${todoIds}`;
         if (window.localStorage.getItem(storageKey) === "seen") return;
         setNoticeKind("todos");
@@ -256,9 +350,21 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <div className={cn("pt-8 pb-10", desktopCollapsed ? "px-3" : "px-7")}>
-          <div className={cn("flex items-start justify-between gap-3", desktopCollapsed && "flex-col items-center")}>
+          <div
+            className={cn(
+              "flex items-start justify-between gap-3",
+              desktopCollapsed && "flex-col items-center",
+            )}
+          >
             <Link to="/" className={cn("block", desktopCollapsed && "text-center")}>
-              <div className={cn("font-display tracking-tight leading-none", desktopCollapsed ? "text-xl" : "text-2xl")}>MERAV</div>
+              <div
+                className={cn(
+                  "font-display tracking-tight leading-none",
+                  desktopCollapsed ? "text-xl" : "text-2xl",
+                )}
+              >
+                MERAV
+              </div>
               {!desktopCollapsed && <div className="eyebrow mt-1.5">Studio</div>}
             </Link>
             <button
@@ -268,14 +374,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               aria-label={desktopCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={desktopCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              {desktopCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {desktopCollapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
             </button>
           </div>
         </div>
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !canManageStudio(profile)) return null;
-            if (to === "/project-management" && isSharedProjectRole(profile?.role)) return null;
+            if ((to === "/ea-desk" || to === "/people-vendors") && !canUseEaWorkspace(profile))
+              return null;
             if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -290,7 +401,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className={cn(
                   "flex items-center rounded-sm text-sm transition-colors",
                   desktopCollapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-2.5",
-                  active ? "bg-bone text-ink font-medium" : "text-muted-foreground hover:text-ink hover:bg-bone/60"
+                  active
+                    ? "bg-bone text-ink font-medium"
+                    : "text-muted-foreground hover:text-ink hover:bg-bone/60",
                 )}
               >
                 <Icon className="w-[15px] h-[15px] shrink-0 stroke-[1.5]" />
@@ -305,7 +418,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               {!desktopCollapsed && (
                 <>
                   <div className="text-sm text-ink truncate">{profile.full_name}</div>
-                  <div className="eyebrow mt-1">{canManageStudio(profile) ? "Overall Admin" : profile.role}</div>
+                  <div className="eyebrow mt-1">
+                    {canManageStudio(profile) ? "Overall Admin" : profile.role}
+                  </div>
                 </>
               )}
               <button
@@ -325,7 +440,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <header className="lg:hidden fixed top-0 inset-x-0 z-40 bg-background/90 backdrop-blur border-b border-border px-5 h-14 flex items-center justify-between print:hidden">
-        <Link to="/" className="font-display text-xl">MERAV Studio</Link>
+        <Link to="/" className="font-display text-xl">
+          MERAV Studio
+        </Link>
         <button
           type="button"
           onClick={() => setMobileOpen((open) => !open)}
@@ -342,7 +459,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
-              if (to === "/project-management" && isSharedProjectRole(profile?.role)) return null;
+              if ((to === "/ea-desk" || to === "/people-vendors") && !canUseEaWorkspace(profile))
+                return null;
               if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -355,7 +473,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   to={to}
                   className={cn(
                     "flex items-center gap-3 px-4 py-3 text-sm rounded-sm transition-colors",
-                    active ? "bg-bone text-ink font-medium" : "text-muted-foreground hover:text-ink hover:bg-bone/60"
+                    active
+                      ? "bg-bone text-ink font-medium"
+                      : "text-muted-foreground hover:text-ink hover:bg-bone/60",
                   )}
                 >
                   <Icon className="w-[15px] h-[15px] stroke-[1.5]" />
@@ -367,7 +487,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           {profile && (
             <div className="mt-5 border-t border-border pt-4">
               <div className="text-sm text-ink">{profile.full_name}</div>
-              <div className="eyebrow mt-1">{canManageStudio(profile) ? "Overall Admin" : profile.role}</div>
+              <div className="eyebrow mt-1">
+                {canManageStudio(profile) ? "Overall Admin" : profile.role}
+              </div>
               <button
                 type="button"
                 onClick={signOut}
@@ -388,7 +510,106 @@ export function AppShell({ children }: { children: ReactNode }) {
         kind={noticeKind}
         onOpenChange={setReminderNoticeOpen}
       />
+      <CalendarLoginNoticeDialog
+        open={calendarNoticeOpen}
+        notices={calendarNotices}
+        onAcknowledged={() => {
+          setCalendarNoticeOpen(false);
+          setCalendarNotices([]);
+        }}
+      />
     </div>
+  );
+}
+
+function CalendarLoginNoticeDialog({
+  open,
+  notices,
+  onAcknowledged,
+}: {
+  open: boolean;
+  notices: CalendarLoginNotice[];
+  onAcknowledged: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const acknowledge = async () => {
+    if (saving || !notices.length) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Your Studio session expired. Sign in again.");
+      const response = await fetch("/api/calendar-notifications", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_ids: notices.map((notice) => notice.id) }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "Unable to save this review.");
+      onAcknowledged();
+    } catch (acknowledgeError) {
+      setError(
+        acknowledgeError instanceof Error
+          ? acknowledgeError.message
+          : "Unable to save this review.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) void acknowledge();
+      }}
+    >
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <div className="eyebrow mb-2">Calendar update</div>
+          <DialogTitle className="font-display text-4xl font-normal">
+            {notices.length === 1
+              ? "A new item was added"
+              : `${notices.length} new items were added`}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          These were added from the EA Desk. No client messages or invitations were sent.
+        </p>
+        <div className="max-h-[50vh] space-y-3 overflow-y-auto">
+          {notices.map((notice) => (
+            <div key={notice.id} className="border border-border bg-bone/20 p-4">
+              <div className="flex items-start gap-3">
+                <CalendarDays className="mt-1 h-4 w-4 shrink-0 text-brass" />
+                <div className="min-w-0">
+                  <div className="font-medium text-ink">{notice.title}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {notice.calendar_name === "FAMILY" ? "Family" : notice.calendar_name} ·{" "}
+                    {formatCalendarNoticeDate(notice.start_at)}
+                  </div>
+                  {notice.location && (
+                    <div className="mt-2 text-xs text-muted-foreground">{notice.location}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {error && <p className="text-sm text-red-700">{error}</p>}
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void acknowledge()}
+          className="mt-2 inline-flex items-center justify-center bg-ink px-5 py-2.5 text-sm text-primary-foreground disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Got it"}
+        </button>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -408,8 +629,12 @@ function ReminderNoticeDialog({
   const markSeen = () => {
     if (typeof window !== "undefined" && profileId && reminders.length) {
       const today = localDateKey();
-      const reminderIds = reminders.map((reminder) => reminder.id).sort().join(".");
-      const storagePrefix = kind === "todos" ? "merav.shared-todo-notices" : "merav.reminder-notices";
+      const reminderIds = reminders
+        .map((reminder) => reminder.id)
+        .sort()
+        .join(".");
+      const storagePrefix =
+        kind === "todos" ? "merav.shared-todo-notices" : "merav.reminder-notices";
       window.localStorage.setItem(`${storagePrefix}.${profileId}.${today}.${reminderIds}`, "seen");
     }
     onOpenChange(false);
@@ -425,7 +650,9 @@ function ReminderNoticeDialog({
     >
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <div className="eyebrow mb-2">{kind === "todos" ? "Project To-Dos" : "Studio Reminders"}</div>
+          <div className="eyebrow mb-2">
+            {kind === "todos" ? "Project To-Dos" : "Studio Reminders"}
+          </div>
           <DialogTitle className="font-display text-4xl font-normal">
             Items needing attention
           </DialogTitle>
@@ -438,14 +665,20 @@ function ReminderNoticeDialog({
                 <div className="min-w-0">
                   <div className="font-medium text-ink">{reminder.title}</div>
                   {reminder.project_name && (
-                    <div className="mt-1 text-sm text-muted-foreground">{reminder.project_name}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {reminder.project_name}
+                    </div>
                   )}
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    {reminder.reminder_date && <span>Reminder: {formatNoticeDate(reminder.reminder_date)}</span>}
+                    {reminder.reminder_date && (
+                      <span>Reminder: {formatNoticeDate(reminder.reminder_date)}</span>
+                    )}
                     {reminder.due_date && <span>Due: {formatNoticeDate(reminder.due_date)}</span>}
                   </div>
                   {reminder.notes && (
-                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{reminder.notes}</p>
+                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                      {reminder.notes}
+                    </p>
                   )}
                 </div>
               </div>
@@ -475,7 +708,24 @@ function localDateKey() {
 function formatNoticeDate(value: string) {
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatCalendarNoticeDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Phoenix",
+  }).format(date);
 }
 
 function reminderMatchesProfile(reminder: ReminderNotice, profile: UserProfile | null) {
@@ -486,10 +736,10 @@ function reminderMatchesProfile(reminder: ReminderNotice, profile: UserProfile |
   return assignee === "studio";
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
-    promise
+    Promise.resolve(promise)
       .then(resolve)
       .catch(reject)
       .finally(() => window.clearTimeout(timeout));

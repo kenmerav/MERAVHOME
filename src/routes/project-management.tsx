@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -46,6 +46,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/project-management")({
   head: () => ({ meta: [{ title: "Project Command Center - MERAV Studio" }] }),
+  beforeLoad: () => {
+    throw redirect({ to: "/ea-desk" });
+  },
   component: ProjectManagementPage,
 });
 
@@ -342,7 +345,11 @@ function PortfolioTable({
             {rows.map(({ project, value, owners }) => (
               <tr key={project.id} className="align-top hover:bg-bone/20">
                 <td className="min-w-0 px-4 py-4">
-                  <button type="button" onClick={() => onOpen(project)} className="max-w-full text-left">
+                  <button
+                    type="button"
+                    onClick={() => onOpen(project)}
+                    className="max-w-full text-left"
+                  >
                     <div className="break-words font-medium">{project.name}</div>
                     <div className="break-words text-xs text-muted-foreground">
                       {project.client_name} · {project.status}
@@ -451,15 +458,25 @@ function PortfolioTable({
 function PortfolioTimeline({ project }: { project: Project }) {
   return (
     <div className="space-y-1">
-      <div><span className="text-muted-foreground">Accepted:</span> {formatShortDate(project.accepted_date)}</div>
-      <div><span className="text-muted-foreground">Promised:</span> {formatShortDate(project.promised_completion_date)}</div>
+      <div>
+        <span className="text-muted-foreground">Accepted:</span>{" "}
+        {formatShortDate(project.accepted_date)}
+      </div>
+      <div>
+        <span className="text-muted-foreground">Promised:</span>{" "}
+        {formatShortDate(project.promised_completion_date)}
+      </div>
       <div>
         <span className="text-muted-foreground">Forecast:</span>{" "}
         {formatShortDate(project.forecast_completion_date)}
       </div>
       {project.forecast_completion_date && project.promised_completion_date && (
         <div
-          className={project.forecast_completion_date > project.promised_completion_date ? "text-red-700" : "text-muted-foreground"}
+          className={
+            project.forecast_completion_date > project.promised_completion_date
+              ? "text-red-700"
+              : "text-muted-foreground"
+          }
         >
           {formatForecastVariance(
             project.forecast_completion_date,
@@ -493,13 +510,8 @@ function PortfolioProgress({
   );
 }
 
-function PortfolioCurrentWork({
-  value,
-}: {
-  value: ReturnType<typeof calculateProjectMetrics>;
-}) {
-  const assignee =
-    value.nextTask?.assigned_user?.full_name || value.nextTask?.assigned_user?.email;
+function PortfolioCurrentWork({ value }: { value: ReturnType<typeof calculateProjectMetrics> }) {
+  const assignee = value.nextTask?.assigned_user?.full_name || value.nextTask?.assigned_user?.email;
   const waitingStatus = value.waitingTask ? formatWaitingStatus(value.waitingTask) : null;
   return (
     <div className="space-y-2">
@@ -507,9 +519,7 @@ function PortfolioCurrentWork({
         <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
           {!value.nextMilestone && waitingStatus ? "Project status" : "Milestone"}
         </div>
-        <div className="break-words">
-          {value.nextMilestone?.title || waitingStatus || "None"}
-        </div>
+        <div className="break-words">{value.nextMilestone?.title || waitingStatus || "None"}</div>
         {value.nextMilestone && (
           <div className="text-muted-foreground">
             {formatShortDate(value.nextMilestone.target_date)}
@@ -517,7 +527,9 @@ function PortfolioCurrentWork({
         )}
       </div>
       <div className="border-t border-border pt-2">
-        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Current task</div>
+        <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          Current task
+        </div>
         <div className="break-words">{value.nextTask?.title || "No ready task"}</div>
         {value.nextTask && (
           <div className="mt-1 break-words text-muted-foreground">
@@ -533,19 +545,20 @@ function formatWaitingStatus(task: ProjectTask) {
   if (!task.waiting_on) return task.title;
   const party = task.waiting_on === "gc" ? "GC / Builder" : task.waiting_on;
   const aliases =
-    task.waiting_on === "gc" ? "(?:gc|builder)" : task.waiting_on.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    task.waiting_on === "gc"
+      ? "(?:gc|builder)"
+      : task.waiting_on.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   let action = task.title
     .trim()
     .replace(new RegExp(`^(?:waiting\\s+(?:on|for)\\s+)?${aliases}\\s+(?:to\\s+)?`, "i"), "")
     .trim();
   action = action.replace(/^choose\b/i, "select");
   if (!action) return `Waiting on ${party}`;
-  const startsWithAction = /^(approve|choose|complete|confirm|decide|deliver|install|order|pay|provide|respond|review|schedule|select|send|sign)\b/i.test(
-    action,
-  );
-  return startsWithAction
-    ? `Waiting on ${party} to ${action}`
-    : `Waiting on ${party}: ${action}`;
+  const startsWithAction =
+    /^(approve|choose|complete|confirm|decide|deliver|install|order|pay|provide|respond|review|schedule|select|send|sign)\b/i.test(
+      action,
+    );
+  return startsWithAction ? `Waiting on ${party} to ${action}` : `Waiting on ${party}: ${action}`;
 }
 
 function formatDaysRemaining(daysRemaining: number | null) {

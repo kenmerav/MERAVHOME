@@ -854,6 +854,7 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          can_use_ea_workspace: boolean
           can_view_all_projects: boolean
           created_at: string
           email: string
@@ -866,6 +867,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          can_use_ea_workspace?: boolean
           can_view_all_projects?: boolean
           created_at?: string
           email: string
@@ -878,6 +880,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          can_use_ea_workspace?: boolean
           can_view_all_projects?: boolean
           created_at?: string
           email?: string

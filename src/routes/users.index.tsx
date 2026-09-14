@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile, UserRole } from "@/lib/db";
-import { OVERALL_ADMIN_EMAILS, canManageStudio } from "@/lib/permissions";
+import { OVERALL_ADMIN_EMAILS, canManageStudio, isEaWorkspaceEmail } from "@/lib/permissions";
 
 const ROLES: UserRole[] = ["Admin", "Employee", "Contractor", "Client"];
 const ASSIGNABLE_ROLES: UserRole[] = ["Client", "Contractor"];
@@ -94,7 +94,8 @@ function UsersPage() {
         role,
         hourly_rate: role === "Employee" ? moneyNumber(hourlyRate) : 0,
         password,
-        can_view_all_projects: role === "Employee" ? employeeProjectScope === "all" : role === "Admin",
+        can_view_all_projects:
+          role === "Employee" ? employeeProjectScope === "all" : role === "Admin",
         project_ids: canAssignProjects(role, employeeProjectScope === "all") ? projectIds : [],
       }),
     });
@@ -115,7 +116,14 @@ function UsersPage() {
     await loadUsers();
   };
 
-  const updateUser = async (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[]; can_view_all_projects?: boolean }) => {
+  const updateUser = async (
+    user: ManagedUser,
+    patch: Partial<UserProfile> & {
+      password?: string;
+      project_ids?: string[];
+      can_view_all_projects?: boolean;
+    },
+  ) => {
     setBusy(true);
     const res = await authedFetch("/api/users", {
       method: "PATCH",
@@ -123,7 +131,8 @@ function UsersPage() {
         id: user.id,
         full_name: patch.full_name ?? user.full_name,
         role: patch.role ?? user.role,
-        hourly_rate: (patch.role ?? user.role) === "Employee" ? patch.hourly_rate ?? user.hourly_rate : 0,
+        hourly_rate:
+          (patch.role ?? user.role) === "Employee" ? (patch.hourly_rate ?? user.hourly_rate) : 0,
         is_active: patch.is_active ?? user.is_active,
         password: patch.password,
         can_view_all_projects: patch.can_view_all_projects ?? user.can_view_all_projects,
@@ -149,7 +158,11 @@ function UsersPage() {
           <div className="eyebrow mb-3">Access</div>
           <h1 className="editorial-hero text-5xl lg:text-6xl">Users</h1>
           <p className="mt-4 text-muted-foreground max-w-2xl">
-            Create accounts now and assign a role. Detailed permission rules will be layered on top of these roles next.
+            Create accounts now and assign a role. Detailed permission rules will be layered on top
+            of these roles next.
+          </p>
+          <p className="mt-3 max-w-2xl border border-border bg-bone/20 px-4 py-3 text-sm text-muted-foreground">
+            EA Desk access is fixed to Ken, Katie, and Brynn.
           </p>
         </div>
 
@@ -157,15 +170,28 @@ function UsersPage() {
           <form onSubmit={createUser} className="border border-border p-6 bg-background space-y-5">
             <div>
               <div className="font-display text-2xl">Create User</div>
-              <p className="text-sm text-muted-foreground mt-1">Default temporary password is merav.</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Default temporary password is merav.
+              </p>
             </div>
             <div>
               <Label className="eyebrow">Name</Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Client" required />
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Jane Client"
+                required
+              />
             </div>
             <div>
               <Label className="eyebrow">Email</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" required />
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="jane@example.com"
+                required
+              />
             </div>
             <div>
               <Label className="eyebrow">Role</Label>
@@ -174,13 +200,21 @@ function UsersPage() {
                 onChange={(e) => setRole(e.target.value as UserRole)}
                 className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm"
               >
-                {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {roleLabel(r)}
+                  </option>
+                ))}
               </select>
             </div>
             {role === "Employee" && (
               <div>
                 <Label className="eyebrow">Hourly Rate</Label>
-                <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
+                <Input
+                  value={hourlyRate}
+                  onChange={(e) => setHourlyRate(e.target.value)}
+                  placeholder="$28"
+                />
               </div>
             )}
             {role === "Employee" && (
@@ -207,7 +241,9 @@ function UsersPage() {
               <Label className="eyebrow">Temporary Password</Label>
               <Input value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            <Button type="submit" disabled={busy} className="w-full">{busy ? "Creating..." : "Create Account"}</Button>
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? "Creating..." : "Create Account"}
+            </Button>
             {error && <div className="text-sm text-destructive">{error}</div>}
           </form>
 
@@ -241,9 +277,17 @@ function UsersPage() {
               <div className="py-12 text-sm text-muted-foreground">No users yet.</div>
             ) : filteredUsers.length === 0 ? (
               <div className="py-12 text-sm text-muted-foreground">No users match that role.</div>
-            ) : filteredUsers.map((user) => (
-              <UserRow key={user.id} user={user} projects={projects} busy={busy} onSave={updateUser} />
-            ))}
+            ) : (
+              filteredUsers.map((user) => (
+                <UserRow
+                  key={user.id}
+                  user={user}
+                  projects={projects}
+                  busy={busy}
+                  onSave={updateUser}
+                />
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -260,7 +304,14 @@ function UserRow({
   user: ManagedUser;
   projects: UserProject[];
   busy: boolean;
-  onSave: (user: ManagedUser, patch: Partial<UserProfile> & { password?: string; project_ids?: string[]; can_view_all_projects?: boolean }) => void;
+  onSave: (
+    user: ManagedUser,
+    patch: Partial<UserProfile> & {
+      password?: string;
+      project_ids?: string[];
+      can_view_all_projects?: boolean;
+    },
+  ) => void;
 }) {
   const [fullName, setFullName] = useState(user.full_name);
   const [email, setEmail] = useState(user.email);
@@ -282,7 +333,9 @@ function UserRow({
     setIsActive(user.is_active);
     setPassword("");
     setProjectIds(user.assigned_project_ids ?? []);
-    setUserProjectScope(user.role === "Employee" && user.can_view_all_projects === false ? "assigned" : "all");
+    setUserProjectScope(
+      user.role === "Employee" && user.can_view_all_projects === false ? "assigned" : "all",
+    );
   }, [user]);
 
   const saveUser = () => {
@@ -304,10 +357,17 @@ function UserRow({
         <div>
           <div className="font-display text-xl">{user.full_name}</div>
           <div className="text-sm text-muted-foreground">{user.email}</div>
+          {isEaWorkspaceEmail(user.email) && (
+            <div className="mt-1 text-xs font-medium text-emerald-700">EA Desk access</div>
+          )}
         </div>
         <div className="text-right">
-          <div className="eyebrow">{canManageStudio(user) ? "Overall Admin" : roleLabel(user.role)}</div>
-          <div className="text-xs text-muted-foreground mt-1">{user.is_active ? "Active" : "Inactive"}</div>
+          <div className="eyebrow">
+            {canManageStudio(user) ? "Overall Admin" : roleLabel(user.role)}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            {user.is_active ? "Active" : "Inactive"}
+          </div>
         </div>
       </div>
 
@@ -334,13 +394,21 @@ function UserRow({
             onChange={(e) => setRole(e.target.value as UserRole)}
             className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm disabled:opacity-60"
           >
-            {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {roleLabel(r)}
+              </option>
+            ))}
           </select>
         </div>
         {role === "Employee" && (
           <div>
             <Label className="eyebrow">Hourly Rate</Label>
-            <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="$28" />
+            <Input
+              value={hourlyRate}
+              onChange={(e) => setHourlyRate(e.target.value)}
+              placeholder="$28"
+            />
           </div>
         )}
         <div>
@@ -383,13 +451,13 @@ function UserRow({
       <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
         <div>
           <Label className="eyebrow">Reset Password</Label>
-          <Input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current password" />
+          <Input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Leave blank to keep current password"
+          />
         </div>
-        <Button
-          type="button"
-          disabled={busy}
-          onClick={saveUser}
-        >
+        <Button type="button" disabled={busy} onClick={saveUser}>
           Save
         </Button>
       </div>
@@ -433,13 +501,18 @@ function ProjectAssignmentPicker({
         onClick={() => setOpen((value) => !value)}
         className="mt-2 flex h-10 w-full items-center justify-between gap-3 border border-input bg-background px-3 py-2 text-left text-sm"
       >
-        <span className={selectedProjects.length ? "truncate text-ink" : "text-muted-foreground"}>{selectedLabel}</span>
+        <span className={selectedProjects.length ? "truncate text-ink" : "text-muted-foreground"}>
+          {selectedLabel}
+        </span>
         <span className="text-xs text-muted-foreground">{open ? "Close" : "Open"}</span>
       </button>
       {selectedProjects.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {selectedProjects.slice(0, compact ? 3 : 5).map((project) => (
-            <span key={project.id} className="rounded-full bg-bone px-2.5 py-1 text-[11px] text-muted-foreground">
+            <span
+              key={project.id}
+              className="rounded-full bg-bone px-2.5 py-1 text-[11px] text-muted-foreground"
+            >
               {project.name}
             </span>
           ))}
@@ -451,7 +524,9 @@ function ProjectAssignmentPicker({
         </div>
       )}
       {open && (
-        <div className={`absolute z-30 mt-2 w-full border border-border bg-background shadow-lg ${compact ? "max-h-56" : "max-h-64"} overflow-y-auto`}>
+        <div
+          className={`absolute z-30 mt-2 w-full border border-border bg-background shadow-lg ${compact ? "max-h-56" : "max-h-64"} overflow-y-auto`}
+        >
           {projects.length === 0 ? (
             <div className="p-3 text-sm text-muted-foreground">No projects available yet.</div>
           ) : (
@@ -467,7 +542,13 @@ function ProjectAssignmentPicker({
                   >
                     <span className="min-w-0">
                       <span className="block text-sm font-medium">{project.name}</span>
-                      <span className={selected ? "block text-xs text-primary-foreground/70" : "block text-xs text-muted-foreground"}>
+                      <span
+                        className={
+                          selected
+                            ? "block text-xs text-primary-foreground/70"
+                            : "block text-xs text-muted-foreground"
+                        }
+                      >
                         {project.client_name} · {project.status}
                       </span>
                     </span>
@@ -478,10 +559,18 @@ function ProjectAssignmentPicker({
                 );
               })}
               <div className="sticky bottom-0 flex justify-between gap-2 border-t border-border bg-background p-2">
-                <button type="button" onClick={() => onChange([])} className="px-3 py-2 text-xs text-muted-foreground hover:text-ink">
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  className="px-3 py-2 text-xs text-muted-foreground hover:text-ink"
+                >
                   Clear
                 </button>
-                <button type="button" onClick={() => setOpen(false)} className="bg-ink px-4 py-2 text-xs text-primary-foreground">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="bg-ink px-4 py-2 text-xs text-primary-foreground"
+                >
                   Done
                 </button>
               </div>

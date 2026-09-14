@@ -14,6 +14,7 @@ import {
   loadConversation,
   loadMarvinBootstrap,
   loadSourceDetail,
+  MARVIN_SHARED_GMAIL,
   marvinChat,
   refreshPendingSourceMatches,
   rebuildSourceSegments,
@@ -71,7 +72,14 @@ export const Route = createFileRoute("/api/marvin")({
               await deleteSource(String(body.id || ""));
               return json({ ok: true });
             case "gmail_connect":
-              return json({ url: gmailAuthorizationUrl(access) });
+              return json({
+                url: gmailAuthorizationUrl(
+                  access,
+                  body.account_email === MARVIN_SHARED_GMAIL
+                    ? MARVIN_SHARED_GMAIL
+                    : access.profile.email,
+                ),
+              });
             case "sync_now":
               return json({ gmail: await syncAllGmail(), fathom: await syncFathom() });
             case "refresh_source_matches":

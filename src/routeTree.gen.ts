@@ -13,8 +13,10 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ProjectManagementRouteImport } from './routes/project-management'
 import { Route as ProcurementRouteImport } from './routes/procurement'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as PeopleVendorsRouteImport } from './routes/people-vendors'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FinancialsRouteImport } from './routes/financials'
+import { Route as EaDeskRouteImport } from './routes/ea-desk'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
@@ -46,6 +48,7 @@ import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
 import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
 import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
+import { Route as ApiProjectCapturesRouteImport } from './routes/api/project-captures'
 import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
 import { Route as ApiProcurementMcpRouteImport } from './routes/api/procurement-mcp'
 import { Route as ApiProcurementGmailCallbackRouteImport } from './routes/api/procurement-gmail-callback'
@@ -64,6 +67,9 @@ import { Route as ApiImportRenderingPackageRouteImport } from './routes/api/impo
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
+import { Route as ApiEaWorkspaceRouteImport } from './routes/api/ea-workspace'
+import { Route as ApiEaDocumentEvidenceRouteImport } from './routes/api/ea-document-evidence'
+import { Route as ApiEaCalendarRouteImport } from './routes/api/ea-calendar'
 import { Route as ApiDuplicateProjectRouteImport } from './routes/api/duplicate-project'
 import { Route as ApiDrawingVerificationRouteImport } from './routes/api/drawing-verification'
 import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
@@ -71,12 +77,14 @@ import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/des
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
+import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
 import { Route as ProjectsIdRoomDesignRouteImport } from './routes/projects.$id.room-design'
 import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
 import { Route as ProjectsIdRenderingStudioRouteImport } from './routes/projects.$id.rendering-studio'
 import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
+import { Route as ProjectsIdOperationsRouteImport } from './routes/projects.$id.operations'
 import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
 import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
 import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
@@ -120,6 +128,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PeopleVendorsRoute = PeopleVendorsRouteImport.update({
+  id: '/people-vendors',
+  path: '/people-vendors',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -128,6 +141,11 @@ const LoginRoute = LoginRouteImport.update({
 const FinancialsRoute = FinancialsRouteImport.update({
   id: '/financials',
   path: '/financials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EaDeskRoute = EaDeskRouteImport.update({
+  id: '/ea-desk',
+  path: '/ea-desk',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogRoute = CatalogRouteImport.update({
@@ -290,6 +308,11 @@ const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
   path: '/api/project-management',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProjectCapturesRoute = ApiProjectCapturesRouteImport.update({
+  id: '/api/project-captures',
+  path: '/api/project-captures',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiProcurementRunsRoute = ApiProcurementRunsRouteImport.update({
   id: '/api/procurement-runs',
   path: '/api/procurement-runs',
@@ -383,6 +406,21 @@ const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
   path: '/api/generate-rendering',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiEaWorkspaceRoute = ApiEaWorkspaceRouteImport.update({
+  id: '/api/ea-workspace',
+  path: '/api/ea-workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEaDocumentEvidenceRoute = ApiEaDocumentEvidenceRouteImport.update({
+  id: '/api/ea-document-evidence',
+  path: '/api/ea-document-evidence',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEaCalendarRoute = ApiEaCalendarRouteImport.update({
+  id: '/api/ea-calendar',
+  path: '/api/ea-calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDuplicateProjectRoute = ApiDuplicateProjectRouteImport.update({
   id: '/api/duplicate-project',
   path: '/api/duplicate-project',
@@ -421,6 +459,12 @@ const ApiCheckMaterialFinishesRoute =
     path: '/api/check-material-finishes',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCalendarNotificationsRoute =
+  ApiCalendarNotificationsRouteImport.update({
+    id: '/api/calendar-notifications',
+    path: '/api/calendar-notifications',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
   id: '/projects/$id/',
   path: '/projects/$id/',
@@ -450,6 +494,11 @@ const ProjectsIdRenderingStudioRoute =
 const ProjectsIdPresentationRoute = ProjectsIdPresentationRouteImport.update({
   id: '/projects/$id/presentation',
   path: '/projects/$id/presentation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdOperationsRoute = ProjectsIdOperationsRouteImport.update({
+  id: '/projects/$id/operations',
+  path: '/projects/$id/operations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsIdMaterialsRoute = ProjectsIdMaterialsRouteImport.update({
@@ -573,12 +622,15 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/ea-desk': typeof EaDeskRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
+  '/people-vendors': typeof PeopleVendorsRoute
   '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
@@ -586,6 +638,9 @@ export interface FileRoutesByFullPath {
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/drawing-verification': typeof ApiDrawingVerificationRoute
   '/api/duplicate-project': typeof ApiDuplicateProjectRoute
+  '/api/ea-calendar': typeof ApiEaCalendarRoute
+  '/api/ea-document-evidence': typeof ApiEaDocumentEvidenceRoute
+  '/api/ea-workspace': typeof ApiEaWorkspaceRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -604,6 +659,7 @@ export interface FileRoutesByFullPath {
   '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
+  '/api/project-captures': typeof ApiProjectCapturesRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -654,6 +710,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
+  '/projects/$id/operations': typeof ProjectsIdOperationsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -665,12 +722,15 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/ea-desk': typeof EaDeskRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
+  '/people-vendors': typeof PeopleVendorsRoute
   '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
@@ -678,6 +738,9 @@ export interface FileRoutesByTo {
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/drawing-verification': typeof ApiDrawingVerificationRoute
   '/api/duplicate-project': typeof ApiDuplicateProjectRoute
+  '/api/ea-calendar': typeof ApiEaCalendarRoute
+  '/api/ea-document-evidence': typeof ApiEaDocumentEvidenceRoute
+  '/api/ea-workspace': typeof ApiEaWorkspaceRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -696,6 +759,7 @@ export interface FileRoutesByTo {
   '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
+  '/api/project-captures': typeof ApiProjectCapturesRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -746,6 +810,7 @@ export interface FileRoutesByTo {
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
+  '/projects/$id/operations': typeof ProjectsIdOperationsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -758,12 +823,15 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/ea-desk': typeof EaDeskRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
+  '/people-vendors': typeof PeopleVendorsRoute
   '/privacy': typeof PrivacyRoute
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
@@ -771,6 +839,9 @@ export interface FileRoutesById {
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/drawing-verification': typeof ApiDrawingVerificationRoute
   '/api/duplicate-project': typeof ApiDuplicateProjectRoute
+  '/api/ea-calendar': typeof ApiEaCalendarRoute
+  '/api/ea-document-evidence': typeof ApiEaDocumentEvidenceRoute
+  '/api/ea-workspace': typeof ApiEaWorkspaceRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -789,6 +860,7 @@ export interface FileRoutesById {
   '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
+  '/api/project-captures': typeof ApiProjectCapturesRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -839,6 +911,7 @@ export interface FileRoutesById {
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
+  '/projects/$id/operations': typeof ProjectsIdOperationsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
   '/projects/$id/renderings': typeof ProjectsIdRenderingsRoute
@@ -852,12 +925,15 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/catalog'
+    | '/ea-desk'
     | '/financials'
     | '/login'
+    | '/people-vendors'
     | '/privacy'
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
@@ -865,6 +941,9 @@ export interface FileRouteTypes {
     | '/api/design-board-question'
     | '/api/drawing-verification'
     | '/api/duplicate-project'
+    | '/api/ea-calendar'
+    | '/api/ea-document-evidence'
+    | '/api/ea-workspace'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -883,6 +962,7 @@ export interface FileRouteTypes {
     | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
+    | '/api/project-captures'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -933,6 +1013,7 @@ export interface FileRouteTypes {
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
+    | '/projects/$id/operations'
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
@@ -944,12 +1025,15 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/catalog'
+    | '/ea-desk'
     | '/financials'
     | '/login'
+    | '/people-vendors'
     | '/privacy'
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
@@ -957,6 +1041,9 @@ export interface FileRouteTypes {
     | '/api/design-board-question'
     | '/api/drawing-verification'
     | '/api/duplicate-project'
+    | '/api/ea-calendar'
+    | '/api/ea-document-evidence'
+    | '/api/ea-workspace'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -975,6 +1062,7 @@ export interface FileRouteTypes {
     | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
+    | '/api/project-captures'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -1025,6 +1113,7 @@ export interface FileRouteTypes {
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
+    | '/projects/$id/operations'
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
@@ -1036,12 +1125,15 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/catalog'
+    | '/ea-desk'
     | '/financials'
     | '/login'
+    | '/people-vendors'
     | '/privacy'
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/create-stripe-payment-link'
@@ -1049,6 +1141,9 @@ export interface FileRouteTypes {
     | '/api/design-board-question'
     | '/api/drawing-verification'
     | '/api/duplicate-project'
+    | '/api/ea-calendar'
+    | '/api/ea-document-evidence'
+    | '/api/ea-workspace'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -1067,6 +1162,7 @@ export interface FileRouteTypes {
     | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
+    | '/api/project-captures'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -1117,6 +1213,7 @@ export interface FileRouteTypes {
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
+    | '/projects/$id/operations'
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
     | '/projects/$id/renderings'
@@ -1129,12 +1226,15 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
+  EaDeskRoute: typeof EaDeskRoute
   FinancialsRoute: typeof FinancialsRoute
   LoginRoute: typeof LoginRoute
+  PeopleVendorsRoute: typeof PeopleVendorsRoute
   PrivacyRoute: typeof PrivacyRoute
   ProcurementRoute: typeof ProcurementRoute
   ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
+  ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
   ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
@@ -1142,6 +1242,9 @@ export interface RootRouteChildren {
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
   ApiDrawingVerificationRoute: typeof ApiDrawingVerificationRoute
   ApiDuplicateProjectRoute: typeof ApiDuplicateProjectRoute
+  ApiEaCalendarRoute: typeof ApiEaCalendarRoute
+  ApiEaDocumentEvidenceRoute: typeof ApiEaDocumentEvidenceRoute
+  ApiEaWorkspaceRoute: typeof ApiEaWorkspaceRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
@@ -1160,6 +1263,7 @@ export interface RootRouteChildren {
   ApiProcurementGmailCallbackRoute: typeof ApiProcurementGmailCallbackRoute
   ApiProcurementMcpRoute: typeof ApiProcurementMcpRoute
   ApiProcurementRunsRoute: typeof ApiProcurementRunsRoute
+  ApiProjectCapturesRoute: typeof ApiProjectCapturesRoute
   ApiProjectManagementRoute: typeof ApiProjectManagementRoute
   ApiProjectTaskAttachmentRoute: typeof ApiProjectTaskAttachmentRoute
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
@@ -1210,6 +1314,7 @@ export interface RootRouteChildren {
   ProjectsIdDesignBoardsRoute: typeof ProjectsIdDesignBoardsRoute
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
+  ProjectsIdOperationsRoute: typeof ProjectsIdOperationsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
   ProjectsIdRenderingStudioRoute: typeof ProjectsIdRenderingStudioRoute
   ProjectsIdRenderingsRoute: typeof ProjectsIdRenderingsRoute
@@ -1249,6 +1354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/people-vendors': {
+      id: '/people-vendors'
+      path: '/people-vendors'
+      fullPath: '/people-vendors'
+      preLoaderRoute: typeof PeopleVendorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -1261,6 +1373,13 @@ declare module '@tanstack/react-router' {
       path: '/financials'
       fullPath: '/financials'
       preLoaderRoute: typeof FinancialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ea-desk': {
+      id: '/ea-desk'
+      path: '/ea-desk'
+      fullPath: '/ea-desk'
+      preLoaderRoute: typeof EaDeskRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog': {
@@ -1480,6 +1599,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiProjectManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/project-captures': {
+      id: '/api/project-captures'
+      path: '/api/project-captures'
+      fullPath: '/api/project-captures'
+      preLoaderRoute: typeof ApiProjectCapturesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/procurement-runs': {
       id: '/api/procurement-runs'
       path: '/api/procurement-runs'
@@ -1606,6 +1732,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGenerateRenderingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ea-workspace': {
+      id: '/api/ea-workspace'
+      path: '/api/ea-workspace'
+      fullPath: '/api/ea-workspace'
+      preLoaderRoute: typeof ApiEaWorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ea-document-evidence': {
+      id: '/api/ea-document-evidence'
+      path: '/api/ea-document-evidence'
+      fullPath: '/api/ea-document-evidence'
+      preLoaderRoute: typeof ApiEaDocumentEvidenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ea-calendar': {
+      id: '/api/ea-calendar'
+      path: '/api/ea-calendar'
+      fullPath: '/api/ea-calendar'
+      preLoaderRoute: typeof ApiEaCalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/duplicate-project': {
       id: '/api/duplicate-project'
       path: '/api/duplicate-project'
@@ -1655,6 +1802,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCheckMaterialFinishesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/calendar-notifications': {
+      id: '/api/calendar-notifications'
+      path: '/api/calendar-notifications'
+      fullPath: '/api/calendar-notifications'
+      preLoaderRoute: typeof ApiCalendarNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$id/': {
       id: '/projects/$id/'
       path: '/projects/$id'
@@ -1695,6 +1849,13 @@ declare module '@tanstack/react-router' {
       path: '/projects/$id/presentation'
       fullPath: '/projects/$id/presentation'
       preLoaderRoute: typeof ProjectsIdPresentationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/operations': {
+      id: '/projects/$id/operations'
+      path: '/projects/$id/operations'
+      fullPath: '/projects/$id/operations'
+      preLoaderRoute: typeof ProjectsIdOperationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/$id/materials': {
@@ -1857,12 +2018,15 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
+  EaDeskRoute: EaDeskRoute,
   FinancialsRoute: FinancialsRoute,
   LoginRoute: LoginRoute,
+  PeopleVendorsRoute: PeopleVendorsRoute,
   PrivacyRoute: PrivacyRoute,
   ProcurementRoute: ProcurementRoute,
   ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
+  ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
   ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
@@ -1870,6 +2034,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
   ApiDrawingVerificationRoute: ApiDrawingVerificationRoute,
   ApiDuplicateProjectRoute: ApiDuplicateProjectRoute,
+  ApiEaCalendarRoute: ApiEaCalendarRoute,
+  ApiEaDocumentEvidenceRoute: ApiEaDocumentEvidenceRoute,
+  ApiEaWorkspaceRoute: ApiEaWorkspaceRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,
@@ -1888,6 +2055,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProcurementGmailCallbackRoute: ApiProcurementGmailCallbackRoute,
   ApiProcurementMcpRoute: ApiProcurementMcpRoute,
   ApiProcurementRunsRoute: ApiProcurementRunsRoute,
+  ApiProjectCapturesRoute: ApiProjectCapturesRoute,
   ApiProjectManagementRoute: ApiProjectManagementRoute,
   ApiProjectTaskAttachmentRoute: ApiProjectTaskAttachmentRoute,
   ApiProjectTodosRoute: ApiProjectTodosRoute,
@@ -1939,6 +2107,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIdDesignBoardsRoute: ProjectsIdDesignBoardsRoute,
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
+  ProjectsIdOperationsRoute: ProjectsIdOperationsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
   ProjectsIdRenderingStudioRoute: ProjectsIdRenderingStudioRoute,
   ProjectsIdRenderingsRoute: ProjectsIdRenderingsRoute,

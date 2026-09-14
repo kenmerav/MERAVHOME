@@ -2,8 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { completeGmailOauth } from "@/lib/marvin.server";
 
 function commandCenterUrl(requestUrl: string, status: "connected" | "error", detail?: string) {
-  const url = new URL("/project-management", new URL(requestUrl).origin);
-  url.searchParams.set("tab", "marvin");
+  const url = new URL("/ea-desk", new URL(requestUrl).origin);
   url.searchParams.set("gmail", status);
   if (detail) url.searchParams.set("detail", detail.slice(0, 180));
   return url;

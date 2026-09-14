@@ -71,7 +71,10 @@ export interface MarvinCitation {
   sourceId?: string;
   title: string;
   url?: string | null;
-  sourceType?: MarvinSourceType | "studio";
+  sourceType?: MarvinSourceType | "studio" | "web";
+  documentId?: string | null;
+  pageNumber?: number | null;
+  support?: string | null;
 }
 
 export interface MarvinMessage {

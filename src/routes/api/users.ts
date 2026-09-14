@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { UserRole } from "@/lib/db";
-import { OVERALL_ADMIN_EMAILS, canManageStudio } from "@/lib/permissions";
+import { OVERALL_ADMIN_EMAILS, canManageStudio, isEaWorkspaceEmail } from "@/lib/permissions";
 
 const ROLES: UserRole[] = ["Admin", "Employee", "Contractor", "Client"];
 
@@ -18,7 +18,8 @@ async function requireOwner(request: Request) {
   if (!token) return { error: json({ error: "Sign in as the overall admin first." }, 401) };
 
   const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  if (userError || !userData.user) return { error: json({ error: "Your session is no longer valid." }, 401) };
+  if (userError || !userData.user)
+    return { error: json({ error: "Your session is no longer valid." }, 401) };
 
   const { data: profile } = await supabaseAdmin
     .from("user_profiles")
@@ -35,7 +36,9 @@ async function requireOwner(request: Request) {
 
 function cleanProjectIds(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return Array.from(new Set(value.filter((id): id is string => typeof id === "string" && id.trim().length > 0)));
+  return Array.from(
+    new Set(value.filter((id): id is string => typeof id === "string" && id.trim().length > 0)),
+  );
 }
 
 async function syncProjectAssignments(userId: string, projectIds: string[]) {
@@ -48,7 +51,11 @@ async function syncProjectAssignments(userId: string, projectIds: string[]) {
 }
 
 function canUseProjectAssignments(role: UserRole, canViewAllProjects?: boolean) {
-  return role === "Client" || role === "Contractor" || (role === "Employee" && canViewAllProjects === false);
+  return (
+    role === "Client" ||
+    role === "Contractor" ||
+    (role === "Employee" && canViewAllProjects === false)
+  );
 }
 
 export const Route = createFileRoute("/api/users")({
@@ -65,8 +72,14 @@ export const Route = createFileRoute("/api/users")({
             .order("created_at", { ascending: false });
           if (error) return json({ error: error.message }, 500);
 
-          const [{ data: projects, error: projectsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
-            supabaseAdmin.from("projects").select("id,name,client_name,status").order("updated_at", { ascending: false }),
+          const [
+            { data: projects, error: projectsError },
+            { data: assignments, error: assignmentsError },
+          ] = await Promise.all([
+            supabaseAdmin
+              .from("projects")
+              .select("id,name,client_name,status")
+              .order("updated_at", { ascending: false }),
             supabaseAdmin.from("user_project_assignments").select("user_id,project_id"),
           ]);
           if (projectsError) return json({ error: projectsError.message }, 500);
@@ -111,14 +124,17 @@ export const Route = createFileRoute("/api/users")({
           const role = body.role;
           const password = body.password?.trim() || "merav";
           const projectIds = cleanProjectIds(body.project_ids);
-          const canViewAllProjects = role === "Employee" ? body.can_view_all_projects !== false : role === "Admin";
+          const canViewAllProjects =
+            role === "Employee" ? body.can_view_all_projects !== false : role === "Admin";
 
           if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400);
           if (!fullName) return json({ error: "Enter the user's name." }, 400);
           if (!role || !ROLES.includes(role)) return json({ error: "Choose a valid role." }, 400);
-          if (password.length < 4) return json({ error: "Password must be at least 4 characters." }, 400);
+          if (password.length < 4)
+            return json({ error: "Password must be at least 4 characters." }, 400);
           const hourlyRate = role === "Employee" ? Number(body.hourly_rate ?? 0) : 0;
-          if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
+          if (!Number.isFinite(hourlyRate) || hourlyRate < 0)
+            return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email,
@@ -148,12 +164,29 @@ export const Route = createFileRoute("/api/users")({
 
           const { data: profile, error: profileError } = await supabaseAdmin
             .from("user_profiles")
-            .upsert({ id: userId, email, full_name: fullName, role, hourly_rate: hourlyRate, is_active: true, is_owner: OVERALL_ADMIN_EMAILS.has(email), can_view_all_projects: canViewAllProjects } as any, { onConflict: "id" })
+            .upsert(
+              {
+                id: userId,
+                email,
+                full_name: fullName,
+                role,
+                hourly_rate: hourlyRate,
+                is_active: true,
+                is_owner: OVERALL_ADMIN_EMAILS.has(email),
+                can_view_all_projects: canViewAllProjects,
+                can_use_ea_workspace:
+                  (role === "Admin" || role === "Employee") && isEaWorkspaceEmail(email),
+              } as any,
+              { onConflict: "id" },
+            )
             .select()
             .single();
 
           if (profileError) return json({ error: profileError.message }, 500);
-          await syncProjectAssignments(userId, canUseProjectAssignments(role, canViewAllProjects) ? projectIds : []);
+          await syncProjectAssignments(
+            userId,
+            canUseProjectAssignments(role, canViewAllProjects) ? projectIds : [],
+          );
           return json({ user: profile });
         } catch (e: any) {
           console.error("Create user failed", e);
@@ -192,20 +225,28 @@ export const Route = createFileRoute("/api/users")({
           const role = body.role ?? existing.role;
           if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400);
           if (!ROLES.includes(role)) return json({ error: "Choose a valid role." }, 400);
-          if ((isProtectedAdmin || willBeProtectedAdmin) && (role !== "Admin" || body.is_active === false)) {
+          if (
+            (isProtectedAdmin || willBeProtectedAdmin) &&
+            (role !== "Admin" || body.is_active === false)
+          ) {
             return json({ error: "Ken and Katie must stay active and Admin." }, 400);
           }
           if (body.password && body.password.trim().length < 4) {
             return json({ error: "Password must be at least 4 characters." }, 400);
           }
-          const hourlyRate = role === "Employee" ? Number(body.hourly_rate ?? existing.hourly_rate ?? 0) : 0;
-          if (!Number.isFinite(hourlyRate) || hourlyRate < 0) return json({ error: "Hourly rate must be $0 or more." }, 400);
+          const hourlyRate =
+            role === "Employee" ? Number(body.hourly_rate ?? existing.hourly_rate ?? 0) : 0;
+          if (!Number.isFinite(hourlyRate) || hourlyRate < 0)
+            return json({ error: "Hourly rate must be $0 or more." }, 400);
 
           const fullName = body.full_name?.trim() || existing.full_name;
-          const isActive = isProtectedAdmin || willBeProtectedAdmin ? true : body.is_active ?? existing.is_active;
+          const isActive =
+            isProtectedAdmin || willBeProtectedAdmin
+              ? true
+              : (body.is_active ?? existing.is_active);
           const canViewAllProjects =
             role === "Employee"
-              ? body.can_view_all_projects ?? existing.can_view_all_projects ?? true
+              ? (body.can_view_all_projects ?? existing.can_view_all_projects ?? true)
               : role === "Admin";
           const userUpdate: Parameters<typeof supabaseAdmin.auth.admin.updateUserById>[1] = {
             email,
@@ -214,7 +255,10 @@ export const Route = createFileRoute("/api/users")({
           };
           if (body.password?.trim()) userUpdate.password = body.password.trim();
 
-          const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(body.id, userUpdate);
+          const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+            body.id,
+            userUpdate,
+          );
           if (authError) return json({ error: authError.message }, 500);
 
           const { data: profile, error: profileError } = await supabaseAdmin
@@ -227,13 +271,20 @@ export const Route = createFileRoute("/api/users")({
               is_active: isActive,
               is_owner: isProtectedAdmin || willBeProtectedAdmin,
               can_view_all_projects: canViewAllProjects,
+              can_use_ea_workspace:
+                (role === "Admin" || role === "Employee") && isEaWorkspaceEmail(email),
             } as any)
             .eq("id", body.id)
             .select()
             .single();
           if (profileError) return json({ error: profileError.message }, 500);
           if (body.project_ids) {
-            await syncProjectAssignments(body.id, canUseProjectAssignments(role, canViewAllProjects) ? cleanProjectIds(body.project_ids) : []);
+            await syncProjectAssignments(
+              body.id,
+              canUseProjectAssignments(role, canViewAllProjects)
+                ? cleanProjectIds(body.project_ids)
+                : [],
+            );
           }
           return json({ user: profile });
         } catch (e: any) {

@@ -416,6 +416,7 @@ export interface UserProfile {
   is_active: boolean;
   is_owner: boolean;
   can_view_all_projects: boolean;
+  can_use_ea_workspace?: boolean;
   hourly_rate: number;
   created_at: string;
   updated_at: string;

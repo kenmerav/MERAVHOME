@@ -22,6 +22,7 @@ import {
   Truck,
   Palette,
   ShieldCheck,
+  BriefcaseBusiness,
   type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -69,6 +70,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
   canManageStudio,
+  canUseEaWorkspace,
+  canUseMarvin,
   canViewFinancials,
   canViewProcurement,
   canViewProjectSurface,
@@ -80,7 +83,7 @@ import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { templateForRoomName } from "@/lib/roomTemplates";
 import { printTimelineDraft, timelineFromRaw } from "@/components/TimelineCreator";
-import { ProjectManagementSummary } from "@/components/ProjectManagementSummary";
+import { ProjectCaptureDialog } from "@/components/ProjectCaptureDialog";
 
 export const Route = createFileRoute("/projects/$id/")({
   head: () => ({ meta: [{ title: "Project — MERAV Studio" }] }),
@@ -258,6 +261,18 @@ function ProjectDetailPage() {
                 currentUrl={project.cover_image_url}
                 allImages={allImages}
               />
+              {canUseMarvin(profile) && (
+                <ProjectCaptureDialog projectId={id} projectName={project.name} />
+              )}
+              {canUseEaWorkspace(profile) && (
+                <Link
+                  to="/projects/$id/operations"
+                  params={{ id }}
+                  className="inline-flex flex-1 items-center justify-center gap-2 border border-ink px-4 py-2.5 text-sm text-ink transition-colors hover:bg-ink hover:text-primary-foreground sm:flex-none"
+                >
+                  <BriefcaseBusiness className="h-4 w-4" /> Operations
+                </Link>
+              )}
               {project.design_workflow_version === "room_design_v2" &&
                 canManageStudio(profile) &&
                 rooms[0] && (
@@ -328,9 +343,7 @@ function ProjectDetailPage() {
                   }}
                 />
               )}
-              {canViewFinancials(profile) && (
-                <ProjectTodoDialog projectId={id} />
-              )}
+              {canViewFinancials(profile) && <ProjectTodoDialog projectId={id} />}
               <Link
                 to="/client/approvals/$projectId"
                 params={{ projectId: id }}
@@ -392,11 +405,7 @@ function ProjectDetailPage() {
           </section>
         )}
 
-        {!isSharedUser && <ProjectManagementSummary projectId={id} />}
-
-        {isSharedUser && (
-          <SharedProjectPortal project={project} projectId={id} profile={profile} />
-        )}
+        {isSharedUser && <SharedProjectPortal project={project} projectId={id} profile={profile} />}
 
         {!isSharedUser && (
           <>
@@ -595,7 +604,11 @@ function ProjectTodoDialog({ projectId }: { projectId: string }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || "Could not load project to-dos.");
-      return body as { todos: ProjectTodo[]; assignees: ProjectTodoAssignee[]; setupNeeded?: boolean };
+      return body as {
+        todos: ProjectTodo[];
+        assignees: ProjectTodoAssignee[];
+        setupNeeded?: boolean;
+      };
     },
   });
 
@@ -665,7 +678,11 @@ function ProjectTodoDialog({ projectId }: { projectId: string }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="md:col-span-2 space-y-1.5">
             <Label className="eyebrow">To-Do</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Confirm outlet layout before rough-in" />
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Confirm outlet layout before rough-in"
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="eyebrow">Assigned To</Label>
@@ -677,14 +694,19 @@ function ProjectTodoDialog({ projectId }: { projectId: string }) {
               <option value="">{isLoading ? "Loading..." : "Choose client / GC"}</option>
               {assignees.map((assignee) => (
                 <option key={assignee.id} value={assignee.id}>
-                  {(assignee.full_name || assignee.email) + (assignee.role === "Contractor" ? " - GC/Builder" : " - Client")}
+                  {(assignee.full_name || assignee.email) +
+                    (assignee.role === "Contractor" ? " - GC/Builder" : " - Client")}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1.5">
             <Label className="eyebrow">Priority</Label>
-            <select value={priority} onChange={(e) => setPriority(e.target.value)} className="h-10 w-full border border-input bg-background px-3 text-sm">
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className="h-10 w-full border border-input bg-background px-3 text-sm"
+            >
               <option value="normal">Normal</option>
               <option value="high">High</option>
               <option value="low">Low</option>
@@ -696,11 +718,20 @@ function ProjectTodoDialog({ projectId }: { projectId: string }) {
           </div>
           <div className="space-y-1.5">
             <Label className="eyebrow">Reminder Date</Label>
-            <Input type="date" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+            <Input
+              type="date"
+              value={reminderDate}
+              onChange={(e) => setReminderDate(e.target.value)}
+            />
           </div>
           <div className="md:col-span-2 space-y-1.5">
             <Label className="eyebrow">Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Add any context they need." />
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Add any context they need."
+            />
           </div>
         </div>
         <button
@@ -895,13 +926,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function ProjectInfoDialog({
-  project,
-  onSaved,
-}: {
-  project: Project;
-  onSaved: () => void;
-}) {
+function ProjectInfoDialog({ project, onSaved }: { project: Project; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -1074,24 +1099,16 @@ function ProjectInfoDialog({
   );
 }
 
-function ProjectAccessDialog({
-  project,
-  onSaved,
-}: {
-  project: Project;
-  onSaved: () => void;
-}) {
+function ProjectAccessDialog({ project, onSaved }: { project: Project; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     client_can_view_spec_book: project.client_can_view_spec_book,
     client_can_view_presentations: project.client_can_view_presentations,
     client_can_view_design_boards: project.client_can_view_design_boards,
-    client_can_download_design_board_pdf:
-      project.client_can_download_design_board_pdf ?? false,
+    client_can_download_design_board_pdf: project.client_can_download_design_board_pdf ?? false,
     client_can_view_construction_docs: project.client_can_view_construction_docs,
-    client_can_download_construction_docs:
-      project.client_can_download_construction_docs ?? false,
+    client_can_download_construction_docs: project.client_can_download_construction_docs ?? false,
     client_can_download_spec_book_pdf: project.client_can_download_spec_book_pdf ?? false,
     client_spec_show_pricing: project.client_spec_show_pricing,
     client_spec_show_links: project.client_spec_show_links,
@@ -1114,11 +1131,9 @@ function ProjectAccessDialog({
       client_can_view_spec_book: project.client_can_view_spec_book,
       client_can_view_presentations: project.client_can_view_presentations,
       client_can_view_design_boards: project.client_can_view_design_boards,
-      client_can_download_design_board_pdf:
-        project.client_can_download_design_board_pdf ?? false,
+      client_can_download_design_board_pdf: project.client_can_download_design_board_pdf ?? false,
       client_can_view_construction_docs: project.client_can_view_construction_docs,
-      client_can_download_construction_docs:
-        project.client_can_download_construction_docs ?? false,
+      client_can_download_construction_docs: project.client_can_download_construction_docs ?? false,
       client_can_download_spec_book_pdf: project.client_can_download_spec_book_pdf ?? false,
       client_spec_show_pricing: project.client_spec_show_pricing,
       client_spec_show_links: project.client_spec_show_links,
@@ -1177,32 +1192,112 @@ function ProjectAccessDialog({
             title="Client"
             description="Control what the client can open and what details they see in the spec book."
             rows={[
-              ["Spec Book Ready", form.client_can_view_spec_book, () => toggle("client_can_view_spec_book")],
-              ["Presentations Ready", form.client_can_view_presentations, () => toggle("client_can_view_presentations")],
-              ["Design Boards Ready", form.client_can_view_design_boards, () => toggle("client_can_view_design_boards")],
-              ["Can Download Design Board PDF", form.client_can_download_design_board_pdf, () => toggle("client_can_download_design_board_pdf")],
-              ["Construction Docs Ready", form.client_can_view_construction_docs, () => toggle("client_can_view_construction_docs")],
-              ["Can Download Construction Docs", form.client_can_download_construction_docs, () => toggle("client_can_download_construction_docs")],
-              ["Can Download Spec Book PDF", form.client_can_download_spec_book_pdf, () => toggle("client_can_download_spec_book_pdf")],
-              ["Spec Shows Pricing", form.client_spec_show_pricing, () => toggle("client_spec_show_pricing")],
-              ["Spec Shows Product Links", form.client_spec_show_links, () => toggle("client_spec_show_links")],
-              ["Spec Shows Ordering", form.client_spec_show_ordering, () => toggle("client_spec_show_ordering")],
+              [
+                "Spec Book Ready",
+                form.client_can_view_spec_book,
+                () => toggle("client_can_view_spec_book"),
+              ],
+              [
+                "Presentations Ready",
+                form.client_can_view_presentations,
+                () => toggle("client_can_view_presentations"),
+              ],
+              [
+                "Design Boards Ready",
+                form.client_can_view_design_boards,
+                () => toggle("client_can_view_design_boards"),
+              ],
+              [
+                "Can Download Design Board PDF",
+                form.client_can_download_design_board_pdf,
+                () => toggle("client_can_download_design_board_pdf"),
+              ],
+              [
+                "Construction Docs Ready",
+                form.client_can_view_construction_docs,
+                () => toggle("client_can_view_construction_docs"),
+              ],
+              [
+                "Can Download Construction Docs",
+                form.client_can_download_construction_docs,
+                () => toggle("client_can_download_construction_docs"),
+              ],
+              [
+                "Can Download Spec Book PDF",
+                form.client_can_download_spec_book_pdf,
+                () => toggle("client_can_download_spec_book_pdf"),
+              ],
+              [
+                "Spec Shows Pricing",
+                form.client_spec_show_pricing,
+                () => toggle("client_spec_show_pricing"),
+              ],
+              [
+                "Spec Shows Product Links",
+                form.client_spec_show_links,
+                () => toggle("client_spec_show_links"),
+              ],
+              [
+                "Spec Shows Ordering",
+                form.client_spec_show_ordering,
+                () => toggle("client_spec_show_ordering"),
+              ],
             ]}
           />
           <AccessRolePanel
             title="Builder / GC"
             description="Control when the builder can access project documents and whether the full spec is visible."
             rows={[
-              ["Spec Book Ready", form.contractor_can_view_spec_book, () => toggle("contractor_can_view_spec_book")],
-              ["Presentations Ready", form.contractor_can_view_presentations, () => toggle("contractor_can_view_presentations")],
-              ["Design Boards Ready", form.contractor_can_view_design_boards, () => toggle("contractor_can_view_design_boards")],
-              ["Can Download Design Board PDF", form.contractor_can_download_design_board_pdf, () => toggle("contractor_can_download_design_board_pdf")],
-              ["Construction Docs Ready", form.contractor_can_view_construction_docs, () => toggle("contractor_can_view_construction_docs")],
-              ["Can Download Spec Book PDF", form.contractor_can_download_spec_book_pdf, () => toggle("contractor_can_download_spec_book_pdf")],
-              ["Spec Shows Pricing", form.contractor_spec_show_pricing, () => toggle("contractor_spec_show_pricing")],
-              ["Spec Shows Product Links", form.contractor_spec_show_links, () => toggle("contractor_spec_show_links")],
-              ["Spec Shows Ordering", form.contractor_spec_show_ordering, () => toggle("contractor_spec_show_ordering")],
-              ["Can Update Ordering", form.contractor_spec_can_update_ordering, () => toggle("contractor_spec_can_update_ordering")],
+              [
+                "Spec Book Ready",
+                form.contractor_can_view_spec_book,
+                () => toggle("contractor_can_view_spec_book"),
+              ],
+              [
+                "Presentations Ready",
+                form.contractor_can_view_presentations,
+                () => toggle("contractor_can_view_presentations"),
+              ],
+              [
+                "Design Boards Ready",
+                form.contractor_can_view_design_boards,
+                () => toggle("contractor_can_view_design_boards"),
+              ],
+              [
+                "Can Download Design Board PDF",
+                form.contractor_can_download_design_board_pdf,
+                () => toggle("contractor_can_download_design_board_pdf"),
+              ],
+              [
+                "Construction Docs Ready",
+                form.contractor_can_view_construction_docs,
+                () => toggle("contractor_can_view_construction_docs"),
+              ],
+              [
+                "Can Download Spec Book PDF",
+                form.contractor_can_download_spec_book_pdf,
+                () => toggle("contractor_can_download_spec_book_pdf"),
+              ],
+              [
+                "Spec Shows Pricing",
+                form.contractor_spec_show_pricing,
+                () => toggle("contractor_spec_show_pricing"),
+              ],
+              [
+                "Spec Shows Product Links",
+                form.contractor_spec_show_links,
+                () => toggle("contractor_spec_show_links"),
+              ],
+              [
+                "Spec Shows Ordering",
+                form.contractor_spec_show_ordering,
+                () => toggle("contractor_spec_show_ordering"),
+              ],
+              [
+                "Can Update Ordering",
+                form.contractor_spec_can_update_ordering,
+                () => toggle("contractor_spec_can_update_ordering"),
+              ],
             ]}
           />
         </div>
@@ -1243,7 +1338,10 @@ function AccessRolePanel({
       <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
       <div className="mt-5 divide-y divide-border">
         {rows.map(([label, checked, onChange]) => (
-          <label key={label} className="flex cursor-pointer items-center justify-between gap-4 py-3 text-sm">
+          <label
+            key={label}
+            className="flex cursor-pointer items-center justify-between gap-4 py-3 text-sm"
+          >
             <span>{label}</span>
             <input
               type="checkbox"
@@ -1414,7 +1512,9 @@ function getAutomaticRoomCoverBoardPage(room: Room, pages: RoomCoverBoardPage[])
   const visibleElementCount = (page: RoomCoverBoardPage) =>
     page.elements.filter((element) => element.visible !== false).length;
   return (
-    pages.find((page) => page.hidden !== true && page.roomId === room.id && visibleElementCount(page) > 0) ??
+    pages.find(
+      (page) => page.hidden !== true && page.roomId === room.id && visibleElementCount(page) > 0,
+    ) ??
     pages.find(
       (page) =>
         page.hidden !== true &&
@@ -1460,7 +1560,12 @@ function RoomCoverBoardPreviewElement({ element }: { element: RoomCoverBoardElem
         className="absolute"
         style={{ left, top, width, height, transform, transformOrigin: "center center" }}
       >
-        <img src={src} alt={element.text || ""} className="h-full w-full object-contain" loading="lazy" />
+        <img
+          src={src}
+          alt={element.text || ""}
+          className="h-full w-full object-contain"
+          loading="lazy"
+        />
       </div>
     );
   }
@@ -1535,13 +1640,15 @@ function RoomCard({
       ? getAutomaticRoomCoverBoardPage(room, boardPages)
       : null;
   const selectedBoardPage = manualBoardPage ?? automaticBoardPage;
-  const heroUrl =
-    selectedBoardPage ? null : room.cover_image_url || renderingHero?.url || sketchupHero?.url || null;
+  const heroUrl = selectedBoardPage
+    ? null
+    : room.cover_image_url || renderingHero?.url || sketchupHero?.url || null;
   const roomBoardPages = boardPages.filter(
     (page) => page.roomId === room.id || page.id === selectedBoardPage?.id,
   );
   const roomApprovalStatus =
-    roomBoardPages.length > 0 && roomBoardPages.every((page) => page.roomApprovalStatus === "declined")
+    roomBoardPages.length > 0 &&
+    roomBoardPages.every((page) => page.roomApprovalStatus === "declined")
       ? "declined"
       : roomBoardPages.length > 0 &&
           roomBoardPages.every((page) => page.roomApprovalStatus === "approved")
@@ -1596,7 +1703,11 @@ function RoomCard({
     setSavingRoomDecision(true);
     try {
       const currentBoard = await db.getDesignBoard(projectId);
-      if (!currentBoard || !currentBoard.board_state || typeof currentBoard.board_state !== "object") {
+      if (
+        !currentBoard ||
+        !currentBoard.board_state ||
+        typeof currentBoard.board_state !== "object"
+      ) {
         throw new Error("Could not find this project's design board.");
       }
       const currentState = currentBoard.board_state as { pages?: unknown[] };
@@ -1624,7 +1735,14 @@ function RoomCard({
       const snapshotsByPageId = new Map<string, DeclinedBoardMaterialItem[]>();
       for (const item of staleItems) {
         if (!item.source_board_page_id) continue;
-        const { id: _id, created_at: _createdAt, updated_at: _updatedAt, product: _product, room_product: _roomProduct, ...snapshot } = item;
+        const {
+          id: _id,
+          created_at: _createdAt,
+          updated_at: _updatedAt,
+          product: _product,
+          room_product: _roomProduct,
+          ...snapshot
+        } = item;
         snapshotsByPageId.set(item.source_board_page_id, [
           ...(snapshotsByPageId.get(item.source_board_page_id) ?? []),
           snapshot,
@@ -1636,12 +1754,16 @@ function RoomCard({
         pages: currentState.pages.map((page) => {
           if (!page || typeof page !== "object") return page;
           const candidate = page as { id?: unknown };
-          if (typeof candidate.id !== "string" || !affectedPageIds.includes(candidate.id)) return page;
+          if (typeof candidate.id !== "string" || !affectedPageIds.includes(candidate.id))
+            return page;
           const nextPage = {
             ...page,
             hidden: decision === "declined",
             ...(decision === "declined"
-              ? { declinedMaterialItems: snapshotsByPageId.get((page as { id?: string }).id ?? "") ?? [] }
+              ? {
+                  declinedMaterialItems:
+                    snapshotsByPageId.get((page as { id?: string }).id ?? "") ?? [],
+                }
               : {}),
             ...(decision === "declined" ? { presentationVisible: false } : {}),
           };
@@ -1649,7 +1771,8 @@ function RoomCard({
             delete (nextPage as { roomApprovalStatus?: unknown }).roomApprovalStatus;
             delete (nextPage as { declinedMaterialItems?: unknown }).declinedMaterialItems;
           } else {
-            (nextPage as { roomApprovalStatus?: "approved" | "declined" }).roomApprovalStatus = decision;
+            (nextPage as { roomApprovalStatus?: "approved" | "declined" }).roomApprovalStatus =
+              decision;
           }
           return nextPage;
         }),
@@ -1734,7 +1857,8 @@ function RoomCard({
                     if (!product) return null;
                     const label =
                       (typeof boardElement.label === "string" && boardElement.label.trim()) ||
-                      (typeof boardElement.productName === "string" && boardElement.productName.trim()) ||
+                      (typeof boardElement.productName === "string" &&
+                        boardElement.productName.trim()) ||
                       product.name;
                     const finish =
                       (typeof boardElement.materialFinish === "string" &&
@@ -1788,8 +1912,12 @@ function RoomCard({
               )
             ).filter((snapshot): snapshot is DeclinedBoardMaterialItem => Boolean(snapshot));
         let nextSortOrder =
-          Math.max(0, ...materialItems.filter((item) => item.room_id === room.id).map((item) => item.sort_order)) +
-          1;
+          Math.max(
+            0,
+            ...materialItems
+              .filter((item) => item.room_id === room.id)
+              .map((item) => item.sort_order),
+          ) + 1;
         const existingSourceElementIds = new Set(
           materialItems
             .map((item) => item.source_board_element_id)
@@ -1806,7 +1934,9 @@ function RoomCard({
             sort_order: snapshot.sort_order > 0 ? snapshot.sort_order : nextSortOrder++,
           }));
         const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
-        const existingProductIds = new Set(roomProducts.map((roomProduct) => roomProduct.product_id));
+        const existingProductIds = new Set(
+          roomProducts.map((roomProduct) => roomProduct.product_id),
+        );
 
         for (const snapshot of snapshotsToRestore) {
           const restoredItem = { ...snapshot, not_needed: false };
@@ -1911,7 +2041,11 @@ function RoomCard({
               onClick={() => void setRoomDecision("approved")}
               disabled={savingRoomDecision || !roomBoardPages.length}
               className="inline-flex items-center gap-1 border border-emerald-700 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-45"
-              title={roomBoardPages.length ? "Keep this room option and show its design board" : "Assign a design board page to this room first"}
+              title={
+                roomBoardPages.length
+                  ? "Keep this room option and show its design board"
+                  : "Assign a design board page to this room first"
+              }
             >
               <CheckCircle2 className="h-3 w-3" /> Approve
             </button>
@@ -2350,7 +2484,11 @@ function CoverImageDialog({
           {currentUrl && (
             <div className="flex items-center gap-4">
               <div className="w-32 aspect-[4/3] bg-bone overflow-hidden border border-border">
-                <img src={normalizeSupabaseImageUrl(currentUrl)} alt="current cover" className="w-full h-full object-cover" />
+                <img
+                  src={normalizeSupabaseImageUrl(currentUrl)}
+                  alt="current cover"
+                  className="w-full h-full object-cover"
+                />
               </div>
               <button
                 onClick={() => save(null)}
@@ -2425,7 +2563,11 @@ export function NewProjectQuickNote() {
 function formatDate(value: string) {
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
 }
 
 // Required to satisfy any tooling that imports field/textarea/etc. unused

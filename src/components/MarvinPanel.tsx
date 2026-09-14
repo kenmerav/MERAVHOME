@@ -35,6 +35,7 @@ import type {
 import { toast } from "sonner";
 
 type MarvinTab = "briefing" | "chat" | "sources" | "review" | "settings";
+const MARVIN_SHARED_GMAIL = "marvinbotai@gmail.com";
 
 export function MarvinPanel({ currentEmail }: { currentEmail: string }) {
   const qc = useQueryClient();
@@ -514,8 +515,8 @@ function ChatView({
               <MessageSquareText className="mx-auto h-8 w-8 text-muted-foreground" />
               <h3 className="mt-4 font-display text-2xl">Ask Marvin about a project</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Answers use current Studio records plus confirmed emails, meetings, notes, and
-                files. Drafts are copy-only.
+                Marvin investigates current Studio records, emails, meetings, notes, and files.
+                Consequential answers receive a separate evidence check. Drafts are copy-only.
               </p>
             </div>
           )}
@@ -1422,12 +1423,20 @@ function SettingsView({
       integration.provider === "gmail" &&
       integration.account_email?.toLowerCase() === currentEmail.toLowerCase(),
   );
+  const sharedGmail = data.integrations.find(
+    (integration) =>
+      integration.provider === "gmail" &&
+      integration.account_email?.toLowerCase() === MARVIN_SHARED_GMAIL,
+  );
   const fathom = data.integrations.find((integration) => integration.provider === "fathom");
 
-  const connectGmail = async () => {
+  const connectGmail = async (accountEmail?: string) => {
     setBusy(true);
     try {
-      const body = await marvinRequest({ action: "gmail_connect" });
+      const body = await marvinRequest({
+        action: "gmail_connect",
+        ...(accountEmail ? { account_email: accountEmail } : {}),
+      });
       window.location.href = body.url;
     } catch (error) {
       toast.error(errorMessage(error));
@@ -1519,11 +1528,48 @@ function SettingsView({
               )}
               <button
                 type="button"
-                onClick={connectGmail}
+                onClick={() => connectGmail()}
                 disabled={busy}
                 className="border border-ink px-3 py-2 text-sm"
               >
                 {gmail ? "Reconnect" : "Connect Gmail"}
+              </button>
+            </div>
+          </div>
+        </section>
+        <section className="border-t border-border pt-4">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4" />
+            <h4 className="font-medium">Marvin shared inbox</h4>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Read-only access to {MARVIN_SHARED_GMAIL}. Scheduled Marvin runs use this inbox for
+            project matching and EA follow-ups.
+          </p>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <span className="text-xs">
+              {sharedGmail
+                ? `${sharedGmail.status} · ${sharedGmail.last_sync_at ? `last synced ${formatDate(sharedGmail.last_sync_at)}` : "not synced"}`
+                : "Not connected"}
+            </span>
+            <div className="flex gap-2">
+              {sharedGmail && (
+                <button
+                  type="button"
+                  onClick={() => disconnect(sharedGmail.id, "Marvin shared inbox")}
+                  disabled={busy}
+                  className="border border-border px-3 py-2 text-sm"
+                >
+                  Disconnect
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => connectGmail(MARVIN_SHARED_GMAIL)}
+                disabled={busy}
+                className="border border-ink px-3 py-2 text-sm"
+              >
+                {sharedGmail ? "Reconnect" : "Connect Marvin inbox"}
               </button>
             </div>
           </div>

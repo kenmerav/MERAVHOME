@@ -3,6 +3,18 @@
     {
       "path": "/api/marvin-cron",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/marvin-cron",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/marvin-cron",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/marvin-cron",
+      "schedule": "0 0 * * *"
     }
   ]
 }

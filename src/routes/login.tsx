@@ -22,16 +22,25 @@ function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-    setBusy(false);
-    if (signInError) {
-      setError(signInError.message);
-      return;
+    try {
+      const { error: signInError } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+        15000,
+      );
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+      navigate({ to: "/" });
+    } catch (signInError) {
+      console.warn("[Login] Sign-in did not finish.", signInError);
+      setError("Sign-in took too long. Please refresh the page and try again.");
+    } finally {
+      setBusy(false);
     }
-    navigate({ to: "/" });
   };
 
   return (
@@ -57,4 +66,14 @@ function LoginPage() {
       </form>
     </main>
   );
+}
+
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
+    Promise.resolve(promise)
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timeout));
+  });
 }
