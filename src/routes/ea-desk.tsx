@@ -97,7 +97,7 @@ type DocumentEvidenceItem = {
 function EaDeskPage() {
   const pageQueryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<
-    "agent" | "operations" | "morning" | "approvals" | "emails" | "projects" | "calendar"
+    "agent" | "morning" | "approvals" | "emails" | "projects" | "calendar"
   >("agent");
   const [task, setTask] = useState<EaTask | null>(null);
   const [reviewProject, setReviewProject] = useState<EaProject | null>(null);
@@ -208,12 +208,6 @@ function EaDeskPage() {
               onClick={() => setActiveTab("agent")}
             />
             <DeskTab
-              icon={Activity}
-              label="EA Operations"
-              active={activeTab === "operations"}
-              onClick={() => setActiveTab("operations")}
-            />
-            <DeskTab
               icon={LayoutDashboard}
               label="Morning desk"
               active={activeTab === "morning"}
@@ -254,20 +248,6 @@ function EaDeskPage() {
 
           {activeTab === "agent" && (
             <EaAgentWorkspace projects={data?.projects ?? []} loading={isLoading} />
-          )}
-
-          {activeTab === "operations" && (
-            <EaOperationsWorkspace
-              tasks={tasks}
-              memoryRules={data?.memoryRules ?? []}
-              loading={isLoading}
-              running={runningOperations}
-              onRun={runOperatingReview}
-              onOpen={openTask}
-              onMemorySaved={async () => {
-                await refetch();
-              }}
-            />
           )}
 
           {activeTab === "morning" && Boolean(data?.fathomReview?.length) && (
