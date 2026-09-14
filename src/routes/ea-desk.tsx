@@ -24,7 +24,6 @@ import {
   Send,
   Sparkles,
   Trash2,
-  Users,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -184,12 +183,6 @@ function EaDeskPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link
-                to="/people-vendors"
-                className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium"
-              >
-                <Users className="h-4 w-4" /> People & Vendors
-              </Link>
               <button
                 type="button"
                 onClick={refreshEmailActions}

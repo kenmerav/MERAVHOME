@@ -16,7 +16,6 @@ import {
   PanelLeftOpen,
   ReceiptText,
   Bell,
-  ContactRound,
   BriefcaseBusiness,
   CalendarDays,
 } from "lucide-react";
@@ -42,7 +41,6 @@ const nav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/ea-desk", label: "EA Desk", icon: BriefcaseBusiness },
   { to: "/projects", label: "Projects", icon: FolderOpen },
-  { to: "/people-vendors", label: "People & Vendors", icon: ContactRound },
   { to: "/catalog", label: "Product Catalog", icon: Library },
   { to: "/presentations", label: "Presentation Boards", icon: LayoutTemplate },
   { to: "/specbooks", label: "Spec Books", icon: BookOpen },
@@ -169,9 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const isEaWorkspace =
-      loc.pathname.startsWith("/ea-desk") ||
-      loc.pathname.startsWith("/people-vendors") ||
-      loc.pathname.endsWith("/operations");
+      loc.pathname.startsWith("/ea-desk") || loc.pathname.endsWith("/operations");
     if (!loadingAuth && isEaWorkspace && !canUseEaWorkspace(profile)) {
       navigate({ to: "/" });
     }
@@ -385,8 +381,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !canManageStudio(profile)) return null;
-            if ((to === "/ea-desk" || to === "/people-vendors") && !canUseEaWorkspace(profile))
-              return null;
+            if (to === "/ea-desk" && !canUseEaWorkspace(profile)) return null;
             if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -459,8 +454,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
-              if ((to === "/ea-desk" || to === "/people-vendors") && !canUseEaWorkspace(profile))
-                return null;
+              if (to === "/ea-desk" && !canUseEaWorkspace(profile)) return null;
               if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
