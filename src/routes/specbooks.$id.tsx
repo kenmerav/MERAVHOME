@@ -96,11 +96,11 @@ const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> =
   { key: "item", label: "Item" },
   { key: "cad", label: "CAD" },
   { key: "clientProductName", label: "Client Product Name" },
+  { key: "quantity", label: "Qty" },
   { key: "productName", label: "Product Name" },
   { key: "vendor", label: "Vendor" },
   { key: "finish", label: "Finish" },
   { key: "color", label: "Color" },
-  { key: "quantity", label: "Qty" },
   { key: "dimensions", label: "Dimensions" },
   { key: "sku", label: "SKU" },
   { key: "clientPrice", label: "Client Price" },
@@ -1160,6 +1160,7 @@ function spreadsheetCellForColumn({
           value={row.clientProductName}
           disabled={!canEditProducts}
           className="font-medium text-ink"
+          compactOnPrint
           onSave={(value) => onSaveMaterialText(row, "client_product_name", value)}
         />
       );
@@ -1168,6 +1169,7 @@ function spreadsheetCellForColumn({
         <EditableSpecTextCell
           value={row.productName}
           disabled={!canEditProducts}
+          compactOnPrint
           onSave={(value) => onSaveProductText(row, "name", value)}
         />
       );
@@ -1295,12 +1297,14 @@ function EditableSpecTextCell({
   onSave,
   className = "",
   inputMode,
+  compactOnPrint = false,
 }: {
   value: string;
   disabled?: boolean;
   onSave: (value: string) => Promise<void>;
   className?: string;
   inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
+  compactOnPrint?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -1324,8 +1328,8 @@ function EditableSpecTextCell({
         onClick={() => !disabled && setEditing(true)}
         className={`max-w-[180px] truncate text-left underline-offset-4 print:max-w-none ${
           disabled ? "" : "hover:text-ink hover:underline"
-        } ${className}`}
-        title={disabled ? undefined : "Click to edit"}
+        } ${compactOnPrint ? "spec-sheet-compact-print" : ""} ${className}`}
+        title={disabled ? value || undefined : "Click to edit"}
       >
         {value || "—"}
       </button>
@@ -1730,14 +1734,32 @@ function SpecCard({
             </span>
           )}
         </div>
-        <h3 className="font-display text-3xl leading-tight print:text-[22px]">{displayName}</h3>
+        <div className="flex items-start justify-between gap-5">
+          <h3
+            className={`min-w-0 break-words font-display leading-tight ${
+              displayName.length > 70
+                ? "text-2xl print:text-[16px]"
+                : displayName.length > 42
+                  ? "text-[1.65rem] print:text-[18px]"
+                  : "text-3xl print:text-[22px]"
+            }`}
+          >
+            {displayName}
+          </h3>
+          {item.quantity != null && (
+            <div className="shrink-0 border-l border-border pl-4 text-right print:pl-3">
+              <div className="eyebrow mb-1 print:mb-0">Qty</div>
+              <div className="font-display text-2xl leading-none print:text-lg">{item.quantity}</div>
+            </div>
+          )}
+        </div>
         {!hideInternalProductDetails && materialNeedsReselection(item) && (
           <div className="mt-2">
             <NeedsReselectionBadge />
           </div>
         )}
         {!hideInternalProductDetails && actualProductName(item, room) && (
-          <p className="text-sm text-muted-foreground mt-1 tracking-wide print:text-[10px] print:leading-snug">
+          <p className="spec-book-product-name text-sm text-muted-foreground mt-1 tracking-wide print:text-[9px] print:leading-snug">
             {actualProductName(item, room)}
           </p>
         )}
@@ -1752,7 +1774,6 @@ function SpecCard({
           {!hideInternalProductDetails && <Detail label="SKU" value={p?.sku} />}
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />
-          <Detail label="Quantity" value={item.quantity != null ? String(item.quantity) : null} />
           {showOrdering && <Detail label="Who Is Ordering" value={item.ordered_by} />}
           {showOrdering && <Detail label="Ordered" value={item.ordered ? "Yes" : "No"} />}
         </dl>

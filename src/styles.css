@@ -162,6 +162,16 @@
   .print\:hidden { display: none !important; }
   .print-page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
   img { break-inside: avoid; page-break-inside: avoid; }
+  .spec-book-product-name,
+  .spec-sheet-compact-print {
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    white-space: normal !important;
+    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
 
