@@ -42,44 +42,6 @@ export type CreateEaCalendarEventResult = {
 
 let cache: { expiresAt: number; pastDays: number; value: EaCalendarData } | null = null;
 
-const JXA = String.raw`
-function run(argv) {
-  const app = Application("Calendar");
-  const calendarName = String(argv[0] || "");
-  const days = Math.max(1, Math.min(60, Number(argv[1]) || 30));
-  const pastDays = Math.max(0, Math.min(60, Number(argv[2]) || 0));
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - pastDays);
-  const end = new Date(start.getTime() + (pastDays + days) * 86400000);
-  const calendar = app.calendars.byName(calendarName);
-  if (!calendar.exists()) return JSON.stringify({ calendar: calendarName, events: [] });
-  const events = calendar.events.whose({
-    _and: [
-      { startDate: { _greaterThanEquals: start } },
-      { startDate: { _lessThanEquals: end } }
-    ]
-  })();
-  const clean = [];
-  for (const event of events) {
-    try {
-      const value = event.properties();
-      clean.push({
-        id: String(value.uid || ""),
-        calendar: calendarName,
-        title: String(value.summary || "Busy"),
-        start_at: new Date(value.startDate).toISOString(),
-        end_at: new Date(value.endDate).toISOString(),
-        all_day: value.alldayEvent === true,
-        location: value.location ? String(value.location) : null,
-        url: value.url ? String(value.url) : null
-      });
-    } catch (_) {}
-  }
-  return JSON.stringify({ calendar: calendarName, events: clean });
-}
-`;
-
 const CREATE_EVENT_JXA = String.raw`
 function run(argv) {
   const app = Application("Calendar");
@@ -151,20 +113,95 @@ function run(argv) {
 }
 `;
 
-async function readCalendar(name: string, pastDays = 0) {
-  const { stdout } = await execFileAsync(
-    "/usr/bin/osascript",
-    ["-l", "JavaScript", "-e", JXA, "--", name, "30", String(pastDays)],
-    { timeout: 90_000, maxBuffer: 2 * 1024 * 1024 },
-  );
-  const parsed = JSON.parse(stdout || "{}");
-  return Array.isArray(parsed.events) ? (parsed.events as EaCalendarEvent[]) : [];
+const EVENTKIT_SWIFT = String.raw`
+import Foundation
+import EventKit
+
+struct CalendarEvent: Codable {
+  let id: String
+  let calendar: String
+  let title: String
+  let start_at: String
+  let end_at: String
+  let all_day: Bool
+  let location: String?
+  let url: String?
+}
+
+let store = EKEventStore()
+let permission = DispatchSemaphore(value: 0)
+var accessGranted = false
+var accessError: Error?
+
+if #available(macOS 14.0, *) {
+  store.requestFullAccessToEvents { granted, error in
+    accessGranted = granted
+    accessError = error
+    permission.signal()
+  }
+} else {
+  store.requestAccess(to: .event) { granted, error in
+    accessGranted = granted
+    accessError = error
+    permission.signal()
+  }
+}
+
+if permission.wait(timeout: .now() + 20) == .timedOut {
+  fputs("Apple Calendar access timed out.\n", stderr)
+  exit(2)
+}
+if !accessGranted {
+  fputs("Apple Calendar access denied: \(accessError?.localizedDescription ?? "permission required")\n", stderr)
+  exit(3)
+}
+
+let environment = ProcessInfo.processInfo.environment
+let days = max(1, min(60, Int(environment["MERAV_CALENDAR_DAYS"] ?? "30") ?? 30))
+let pastDays = max(0, min(60, Int(environment["MERAV_CALENDAR_PAST_DAYS"] ?? "0") ?? 0))
+let wantedNames = Set(["Katie", "Ken", "FAMILY"])
+let calendars = store.calendars(for: .event).filter { wantedNames.contains($0.title) }
+let startOfToday = Calendar.current.startOfDay(for: Date())
+let start = Calendar.current.date(byAdding: .day, value: -pastDays, to: startOfToday)!
+let end = Calendar.current.date(byAdding: .day, value: pastDays + days, to: start)!
+let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
+let formatter = ISO8601DateFormatter()
+formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+let events = store.events(matching: predicate).map { event in
+  CalendarEvent(
+    id: event.eventIdentifier ?? "",
+    calendar: event.calendar.title,
+    title: event.title ?? "Busy",
+    start_at: formatter.string(from: event.startDate),
+    end_at: formatter.string(from: event.endDate),
+    all_day: event.isAllDay,
+    location: event.location,
+    url: event.url?.absoluteString
+  )
+}.filter { !$0.id.isEmpty }
+
+let data = try JSONEncoder().encode(events)
+FileHandle.standardOutput.write(data)
+`;
+
+async function readCalendars(pastDays = 0) {
+  const { stdout } = await execFileAsync("/usr/bin/swift", ["-e", EVENTKIT_SWIFT], {
+    timeout: 30_000,
+    maxBuffer: 2 * 1024 * 1024,
+    env: {
+      ...process.env,
+      MERAV_CALENDAR_DAYS: "30",
+      MERAV_CALENDAR_PAST_DAYS: String(pastDays),
+    },
+  });
+  const parsed = JSON.parse(stdout || "[]");
+  return Array.isArray(parsed) ? (parsed as EaCalendarEvent[]) : [];
 }
 
 function calendarReadMessage(error: unknown) {
   const detail = error instanceof Error ? error.message : String(error || "");
-  if (/not authorized|not permitted|-1743/i.test(detail)) {
-    return "Allow your terminal or Studio to control Calendar in System Settings → Privacy & Security → Automation, then refresh again.";
+  if (/not authorized|not permitted|access denied|permission required|-1743/i.test(detail)) {
+    return "Allow your terminal or Studio to read calendars in System Settings → Privacy & Security → Calendars, then refresh again.";
   }
   if (/timed out|timeout|killed/i.test(detail)) {
     return "Apple Calendar took too long to respond. Open the Calendar app, then try Refresh calendars again.";
@@ -186,42 +223,17 @@ export async function loadAppleCalendar(force = false, pastDays = 0): Promise<Ea
     };
   }
   try {
-    const results = await Promise.allSettled(
-      CALENDAR_NAMES.map((name) => readCalendar(name, pastDays)),
-    );
-    const freshEvents = results
-      .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-      .filter((event) => event.id && event.start_at);
-    const failedCalendars = results.flatMap((result, index) =>
-      result.status === "rejected" ? [CALENDAR_NAMES[index]] : [],
-    );
-    const cachedEvents = cache?.value.events.filter((event) =>
-      failedCalendars.includes(event.calendar as (typeof CALENDAR_NAMES)[number]),
-    );
-    const events = [...freshEvents, ...(cachedEvents ?? [])].sort((left, right) =>
-      left.start_at.localeCompare(right.start_at),
-    );
-    if (failedCalendars.length === CALENDAR_NAMES.length && !cachedEvents?.length) {
-      throw results[0].status === "rejected" ? results[0].reason : new Error("Calendar failed.");
-    }
+    const events = (await readCalendars(pastDays)).filter((event) => event.id && event.start_at);
+    events.sort((left, right) => left.start_at.localeCompare(right.start_at));
     const value: EaCalendarData = {
       provider: "apple_calendar",
       calendars: [...CALENDAR_NAMES],
       events,
       refreshed_at: new Date().toISOString(),
       available: true,
-      ...(failedCalendars.length
-        ? {
-            message: `${failedCalendars
-              .map((name) => (name === "FAMILY" ? "Family" : name))
-              .join(
-                " and ",
-              )} did not finish refreshing. Showing the last successful events for that calendar.`,
-          }
-        : {}),
     };
     cache = {
-      expiresAt: Date.now() + (failedCalendars.length ? 30_000 : CACHE_MS),
+      expiresAt: Date.now() + CACHE_MS,
       pastDays,
       value,
     };
