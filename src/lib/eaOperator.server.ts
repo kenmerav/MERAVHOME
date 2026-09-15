@@ -6,6 +6,19 @@ import { normalizedEaTaskSignature, type EaResponsibilityKey } from "@/lib/eaOpe
 const admin = supabaseAdmin as any;
 const DAY_MS = 86_400_000;
 const ACTIVE_TASK_STATUSES = ["open", "ready", "in_progress", "waiting", "blocked"];
+const INVOICE_EVIDENCE_WINDOW_DAYS = 45;
+
+type InvoicePhase =
+  | "project_start"
+  | "design_presentation"
+  | "design_document_delivery"
+  | "project_completion";
+
+type InvoiceTrigger = {
+  phase: InvoicePhase;
+  occurredAt: string;
+  evidence: string;
+};
 
 type OperatorSignal = {
   key: string;
@@ -38,6 +51,141 @@ function asDate(value: unknown) {
 function daysAgo(value: unknown, now = Date.now()) {
   const date = asDate(value);
   return date ? Math.floor((now - date.getTime()) / DAY_MS) : null;
+}
+
+function addCalendarDays(value: string, days: number) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
+  return date.toISOString().slice(0, 10);
+}
+
+function phaseFromPaymentLabel(value: unknown): InvoicePhase | null {
+  const label = cleanMatchText(value).replace(/^phase \d+ /, "");
+  if (label.includes("project start")) return "project_start";
+  if (label.includes("design presentation")) return "design_presentation";
+  if (label.includes("design document")) return "design_document_delivery";
+  if (label.includes("project completion")) return "project_completion";
+  return null;
+}
+
+function phaseLabel(phase: InvoicePhase) {
+  if (phase === "project_start") return "Project Start";
+  if (phase === "design_presentation") return "Design Presentation";
+  if (phase === "design_document_delivery") return "Design Document Delivery";
+  return "Project Completion";
+}
+
+function sourceText(source: any, length = 12_000) {
+  return cleanMatchText(
+    [source.title, source.summary, String(source.body_text || "").slice(0, length)].join(" "),
+  );
+}
+
+function isRecentEvidence(value: unknown, notBefore: string | null, now: number) {
+  const date = asDate(value);
+  if (!date) return false;
+  if (date.getTime() > now) return false;
+  if ((daysAgo(date, now) ?? INVOICE_EVIDENCE_WINDOW_DAYS + 1) > INVOICE_EVIDENCE_WINDOW_DAYS)
+    return false;
+  return !notBefore || date.getTime() >= (asDate(notBefore)?.getTime() ?? 0);
+}
+
+function outboundInvoiceAlreadySent(phase: InvoicePhase, trigger: InvoiceTrigger, sources: any[]) {
+  const phasePattern =
+    phase === "project_start"
+      ? /project start|initial|deposit/
+      : phase === "design_presentation"
+        ? /design presentation/
+        : phase === "design_document_delivery"
+          ? /design document|construction document|construction drawing|drawing set|final plan/
+          : /project completion|final invoice/;
+  const triggerTime = asDate(trigger.occurredAt)?.getTime() ?? 0;
+  return sources.some((source) => {
+    if (source.source_type !== "email") return false;
+    if ((asDate(source.occurred_at)?.getTime() ?? 0) < triggerTime) return false;
+    const text = sourceText(source, 3_000);
+    return (
+      /invoice/.test(text) &&
+      phasePattern.test(text) &&
+      /attached|sent|sending|here is|here s|updated invoice|payment link/.test(text)
+    );
+  });
+}
+
+function invoiceTriggerForPhase(input: {
+  phase: InvoicePhase;
+  project: any;
+  sources: any[];
+  calendarEvents: EaCalendarEvent[];
+  notBefore: string | null;
+  now: number;
+}) {
+  const { phase, project, sources, calendarEvents, notBefore, now } = input;
+  if (phase === "project_start") {
+    const accepted = String(project.accepted_date || "");
+    if (!accepted || !isRecentEvidence(`${accepted}T12:00:00-07:00`, notBefore, now)) return null;
+    return {
+      phase,
+      occurredAt: `${accepted}T12:00:00-07:00`,
+      evidence: `Studio records the project start date as ${accepted}.`,
+    } satisfies InvoiceTrigger;
+  }
+
+  const candidates: InvoiceTrigger[] = [];
+  if (phase === "design_presentation") {
+    for (const event of calendarEvents) {
+      if (!isRecentEvidence(event.end_at, notBefore, now)) continue;
+      if (
+        !/(design presentation|presentation meeting|design review|design meeting)/i.test(
+          event.title,
+        )
+      )
+        continue;
+      candidates.push({
+        phase,
+        occurredAt: event.end_at,
+        evidence: `${event.calendar} calendar shows “${event.title}” ended ${phoenixDate(asDate(event.end_at) || new Date())}.`,
+      });
+    }
+  }
+
+  for (const source of sources) {
+    if (source.source_type !== "email") continue;
+    if (!isRecentEvidence(source.occurred_at, notBefore, now)) continue;
+    const text = sourceText(source);
+    const recentMessage = sourceText(source, 3_000);
+    let matches = false;
+    if (phase === "design_presentation") {
+      matches =
+        /design presentation|presentation meeting|design review/.test(text) &&
+        /presented|presentation complete|design approval|approved the design|thank you for (the|our) meeting|following (the|our) (meeting|presentation)|recap/.test(
+          recentMessage,
+        );
+    } else if (phase === "design_document_delivery") {
+      matches =
+        /design document|construction document|construction drawing|final drawing|final plan|drawing set|cd set/.test(
+          recentMessage,
+        ) &&
+        /attached|delivered|sending|sent|here are|please find/.test(recentMessage) &&
+        /@meravinteriors\.com$/i.test(String(source.author_email || ""));
+    } else if (phase === "project_completion") {
+      matches =
+        /project (is |has been )?(complete|completed)|completed the project|final installation (is )?complete/.test(
+          recentMessage,
+        ) && !/will be|expected|scheduled|target/.test(recentMessage);
+    }
+    if (!matches) continue;
+    candidates.push({
+      phase,
+      occurredAt: source.occurred_at,
+      evidence: `Email evidence: “${source.title || phaseLabel(phase)}” on ${phoenixDate(asDate(source.occurred_at) || new Date())}.`,
+    });
+  }
+
+  return (
+    candidates.sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))[0] ?? null
+  );
 }
 
 function cleanMatchText(value: unknown) {
@@ -193,7 +341,7 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
   const projectsResult = await admin
     .from("projects")
     .select(
-      "id,name,client_name,status,promised_completion_date,forecast_completion_date,health_override,health_override_reason",
+      "id,name,client_name,status,accepted_date,created_at,updated_at,promised_completion_date,forecast_completion_date,health_override,health_override_reason",
     )
     .neq("status", "Complete")
     .order("name");
@@ -215,6 +363,7 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     vendors,
     profiles,
     sources,
+    calendarNotifications,
   ] = await Promise.all([
     admin.from("ea_project_operations").select("*").in("project_id", projectIds),
     admin
@@ -236,10 +385,18 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     admin.from("user_profiles").select("id,email,full_name").eq("is_active", true),
     admin
       .from("marvin_sources")
-      .select("id,title,occurred_at,source_type,marvin_source_projects(project_id)")
+      .select(
+        "id,title,body_text,summary,author_email,occurred_at,source_type,marvin_source_projects(project_id)",
+      )
       .in("source_type", ["email", "fathom", "voice_memo", "note", "document"])
       .eq("review_status", "linked")
       .order("occurred_at", { ascending: false, nullsFirst: false })
+      .limit(2000),
+    admin
+      .from("studio_calendar_notifications")
+      .select("id,calendar_event_id,task_id,calendar_name,title,start_at,end_at,location")
+      .gte("end_at", new Date(now - INVOICE_EVIDENCE_WINDOW_DAYS * DAY_MS).toISOString())
+      .lte("end_at", new Date(now).toISOString())
       .limit(1000),
   ]);
   for (const result of [
@@ -253,6 +410,7 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     vendors,
     profiles,
     sources,
+    calendarNotifications,
   ]) {
     if (result.error) throw result.error;
   }
@@ -267,6 +425,15 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
         .limit(3000)
     : { data: [], error: null };
   if (roomProducts.error) throw roomProducts.error;
+  const invoiceIds = (invoices.data ?? []).map((invoice: any) => invoice.id);
+  const invoicePayments = invoiceIds.length
+    ? await admin
+        .from("financial_invoice_payments")
+        .select("*")
+        .in("invoice_id", invoiceIds)
+        .limit(2000)
+    : { data: [], error: null };
+  if (invoicePayments.error) throw invoicePayments.error;
   const roomProductIds = (roomProducts.data ?? []).map((item: any) => item.id);
   const procurement = roomProductIds.length
     ? await admin
@@ -313,6 +480,38 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
         ...(sourcesByProject.get(link.project_id) ?? []),
         source,
       ]);
+    }
+  }
+  const taskById = new Map((tasks.data ?? []).map((task: any) => [task.id, task]));
+  const calendar = await loadAppleCalendar(false, INVOICE_EVIDENCE_WINDOW_DAYS);
+  const calendarByProject = new Map<string, EaCalendarEvent[]>();
+  for (const notification of calendarNotifications.data ?? []) {
+    const task: any = taskById.get(notification.task_id);
+    if (!task?.project_id) continue;
+    const event: EaCalendarEvent = {
+      id: notification.calendar_event_id || notification.id,
+      calendar: notification.calendar_name,
+      title: notification.title,
+      start_at: notification.start_at,
+      end_at: notification.end_at,
+      all_day: false,
+      location: notification.location,
+      url: null,
+    };
+    calendarByProject.set(task.project_id, [
+      ...(calendarByProject.get(task.project_id) ?? []),
+      event,
+    ]);
+  }
+  if (calendar.available) {
+    for (const event of calendar.events) {
+      const end = asDate(event.end_at)?.getTime() ?? 0;
+      if (end > now || end < now - INVOICE_EVIDENCE_WINDOW_DAYS * DAY_MS) continue;
+      const project = projectForCalendarEvent(event, projects, operations.data ?? []);
+      if (!project) continue;
+      const existing = calendarByProject.get(project.id) ?? [];
+      if (existing.some((item) => item.id === event.id)) continue;
+      calendarByProject.set(project.id, [...existing, event]);
     }
   }
   const roomById = new Map((rooms.data ?? []).map((room: any) => [room.id, room]));
@@ -455,38 +654,55 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     });
   }
 
-  const balancesByProject = new Map<string, any[]>();
-  for (const invoice of invoices.data ?? []) {
-    if (Number(invoice.balance_due || 0) <= 0) continue;
-    balancesByProject.set(invoice.project_id, [
-      ...(balancesByProject.get(invoice.project_id) ?? []),
-      invoice,
-    ]);
-  }
-  for (const [projectId, outstanding] of balancesByProject) {
-    const project = projects.find((item: any) => item.id === projectId);
-    const total = outstanding.reduce((sum, invoice) => sum + Number(invoice.balance_due || 0), 0);
+  const invoiceById = new Map((invoices.data ?? []).map((invoice: any) => [invoice.id, invoice]));
+  for (const payment of invoicePayments.data ?? []) {
+    const phase = phaseFromPaymentLabel(payment.label);
+    if (!phase || payment.status === "paid" || Number(payment.amount || 0) <= 0) continue;
+    const invoice: any = invoiceById.get(payment.invoice_id);
+    const project = projects.find((item: any) => item.id === invoice?.project_id);
+    if (!project) continue;
+    const projectSources = sourcesByProject.get(project.id) ?? [];
+    const trigger = invoiceTriggerForPhase({
+      phase,
+      project,
+      sources: projectSources,
+      calendarEvents: calendarByProject.get(project.id) ?? [],
+      notBefore: invoice.invoice_date || project.accepted_date || project.created_at || null,
+      now,
+    });
+    if (!trigger) continue;
+    const triggerDate = phoenixDate(asDate(trigger.occurredAt) || new Date());
+    const dueDate = addCalendarDays(triggerDate, 1);
+    if (!dueDate || dueDate > today) continue;
+    if (outboundInvoiceAlreadySent(phase, trigger, projectSources)) continue;
+    const ownerName = phase === "project_start" ? "katie" : "ken";
+    const amount = Number(payment.amount || 0);
+    const displayAmount = amount.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    });
     signals.push({
-      key: `ea-agent:billing_admin:${projectId}`,
+      key: `ea-agent:invoice_due:${payment.id}`,
       category: "billing_admin",
-      projectId,
-      title: `Review outstanding invoice balance for ${project?.name || "project"}`,
-      notes: `${outstanding.length} invoice${outstanding.length === 1 ? " has" : "s have"} a recorded balance totaling $${total.toLocaleString("en-US", { maximumFractionDigits: 2 })}.`,
-      nextAction:
-        "Verify the balance and responsible follow-up with Ken, Katie, or the bookkeeper before preparing communication.",
-      dueDate: today,
-      priority: outstanding.some((invoice) => (daysAgo(invoice.invoice_date, now) ?? 0) >= 30)
-        ? "high"
-        : "normal",
+      projectId: project.id,
+      title: `Send ${phaseLabel(phase)} invoice for ${project.name}`,
+      notes: `${phaseLabel(phase)} payment scheduled for ${displayAmount}. ${trigger.evidence}`,
+      nextAction: `Prepare and send the ${phaseLabel(phase)} invoice. Do not verify whether the client paid; this task is only about issuing the invoice after the milestone.`,
+      dueDate,
+      priority: (daysAgo(`${dueDate}T12:00:00-07:00`, now) ?? 0) >= 3 ? "high" : "normal",
+      ownerId: profileByName.get(ownerName) || null,
       artifact: [
-        `INVOICE REVIEW — ${project?.name || "Project"}`,
+        `INVOICE DUE — ${project.name}`,
         "",
-        ...outstanding.map(
-          (invoice) =>
-            `• ${invoice.provider_name || invoice.file_name || "Invoice"} · ${invoice.invoice_date || "No date"} · balance $${Number(invoice.balance_due || 0).toLocaleString("en-US")}`,
-        ),
+        `• Phase: ${phaseLabel(phase)}`,
+        `• Scheduled amount: ${displayAmount}`,
+        `• Milestone occurred: ${triggerDate}`,
+        `• Invoice reminder due: ${dueDate}`,
+        `• Evidence: ${trigger.evidence}`,
+        `• Assigned to: ${phase === "project_start" ? "Katie" : "Ken"}`,
         "",
-        "INTERNAL ONLY — do not charge, pay, invoice, or contact anyone.",
+        "Prepare the invoice for human review and sending. The EA must never send it or contact the client automatically.",
       ].join("\n"),
     });
   }
@@ -555,7 +771,6 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     });
   }
 
-  const calendar = await loadAppleCalendar(false);
   if (calendar.available) {
     const cutoff = now + 48 * 60 * 60 * 1000;
     const travelCutoff = now + 7 * DAY_MS;

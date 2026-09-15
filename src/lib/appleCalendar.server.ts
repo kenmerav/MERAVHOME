@@ -40,16 +40,18 @@ export type CreateEaCalendarEventResult = {
   event: EaCalendarEvent;
 };
 
-let cache: { expiresAt: number; value: EaCalendarData } | null = null;
+let cache: { expiresAt: number; pastDays: number; value: EaCalendarData } | null = null;
 
 const JXA = String.raw`
 function run(argv) {
   const app = Application("Calendar");
   const calendarName = String(argv[0] || "");
   const days = Math.max(1, Math.min(60, Number(argv[1]) || 30));
+  const pastDays = Math.max(0, Math.min(60, Number(argv[2]) || 0));
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  const end = new Date(start.getTime() + days * 86400000);
+  start.setDate(start.getDate() - pastDays);
+  const end = new Date(start.getTime() + (pastDays + days) * 86400000);
   const calendar = app.calendars.byName(calendarName);
   if (!calendar.exists()) return JSON.stringify({ calendar: calendarName, events: [] });
   const events = calendar.events.whose({
@@ -149,10 +151,10 @@ function run(argv) {
 }
 `;
 
-async function readCalendar(name: string) {
+async function readCalendar(name: string, pastDays = 0) {
   const { stdout } = await execFileAsync(
     "/usr/bin/osascript",
-    ["-l", "JavaScript", "-e", JXA, "--", name, "30"],
+    ["-l", "JavaScript", "-e", JXA, "--", name, "30", String(pastDays)],
     { timeout: 90_000, maxBuffer: 2 * 1024 * 1024 },
   );
   const parsed = JSON.parse(stdout || "{}");
@@ -170,8 +172,9 @@ function calendarReadMessage(error: unknown) {
   return "Apple Calendar was temporarily unavailable. Open the Calendar app, then try Refresh calendars again.";
 }
 
-export async function loadAppleCalendar(force = false): Promise<EaCalendarData> {
-  if (!force && cache && cache.expiresAt > Date.now()) return cache.value;
+export async function loadAppleCalendar(force = false, pastDays = 0): Promise<EaCalendarData> {
+  if (!force && cache && cache.pastDays === pastDays && cache.expiresAt > Date.now())
+    return cache.value;
   if (process.platform !== "darwin") {
     return {
       provider: "apple_calendar",
@@ -183,7 +186,9 @@ export async function loadAppleCalendar(force = false): Promise<EaCalendarData> 
     };
   }
   try {
-    const results = await Promise.allSettled(CALENDAR_NAMES.map((name) => readCalendar(name)));
+    const results = await Promise.allSettled(
+      CALENDAR_NAMES.map((name) => readCalendar(name, pastDays)),
+    );
     const freshEvents = results
       .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
       .filter((event) => event.id && event.start_at);
@@ -209,17 +214,20 @@ export async function loadAppleCalendar(force = false): Promise<EaCalendarData> 
         ? {
             message: `${failedCalendars
               .map((name) => (name === "FAMILY" ? "Family" : name))
-              .join(" and ")} did not finish refreshing. Showing the last successful events for that calendar.`,
+              .join(
+                " and ",
+              )} did not finish refreshing. Showing the last successful events for that calendar.`,
           }
         : {}),
     };
     cache = {
       expiresAt: Date.now() + (failedCalendars.length ? 30_000 : CACHE_MS),
+      pastDays,
       value,
     };
     return value;
   } catch (error) {
-    if (cache?.value.events.length) {
+    if (cache?.pastDays === pastDays && cache.value.events.length) {
       return {
         ...cache.value,
         available: true,
