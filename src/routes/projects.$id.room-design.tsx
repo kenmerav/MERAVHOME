@@ -92,6 +92,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   mergeRoomDesignSelectionsIntoBoard,
   normalizeRoomDesignWorkflowState,
+  reconcileRoomDesignChecklist,
   roomDesignGeneratedPageCount,
   type RoomDesignWorkflowState,
 } from "@/lib/roomDesignWorkflow";
@@ -390,21 +391,24 @@ function createSavedRoomWorkflowDraft(
   roomId: string,
 ): RoomWorkflowDraft {
   const base = createRoomWorkflowDraft(roomName);
-  const normalized = normalizeRoomDesignWorkflowState(savedState, {
-    method: base.method,
-    stage: 0,
-    links: base.links,
-    linksRoomName: base.linksRoomName,
-    selections: base.selections,
-    conceptImageUrl: base.conceptPreview,
-    roomImageUrl: base.roomPreview,
-    floorPlanImageUrl: base.planPreview,
-    sketchupImageUrl: base.sketchupPreview,
-    completedRenderImageUrl: base.completedRenderPreview,
-    boardReady: base.boardReady,
-    renderReady: base.renderReady,
-    materialsSent: base.materialsSent,
-  });
+  const normalized = reconcileRoomDesignChecklist(
+    normalizeRoomDesignWorkflowState(savedState, {
+      method: base.method,
+      stage: 0,
+      links: base.links,
+      linksRoomName: base.linksRoomName,
+      selections: base.selections,
+      conceptImageUrl: base.conceptPreview,
+      roomImageUrl: base.roomPreview,
+      floorPlanImageUrl: base.planPreview,
+      sketchupImageUrl: base.sketchupPreview,
+      completedRenderImageUrl: base.completedRenderPreview,
+      boardReady: base.boardReady,
+      renderReady: base.renderReady,
+      materialsSent: base.materialsSent,
+    }),
+    roomName,
+  );
 
   return {
     method: normalized.method,

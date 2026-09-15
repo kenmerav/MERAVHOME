@@ -40,6 +40,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       boardPageId: message.boardPageId,
       destination: message.destination,
       roomId: message.roomId,
+      roomName: message.roomName,
       requiredItemKey: message.requiredItemKey,
       quantity: message.quantity,
       colorFinish: message.colorFinish,
@@ -104,23 +105,36 @@ async function sendCurrentTabToStudio(overrides = {}) {
 
 async function sendImageToStudio(info, tab, overrides = {}) {
   await updateProgress(8, "Starting MERAV import...");
-  const settings = await chrome.storage.sync.get([
-    "studioUrl",
-    "projectId",
-    "boardPageId",
-    "extensionToken",
-    "lastStudioProjectId",
-    "destinationByProject",
-    "roomByProject",
-    "itemByRoom",
-    "quantityByItem",
+  const [settings, localRoomSettings] = await Promise.all([
+    chrome.storage.sync.get([
+      "studioUrl",
+      "projectId",
+      "boardPageId",
+      "extensionToken",
+      "lastStudioProjectId",
+      "destinationByProject",
+      "roomByProject",
+      "roomNameByProject",
+      "itemByRoom",
+      "quantityByItem",
+    ]),
+    chrome.storage.local.get(["roomByProject", "roomNameByProject"]),
   ]);
   const studioUrl = normalizeStudioUrl(settings.studioUrl || DEFAULT_STUDIO_URL);
   const projectId = overrides.projectId || settings.projectId || settings.lastStudioProjectId;
   const destination =
     overrides.destination || settings.destinationByProject?.[projectId] || "design_board";
   const boardPageId = overrides.boardPageId || settings.boardPageId || "";
-  const roomId = overrides.roomId || settings.roomByProject?.[projectId] || "";
+  const roomByProject = {
+    ...(settings.roomByProject || {}),
+    ...(localRoomSettings.roomByProject || {}),
+  };
+  const roomNameByProject = {
+    ...(settings.roomNameByProject || {}),
+    ...(localRoomSettings.roomNameByProject || {}),
+  };
+  const roomId = overrides.roomId || roomByProject[projectId] || "";
+  const roomName = overrides.roomName || roomNameByProject[projectId] || "";
   const requiredItemKey = overrides.requiredItemKey || settings.itemByRoom?.[roomId] || "";
   const storedQuantity = settings.quantityByItem?.[`${roomId}:${requiredItemKey}`];
   const quantity = Number(overrides.quantity || storedQuantity || 1);
@@ -151,6 +165,7 @@ async function sendImageToStudio(info, tab, overrides = {}) {
     boardPageId,
     destination,
     roomId,
+    roomName,
     requiredItemKey,
     quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
     imageUrl: pageExtraction.imageUrl || info.srcUrl,

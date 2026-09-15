@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Send to MERAV Studio",
   "description": "Send product pages and product images directly to MERAV Studio.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "permissions": [
     "contextMenus",
     "storage",

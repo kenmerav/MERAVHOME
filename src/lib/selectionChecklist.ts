@@ -99,7 +99,7 @@ export const SELECTION_ROOM_TEMPLATES: SelectionRoomTemplate[] = [
       "Shower floor tile",
       "Shower system",
       "Shower drain",
-      "Freestanding tub",
+      "Tub",
       "Tub filler",
       "Toilet",
       "Mirror(s)",
@@ -186,7 +186,7 @@ export function classifyBoardGroup(...values: Array<string | null | undefined>):
     return "Hardware";
   }
   if (
-    /\b(sink|faucet|pot filler|drain|disposal|toilet|shower system|tub filler|freestanding tub|plumbing)\b/.test(
+    /\b(sink|faucet|pot filler|drain|disposal|toilet|shower system|tub|tub filler|freestanding tub|plumbing)\b/.test(
       text,
     )
   ) {

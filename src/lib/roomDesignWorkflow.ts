@@ -139,6 +139,105 @@ export function createDefaultRoomDesignWorkflowState(roomName: string): RoomDesi
   };
 }
 
+function normalizedCategory(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function roomDesignRoomNamesMatch(expectedRoomName: string, actualRoomName: string) {
+  return (
+    !expectedRoomName || normalizedCategory(expectedRoomName) === normalizedCategory(actualRoomName)
+  );
+}
+
+/** Adds the new Tub row without replacing a room's saved work or restoring intentionally removed rows. */
+export function reconcileRoomDesignChecklist(
+  state: RoomDesignWorkflowState,
+  roomName: string,
+): RoomDesignWorkflowState {
+  const isPrimaryBathroom = /primary.*bath/i.test(roomName);
+  const renamedLinks = state.links.map((link) =>
+    isPrimaryBathroom &&
+    (link.id === "freestanding-tub" || normalizedCategory(link.category) === "freestanding tub")
+      ? { ...link, category: "Tub", group: classifyBoardGroup("Tub") }
+      : link,
+  );
+  const categories = new Set(renamedLinks.map((link) => normalizedCategory(link.category)));
+  const ids = new Set(renamedLinks.map((link) => link.id));
+  const defaultTub = isPrimaryBathroom
+    ? createDefaultRoomDesignWorkflowState(roomName).links.find((link) => link.id === "tub")
+    : undefined;
+  const missingLinks =
+    defaultTub &&
+    !ids.has(defaultTub.id) &&
+    !categories.has(normalizedCategory(defaultTub.category))
+      ? [defaultTub]
+      : [];
+  const links = [...renamedLinks, ...missingLinks];
+  const linkBySelectionId = new Map(links.map((link) => [`link-${link.id}`, link]));
+  const selections = state.selections.map((selection) => {
+    const link = linkBySelectionId.get(selection.id);
+    return link && (selection.category !== link.category || selection.group !== link.group)
+      ? { ...selection, category: link.category, group: link.group }
+      : selection;
+  });
+
+  const renamed = renamedLinks.some((link, index) => link !== state.links[index]);
+  const selectionRenamed = selections.some(
+    (selection, index) => selection !== state.selections[index],
+  );
+  if (missingLinks.length === 0 && !renamed && !selectionRenamed) {
+    return state;
+  }
+  return {
+    ...state,
+    links,
+    selections,
+    linksRoomName: roomName || state.linksRoomName,
+  };
+}
+
+export function addCustomRoomDesignProductType({
+  state,
+  label,
+  itemId,
+}: {
+  state: RoomDesignWorkflowState;
+  label: string;
+  itemId: string;
+}) {
+  const category = label.trim().replace(/\s+/g, " ");
+  if (!category) throw new Error("Enter a product type name.");
+  if (category.length > 80) throw new Error("Product type names must be 80 characters or fewer.");
+
+  const existing = state.links.find(
+    (link) => normalizedCategory(link.category) === normalizedCategory(category),
+  );
+  if (existing) return { state, item: existing, added: false };
+  if (!/^custom-[a-z0-9-]+$/i.test(itemId)) throw new Error("Could not create the product type.");
+
+  const item: RoomDesignLink = {
+    id: itemId,
+    category,
+    url: "",
+    group: classifyBoardGroup(category),
+    quantity: 1,
+    notes: "",
+    custom: true,
+    saveToTemplate: false,
+  };
+  return {
+    state: {
+      ...state,
+      links: [...state.links, item],
+      boardReady: false,
+      renderReady: false,
+      updatedAt: new Date().toISOString(),
+    },
+    item,
+    added: true,
+  };
+}
+
 export function mergeExtensionProductIntoRoomDesignWorkflow({
   state,
   itemKey,

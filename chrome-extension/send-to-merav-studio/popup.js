@@ -12,18 +12,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderLocalRoomDesignPreview();
     return;
   }
-  settings = await chrome.storage.sync.get([
-    "studioUrl",
-    "projectId",
-    "boardPageId",
-    "boardPageByProject",
-    "extensionToken",
-    "lastStudioProjectId",
-    "destinationByProject",
-    "roomByProject",
-    "itemByRoom",
-    "quantityByItem",
+  const [syncedSettings, localRoomSettings] = await Promise.all([
+    chrome.storage.sync.get([
+      "studioUrl",
+      "projectId",
+      "boardPageId",
+      "boardPageByProject",
+      "extensionToken",
+      "lastStudioProjectId",
+      "destinationByProject",
+      "roomByProject",
+      "roomNameByProject",
+      "itemByRoom",
+      "quantityByItem",
+    ]),
+    chrome.storage.local.get(["roomByProject", "roomNameByProject"]),
   ]);
+  settings = {
+    ...syncedSettings,
+    roomByProject: {
+      ...(syncedSettings.roomByProject || {}),
+      ...(localRoomSettings.roomByProject || {}),
+    },
+    roomNameByProject: {
+      ...(syncedSettings.roomNameByProject || {}),
+      ...(localRoomSettings.roomNameByProject || {}),
+    },
+  };
   await loadProjects();
   await loadPriceQueue();
 });
@@ -170,7 +185,7 @@ function renderLocalRoomDesignPreview() {
       "Shower floor tile",
       "Shower system",
       "Shower drain",
-      "Freestanding tub",
+      "Tub",
       "Tub filler",
       "Toilet",
       "Mirror(s)",
@@ -205,7 +220,7 @@ function renderLocalRoomDesignPreview() {
   renderRequiredItems(roomDesignData.items, "island-pendants");
   restoreQuantity(roomDesignData.selectedRoomId, "island-pendants");
   document.querySelectorAll("button").forEach((button) => {
-    button.disabled = true;
+    button.disabled = !button.hasAttribute("data-preview-enabled");
   });
   setStatus("Local preview only — no Studio data will be changed.");
 }
@@ -253,10 +268,20 @@ document.getElementById("roomSelect").addEventListener("change", async (event) =
   }
   const projectId = document.getElementById("projectSelect").value;
   const roomId = event.target.value;
+  const roomName = event.target.selectedOptions?.[0]?.textContent?.trim() || "";
   const roomByProject = { ...(settings.roomByProject || {}) };
+  const roomNameByProject = { ...(settings.roomNameByProject || {}) };
   if (projectId) roomByProject[projectId] = roomId;
+  if (projectId) roomNameByProject[projectId] = roomName;
   settings.roomByProject = roomByProject;
-  await chrome.storage.sync.set({ roomByProject });
+  settings.roomNameByProject = roomNameByProject;
+  roomDesignData = null;
+  renderRequiredItems([], "");
+  setStatus(`Loading ${roomName}...`);
+  await Promise.all([
+    chrome.storage.sync.set({ roomByProject, roomNameByProject }),
+    chrome.storage.local.set({ roomByProject, roomNameByProject }),
+  ]);
   await loadRoomDesign(projectId, roomId);
 });
 
@@ -268,6 +293,25 @@ document.getElementById("requiredItemSelect").addEventListener("change", async (
   settings.itemByRoom = itemByRoom;
   await chrome.storage.sync.set({ itemByRoom });
   restoreQuantity(roomId, event.target.value);
+});
+
+document.getElementById("showAddProductType").addEventListener("click", () => {
+  const fields = document.getElementById("addProductTypeFields");
+  fields.hidden = false;
+  document.getElementById("newProductTypeInput").focus();
+});
+
+document.getElementById("cancelProductType").addEventListener("click", () => {
+  hideAddProductType();
+});
+
+document.getElementById("saveProductType").addEventListener("click", addProductType);
+document.getElementById("newProductTypeInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addProductType();
+  }
+  if (event.key === "Escape") hideAddProductType();
 });
 
 document.getElementById("quantityInput").addEventListener("change", async (event) => {
@@ -301,6 +345,8 @@ document.getElementById("send").addEventListener("click", async () => {
   const destination = document.getElementById("destinationSelect").value;
   const boardPageId = document.getElementById("boardPageSelect").value;
   const roomId = document.getElementById("roomSelect").value;
+  const roomName =
+    document.getElementById("roomSelect").selectedOptions?.[0]?.textContent?.trim() || "";
   const requiredItemKey = document.getElementById("requiredItemSelect").value;
   const quantity = Number(document.getElementById("quantityInput").value) || 1;
   const colorFinish = document.getElementById("colorFinishInput").value.trim();
@@ -317,6 +363,10 @@ document.getElementById("send").addEventListener("click", async () => {
     setStatus("Choose a room first.", true);
     return;
   }
+  if (destination === "room_design" && roomDesignData?.selectedRoomId !== roomId) {
+    setStatus("That room is still loading. Wait a moment and try again.", true);
+    return;
+  }
   if (destination === "room_design" && !requiredItemKey) {
     setStatus("Choose a product type first.", true);
     return;
@@ -331,6 +381,7 @@ document.getElementById("send").addEventListener("click", async () => {
       boardPageId,
       destination,
       roomId,
+      roomName,
       requiredItemKey,
       quantity,
       colorFinish,
@@ -566,11 +617,21 @@ async function loadRoomDesign(projectId, requestedRoomId = "", preferredItemId =
       ? rememberedItemId
       : (body.items || []).find((item) => !item.filled)?.id || body.items?.[0]?.id || "";
     renderRequiredItems(body.items || [], selectedItemId);
+    const selectedRoomName =
+      (body.rooms || []).find((room) => room.id === roomId)?.name || body.selectedRoomName || "";
     const roomByProject = { ...(settings.roomByProject || {}), [projectId]: roomId };
+    const roomNameByProject = {
+      ...(settings.roomNameByProject || {}),
+      [projectId]: selectedRoomName,
+    };
     const itemByRoom = { ...(settings.itemByRoom || {}), [roomId]: selectedItemId };
     settings.roomByProject = roomByProject;
+    settings.roomNameByProject = roomNameByProject;
     settings.itemByRoom = itemByRoom;
-    await chrome.storage.sync.set({ roomByProject, itemByRoom });
+    await Promise.all([
+      chrome.storage.sync.set({ roomByProject, roomNameByProject, itemByRoom }),
+      chrome.storage.local.set({ roomByProject, roomNameByProject }),
+    ]);
     restoreQuantity(roomId, selectedItemId);
     return true;
   } catch (error) {
@@ -620,6 +681,81 @@ function restoreQuantity(roomId, itemId) {
   const item = roomDesignData?.items?.find((candidate) => candidate.id === itemId);
   const remembered = settings.quantityByItem?.[`${roomId}:${itemId}`];
   document.getElementById("quantityInput").value = String(remembered || item?.quantity || 1);
+}
+
+function hideAddProductType() {
+  document.getElementById("addProductTypeFields").hidden = true;
+  document.getElementById("newProductTypeInput").value = "";
+}
+
+async function addProductType() {
+  const projectId = document.getElementById("projectSelect").value;
+  const roomId = document.getElementById("roomSelect").value;
+  const roomName =
+    document.getElementById("roomSelect").selectedOptions?.[0]?.textContent?.trim() || "";
+  const label = document.getElementById("newProductTypeInput").value.trim();
+  if (!roomId) return setStatus("Choose a room first.", true);
+  if (!LOCAL_ROOM_DESIGN_PREVIEW && roomDesignData?.selectedRoomId !== roomId) {
+    return setStatus("That room is still loading. Wait a moment and try again.", true);
+  }
+  if (!label) return setStatus("Enter a product type name.", true);
+
+  const existing = roomDesignData?.items?.find(
+    (item) => item.label.trim().toLowerCase() === label.toLowerCase(),
+  );
+  if (existing) {
+    renderRequiredItems(roomDesignData.items, existing.id);
+    restoreQuantity(roomId, existing.id);
+    hideAddProductType();
+    return setStatus(`${existing.label} is already in this room.`);
+  }
+
+  if (LOCAL_ROOM_DESIGN_PREVIEW) {
+    const item = {
+      id: `custom-preview-${Date.now()}`,
+      label,
+      filled: false,
+      productName: "",
+      quantity: 1,
+    };
+    roomDesignData.items.push(item);
+    roomDesignData.itemsByRoom[roomId] = roomDesignData.items;
+    renderRequiredItems(roomDesignData.items, item.id);
+    restoreQuantity(roomId, item.id);
+    hideAddProductType();
+    return setStatus(`${label} added to this preview room.`);
+  }
+
+  if (!projectId) return setStatus("Choose a project first.", true);
+  const saveButton = document.getElementById("saveProductType");
+  saveButton.disabled = true;
+  setStatus("Adding product type...");
+  try {
+    const studioUrl = normalizeStudioUrl(settings.studioUrl);
+    const response = await fetch(`${studioUrl}/api/extension/room-design`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.extensionToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ projectId, roomId, roomName, productTypeLabel: label }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.error) {
+      throw new Error(body.error || `Could not add product type (${response.status}).`);
+    }
+    hideAddProductType();
+    await loadRoomDesign(projectId, roomId, body.item?.id || "");
+    setStatus(
+      body.added
+        ? `${body.item.label} added to ${body.roomName || roomName}.`
+        : `${body.item.label} is already in ${body.roomName || roomName}.`,
+    );
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Could not add the product type.", true);
+  } finally {
+    saveButton.disabled = false;
+  }
 }
 
 async function loadBoardPages(projectId) {
