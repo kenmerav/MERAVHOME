@@ -546,14 +546,19 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     const openTasks = projectTasks.filter((task) => ACTIVE_TASK_STATUSES.includes(task.status));
     const projectMilestones = milestonesByProject.get(project.id) ?? [];
     const reasons: string[] = [];
-    if (project.promised_completion_date && project.promised_completion_date < today)
+    let hasProjectLevelException = false;
+    if (project.promised_completion_date && project.promised_completion_date < today) {
       reasons.push(`promised completion passed on ${project.promised_completion_date}`);
+      hasProjectLevelException = true;
+    }
     if (
       project.promised_completion_date &&
       project.forecast_completion_date &&
       project.forecast_completion_date > project.promised_completion_date
-    )
+    ) {
       reasons.push(`forecast ${project.forecast_completion_date} exceeds the promise`);
+      hasProjectLevelException = true;
+    }
     const overdueTasks = openTasks.filter((task) => task.due_date && task.due_date < today);
     if (overdueTasks.length)
       reasons.push(
@@ -566,15 +571,23 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
         milestone.target_date &&
         (daysAgo(milestone.target_date, now) ?? 0) >= 7,
     );
-    if (lateCritical.length)
+    if (lateCritical.length) {
       reasons.push(
         `${lateCritical.length} critical milestone${lateCritical.length === 1 ? " is" : "s are"} at least seven days late`,
       );
-    if (operation?.follow_up_date && operation.follow_up_date <= today)
+      hasProjectLevelException = true;
+    }
+    if (operation?.follow_up_date && operation.follow_up_date <= today) {
       reasons.push(`the project follow-up date arrived on ${operation.follow_up_date}`);
-    if (!openTasks.length && !operation?.waiting_party)
+      hasProjectLevelException = true;
+    }
+    if (!openTasks.length && !operation?.waiting_party) {
       reasons.push("the active project has no actionable next work recorded");
-    if (reasons.length) {
+      hasProjectLevelException = true;
+    }
+    // A concrete overdue task is already visible in the EA Desk. Do not add a vague
+    // "Own the next move" wrapper unless the project itself has a separate exception.
+    if (reasons.length && hasProjectLevelException) {
       signals.push({
         key: `ea-agent:commitments:${project.id}`,
         category: "commitments",

@@ -4601,9 +4601,17 @@ export async function syncEaEmailActions() {
   if (peopleError) throw peopleError;
   if (projectsError) throw projectsError;
   const today = phoenixDateKey();
+  // Fathom remains searchable project knowledge, but it no longer creates EA to-do items.
+  // Retire any legacy Fathom tasks that predate that operating rule.
+  const retiredFathom = await admin
+    .from("shared_project_todos")
+    .update({ status: "cancelled" })
+    .eq("source_type", "ea_fathom")
+    .not("status", "in", "(complete,cancelled)");
+  if (retiredFathom.error) throw retiredFathom.error;
   const { data: expiredCandidates, error: expiredCandidatesError } = await admin
     .from("shared_project_todos")
-    .select("id,title,due_date,source_type,source_key")
+    .select("id,title,notes,internal_notes,due_date,source_type,source_key")
     .in("source_type", ["ea_email", "ea_agent"])
     .not("status", "in", "(complete,cancelled)")
     .lt("due_date", today)
@@ -4613,6 +4621,7 @@ export async function syncEaEmailActions() {
     .filter(
       (task: any) =>
         isExpiredEventPreparation(task.title, task.due_date, today) ||
+        isUnsupportedMeetingOccurrenceCheck(task.title) ||
         (task.source_type === "ea_agent" &&
           String(task.source_key || "").startsWith("ea-agent:meeting_preparation:")),
     )
@@ -4700,7 +4709,9 @@ export async function syncEaEmailActions() {
         "Return only concrete, unfinished actions that MERAV needs to take, verify, chase, schedule, decide, or close.",
         "Some supplied messages have work_scope general_admin and project_id null. Keep travel, account administration, licensing, security, and similar internal operations in General Admin; never assign them to a client project.",
         "An acknowledgement is not completion. Mark an action complete only when the emails contain explicit completion evidence.",
-        "Consolidate repeated messages in the same thread into one current action. Ignore newsletters, receipts with no action, automated backups, Supabase notices, spam, design-board comments, and ordinary discussion.",
+        "Consolidate the same obligation into one current action even when it appears in different email threads for the same project. Choose the newest and clearest source_id for the consolidated action. Ignore newsletters, receipts with no action, automated backups, Supabase notices, spam, design-board comments, and ordinary discussion.",
+        "Do not create a task merely to verify whether a scheduled meeting, review, appointment, or call happened. A proposed or held time is not proof of an unfinished action. If a later message declines, replaces, or changes that meeting, use the latest plan and ignore the obsolete time. After a meeting date, create a task only for a specific outcome or deliverable that the email evidence says MERAV still owes.",
+        "Each task must name one concrete deliverable. Do not combine sending drawings with scheduling a later meeting; keep the immediate promised deliverable and create a separate scheduling task only when scheduling is actually due now.",
         "When a MERAV employee sent the latest email asking a client, GC, or vendor for information, the immediate action is waiting for that external reply. Set waiting_on to client, gc, or vendor as appropriate; do not tell the employee to resend or chase it immediately unless a stated follow-up date has arrived.",
         "If the latest email evidence says a project or request is paused, on hold, cancelled, or no longer moving forward, do not create an action for it.",
         "Never invent a due date, owner, project, or completion. The supplied project_id and work_scope are authoritative.",
@@ -4710,7 +4721,7 @@ export async function syncEaEmailActions() {
         "When missing information blocks the action, put the exact questions that must be answered in draft_response even if this email alone does not identify the recipient. A separate evidence-and-contact pass will find the best supplied person and route the draft.",
         "Every draft_response is an internal Studio draft only. Never claim an email was sent, a meeting was confirmed, an appointment was added, a purchase was made, or a decision was approved. For scheduling, state that Katie, Ken, and Family calendars must be checked before the draft is sent.",
         "If information is missing, the draft should ask the exact questions needed rather than guessing. Do not invent names, email addresses, dates, prices, approvals, or technical answers.",
-        "waiting_on must be one of employee, client, gc, vendor, or null. priority must be Low, Medium, High, or Urgent.",
+        "waiting_on must be one of employee, client, gc, vendor, or null. priority must be Low, Medium, High, or Urgent. Use High or Urgent only for an explicit overdue promise, a stated urgent deadline, or work that is clearly blocking another party; missing completion evidence by itself is not high priority.",
         "Return JSON only as an array of objects with source_id, work_scope, project_id, action_key, title, next_action, why_open, draft_response, owner_email, due_date, follow_up_date, waiting_on, priority, state, and completion_evidence.",
         "state must be open or complete. Dates must be YYYY-MM-DD or null.",
         `Today is ${phoenixDateKey()} in America/Phoenix.`,
@@ -4782,7 +4793,11 @@ export async function syncEaEmailActions() {
     const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(action.due_date || ""))
       ? String(action.due_date)
       : null;
-    if (isExpiredEventPreparation(title, dueDate, today)) continue;
+    if (
+      isExpiredEventPreparation(title, dueDate, today) ||
+      isUnsupportedMeetingOccurrenceCheck(title)
+    )
+      continue;
     const owner = employeeByEmail.get(String(action.owner_email || "").toLowerCase());
     const priority =
       action.priority === "Urgent" || action.priority === "High"
@@ -4858,7 +4873,7 @@ export async function syncEaEmailActions() {
   const includesGeneralAdmin = rows.some((row) => row.project_id == null);
   let existingQuery = admin
     .from("shared_project_todos")
-    .select("id,project_id,source_key,title,link_url,created_at,status")
+    .select("id,project_id,source_key,title,notes,internal_notes,link_url,created_at,status")
     .eq("source_type", "ea_email");
   if (rowProjectIds.length && includesGeneralAdmin) {
     existingQuery = existingQuery.or(
@@ -4881,8 +4896,8 @@ export async function syncEaEmailActions() {
       (candidate: any) =>
         candidate.source_key === row.source_key ||
         (candidate.project_id === row.project_id &&
-          candidate.link_url === row.link_url &&
-          tasksAreSimilar(candidate.title, row.title)),
+          ((candidate.link_url === row.link_url && tasksAreSimilar(candidate.title, row.title)) ||
+            taskObligationsOverlap(candidate, row))),
     );
     if (!matches.length) {
       newRows.push(row);
@@ -5190,6 +5205,23 @@ function tasksAreSimilar(left: string, right: string) {
   return intersection / union >= 0.33;
 }
 
+function taskObligationsOverlap(
+  left: { title?: string; notes?: string; internal_notes?: string },
+  right: { title?: string; notes?: string; internal_notes?: string },
+) {
+  const leftWords = normalizedTaskWords(
+    [left.title, left.notes, left.internal_notes].filter(Boolean).join(" "),
+  );
+  const rightWords = normalizedTaskWords(
+    [right.title, right.notes, right.internal_notes].filter(Boolean).join(" "),
+  );
+  if (leftWords.size < 4 || rightWords.size < 4) return false;
+  const intersection = Array.from(leftWords).filter((word) => rightWords.has(word)).length;
+  const union = new Set([...leftWords, ...rightWords]).size;
+  const smaller = Math.min(leftWords.size, rightWords.size);
+  return intersection / union >= 0.38 || intersection / smaller >= 0.68;
+}
+
 function isCompletedSchedule(title: string, dueDate: string | null, today: string) {
   return Boolean(dueDate && dueDate < today && /(attend|call|meet|meeting)/i.test(title));
 }
@@ -5200,6 +5232,14 @@ function isExpiredEventPreparation(title: string, dueDate: string | null, today:
     dueDate < today &&
     /\b(prepare for|prepare to attend|attend|join)\b/i.test(title) &&
     /\b(meeting|appointment|presentation|site visit|walkthrough|coffee|call)\b/i.test(title),
+  );
+}
+
+function isUnsupportedMeetingOccurrenceCheck(title: string) {
+  return (
+    /\b(verify|confirm|check)\b/i.test(title) &&
+    /\b(meeting|review|appointment|call)\b/i.test(title) &&
+    /\b(occurred|happened|took place)\b/i.test(title)
   );
 }
 
