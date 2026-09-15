@@ -89,8 +89,9 @@ export const EA_RESPONSIBILITIES: EaResponsibilityDefinition[] = [
     key: "billing_admin",
     label: "Invoices and billing",
     description:
-      "Track balances, possible billable work, deposits, reimbursements, and admin questions.",
-    automaticWork: "Creates internal balance reviews and never invoices, pays, or charges anyone.",
+      "Watch the project payment schedule and identify when the next invoice phase is earned.",
+    automaticWork:
+      "Reminds Katie at project start and Ken after a design presentation, design-document delivery, or project completion. It never sends an invoice or checks whether a client paid.",
   },
   {
     key: "travel_admin",

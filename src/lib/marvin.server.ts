@@ -5197,9 +5197,9 @@ function isCompletedSchedule(title: string, dueDate: string | null, today: strin
 function isExpiredEventPreparation(title: string, dueDate: string | null, today: string) {
   return Boolean(
     dueDate &&
-      dueDate < today &&
-      /\b(prepare for|prepare to attend|attend|join)\b/i.test(title) &&
-      /\b(meeting|appointment|presentation|site visit|walkthrough|coffee|call)\b/i.test(title),
+    dueDate < today &&
+    /\b(prepare for|prepare to attend|attend|join)\b/i.test(title) &&
+    /\b(meeting|appointment|presentation|site visit|walkthrough|coffee|call)\b/i.test(title),
   );
 }
 
@@ -5612,10 +5612,14 @@ export async function runMorningBriefings(force = false) {
     }
   };
   try {
+    // The internal EA review is the time-sensitive part of this scheduled run. Run it before
+    // source refreshes so a slow Gmail, Drive, Fathom, or indexing pass cannot prevent due
+    // reminders from being evaluated. Newly synced evidence is included in the next scheduled
+    // review (or immediately when someone uses Run full EA review in the EA Desk).
+    await runStep("EA operating review", () => runEaOperatingReview());
     await runStep("Inbox and Fathom sync", () => Promise.all([syncAllGmail(), syncFathom()]));
     await runStep("Source matching", () => refreshPendingSourceMatches());
     await runStep("EA email actions", () => syncEaEmailActions());
-    await runStep("EA operating review", () => runEaOperatingReview());
     for (const user of users ?? []) {
       await runStep(`Briefing for ${user.email || user.id}`, () =>
         generateBriefingForUser(user.id, true),
