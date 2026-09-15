@@ -760,3 +760,23 @@ function isMaterialSwatch(category: string) {
 export function isRoomDesignGeneratedPageId(value: string) {
   return value.startsWith(`${PAGE_PREFIX}:`);
 }
+
+export function roomDesignBoardDisplayLabel(element: {
+  id?: unknown;
+  label?: unknown;
+  productName?: unknown;
+  materialCategory?: unknown;
+}) {
+  const savedLabel = typeof element.label === "string" ? element.label.trim() : "";
+  const productName = typeof element.productName === "string" ? element.productName.trim() : "";
+  const materialCategory =
+    typeof element.materialCategory === "string" ? element.materialCategory.trim() : "";
+  const isGeneratedRoomDesignItem =
+    typeof element.id === "string" && element.id.startsWith(`${PAGE_PREFIX}:`);
+
+  // Room Design boards use the checklist type (for example, "Tub") as the
+  // presentation caption. Keep productName separate for Materials and specs.
+  return isGeneratedRoomDesignItem && materialCategory
+    ? materialCategory
+    : savedLabel || productName;
+}
