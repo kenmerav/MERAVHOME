@@ -114,6 +114,15 @@ function EaDeskPage() {
     staleTime: 5 * 60 * 1000,
   });
   const tasks = data?.tasks ?? [];
+  const inboxLastUpdated = useMemo(
+    () =>
+      data?.syncStatus.find(
+        (row) =>
+          row.provider === "gmail" &&
+          String(row.account_email || "").toLowerCase() === "marvinbotai@gmail.com",
+      )?.last_sync_at ?? null,
+    [data?.syncStatus],
+  );
   const openTasks = tasks.filter(
     (item) => !["complete", "cancelled", "suggested"].includes(item.status),
   );
@@ -182,7 +191,7 @@ function EaDeskPage() {
                 Studio action brief for {longDate(new Date())}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col items-start gap-2 lg:items-end">
               <button
                 type="button"
                 onClick={refreshEmailActions}
@@ -195,6 +204,15 @@ function EaDeskPage() {
                 />{" "}
                 Refresh inbox
               </button>
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                {refreshingEmailActions
+                  ? "Inbox updating now…"
+                  : inboxLastUpdated
+                    ? `Inbox last updated ${formatInboxLastUpdated(inboxLastUpdated)}`
+                    : isLoading
+                      ? "Checking inbox update time…"
+                      : "Inbox has not been updated yet"}
+              </p>
             </div>
           </div>
         </header>
@@ -3785,6 +3803,21 @@ function formatDateTime(value: string) {
     minute: "2-digit",
   });
 }
+
+function formatInboxLastUpdated(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "time unavailable";
+  const today = new Date();
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (date.toDateString() === today.toDateString()) return `today at ${time}`;
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function SyncCard({
   rows,
 }: {
