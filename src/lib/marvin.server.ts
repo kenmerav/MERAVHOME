@@ -4896,6 +4896,7 @@ export async function syncEaEmailActions() {
         completed_at: row.completed_at,
         waiting_on: row.waiting_on,
         link_url: row.link_url,
+        source_key: row.source_key,
       })
       .eq("id", primary.id)
       .select("id,project_id,source_key");
