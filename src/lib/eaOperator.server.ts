@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- this server-only operator spans legacy Studio tables. */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { loadAppleCalendar, type EaCalendarEvent } from "@/lib/appleCalendar.server";
-import { normalizedEaTaskSignature, type EaResponsibilityKey } from "@/lib/eaOperatingSystem";
+import { type EaResponsibilityKey } from "@/lib/eaOperatingSystem";
 
 const admin = supabaseAdmin as any;
 const DAY_MS = 86_400_000;
@@ -218,14 +218,6 @@ function projectForCalendarEvent(event: EaCalendarEvent, projects: any[], operat
   );
 }
 
-function weekKey(date = new Date()) {
-  const thursday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  thursday.setUTCDate(thursday.getUTCDate() + 4 - (thursday.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / DAY_MS + 1) / 7);
-  return `${thursday.getUTCFullYear()}-${String(week).padStart(2, "0")}`;
-}
-
 async function saveSignal(signal: OperatorSignal, createdBy: string | null) {
   const existingResult = await admin
     .from("shared_project_todos")
@@ -360,7 +352,6 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     invoices,
     documents,
     rooms,
-    vendors,
     profiles,
     sources,
     calendarNotifications,
@@ -381,7 +372,6 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     admin.from("financial_invoices").select("*").in("project_id", projectIds),
     admin.from("project_documents").select("*").in("project_id", projectIds),
     admin.from("rooms").select("id,name,project_id").in("project_id", projectIds),
-    admin.from("ea_vendor_profiles").select("*").neq("purchasing_route_status", "archived"),
     admin.from("user_profiles").select("id,email,full_name").eq("is_active", true),
     admin
       .from("marvin_sources")
@@ -407,7 +397,6 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     invoices,
     documents,
     rooms,
-    vendors,
     profiles,
     sources,
     calendarNotifications,
@@ -720,70 +709,6 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
     });
   }
 
-  for (const project of projects) {
-    const duplicates = new Map<string, any[]>();
-    for (const document of documentsByProject.get(project.id) ?? []) {
-      const key = cleanMatchText(
-        String(document.title || "").replace(/\b(rev|revision|v)\s*\d+\b/g, ""),
-      );
-      if (key) duplicates.set(key, [...(duplicates.get(key) ?? []), document]);
-    }
-    const repeated = [...duplicates.values()].filter((items) => items.length > 1);
-    if (!repeated.length) continue;
-    signals.push({
-      key: `ea-agent:project_files:${project.id}`,
-      category: "project_files",
-      projectId: project.id,
-      title: `Confirm current document revisions for ${project.name}`,
-      notes: `${repeated.length} document title group${repeated.length === 1 ? " has" : "s have"} multiple versions in Studio.`,
-      nextAction:
-        "Confirm the newest revision and label older files as superseded without deleting the originals.",
-      dueDate: today,
-      priority: "normal",
-      artifact: [
-        `PROJECT FILE REVIEW — ${project.name}`,
-        "",
-        ...repeated.flatMap((items) =>
-          items.map((item) => `• ${item.title} · ${String(item.created_at).slice(0, 10)}`),
-        ),
-        "",
-        "Preserve every source file. Confirm which revision is current before relying on it.",
-      ].join("\n"),
-    });
-  }
-
-  const unverifiedVendors = (vendors.data ?? []).filter(
-    (vendor: any) =>
-      vendor.purchasing_route_status !== "confirmed" ||
-      vendor.contact_verification_status !== "verified",
-  );
-  if (unverifiedVendors.length) {
-    signals.push({
-      key: "ea-agent:process_memory:vendor-directory",
-      category: "process_memory",
-      projectId: null,
-      title: "Verify MERAV vendor routes and contacts",
-      notes: `${unverifiedVendors.length} vendor record${unverifiedVendors.length === 1 ? " needs" : "s need"} a confirmed purchasing route or contact.`,
-      nextAction:
-        "Verify the most-used vendors first and record exactly who handles sales, service, samples, damages, and returns.",
-      dueDate: null,
-      priority: "normal",
-      ownerId: profileByName.get("brynn") || null,
-      artifact: [
-        "MERAV VENDOR MEMORY REVIEW",
-        "",
-        ...unverifiedVendors
-          .slice(0, 30)
-          .map(
-            (vendor: any) =>
-              `• ${vendor.supplier_company} — route ${vendor.purchasing_route_status}; contact ${vendor.contact_verification_status}`,
-          ),
-        "",
-        "Verified entries become reusable operating knowledge for future drafts and procurement reviews.",
-      ].join("\n"),
-    });
-  }
-
   if (calendar.available) {
     const cutoff = now + 48 * 60 * 60 * 1000;
     const travelCutoff = now + 7 * DAY_MS;
@@ -839,66 +764,6 @@ export async function runEaOperatingReview(createdBy: string | null = null) {
       });
     }
   }
-
-  const duplicateGroups = new Map<string, any[]>();
-  for (const task of (tasks.data ?? []).filter((item: any) =>
-    ACTIVE_TASK_STATUSES.includes(item.status),
-  )) {
-    const key = normalizedEaTaskSignature(task.project_id, task.title);
-    duplicateGroups.set(key, [...(duplicateGroups.get(key) ?? []), task]);
-  }
-  const duplicateTasks = [...duplicateGroups.values()].filter((items) => items.length > 1);
-  if (duplicateTasks.length) {
-    signals.push({
-      key: "ea-agent:quality_control:duplicate-tasks",
-      category: "quality_control",
-      projectId: null,
-      title: "Review possible duplicate open work",
-      notes: `${duplicateTasks.length} group${duplicateTasks.length === 1 ? " may" : "s may"} describe the same obligation.`,
-      nextAction:
-        "Compare the sources and keep one current task for each real obligation; do not remove distinct responsibilities.",
-      dueDate: today,
-      priority: "normal",
-      ownerId: null,
-      artifact: [
-        "EA QUALITY CONTROL — POSSIBLE DUPLICATES",
-        "",
-        ...duplicateTasks
-          .slice(0, 20)
-          .map((items) => `• ${items.map((item) => item.title).join(" / ")}`),
-        "",
-        "Review before closing anything. Similar wording is not proof that two commitments are identical.",
-      ].join("\n"),
-    });
-  }
-
-  const attentionProjects = signals.filter((signal) => signal.category === "commitments");
-  signals.push({
-    key: `ea-agent:quality_control:weekly-review:${weekKey()}`,
-    category: "quality_control",
-    projectId: null,
-    title: "Review the weekly MERAV operations brief",
-    notes: `${attentionProjects.length} active project${attentionProjects.length === 1 ? " needs" : "s need"} an ownership review this week.`,
-    nextAction:
-      "Review project exceptions, unanswered commitments, procurement, invoices, meetings, and directory gaps.",
-    dueDate: today,
-    priority: attentionProjects.some((item) => item.priority === "high") ? "high" : "normal",
-    ownerId: profileByName.get("katie") || profileByName.get("ken") || null,
-    artifact: [
-      `WEEKLY MERAV OPERATIONS REVIEW — ${weekKey()}`,
-      "",
-      `• Project follow-through exceptions: ${attentionProjects.length}`,
-      `• Procurement reviews: ${signals.filter((item) => item.category === "procurement").length}`,
-      `• Invoice reviews: ${signals.filter((item) => item.category === "billing_admin").length}`,
-      `• Upcoming meeting briefs: ${signals.filter((item) => item.category === "meeting_preparation").length}`,
-      `• Travel and admin preparations: ${signals.filter((item) => item.category === "travel_admin").length}`,
-      `• File and quality reviews: ${signals.filter((item) => ["project_files", "quality_control"].includes(item.category)).length}`,
-      "",
-      ...attentionProjects.slice(0, 20).map((item) => `• ${item.title} — ${item.notes}`),
-      "",
-      "INTERNAL ONLY — this is an operational review, not communication or approval.",
-    ].join("\n"),
-  });
 
   let created = 0;
   let updated = 0;

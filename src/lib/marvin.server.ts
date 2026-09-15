@@ -4711,8 +4711,10 @@ export async function syncEaEmailActions() {
         "An acknowledgement is not completion. Mark an action complete only when the emails contain explicit completion evidence.",
         "Consolidate the same obligation into one current action even when it appears in different email threads for the same project. Choose the newest and clearest source_id for the consolidated action. Ignore newsletters, receipts with no action, automated backups, Supabase notices, spam, design-board comments, and ordinary discussion.",
         "Do not create a task merely to verify whether a scheduled meeting, review, appointment, or call happened. A proposed or held time is not proof of an unfinished action. If a later message declines, replaces, or changes that meeting, use the latest plan and ignore the obsolete time. After a meeting date, create a task only for a specific outcome or deliverable that the email evidence says MERAV still owes.",
+        "If the thread contains an accepted appointment time, such as 'yes perfect,' 'sounds good,' 'I'll be there,' 'works for me,' or 'see you then,' treat that date and time as confirmed. Do not create a task to finalize, schedule, or confirm the meeting from older alternate availability in the same thread.",
         "Each task must name one concrete deliverable. Do not combine sending drawings with scheduling a later meeting; keep the immediate promised deliverable and create a separate scheduling task only when scheduling is actually due now.",
         "When a MERAV employee sent the latest email asking a client, GC, or vendor for information, the immediate action is waiting for that external reply. Set waiting_on to client, gc, or vendor as appropriate; do not tell the employee to resend or chase it immediately unless a stated follow-up date has arrived.",
+        "When the evidence clearly leaves the next move with a client, GC, or vendor, keep the item waiting even if their promise is the newest message. Use a stated follow-up date when one exists. Otherwise set follow_up_date seven calendar days after occurred_at, or fourteen days when the thread explicitly says there is no rush or to take their time.",
         "If the latest email evidence says a project or request is paused, on hold, cancelled, or no longer moving forward, do not create an action for it.",
         "Never invent a due date, owner, project, or completion. The supplied project_id and work_scope are authoritative.",
         "Use a short stable action_key describing the obligation, so the same action keeps the same key after another email arrives.",
@@ -4795,7 +4797,8 @@ export async function syncEaEmailActions() {
       : null;
     if (
       isExpiredEventPreparation(title, dueDate, today) ||
-      isUnsupportedMeetingOccurrenceCheck(title)
+      isUnsupportedMeetingOccurrenceCheck(title) ||
+      (isSchedulingAction(title) && sourceShowsConfirmedAppointment(source))
     )
       continue;
     const owner = employeeByEmail.get(String(action.owner_email || "").toLowerCase());
@@ -4810,11 +4813,8 @@ export async function syncEaEmailActions() {
     const waitingOn = ["employee", "client", "gc", "vendor"].includes(action.waiting_on)
       ? action.waiting_on
       : null;
-    const outboundWaiting =
-      !explicitCompletion &&
-      /@meravinteriors\.com$/i.test(String(source.author_email || "")) &&
-      ["client", "gc", "vendor"].includes(waitingOn);
-    const draftResponse = outboundWaiting
+    const externalWaiting = !explicitCompletion && ["client", "gc", "vendor"].includes(waitingOn);
+    const draftResponse = externalWaiting
       ? ""
       : String(action.draft_response || "")
           .trim()
@@ -4831,10 +4831,10 @@ export async function syncEaEmailActions() {
         .trim()
         .slice(0, 2000),
       due_date: dueDate,
-      priority: outboundWaiting ? "normal" : priority,
+      priority: externalWaiting ? "normal" : priority,
       status: explicitCompletion
         ? "complete"
-        : outboundWaiting
+        : externalWaiting
           ? "waiting"
           : owner
             ? "ready"
@@ -4851,9 +4851,7 @@ export async function syncEaEmailActions() {
       ea_next_action: String(action.next_action || title)
         .trim()
         .slice(0, 2000),
-      next_follow_up_date: /^\d{4}-\d{2}-\d{2}$/.test(String(action.follow_up_date || ""))
-        ? action.follow_up_date
-        : null,
+      next_follow_up_date: eaFollowUpDate(action, source, externalWaiting),
       completion_evidence: explicitCompletion
         ? String(action.completion_evidence).trim().slice(0, 2000)
         : null,
@@ -5241,6 +5239,37 @@ function isUnsupportedMeetingOccurrenceCheck(title: string) {
     /\b(meeting|review|appointment|call)\b/i.test(title) &&
     /\b(occurred|happened|took place)\b/i.test(title)
   );
+}
+
+function isSchedulingAction(title: string) {
+  return (
+    /\b(schedule|finalize|confirm|set|book|coordinate)\b/i.test(title) &&
+    /\b(meeting|review|appointment|call|presentation|site visit)\b/i.test(title)
+  );
+}
+
+function sourceShowsConfirmedAppointment(source: any) {
+  const text = String(source?.body_text || source?.summary || "").replace(/[’]/g, "'");
+  const hasAcceptance =
+    /\b(yes[,! ]+perfect|sounds good|i'll be there|works for me|see you then|confirmed for|we're confirmed)\b/i.test(
+      text,
+    );
+  const hasSpecificTime =
+    /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?)|\d{1,2}\s*(?:a\.?m\.?|p\.?m\.?))\b/i.test(
+      text,
+    );
+  return hasAcceptance && hasSpecificTime;
+}
+
+function eaFollowUpDate(action: any, source: any, externalWaiting: boolean) {
+  const supplied = String(action.follow_up_date || "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(supplied)) return supplied;
+  if (!externalWaiting) return null;
+  const occurredAt = new Date(source?.occurred_at || "");
+  if (Number.isNaN(occurredAt.getTime())) return null;
+  const text = String(source?.body_text || source?.summary || "");
+  const waitDays = /\b(no rush|take your time|no pressure)\b/i.test(text) ? 14 : 7;
+  return phoenixDateKey(new Date(occurredAt.getTime() + waitDays * 24 * 60 * 60 * 1000));
 }
 
 async function extractMeetingTaskProposals(sources: any[]) {
