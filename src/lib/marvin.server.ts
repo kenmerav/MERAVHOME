@@ -4600,6 +4600,30 @@ export async function syncEaEmailActions() {
   if (integrationError) throw integrationError;
   if (peopleError) throw peopleError;
   if (projectsError) throw projectsError;
+  const today = phoenixDateKey();
+  const { data: expiredCandidates, error: expiredCandidatesError } = await admin
+    .from("shared_project_todos")
+    .select("id,title,due_date,source_type,source_key")
+    .in("source_type", ["ea_email", "ea_agent"])
+    .not("status", "in", "(complete,cancelled)")
+    .lt("due_date", today)
+    .limit(500);
+  if (expiredCandidatesError) throw expiredCandidatesError;
+  const expiredIds = (expiredCandidates ?? [])
+    .filter(
+      (task: any) =>
+        isExpiredEventPreparation(task.title, task.due_date, today) ||
+        (task.source_type === "ea_agent" &&
+          String(task.source_key || "").startsWith("ea-agent:meeting_preparation:")),
+    )
+    .map((task: any) => task.id);
+  if (expiredIds.length) {
+    const expired = await admin
+      .from("shared_project_todos")
+      .update({ status: "complete", completed_at: new Date().toISOString() })
+      .in("id", expiredIds);
+    if (expired.error) throw expired.error;
+  }
   if (!integration) {
     return { created: 0, reviewed: 0, skipped: true, reason: "Shared Gmail is not connected." };
   }
@@ -4755,6 +4779,10 @@ export async function syncEaEmailActions() {
       generalAdmin ? "general-admin" : projectId,
       actionKey,
     );
+    const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(action.due_date || ""))
+      ? String(action.due_date)
+      : null;
+    if (isExpiredEventPreparation(title, dueDate, today)) continue;
     const owner = employeeByEmail.get(String(action.owner_email || "").toLowerCase());
     const priority =
       action.priority === "Urgent" || action.priority === "High"
@@ -4787,7 +4815,7 @@ export async function syncEaEmailActions() {
       internal_notes: String(action.next_action || title)
         .trim()
         .slice(0, 2000),
-      due_date: /^\d{4}-\d{2}-\d{2}$/.test(String(action.due_date || "")) ? action.due_date : null,
+      due_date: dueDate,
       priority: outboundWaiting ? "normal" : priority,
       status: explicitCompletion
         ? "complete"
@@ -5164,6 +5192,15 @@ function tasksAreSimilar(left: string, right: string) {
 
 function isCompletedSchedule(title: string, dueDate: string | null, today: string) {
   return Boolean(dueDate && dueDate < today && /(attend|call|meet|meeting)/i.test(title));
+}
+
+function isExpiredEventPreparation(title: string, dueDate: string | null, today: string) {
+  return Boolean(
+    dueDate &&
+      dueDate < today &&
+      /\b(prepare for|prepare to attend|attend|join)\b/i.test(title) &&
+      /\b(meeting|appointment|presentation|site visit|walkthrough|coffee|call)\b/i.test(title),
+  );
 }
 
 async function extractMeetingTaskProposals(sources: any[]) {
