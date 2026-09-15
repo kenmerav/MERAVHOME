@@ -352,8 +352,12 @@ describe("Room Design V2 checklist templates", () => {
     const primaryBathroom = SELECTION_ROOM_TEMPLATES.find(
       (room) => room.key === "primary-bathroom",
     )!;
+    const powderBathroom = SELECTION_ROOM_TEMPLATES.find(
+      (room) => room.key === "powder-bathroom",
+    )!;
     const kitchenLabels = kitchen.items.map((item) => item.label);
     const bathroomLabels = primaryBathroom.items.map((item) => item.label);
+    const powderBathroomLabels = powderBathroom.items.map((item) => item.label);
 
     expect(kitchenLabels).toEqual(
       expect.arrayContaining([
@@ -369,6 +373,9 @@ describe("Room Design V2 checklist templates", () => {
     expect(kitchenLabels).not.toContain("Doors + door hardware");
     expect(kitchenLabels).not.toContain("Cabinet + appliance layout");
     expect(bathroomLabels).toEqual(
+      expect.arrayContaining(["Baseboard", "Casing", "Doors", "Door hardware"]),
+    );
+    expect(powderBathroomLabels).toEqual(
       expect.arrayContaining(["Baseboard", "Casing", "Doors", "Door hardware"]),
     );
   });

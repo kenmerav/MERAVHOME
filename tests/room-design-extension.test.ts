@@ -39,6 +39,28 @@ describe("Room Design extension destination", () => {
     expect(labels).not.toContain("Freestanding tub");
   });
 
+  it("uses the full Powder Bathroom checklist for common room-name variants", () => {
+    for (const roomName of ["Powder Bathroom", "Powder Bath", "Powder Room"]) {
+      const labels = selectionItemsForRoom(roomName).map((item) => item.label);
+      expect(labels).toEqual(
+        expect.arrayContaining([
+          "Vanity layout",
+          "Countertop",
+          "Sink",
+          "Faucet",
+          "Toilet",
+          "Mirror",
+          "Vanity sconces",
+          "Exhaust fan",
+          "Toilet paper holder",
+          "Hand towel holder",
+        ]),
+      );
+      expect(labels).not.toContain("Tub");
+      expect(labels).not.toContain("Shower system");
+    }
+  });
+
   it("upgrades an older Primary Bathroom checklist without losing saved work", () => {
     const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
     const olderState = {
