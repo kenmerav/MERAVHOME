@@ -61,6 +61,42 @@ describe("Room Design extension destination", () => {
     }
   });
 
+  it("adds newly introduced Powder Bathroom rows without replacing saved work", () => {
+    const state = createDefaultRoomDesignWorkflowState("Powder Bathroom");
+    const olderState = {
+      ...state,
+      links: state.links
+        .filter(
+          (item) =>
+            ![
+              "Recessed lighting",
+              "Exhaust fan",
+              "Toilet paper holder",
+              "Hand towel holder",
+            ].includes(item.category),
+        )
+        .map((item) =>
+          item.category === "Faucet"
+            ? { ...item, url: "https://example.com/saved-faucet", notes: "Keep this choice" }
+            : item,
+        ),
+    };
+    const reconciled = reconcileRoomDesignChecklist(olderState, "Powder Bathroom");
+
+    expect(reconciled.links.find((item) => item.category === "Faucet")).toMatchObject({
+      url: "https://example.com/saved-faucet",
+      notes: "Keep this choice",
+    });
+    expect(reconciled.links.map((item) => item.category)).toEqual(
+      expect.arrayContaining([
+        "Recessed lighting",
+        "Exhaust fan",
+        "Toilet paper holder",
+        "Hand towel holder",
+      ]),
+    );
+  });
+
   it("upgrades an older Primary Bathroom checklist without losing saved work", () => {
     const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
     const olderState = {

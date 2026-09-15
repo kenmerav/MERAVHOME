@@ -149,12 +149,13 @@ export function roomDesignRoomNamesMatch(expectedRoomName: string, actualRoomNam
   );
 }
 
-/** Adds the new Tub row without replacing a room's saved work or restoring intentionally removed rows. */
+/** Adds newly introduced room rows without replacing saved work or restoring intentionally removed rows. */
 export function reconcileRoomDesignChecklist(
   state: RoomDesignWorkflowState,
   roomName: string,
 ): RoomDesignWorkflowState {
   const isPrimaryBathroom = /primary.*bath/i.test(roomName);
+  const isPowderBathroom = /powder.*(?:bath|room)/i.test(roomName);
   const renamedLinks = state.links.map((link) =>
     isPrimaryBathroom &&
     (link.id === "freestanding-tub" || normalizedCategory(link.category) === "freestanding tub")
@@ -166,12 +167,27 @@ export function reconcileRoomDesignChecklist(
   const defaultTub = isPrimaryBathroom
     ? createDefaultRoomDesignWorkflowState(roomName).links.find((link) => link.id === "tub")
     : undefined;
-  const missingLinks =
+  const missingTub =
     defaultTub &&
     !ids.has(defaultTub.id) &&
     !categories.has(normalizedCategory(defaultTub.category))
       ? [defaultTub]
       : [];
+  const newPowderBathroomCategories = new Set([
+    "Recessed lighting",
+    "Exhaust fan",
+    "Toilet paper holder",
+    "Hand towel holder",
+  ]);
+  const missingPowderBathroomLinks = isPowderBathroom
+    ? createDefaultRoomDesignWorkflowState(roomName).links.filter(
+        (link) =>
+          newPowderBathroomCategories.has(link.category) &&
+          !ids.has(link.id) &&
+          !categories.has(normalizedCategory(link.category)),
+      )
+    : [];
+  const missingLinks = [...missingTub, ...missingPowderBathroomLinks];
   const links = [...renamedLinks, ...missingLinks];
   const linkBySelectionId = new Map(links.map((link) => [`link-${link.id}`, link]));
   const selections = state.selections.map((selection) => {
