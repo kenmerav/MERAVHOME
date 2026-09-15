@@ -5560,12 +5560,29 @@ export async function runMorningBriefings(force = false) {
   });
   if (claimError?.code === "23505") return { skipped: true, date, hour };
   if (claimError) throw claimError;
+  const runStep = async <T>(label: string, operation: () => Promise<T>) => {
+    try {
+      return await operation();
+    } catch (error) {
+      const detail =
+        error instanceof Error
+          ? error.message
+          : error && typeof error === "object"
+            ? JSON.stringify(error)
+            : String(error || "Unknown error");
+      throw new Error(`${label} failed: ${detail}`);
+    }
+  };
   try {
-    await Promise.all([syncAllGmail(), syncFathom()]);
-    await refreshPendingSourceMatches();
-    await syncEaEmailActions();
-    await runEaOperatingReview();
-    for (const user of users ?? []) await generateBriefingForUser(user.id, true);
+    await runStep("Inbox and Fathom sync", () => Promise.all([syncAllGmail(), syncFathom()]));
+    await runStep("Source matching", () => refreshPendingSourceMatches());
+    await runStep("EA email actions", () => syncEaEmailActions());
+    await runStep("EA operating review", () => runEaOperatingReview());
+    for (const user of users ?? []) {
+      await runStep(`Briefing for ${user.email || user.id}`, () =>
+        generateBriefingForUser(user.id, true),
+      );
+    }
     await admin
       .from("marvin_sync_jobs")
       .update({ status: "complete", finished_at: new Date().toISOString() })
