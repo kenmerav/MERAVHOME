@@ -1,0 +1,9 @@
+# Local browser-test artifacts and temporary work are not part of Studio.
+.playwright-cli/
+tmp/
+
+# Keep local secrets and generated builds out of CLI source deployments.
+.env
+.env.*
+!.env.example
+.output/
