@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { json, runMorningBriefings } from "@/lib/marvin.server";
+import { json } from "@/lib/marvin.server";
+import { runMarvinCronStage } from "@/lib/marvinCron.server";
 
 export const Route = createFileRoute("/api/marvin-cron")({
   server: {
@@ -10,10 +11,10 @@ export const Route = createFileRoute("/api/marvin-cron")({
           return json({ error: "Unauthorized." }, 401);
         }
         try {
-          return json(await runMorningBriefings(false));
+          return json(await runMarvinCronStage("inbox"));
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : "Morning briefing failed.";
-          console.error("Marvin morning briefing failed", message);
+          const message = error instanceof Error ? error.message : "Scheduled inbox sync failed.";
+          console.error("Marvin scheduled inbox sync failed", message);
           return json({ error: message }, 500);
         }
       },

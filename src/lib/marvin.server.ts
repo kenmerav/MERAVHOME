@@ -21,7 +21,7 @@ import {
   normalizeProjectCaptureAnalysis,
   type ProjectCaptureAnalysis,
 } from "@/lib/projectCapture";
-import { runEaOperatingReview } from "@/lib/eaOperator.server";
+import { orderGmailMessageIds, takeScheduledGmailBatch } from "@/lib/marvinCron";
 import {
   buildDeterministicStudioFacts,
   formatVerificationBlock,
@@ -1233,13 +1233,18 @@ async function promotedDuplicate(contentHash: string, projectId: string, exclude
   };
 }
 
-async function syncBlueSkyDriveFolder(integration: any, token: string) {
+async function syncBlueSkyDriveFolder(
+  integration: any,
+  token: string,
+  options: { maxChangedFiles?: number } = {},
+) {
   if (!hasDriveReadScope(integration)) {
     return {
       processed: 0,
       promoted: 0,
       pending: 0,
       failed: 0,
+      deferred: 0,
       needsReconnect: true,
       error:
         "Reconnect marvinbotai@gmail.com once to grant read-only access to the Blue Sky Drive folder.",
@@ -1269,6 +1274,9 @@ async function syncBlueSkyDriveFolder(integration: any, token: string) {
     let promoted = 0;
     let pending = 0;
     let failed = 0;
+    let deferred = 0;
+    let changedFiles = 0;
+    const maxChangedFiles = Math.max(1, Math.min(100, options.maxChangedFiles ?? 100));
     for (const driveFile of listing.files ?? []) {
       try {
         const { data: existing } = await admin
@@ -1279,12 +1287,18 @@ async function syncBlueSkyDriveFolder(integration: any, token: string) {
           .maybeSingle();
         if (
           existing?.metadata?.drive_modified_time === driveFile.modifiedTime &&
-          existing?.metadata?.project_document_id
+          existing?.storage_path
         ) {
           processed += 1;
-          promoted += 1;
+          if (existing.metadata?.project_document_id) promoted += 1;
+          else pending += 1;
           continue;
         }
+        if (changedFiles >= maxChangedFiles) {
+          deferred += 1;
+          continue;
+        }
+        changedFiles += 1;
         const file = await drivePdfFile(driveFile.id, driveFile.name, token);
         const bytes = Buffer.from(await file.arrayBuffer());
         const contentHash = createHash("sha256").update(bytes).digest("hex");
@@ -1390,7 +1404,7 @@ async function syncBlueSkyDriveFolder(integration: any, token: string) {
         );
       }
     }
-    return { processed, promoted, pending, failed, needsReconnect: false, error: null };
+    return { processed, promoted, pending, failed, deferred, needsReconnect: false, error: null };
   } catch (driveError) {
     const message =
       driveError instanceof Error ? driveError.message : "Blue Sky Drive sync failed.";
@@ -1399,13 +1413,17 @@ async function syncBlueSkyDriveFolder(integration: any, token: string) {
       promoted: 0,
       pending: 0,
       failed: 1,
+      deferred: 0,
       needsReconnect: /insufficient|permission|scope|forbidden/i.test(message),
       error: message,
     };
   }
 }
 
-export async function syncGmailIntegration(integration: any) {
+export async function syncGmailIntegration(
+  integration: any,
+  options: { maxMessages?: number; syncDrive?: boolean } = {},
+) {
   const token = await gmailAccessToken(integration);
   const { data: projects } = await admin
     .from("projects")
@@ -1520,7 +1538,7 @@ export async function syncGmailIntegration(integration: any) {
     const attachmentMessageIds = (attachmentListing.messages ?? []).map(
       (message: any) => message.id,
     );
-    messageIds = Array.from(new Set([...attachmentMessageIds, ...messageIds]));
+    messageIds = Array.from(new Set([...messageIds, ...attachmentMessageIds]));
     nextMetadata.blue_sky_attachment_scan_at = new Date().toISOString();
     nextMetadata.blue_sky_attachment_message_count = attachmentMessageIds.length;
     nextMetadata.blue_sky_attachment_scan_error = null;
@@ -1538,13 +1556,16 @@ export async function syncGmailIntegration(integration: any) {
   const deferredMessageIds = Array.isArray(nextMetadata.gmail_deferred_message_ids)
     ? nextMetadata.gmail_deferred_message_ids.map(String).filter(Boolean)
     : [];
-  messageIds = Array.from(new Set([...retryMessageIds, ...deferredMessageIds, ...messageIds]));
-  const queuedMessageIds = messageIds.slice(150);
+  messageIds = orderGmailMessageIds(retryMessageIds, deferredMessageIds, messageIds);
+  const { selected: selectedMessageIds, deferred: queuedMessageIds } = takeScheduledGmailBatch(
+    messageIds,
+    options.maxMessages,
+  );
   let processed = 0;
   let failed = 0;
   const failedMessageIds: string[] = [];
   const processedThreadIds = new Set<string>();
-  for (const messageId of messageIds.slice(0, 150)) {
+  for (const messageId of selectedMessageIds) {
     try {
       const result = await ingestGmailMessage(integration, messageId, token, processedThreadIds);
       if (!result.skipped) {
@@ -1587,6 +1608,7 @@ export async function syncGmailIntegration(integration: any) {
     nextMetadata.gmail_index_coverage_complete = false;
   }
   const drive =
+    options.syncDrive !== false &&
     String(integration.account_email || "").toLowerCase() === MARVIN_SHARED_GMAIL
       ? await syncBlueSkyDriveFolder(integration, token)
       : null;
@@ -1597,6 +1619,7 @@ export async function syncGmailIntegration(integration: any) {
     nextMetadata.blue_sky_drive_promoted = drive.promoted;
     nextMetadata.blue_sky_drive_pending = drive.pending;
     nextMetadata.blue_sky_drive_failed = drive.failed;
+    nextMetadata.blue_sky_drive_deferred = drive.deferred;
     nextMetadata.blue_sky_drive_needs_reconnect = drive.needsReconnect;
     nextMetadata.blue_sky_drive_error = drive.error;
   }
@@ -1653,7 +1676,7 @@ export async function syncAllGmail(ownerUserId?: string) {
   return results;
 }
 
-export async function syncSharedGmail() {
+export async function syncSharedGmail(options: { maxMessages?: number; syncDrive?: boolean } = {}) {
   const { data: integration, error } = await admin
     .from("marvin_integrations")
     .select("*")
@@ -1663,7 +1686,52 @@ export async function syncSharedGmail() {
     .maybeSingle();
   if (error) throw error;
   if (!integration) throw new Error("marvinbotai@gmail.com is not connected.");
-  return syncGmailIntegration(integration);
+  return syncGmailIntegration(integration, options);
+}
+
+/** Keep Blue Sky Drive intake independent from the time-sensitive inbox cursor. */
+export async function syncSharedDriveFolder(options: { maxChangedFiles?: number } = {}) {
+  const { data: integration, error } = await admin
+    .from("marvin_integrations")
+    .select("*")
+    .eq("provider", "gmail")
+    .ilike("account_email", MARVIN_SHARED_GMAIL)
+    .eq("status", "connected")
+    .maybeSingle();
+  if (error) throw error;
+  if (!integration) throw new Error("marvinbotai@gmail.com is not connected.");
+  const token = await gmailAccessToken(integration);
+  const drive = await syncBlueSkyDriveFolder(integration, token, options);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: latest, error: readError } = await admin
+      .from("marvin_integrations")
+      .select("updated_at,metadata")
+      .eq("id", integration.id)
+      .single();
+    if (readError) throw readError;
+    const { data: saved, error: saveError } = await admin
+      .from("marvin_integrations")
+      .update({
+        metadata: {
+          ...(latest.metadata ?? {}),
+          blue_sky_drive_folder_id: BLUE_SKY_DRIVE_FOLDER_ID,
+          blue_sky_drive_last_sync_at: new Date().toISOString(),
+          blue_sky_drive_processed: drive.processed,
+          blue_sky_drive_promoted: drive.promoted,
+          blue_sky_drive_pending: drive.pending,
+          blue_sky_drive_failed: drive.failed,
+          blue_sky_drive_deferred: drive.deferred,
+          blue_sky_drive_needs_reconnect: drive.needsReconnect,
+          blue_sky_drive_error: drive.error,
+        },
+      })
+      .eq("id", integration.id)
+      .eq("updated_at", latest.updated_at)
+      .select("id");
+    if (saveError) throw saveError;
+    if (saved?.length) return drive;
+  }
+  throw new Error("The Gmail connection changed during the Drive scan. Retry next run.");
 }
 
 async function ensureVectorStore() {
@@ -2587,7 +2655,7 @@ async function applyAutomaticMeetingClassification(source: any, match: any) {
   return true;
 }
 
-export async function refreshPendingSourceMatches() {
+export async function refreshPendingSourceMatches(limit = 250) {
   const [{ data: sources, error }, context] = await Promise.all([
     admin
       .from("marvin_sources")
@@ -2596,7 +2664,7 @@ export async function refreshPendingSourceMatches() {
       )
       .eq("review_status", "pending")
       .order("occurred_at", { ascending: false, nullsFirst: false })
-      .limit(250),
+      .limit(Math.max(1, Math.min(250, limit))),
     projectMatchingContext(),
   ]);
   if (error) throw error;
@@ -3750,14 +3818,6 @@ function phoenixDateKey(date = new Date()) {
   }).format(date);
 }
 
-function phoenixHourKey(date = new Date()) {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Phoenix",
-    hour: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
 async function extractEmailCommitments(sources: any[]) {
   const emails = sources.filter((source) => source.source_type === "email").slice(0, 20);
   if (!emails.length || !process.env.OPENAI_API_KEY) return [] as any[];
@@ -4577,7 +4637,9 @@ export async function findEaTaskAnswer(taskId: string, projectId: string): Promi
 }
 
 /** Build the EA Morning Desk exclusively from the shared Marvin inbox. */
-export async function syncEaEmailActions() {
+export async function syncEaEmailActions(
+  options: { maxSources?: number; prepareDrafts?: boolean } = {},
+) {
   const [
     { data: integration, error: integrationError },
     { data: employees, error: peopleError },
@@ -4647,7 +4709,7 @@ export async function syncEaEmailActions() {
     .neq("review_status", "dismissed")
     .gte("occurred_at", new Date(Date.now() - 45 * 86400000).toISOString())
     .order("occurred_at", { ascending: false })
-    .limit(100);
+    .limit(Math.max(1, Math.min(100, options.maxSources ?? 100)));
   if (sourceError) throw sourceError;
   if (!sources?.length || !process.env.OPENAI_API_KEY) {
     return {
@@ -4986,7 +5048,11 @@ export async function syncEaEmailActions() {
   );
   let draftsPrepared = 0;
   let draftFailures = 0;
-  for (let index = 0; index < draftCandidates.length; index += 3) {
+  for (
+    let index = 0;
+    options.prepareDrafts !== false && index < draftCandidates.length;
+    index += 3
+  ) {
     const batch = draftCandidates.slice(index, index + 3);
     const results = await Promise.allSettled(
       batch.map((todo: any) =>
@@ -5013,6 +5079,49 @@ export async function syncEaEmailActions() {
     draftFailures,
     reviewed: sources.length,
     skipped: false,
+  };
+}
+
+/** Finish a few internal email drafts per run so source review never waits on draft research. */
+export async function preparePendingEaDrafts(limit = 3) {
+  const { data: contexts, error } = await admin
+    .from("ea_task_contexts")
+    .select("todo_id,created_at")
+    .eq("approval_status", "draft")
+    .eq("work_artifact_kind", "email_draft")
+    .order("created_at", { ascending: true })
+    .limit(100);
+  if (error) throw error;
+  const ids = (contexts ?? []).map((context: any) => context.todo_id).filter(Boolean);
+  if (!ids.length) return { considered: 0, prepared: 0, failed: 0 };
+  const { data: tasks, error: taskError } = await admin
+    .from("shared_project_todos")
+    .select("id,project_id,source_type,status")
+    .in("id", ids)
+    .eq("source_type", "ea_email")
+    .in("status", ["open", "ready", "in_progress", "blocked"]);
+  if (taskError) throw taskError;
+  const taskById = new Map((tasks ?? []).map((task: any) => [task.id, task]));
+  const candidates = (contexts ?? [])
+    .map((context: any) => taskById.get(context.todo_id))
+    .filter(Boolean)
+    .slice(0, Math.max(1, Math.min(10, limit))) as any[];
+  const results = await Promise.allSettled(
+    candidates.map((task) => prepareEaTaskDraft(task.id, task.project_id || null)),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error(
+        "Scheduled EA draft preparation failed",
+        result.reason instanceof Error ? result.reason.message : result.reason,
+      );
+    }
+  }
+  return {
+    considered: candidates.length,
+    prepared: results.filter((result) => result.status === "fulfilled" && result.value.drafted)
+      .length,
+    failed: results.filter((result) => result.status === "rejected").length,
   };
 }
 
@@ -5645,68 +5754,6 @@ export async function generateBriefingForUser(userId: string, force = false) {
     .select("*")
     .single();
   return ready;
-}
-
-export async function runMorningBriefings(force = false) {
-  const { data: users, error } = await admin
-    .from("user_profiles")
-    .select("id,email,is_active")
-    .in("email", MARVIN_USER_EMAILS)
-    .eq("is_active", true);
-  if (error) throw error;
-  const date = phoenixDateKey();
-  const hour = phoenixHourKey();
-  const idempotencyKey = force
-    ? `morning:${date}:manual:${crypto.randomUUID()}`
-    : `morning:${date}:${hour}`;
-  const { error: claimError } = await admin.from("marvin_sync_jobs").insert({
-    job_type: "morning_briefing",
-    idempotency_key: idempotencyKey,
-    status: "running",
-    started_at: new Date().toISOString(),
-  });
-  if (claimError?.code === "23505") return { skipped: true, date, hour };
-  if (claimError) throw claimError;
-  const runStep = async <T>(label: string, operation: () => Promise<T>) => {
-    try {
-      return await operation();
-    } catch (error) {
-      const detail =
-        error instanceof Error
-          ? error.message
-          : error && typeof error === "object"
-            ? JSON.stringify(error)
-            : String(error || "Unknown error");
-      throw new Error(`${label} failed: ${detail}`);
-    }
-  };
-  try {
-    // The internal EA review is the time-sensitive part of this scheduled run. Run it before
-    // source refreshes so a slow Gmail, Drive, Fathom, or indexing pass cannot prevent due
-    // reminders from being evaluated. Newly synced evidence is included in the next scheduled
-    // review (or immediately when someone uses Run full EA review in the EA Desk).
-    await runStep("EA operating review", () => runEaOperatingReview());
-    await runStep("Inbox and Fathom sync", () => Promise.all([syncAllGmail(), syncFathom()]));
-    await runStep("Source matching", () => refreshPendingSourceMatches());
-    await runStep("EA email actions", () => syncEaEmailActions());
-    for (const user of users ?? []) {
-      await runStep(`Briefing for ${user.email || user.id}`, () =>
-        generateBriefingForUser(user.id, true),
-      );
-    }
-    await admin
-      .from("marvin_sync_jobs")
-      .update({ status: "complete", finished_at: new Date().toISOString() })
-      .eq("idempotency_key", idempotencyKey);
-    return { skipped: false, date, hour, users: users?.length ?? 0 };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Morning briefing failed.";
-    await admin
-      .from("marvin_sync_jobs")
-      .update({ status: "failed", error: message, finished_at: new Date().toISOString() })
-      .eq("idempotency_key", idempotencyKey);
-    throw error;
-  }
 }
 
 export async function approveSuggestion(access: MarvinAccess, body: any) {

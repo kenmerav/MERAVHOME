@@ -15,6 +15,114 @@
     {
       "path": "/api/marvin-cron",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/fathom",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/fathom",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/fathom",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/fathom",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/review",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/review",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/review",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/review",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drive",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drive",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drive",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drive",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/matching",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/matching",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/matching",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/matching",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/actions",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/actions",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/actions",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/actions",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drafts",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drafts",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drafts",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/drafts",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/briefing-ken",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/briefing-katie",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/marvin-cron/briefing-brynn",
+      "schedule": "0 16 * * *"
     }
   ]
 }

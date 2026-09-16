@@ -101,6 +101,7 @@ import { Route as ApiQuickbooksDisconnectRouteImport } from './routes/api/quickb
 import { Route as ApiQuickbooksCustomersRouteImport } from './routes/api/quickbooks/customers'
 import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
 import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
+import { Route as ApiMarvinCronStageRouteImport } from './routes/api/marvin-cron.$stage'
 import { Route as ApiExtensionRoomDesignRouteImport } from './routes/api/extension/room-design'
 import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
 import { Route as ApiExtensionPricesRouteImport } from './routes/api/extension/prices'
@@ -588,6 +589,11 @@ const ApiQuickbooksCallbackRoute = ApiQuickbooksCallbackRouteImport.update({
   path: '/api/quickbooks/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMarvinCronStageRoute = ApiMarvinCronStageRouteImport.update({
+  id: '/$stage',
+  path: '/$stage',
+  getParentRoute: () => ApiMarvinCronRoute,
+} as any)
 const ApiExtensionRoomDesignRoute = ApiExtensionRoomDesignRouteImport.update({
   id: '/api/extension/room-design',
   path: '/api/extension/room-design',
@@ -656,7 +662,7 @@ export interface FileRoutesByFullPath {
   '/api/import-rendering-pdf': typeof ApiImportRenderingPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/marvin': typeof ApiMarvinRoute
-  '/api/marvin-cron': typeof ApiMarvinCronRoute
+  '/api/marvin-cron': typeof ApiMarvinCronRouteWithChildren
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
@@ -703,6 +709,7 @@ export interface FileRoutesByFullPath {
   '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/extension/room-design': typeof ApiExtensionRoomDesignRoute
+  '/api/marvin-cron/$stage': typeof ApiMarvinCronStageRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
@@ -757,7 +764,7 @@ export interface FileRoutesByTo {
   '/api/import-rendering-pdf': typeof ApiImportRenderingPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/marvin': typeof ApiMarvinRoute
-  '/api/marvin-cron': typeof ApiMarvinCronRoute
+  '/api/marvin-cron': typeof ApiMarvinCronRouteWithChildren
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
@@ -804,6 +811,7 @@ export interface FileRoutesByTo {
   '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/extension/room-design': typeof ApiExtensionRoomDesignRoute
+  '/api/marvin-cron/$stage': typeof ApiMarvinCronStageRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
@@ -859,7 +867,7 @@ export interface FileRoutesById {
   '/api/import-rendering-pdf': typeof ApiImportRenderingPdfRoute
   '/api/mark-financial-payment-due': typeof ApiMarkFinancialPaymentDueRoute
   '/api/marvin': typeof ApiMarvinRoute
-  '/api/marvin-cron': typeof ApiMarvinCronRoute
+  '/api/marvin-cron': typeof ApiMarvinCronRouteWithChildren
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
@@ -906,6 +914,7 @@ export interface FileRoutesById {
   '/api/extension/prices': typeof ApiExtensionPricesRoute
   '/api/extension/projects': typeof ApiExtensionProjectsRoute
   '/api/extension/room-design': typeof ApiExtensionRoomDesignRoute
+  '/api/marvin-cron/$stage': typeof ApiMarvinCronStageRoute
   '/api/quickbooks/callback': typeof ApiQuickbooksCallbackRoute
   '/api/quickbooks/connect-url': typeof ApiQuickbooksConnectUrlRoute
   '/api/quickbooks/customers': typeof ApiQuickbooksCustomersRoute
@@ -1009,6 +1018,7 @@ export interface FileRouteTypes {
     | '/api/extension/prices'
     | '/api/extension/projects'
     | '/api/extension/room-design'
+    | '/api/marvin-cron/$stage'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
@@ -1110,6 +1120,7 @@ export interface FileRouteTypes {
     | '/api/extension/prices'
     | '/api/extension/projects'
     | '/api/extension/room-design'
+    | '/api/marvin-cron/$stage'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
@@ -1211,6 +1222,7 @@ export interface FileRouteTypes {
     | '/api/extension/prices'
     | '/api/extension/projects'
     | '/api/extension/room-design'
+    | '/api/marvin-cron/$stage'
     | '/api/quickbooks/callback'
     | '/api/quickbooks/connect-url'
     | '/api/quickbooks/customers'
@@ -1266,7 +1278,7 @@ export interface RootRouteChildren {
   ApiImportRenderingPdfRoute: typeof ApiImportRenderingPdfRoute
   ApiMarkFinancialPaymentDueRoute: typeof ApiMarkFinancialPaymentDueRoute
   ApiMarvinRoute: typeof ApiMarvinRoute
-  ApiMarvinCronRoute: typeof ApiMarvinCronRoute
+  ApiMarvinCronRoute: typeof ApiMarvinCronRouteWithChildren
   ApiMarvinFathomWebhookRoute: typeof ApiMarvinFathomWebhookRoute
   ApiMarvinGmailCallbackRoute: typeof ApiMarvinGmailCallbackRoute
   ApiMarvinUploadRoute: typeof ApiMarvinUploadRoute
@@ -1984,6 +1996,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiQuickbooksCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/marvin-cron/$stage': {
+      id: '/api/marvin-cron/$stage'
+      path: '/$stage'
+      fullPath: '/api/marvin-cron/$stage'
+      preLoaderRoute: typeof ApiMarvinCronStageRouteImport
+      parentRoute: typeof ApiMarvinCronRoute
+    }
     '/api/extension/room-design': {
       id: '/api/extension/room-design'
       path: '/api/extension/room-design'
@@ -2036,6 +2055,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ApiMarvinCronRouteChildren {
+  ApiMarvinCronStageRoute: typeof ApiMarvinCronStageRoute
+}
+
+const ApiMarvinCronRouteChildren: ApiMarvinCronRouteChildren = {
+  ApiMarvinCronStageRoute: ApiMarvinCronStageRoute,
+}
+
+const ApiMarvinCronRouteWithChildren = ApiMarvinCronRoute._addFileChildren(
+  ApiMarvinCronRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
@@ -2067,7 +2098,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiImportRenderingPdfRoute: ApiImportRenderingPdfRoute,
   ApiMarkFinancialPaymentDueRoute: ApiMarkFinancialPaymentDueRoute,
   ApiMarvinRoute: ApiMarvinRoute,
-  ApiMarvinCronRoute: ApiMarvinCronRoute,
+  ApiMarvinCronRoute: ApiMarvinCronRouteWithChildren,
   ApiMarvinFathomWebhookRoute: ApiMarvinFathomWebhookRoute,
   ApiMarvinGmailCallbackRoute: ApiMarvinGmailCallbackRoute,
   ApiMarvinUploadRoute: ApiMarvinUploadRoute,
