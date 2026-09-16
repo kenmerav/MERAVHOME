@@ -64,6 +64,16 @@
         background: white;
         color: #17130f;
       }
+      button.tertiary {
+        width: auto;
+        margin-top: 7px;
+        border: 0;
+        background: transparent;
+        color: #1f4e5f;
+        padding: 3px 0;
+        font-size: 12px;
+        text-align: left;
+      }
       button.connect {
         margin-top: 0;
         background: #1f4e5f;
@@ -90,6 +100,24 @@
       .destination-note {
         margin: 7px 0 0;
         font-size: 11px;
+      }
+      .add-product-type {
+        margin-top: 8px;
+        padding: 10px;
+        border: 1px solid #ded9cd;
+        background: white;
+      }
+      .add-product-type label {
+        margin-top: 0;
+      }
+      .compact-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .compact-actions button {
+        margin-top: 8px;
+        padding: 8px;
       }
       .status {
         min-height: 18px;
@@ -215,6 +243,27 @@
             <option value="">Choose a room first</option>
           </select>
         </label>
+        <button id="showAddProductType" class="tertiary" type="button" data-preview-enabled>
+          + Add product type
+        </button>
+        <div id="addProductTypeFields" class="add-product-type" hidden>
+          <label>
+            New Product Type
+            <input
+              id="newProductTypeInput"
+              type="text"
+              maxlength="80"
+              placeholder="e.g. Towel warmer"
+              autocomplete="off"
+            />
+          </label>
+          <div class="compact-actions">
+            <button id="saveProductType" type="button" data-preview-enabled>Add Type</button>
+            <button id="cancelProductType" class="secondary" type="button" data-preview-enabled>
+              Cancel
+            </button>
+          </div>
+        </div>
         <label>
           Quantity
           <input id="quantityInput" type="number" min="0.01" step="0.01" value="1" />

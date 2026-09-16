@@ -267,7 +267,7 @@ function DashboardPage() {
   );
 }
 
-function ProjectQuickSearch({ projects, loading }: { projects: Project[]; loading: boolean }) {
+export function ProjectQuickSearch({ projects, loading }: { projects: Project[]; loading: boolean }) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();

@@ -63,6 +63,7 @@ import {
 import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
+import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import {
   ALL_CATEGORIES,
@@ -5375,6 +5376,7 @@ function BoardObject({
   const materialIssues =
     element.type === "image" ? imageMaterialIssues(element, linkedProduct) : [];
   const elementLinkHref = externalHref(element.link);
+  const displayLabel = roomDesignBoardDisplayLabel(element);
 
   const startCropGesture = (
     event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>,
@@ -5550,7 +5552,7 @@ function BoardObject({
             >
               <OptimizedBoardImage
                 src={normalizeSupabaseImageUrl(element.src)}
-                alt={element.label ?? ""}
+                alt={displayLabel}
                 kind="preview"
                 className="h-full w-full object-contain"
                 draggable={false}
@@ -5575,11 +5577,11 @@ function BoardObject({
             </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center border border-dashed border-stone-300 bg-[#faf9f5] p-4 text-center font-display text-2xl text-stone-400">
-              {element.label || element.productName || "Image"}
+              {displayLabel || "Image"}
             </div>
           )}
           {!element.hideDetails &&
-            (element.label || element.productName) &&
+            displayLabel &&
             (elementLinkHref ? (
               <a
                 href={elementLinkHref}
@@ -5589,11 +5591,11 @@ function BoardObject({
                 onClick={(event) => event.stopPropagation()}
                 className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 underline decoration-stone-400 underline-offset-4 shadow-sm"
               >
-                {element.label || element.productName}
+                {displayLabel}
               </a>
             ) : (
               <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 shadow-sm">
-                {element.label || element.productName}
+                {displayLabel}
               </div>
             ))}
           {!element.hideDetails && showProductBadge && element.productId && (
@@ -7007,7 +7009,7 @@ function materialTrayLabel(item: MaterialItem) {
 }
 
 function imageMaterialLabel(element: BoardElement) {
-  return (element.label || element.productName || "").trim();
+  return roomDesignBoardDisplayLabel(element);
 }
 
 function imageMaterialLabelForSend(element: BoardElement) {
@@ -7219,7 +7221,7 @@ function drawImageFallback(ctx: CanvasRenderingContext2D, element: BoardElement)
   ctx.fillRect(0, 0, element.width, element.height);
   drawWrappedCanvasText(
     ctx,
-    element.label || element.productName || "Image",
+    roomDesignBoardDisplayLabel(element) || "Image",
     element.width / 2,
     element.height / 2,
     element.width - 32,
@@ -7232,7 +7234,7 @@ function drawImageFallback(ctx: CanvasRenderingContext2D, element: BoardElement)
 }
 
 function drawBoardImageLabelForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
-  const label = (element.label || element.productName || "").trim();
+  const label = roomDesignBoardDisplayLabel(element);
   if (!label) return;
   const fontSize = 12;
   ctx.font = `${fontSize}px Montserrat, Arial, sans-serif`;

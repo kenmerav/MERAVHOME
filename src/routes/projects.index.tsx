@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import type { Project } from "@/lib/db";
 import { resolveImage } from "@/lib/local-assets";
 import { canManageStudio, isSharedProjectRole } from "@/lib/permissions";
-import { NewProjectDialog, StatusBadge } from "./index";
+import { NewProjectDialog, ProjectQuickSearch, StatusBadge } from "./index";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/projects/")({
@@ -64,6 +64,7 @@ function ProjectsListPage() {
           <div>
             <div className="eyebrow mb-3">Index</div>
             <h1 className="editorial-hero text-5xl lg:text-6xl">Projects</h1>
+            <ProjectQuickSearch projects={projects} loading={isLoading} />
           </div>
           {!profileLoading && !isSharedUser && <NewProjectDialog />}
         </div>

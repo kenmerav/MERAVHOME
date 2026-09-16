@@ -7,6 +7,8 @@ import {
   createDefaultRoomDesignWorkflowState,
   mergeExtensionProductIntoRoomDesignWorkflow,
   normalizeRoomDesignWorkflowState,
+  reconcileRoomDesignChecklist,
+  roomDesignRoomNamesMatch,
 } from "@/lib/roomDesignWorkflow";
 
 const PRODUCT_IMAGE_BUCKET = "product-images";
@@ -63,6 +65,7 @@ type ExtensionProductPayload = {
   boardPageId?: string;
   destination?: "design_board" | "room_design";
   roomId?: string;
+  roomName?: string;
   requiredItemKey?: string;
   quantity?: number;
   sourcePageUrl?: string;
@@ -432,18 +435,20 @@ function normalizedRoomDesignState(roomName: string, value: unknown) {
   const initial = createDefaultRoomDesignWorkflowState(roomName);
   const { version: _version, updatedAt: _updatedAt, ...fallback } = initial;
   const normalized = normalizeRoomDesignWorkflowState(value, fallback);
-  return normalized.links.length ? normalized : initial;
+  return reconcileRoomDesignChecklist(normalized.links.length ? normalized : initial, roomName);
 }
 
 async function saveRoomDesignSelectionWithRetry({
   projectId,
   roomId,
   requiredItemKey,
+  expectedRoomName,
   product,
 }: {
   projectId: string;
   roomId: string;
   requiredItemKey: string;
+  expectedRoomName: string;
   product: Parameters<typeof mergeExtensionProductIntoRoomDesignWorkflow>[0]["product"];
 }) {
   const [{ data: featureFlag }, { data: enrollment }, { data: room, error: roomError }] =
@@ -470,6 +475,11 @@ async function saveRoomDesignSelectionWithRetry({
     throw new Error("This project is not using the new Room Design process.");
   }
   if (!room) throw new Error("That room does not belong to the selected project.");
+  if (!roomDesignRoomNamesMatch(expectedRoomName, cleanText((room as any).name))) {
+    throw new Error(
+      `Room selection changed. Reopen the extension and choose ${expectedRoomName} again.`,
+    );
+  }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const { data: workflow, error } = await supabaseAdmin
@@ -524,7 +534,7 @@ async function saveRoomDesignSelectionWithRetry({
       created_by: null,
     } as any);
 
-    return merged;
+    return { ...merged, roomName: (room as any).name as string };
   }
   throw new Error("Room Design changed at the same time. Open the room and try again.");
 }
@@ -545,6 +555,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const destination =
             payload.destination === "room_design" ? "room_design" : "design_board";
           const roomId = cleanText(payload.roomId);
+          const roomName = cleanText(payload.roomName);
           const requiredItemKey = cleanText(payload.requiredItemKey);
           const quantity =
             typeof payload.quantity === "number" &&
@@ -572,6 +583,27 @@ export const Route = createFileRoute("/api/extension/import-product")({
             .eq("id", projectId)
             .maybeSingle();
           if (!project) return json({ error: "Studio project was not found." }, 404);
+
+          if (destination === "room_design") {
+            const { data: selectedRoom, error: selectedRoomError } = await supabaseAdmin
+              .from("rooms")
+              .select("id,name")
+              .eq("id", roomId)
+              .eq("project_id", projectId)
+              .maybeSingle();
+            if (selectedRoomError) throw selectedRoomError;
+            if (!selectedRoom) {
+              return json({ error: "That room does not belong to the selected project." }, 400);
+            }
+            if (!roomDesignRoomNamesMatch(roomName, cleanText((selectedRoom as any).name))) {
+              return json(
+                {
+                  error: `Room selection changed. Reopen the extension and choose ${roomName} again.`,
+                },
+                409,
+              );
+            }
+          }
 
           const productData = payload.product ?? {};
           const productName =
@@ -699,6 +731,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
               projectId,
               roomId,
               requiredItemKey,
+              expectedRoomName: roomName,
               product: {
                 id: (product as any).id,
                 name: productName,
@@ -718,6 +751,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
               destination,
               productId: (product as any).id,
               roomId,
+              roomName: merged.roomName,
               requiredItemKey,
               requiredItemLabel: merged.item.category,
               nextItemId: merged.nextItem?.id || null,
@@ -728,7 +762,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
               backgroundRemovedUrl,
               price: price || null,
               warning: colorWarning,
-              message: `${productName} added to ${merged.item.category}.`,
+              message: `${productName} added to ${merged.item.category} in ${merged.roomName}.`,
               openUrl: `/projects/${projectId}/room-design?roomId=${roomId}`,
             });
           }

@@ -12,6 +12,7 @@ export const PRESET_ROOMS = [
   "Bedroom 1",
   "Bedroom 2",
   "Primary Bathroom",
+  "Powder Bathroom",
   "Bathroom 1",
   "Bathroom 2",
   "Dining Room",

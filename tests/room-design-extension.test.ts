@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { selectionItemsForRoom } from "@/lib/selectionChecklist";
 import {
+  addCustomRoomDesignProductType,
   createDefaultRoomDesignWorkflowState,
   mergeExtensionProductIntoRoomDesignWorkflow,
+  reconcileRoomDesignChecklist,
+  roomDesignRoomNamesMatch,
 } from "@/lib/roomDesignWorkflow";
 
 const product = {
@@ -27,6 +30,128 @@ describe("Room Design extension destination", () => {
     expect(labels).toContain("Doors");
     expect(labels).toContain("Door hardware");
     expect(labels).toContain("Island pendants");
+  });
+
+  it("includes a generic tub selection for Primary Bathrooms", () => {
+    const labels = selectionItemsForRoom("Primary Bathroom").map((item) => item.label);
+    expect(labels).toContain("Tub");
+    expect(labels).toContain("Tub filler");
+    expect(labels).not.toContain("Freestanding tub");
+  });
+
+  it("uses the full Powder Bathroom checklist for common room-name variants", () => {
+    for (const roomName of ["Powder Bathroom", "Powder Bath", "Powder Room"]) {
+      const labels = selectionItemsForRoom(roomName).map((item) => item.label);
+      expect(labels).toEqual(
+        expect.arrayContaining([
+          "Vanity layout",
+          "Countertop",
+          "Sink",
+          "Faucet",
+          "Toilet",
+          "Mirror",
+          "Vanity sconces",
+          "Exhaust fan",
+          "Toilet paper holder",
+          "Hand towel holder",
+        ]),
+      );
+      expect(labels).not.toContain("Tub");
+      expect(labels).not.toContain("Shower system");
+    }
+  });
+
+  it("adds newly introduced Powder Bathroom rows without replacing saved work", () => {
+    const state = createDefaultRoomDesignWorkflowState("Powder Bathroom");
+    const olderState = {
+      ...state,
+      links: state.links
+        .filter(
+          (item) =>
+            ![
+              "Recessed lighting",
+              "Exhaust fan",
+              "Toilet paper holder",
+              "Hand towel holder",
+            ].includes(item.category),
+        )
+        .map((item) =>
+          item.category === "Faucet"
+            ? { ...item, url: "https://example.com/saved-faucet", notes: "Keep this choice" }
+            : item,
+        ),
+    };
+    const reconciled = reconcileRoomDesignChecklist(olderState, "Powder Bathroom");
+
+    expect(reconciled.links.find((item) => item.category === "Faucet")).toMatchObject({
+      url: "https://example.com/saved-faucet",
+      notes: "Keep this choice",
+    });
+    expect(reconciled.links.map((item) => item.category)).toEqual(
+      expect.arrayContaining([
+        "Recessed lighting",
+        "Exhaust fan",
+        "Toilet paper holder",
+        "Hand towel holder",
+      ]),
+    );
+  });
+
+  it("upgrades an older Primary Bathroom checklist without losing saved work", () => {
+    const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
+    const olderState = {
+      ...state,
+      links: state.links
+        .filter((item) => item.id !== "tub")
+        .concat({
+          id: "freestanding-tub",
+          category: "Freestanding tub",
+          url: "https://example.com/tub",
+          group: "Plumbing",
+          quantity: 1,
+          notes: "Keep this choice",
+        }),
+    };
+    const reconciled = reconcileRoomDesignChecklist(olderState, "Primary Bathroom");
+    const tub = reconciled.links.find((item) => item.id === "freestanding-tub");
+
+    expect(tub).toMatchObject({
+      category: "Tub",
+      url: "https://example.com/tub",
+      notes: "Keep this choice",
+    });
+    expect(reconciled.links.filter((item) => item.category === "Tub")).toHaveLength(1);
+  });
+
+  it("adds a custom product type once and keeps it room-specific", () => {
+    const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
+    const first = addCustomRoomDesignProductType({
+      state,
+      label: "  Towel warmer  ",
+      itemId: "custom-123",
+    });
+    const duplicate = addCustomRoomDesignProductType({
+      state: first.state,
+      label: "towel warmer",
+      itemId: "custom-456",
+    });
+
+    expect(first.added).toBe(true);
+    expect(first.item).toMatchObject({
+      id: "custom-123",
+      category: "Towel warmer",
+      custom: true,
+    });
+    expect(duplicate.added).toBe(false);
+    expect(duplicate.state.links.filter((item) => item.category === "Towel warmer")).toHaveLength(
+      1,
+    );
+  });
+
+  it("fails closed when a stored room ID and visible room name disagree", () => {
+    expect(roomDesignRoomNamesMatch("Primary Bathroom", "Primary Bathroom")).toBe(true);
+    expect(roomDesignRoomNamesMatch(" primary   bathroom ", "Primary Bathroom")).toBe(true);
+    expect(roomDesignRoomNamesMatch("Primary Bathroom", "Primary Bedroom")).toBe(false);
   });
 
   it("adds a catalog product to one room selection without touching the board", () => {

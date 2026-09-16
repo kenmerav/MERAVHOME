@@ -11,6 +11,9 @@ For a project enrolled in the **Room Design V2** pilot:
 4. Studio reuses or creates the catalog product and fills that room selection. The existing design
    board is populated later from Room Design, after the selections are reviewed.
 
+If a room needs another selection, click **+ Add product type** below the Product Type menu. The
+new type is saved to that room immediately and becomes the selected destination for the product.
+
 The extension gathers the current product page link, product name, price, dimensions, SKU, and
 image. It remembers the last room and advances to the next unfilled product type after a successful
 import.

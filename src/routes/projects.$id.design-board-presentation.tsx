@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { canViewProjectSurface } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ type PresentationBoardElement = {
   src?: string;
   label?: string;
   productName?: string | null;
+  materialCategory?: string | null;
   link?: string;
   hideDetails?: boolean;
   text?: string;
@@ -318,6 +320,7 @@ function DesignBoardPagePreview({
 function DesignBoardElementPreview({ element }: { element: PresentationBoardElement }) {
   if (element.visible === false) return null;
   const elementLinkHref = externalHref(element.link);
+  const displayLabel = roomDesignBoardDisplayLabel(element);
 
   return (
     <div
@@ -336,7 +339,7 @@ function DesignBoardElementPreview({ element }: { element: PresentationBoardElem
           {element.src ? (
             <OptimizedBoardImage
               src={normalizeSupabaseImageUrl(element.src)}
-              alt={element.label ?? ""}
+              alt={displayLabel}
               kind="preview"
               className="h-full w-full object-contain"
               draggable={false}
@@ -348,11 +351,11 @@ function DesignBoardElementPreview({ element }: { element: PresentationBoardElem
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center border border-dashed border-stone-300 bg-[#faf9f5] p-4 text-center font-display text-2xl text-stone-400">
-              {element.label || element.productName || "Image"}
+              {displayLabel || "Image"}
             </div>
           )}
           {!element.hideDetails &&
-            (element.label || element.productName) &&
+            displayLabel &&
             (elementLinkHref ? (
               <a
                 href={elementLinkHref}
@@ -360,11 +363,11 @@ function DesignBoardElementPreview({ element }: { element: PresentationBoardElem
                 rel="noreferrer"
                 className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 underline decoration-stone-400 underline-offset-4 shadow-sm"
               >
-                {element.label || element.productName}
+                {displayLabel}
               </a>
             ) : (
               <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 py-1 text-center font-[var(--font-montserrat)] text-[12px] uppercase tracking-[0.12em] text-stone-700 shadow-sm">
-                {element.label || element.productName}
+                {displayLabel}
               </div>
             ))}
         </>

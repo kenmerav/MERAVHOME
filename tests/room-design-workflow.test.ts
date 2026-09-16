@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeRoomDesignSelectionsIntoBoard,
   normalizeRoomDesignWorkflowState,
+  roomDesignBoardDisplayLabel,
   type RoomDesignSelection,
 } from "@/lib/roomDesignWorkflow";
 import { SELECTION_ROOM_TEMPLATES } from "@/lib/selectionChecklist";
@@ -32,6 +33,21 @@ function selection(
 }
 
 describe("Room Design V2 shared board merge", () => {
+  it("shows the selection type on generated boards while retaining the real product name", () => {
+    const tub = {
+      id: "room-design-v2:primary-bath:selection:link-tub",
+      label: "Native Trails NST6636-C",
+      productName: "Native Trails NST6636-C",
+      materialCategory: "Tub",
+    };
+
+    expect(roomDesignBoardDisplayLabel(tub)).toBe("Tub");
+    expect(tub.productName).toBe("Native Trails NST6636-C");
+    expect(
+      roomDesignBoardDisplayLabel({ ...tub, id: "manual-board-item", materialCategory: "Tub" }),
+    ).toBe("Native Trails NST6636-C");
+  });
+
   it("preserves every manual page and every other room page", () => {
     const existing = {
       selectedPageId: "manual-page",
@@ -336,8 +352,12 @@ describe("Room Design V2 checklist templates", () => {
     const primaryBathroom = SELECTION_ROOM_TEMPLATES.find(
       (room) => room.key === "primary-bathroom",
     )!;
+    const powderBathroom = SELECTION_ROOM_TEMPLATES.find(
+      (room) => room.key === "powder-bathroom",
+    )!;
     const kitchenLabels = kitchen.items.map((item) => item.label);
     const bathroomLabels = primaryBathroom.items.map((item) => item.label);
+    const powderBathroomLabels = powderBathroom.items.map((item) => item.label);
 
     expect(kitchenLabels).toEqual(
       expect.arrayContaining([
@@ -353,6 +373,9 @@ describe("Room Design V2 checklist templates", () => {
     expect(kitchenLabels).not.toContain("Doors + door hardware");
     expect(kitchenLabels).not.toContain("Cabinet + appliance layout");
     expect(bathroomLabels).toEqual(
+      expect.arrayContaining(["Baseboard", "Casing", "Doors", "Door hardware"]),
+    );
+    expect(powderBathroomLabels).toEqual(
       expect.arrayContaining(["Baseboard", "Casing", "Doors", "Door hardware"]),
     );
   });
