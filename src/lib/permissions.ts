@@ -28,6 +28,14 @@ export function canUseMarvin(profile?: Pick<UserProfile, "email" | "is_active"> 
   return !!profile?.is_active && MARVIN_EMAILS.has(profile.email.toLowerCase());
 }
 
+export function canReconnectMarvinInbox(email?: string | null) {
+  return (
+    String(email ?? "")
+      .trim()
+      .toLowerCase() === "ken@meravinteriors.com"
+  );
+}
+
 export function isEaWorkspaceEmail(email?: string | null) {
   return EA_WORKSPACE_EMAILS.has(
     String(email ?? "")

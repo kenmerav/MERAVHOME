@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canUseEaWorkspace, canUseMarvin, isEaWorkspaceEmail } from "../src/lib/permissions";
+import {
+  canReconnectMarvinInbox,
+  canUseEaWorkspace,
+  canUseMarvin,
+  isEaWorkspaceEmail,
+} from "../src/lib/permissions";
 
 const allowedEmails = [
   "ken@meravinteriors.com",
@@ -45,5 +50,13 @@ describe("EA Desk account access", () => {
         role: "Client",
       }),
     ).toBe(false);
+  });
+
+  it("allows only Ken to reconnect the shared Marvin inbox", () => {
+    expect(canReconnectMarvinInbox("ken@meravinteriors.com")).toBe(true);
+    expect(canReconnectMarvinInbox(" KEN@MERAVINTERIORS.COM ")).toBe(true);
+    expect(canReconnectMarvinInbox("katie@meravinteriors.com")).toBe(false);
+    expect(canReconnectMarvinInbox("brynn@meravinteriors.com")).toBe(false);
+    expect(canReconnectMarvinInbox(null)).toBe(false);
   });
 });

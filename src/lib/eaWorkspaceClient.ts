@@ -177,6 +177,25 @@ export async function loadEaWorkspace(): Promise<EaWorkspaceData> {
   return body as EaWorkspaceData;
 }
 
+export async function reconnectMarvinInbox(): Promise<string> {
+  const token = await authToken();
+  const response = await fetch("/api/marvin", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "gmail_connect", account_email: "marvinbotai@gmail.com" }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error || "Unable to reconnect the Marvin inbox.");
+  if (typeof body?.url !== "string" || !body.url) {
+    throw new Error("Google did not provide a valid connection link.");
+  }
+  const url = new URL(body.url);
+  if (url.protocol !== "https:" || url.hostname !== "accounts.google.com") {
+    throw new Error("Google did not provide a valid connection link.");
+  }
+  return url.toString();
+}
+
 export async function saveEaWorkspace(payload: Record<string, unknown>) {
   const token = await authToken();
   const response = await fetch("/api/ea-workspace", {

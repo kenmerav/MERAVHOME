@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Marvin schema is server-only. */
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { canReconnectMarvinInbox } from "@/lib/permissions";
 import {
   addManualSource,
   approveSuggestion,
@@ -72,6 +73,12 @@ export const Route = createFileRoute("/api/marvin")({
               await deleteSource(String(body.id || ""));
               return json({ ok: true });
             case "gmail_connect":
+              if (
+                body.account_email === MARVIN_SHARED_GMAIL &&
+                !canReconnectMarvinInbox(access.profile.email)
+              ) {
+                return json({ error: "Only Ken can reconnect the Marvin inbox." }, 403);
+              }
               return json({
                 url: gmailAuthorizationUrl(
                   access,

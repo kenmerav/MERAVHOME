@@ -10,7 +10,7 @@ import {
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { matchConstructionDocumentProject } from "@/lib/constructionDocumentMatching";
 import { isConstructionDocumentQuestion } from "@/lib/constructionDocumentQuestion";
-import { canUseMarvin } from "@/lib/permissions";
+import { canReconnectMarvinInbox, canUseMarvin } from "@/lib/permissions";
 import {
   buildGmailThreadKnowledge,
   mergeCoverageDate,
@@ -145,7 +145,8 @@ export function createOauthState(access: MarvinAccess, accountEmail = access.pro
   const normalizedAccountEmail = String(accountEmail || "").toLowerCase();
   if (
     !MARVIN_USER_EMAILS.includes(ownerEmail) ||
-    !MARVIN_GMAIL_ACCOUNTS.has(normalizedAccountEmail)
+    !MARVIN_GMAIL_ACCOUNTS.has(normalizedAccountEmail) ||
+    (normalizedAccountEmail === MARVIN_SHARED_GMAIL && !canReconnectMarvinInbox(ownerEmail))
   ) {
     throw new Error("This Gmail account cannot connect to Marvin.");
   }
@@ -175,7 +176,11 @@ export function verifyOauthState(value: string) {
   }
   const accountEmail = String(decoded.email).toLowerCase();
   const ownerEmail = String(decoded.ownerEmail || decoded.email).toLowerCase();
-  if (!MARVIN_USER_EMAILS.includes(ownerEmail) || !MARVIN_GMAIL_ACCOUNTS.has(accountEmail)) {
+  if (
+    !MARVIN_USER_EMAILS.includes(ownerEmail) ||
+    !MARVIN_GMAIL_ACCOUNTS.has(accountEmail) ||
+    (accountEmail === MARVIN_SHARED_GMAIL && !canReconnectMarvinInbox(ownerEmail))
+  ) {
     throw new Error("This Google account cannot connect to Marvin.");
   }
   return decoded as { userId: string; email: string };

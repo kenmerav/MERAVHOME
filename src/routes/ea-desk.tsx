@@ -36,6 +36,7 @@ import {
   loadEaCalendar,
   loadEaDocumentEvidence,
   loadEaWorkspace,
+  reconnectMarvinInbox,
   saveEaWorkspace,
   type EaProjectEmail,
   type EaProject,
@@ -58,6 +59,7 @@ import {
   summarizeEaResponsibilities,
 } from "@/lib/eaOperatingSystem";
 import { toast } from "sonner";
+import { canReconnectMarvinInbox } from "@/lib/permissions";
 
 export const Route = createFileRoute("/ea-desk")({
   head: () => ({ meta: [{ title: "EA Desk - MERAV Studio" }] }),
@@ -103,6 +105,8 @@ function EaDeskPage() {
   const [reviewProject, setReviewProject] = useState<EaProject | null>(null);
   const [taskArtifact, setTaskArtifact] = useState<SeedArtifactKind | null>(null);
   const [refreshingEmailActions, setRefreshingEmailActions] = useState(false);
+  const [reconnectingInbox, setReconnectingInbox] = useState(false);
+  const [inboxConnectionNotice, setInboxConnectionNotice] = useState<string | null>(null);
   const [runningOperations, setRunningOperations] = useState(false);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["eaWorkspace"],
@@ -114,6 +118,7 @@ function EaDeskPage() {
     staleTime: 5 * 60 * 1000,
   });
   const tasks = data?.tasks ?? [];
+  const canReconnectInbox = canReconnectMarvinInbox(data?.viewer?.email);
   const inboxLastUpdated = useMemo(
     () =>
       data?.syncStatus.find(
@@ -130,11 +135,38 @@ function EaDeskPage() {
     setTaskArtifact(artifactKind);
     setTask(selectedTask);
   };
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get("gmail");
+    if (result !== "connected" && result !== "error") return;
+    setInboxConnectionNotice(
+      result === "connected"
+        ? "Marvin inbox reconnected. Select Refresh inbox to bring in current email."
+        : url.searchParams.get("detail") || "Google could not reconnect the Marvin inbox.",
+    );
+    url.searchParams.delete("gmail");
+    url.searchParams.delete("detail");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, []);
+  const reconnectInbox = async () => {
+    setReconnectingInbox(true);
+    try {
+      window.location.assign(await reconnectMarvinInbox());
+    } catch (connectionError) {
+      toast.error(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "Unable to reconnect the Marvin inbox.",
+      );
+      setReconnectingInbox(false);
+    }
+  };
   const refreshEmailActions = async () => {
     setRefreshingEmailActions(true);
     try {
       const result = await saveEaWorkspace({ action: "refresh_email_actions" });
       await refetch();
+      setInboxConnectionNotice(null);
       const emailCreated = Number(result?.emailActions?.created || 0);
       const emailHistoryStillIndexing =
         result?.gmail?.partial === true || result?.gmail?.coverage?.complete === false;
@@ -213,6 +245,21 @@ function EaDeskPage() {
                       ? "Checking inbox update time…"
                       : "Inbox has not been updated yet"}
               </p>
+              {canReconnectInbox && (
+                <button
+                  type="button"
+                  onClick={reconnectInbox}
+                  disabled={reconnectingInbox}
+                  className="text-xs text-amber-800 underline underline-offset-2 disabled:opacity-50"
+                >
+                  {reconnectingInbox ? "Opening Google…" : "Reconnect Marvin inbox"}
+                </button>
+              )}
+              {canReconnectInbox && inboxConnectionNotice && (
+                <p className="max-w-xs text-xs text-amber-800" role="status">
+                  {inboxConnectionNotice}
+                </p>
+              )}
             </div>
           </div>
         </header>
