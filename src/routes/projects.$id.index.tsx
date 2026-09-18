@@ -69,6 +69,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  canManageProjectAccess,
   canManageStudio,
   canUseEaWorkspace,
   canUseMarvin,
@@ -334,7 +335,7 @@ function ProjectDetailPage() {
               >
                 <SlidersHorizontal className="w-4 h-4" /> Approval Setup
               </Link>
-              {canManageStudio(profile) && (
+              {canManageProjectAccess(profile) && (
                 <ProjectAccessDialog
                   project={project}
                   onSaved={() => {
@@ -1159,7 +1160,19 @@ function ProjectAccessDialog({ project, onSaved }: { project: Project; onSaved: 
   const save = async () => {
     setSaving(true);
     try {
-      await db.updateProject(project.id, form);
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sign in to update project access.");
+      const response = await fetch("/api/project-access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ projectId: project.id, settings: form }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error || "Unable to update project access.");
       toast.success("Project access updated");
       setOpen(false);
       onSaved();

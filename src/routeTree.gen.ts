@@ -49,6 +49,7 @@ import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
 import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
 import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
 import { Route as ApiProjectCapturesRouteImport } from './routes/api/project-captures'
+import { Route as ApiProjectAccessRouteImport } from './routes/api/project-access'
 import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
 import { Route as ApiProcurementMcpRouteImport } from './routes/api/procurement-mcp'
 import { Route as ApiProcurementGmailCallbackRouteImport } from './routes/api/procurement-gmail-callback'
@@ -313,6 +314,11 @@ const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
 const ApiProjectCapturesRoute = ApiProjectCapturesRouteImport.update({
   id: '/api/project-captures',
   path: '/api/project-captures',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProjectAccessRoute = ApiProjectAccessRouteImport.update({
+  id: '/api/project-access',
+  path: '/api/project-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiProcurementRunsRoute = ApiProcurementRunsRouteImport.update({
@@ -673,6 +679,7 @@ export interface FileRoutesByFullPath {
   '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
+  '/api/project-access': typeof ApiProjectAccessRoute
   '/api/project-captures': typeof ApiProjectCapturesRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
@@ -775,6 +782,7 @@ export interface FileRoutesByTo {
   '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
+  '/api/project-access': typeof ApiProjectAccessRoute
   '/api/project-captures': typeof ApiProjectCapturesRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
@@ -878,6 +886,7 @@ export interface FileRoutesById {
   '/api/procurement-gmail-callback': typeof ApiProcurementGmailCallbackRoute
   '/api/procurement-mcp': typeof ApiProcurementMcpRoute
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
+  '/api/project-access': typeof ApiProjectAccessRoute
   '/api/project-captures': typeof ApiProjectCapturesRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
@@ -982,6 +991,7 @@ export interface FileRouteTypes {
     | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
+    | '/api/project-access'
     | '/api/project-captures'
     | '/api/project-management'
     | '/api/project-task-attachment'
@@ -1084,6 +1094,7 @@ export interface FileRouteTypes {
     | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
+    | '/api/project-access'
     | '/api/project-captures'
     | '/api/project-management'
     | '/api/project-task-attachment'
@@ -1186,6 +1197,7 @@ export interface FileRouteTypes {
     | '/api/procurement-gmail-callback'
     | '/api/procurement-mcp'
     | '/api/procurement-runs'
+    | '/api/project-access'
     | '/api/project-captures'
     | '/api/project-management'
     | '/api/project-task-attachment'
@@ -1289,6 +1301,7 @@ export interface RootRouteChildren {
   ApiProcurementGmailCallbackRoute: typeof ApiProcurementGmailCallbackRoute
   ApiProcurementMcpRoute: typeof ApiProcurementMcpRoute
   ApiProcurementRunsRoute: typeof ApiProcurementRunsRoute
+  ApiProjectAccessRoute: typeof ApiProjectAccessRoute
   ApiProjectCapturesRoute: typeof ApiProjectCapturesRoute
   ApiProjectManagementRoute: typeof ApiProjectManagementRoute
   ApiProjectTaskAttachmentRoute: typeof ApiProjectTaskAttachmentRoute
@@ -1630,6 +1643,13 @@ declare module '@tanstack/react-router' {
       path: '/api/project-captures'
       fullPath: '/api/project-captures'
       preLoaderRoute: typeof ApiProjectCapturesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-access': {
+      id: '/api/project-access'
+      path: '/api/project-access'
+      fullPath: '/api/project-access'
+      preLoaderRoute: typeof ApiProjectAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/procurement-runs': {
@@ -2109,6 +2129,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProcurementGmailCallbackRoute: ApiProcurementGmailCallbackRoute,
   ApiProcurementMcpRoute: ApiProcurementMcpRoute,
   ApiProcurementRunsRoute: ApiProcurementRunsRoute,
+  ApiProjectAccessRoute: ApiProjectAccessRoute,
   ApiProjectCapturesRoute: ApiProjectCapturesRoute,
   ApiProjectManagementRoute: ApiProjectManagementRoute,
   ApiProjectTaskAttachmentRoute: ApiProjectTaskAttachmentRoute,

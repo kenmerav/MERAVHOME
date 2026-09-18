@@ -87,6 +87,17 @@ export function canManageStudio(
   );
 }
 
+export function canManageProjectAccess(
+  profile?: Pick<UserProfile, "email" | "is_active" | "role" | "is_owner"> | null,
+) {
+  return (
+    canManageStudio(profile) ||
+    (!!profile?.is_active &&
+      profile.role === "Employee" &&
+      profile.email.toLowerCase() === "brynn@meravinteriors.com")
+  );
+}
+
 export function canLogHours(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
   return !!profile?.is_active && isStudioTeamRole(profile.role);
 }
