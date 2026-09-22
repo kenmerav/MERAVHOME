@@ -1,13 +1,29 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, ExternalLink, FileText, Trash2, Upload } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  ExternalLink,
+  FileText,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { estimateConstructionDocumentFinality } from "@/lib/constructionDocumentFinality";
 import { db } from "@/lib/db";
 import {
   canDownloadConstructionDocs,
@@ -48,7 +64,10 @@ function ConstructionDocsPage() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".pdf") || (file.type && file.type !== "application/pdf")) {
+      if (
+        !file.name.toLowerCase().endsWith(".pdf") ||
+        (file.type && file.type !== "application/pdf")
+      ) {
         throw new Error("Choose a PDF construction document.");
       }
       if (file.size > PROJECT_FILE_LIMIT) {
@@ -83,7 +102,9 @@ function ConstructionDocsPage() {
         });
       if (storageError) throw storageError;
 
-      return db.createProjectDocument({
+      const finality = estimateConstructionDocumentFinality({ fileName: file.name });
+
+      const document = await db.createProjectDocument({
         project_id: id,
         title: title.trim() || file.name.replace(/\.[^/.]+$/, ""),
         document_type: "Construction Doc",
@@ -94,10 +115,41 @@ function ConstructionDocsPage() {
         visible_to_contractors: true,
         visible_to_clients: true,
         created_by: sessionData.session?.user.id ?? null,
+        finality_estimate: finality.estimate,
+        finality_confidence: finality.confidence,
+        finality_reason: finality.reason,
+        finality_estimated_at: new Date().toISOString(),
+        finality_evidence: finality.evidence,
+        finality_revision: finality.revision,
+        finality_document_date: finality.documentDate,
+        finality_method: "rules",
+        finality_pdf_text_available: false,
+        finality_override: null,
+        finality_overridden_at: null,
+        finality_overridden_by: null,
+        superseded_by_document_id: null,
       });
+      if (!document) throw new Error("The document uploaded but its record was not created.");
+
+      const analysisResponse = await fetch("/api/analyze-project-document", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ documentId: document.id }),
+      });
+      return {
+        document,
+        analysisWarning: analysisResponse.ok
+          ? null
+          : (await analysisResponse.json().catch(() => ({})))?.error ||
+            "The deeper estimate will be retried later.",
+      };
     },
-    onSuccess: () => {
-      toast.success("Construction doc uploaded.");
+    onSuccess: (result) => {
+      if (result.analysisWarning) toast.warning(`Document uploaded. ${result.analysisWarning}`);
+      else toast.success("Construction doc uploaded and analyzed.");
       setTitle("");
       qc.invalidateQueries({ queryKey: ["projectDocuments", id] });
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -114,6 +166,63 @@ function ConstructionDocsPage() {
     onError: () => toast.error("Could not remove construction doc."),
   });
 
+  const statusMutation = useMutation({
+    mutationFn: async ({
+      documentId,
+      status,
+    }: {
+      documentId: string;
+      status: "final" | "in_progress" | "superseded" | null;
+    }) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in to update the document status.");
+
+      const response = await fetch("/api/project-document-finality", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ documentId, status }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "Could not update document status.");
+      return body;
+    },
+    onSuccess: (_, variables) => {
+      toast.success(variables.status ? "Document status updated." : "Email estimate restored.");
+      qc.invalidateQueries({ queryKey: ["projectDocuments", id] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Could not update document status."),
+  });
+
+  const analysisMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in to analyze the document.");
+      const response = await fetch("/api/analyze-project-document", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ documentId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "Document analysis failed.");
+      return body;
+    },
+    onSuccess: () => {
+      toast.success("Email and PDF estimate refreshed.");
+      qc.invalidateQueries({ queryKey: ["projectDocuments", id] });
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Document analysis failed."),
+  });
+
   if (loadingProfile || loadingProject) {
     return (
       <AppShell>
@@ -126,7 +235,11 @@ function ConstructionDocsPage() {
     return (
       <AppShell>
         <div className="page-pad max-w-3xl">
-          <Link to="/projects/$id" params={{ id }} className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+          <Link
+            to="/projects/$id"
+            params={{ id }}
+            className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
+          >
             <ArrowLeft className="h-4 w-4" /> Back to project
           </Link>
           <h1 className="editorial-hero text-5xl">Construction Docs</h1>
@@ -141,7 +254,11 @@ function ConstructionDocsPage() {
   return (
     <AppShell>
       <div className="page-pad max-w-[1200px]">
-        <Link to="/projects/$id" params={{ id }} className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink">
+        <Link
+          to="/projects/$id"
+          params={{ id }}
+          className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
+        >
           <ArrowLeft className="h-4 w-4" /> {project.name}
         </Link>
         <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -180,7 +297,11 @@ function ConstructionDocsPage() {
                   if (file) uploadMutation.mutate(file);
                 }}
               />
-              <Button type="button" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
+              <Button
+                type="button"
+                disabled={uploadMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
                 {uploadMutation.isPending ? "Uploading..." : "Choose PDF"}
               </Button>
             </div>
@@ -203,42 +324,227 @@ function ConstructionDocsPage() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {docs.map((doc) => (
-                <div key={doc.id} className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="eyebrow mb-2">{doc.document_type}</div>
-                    <div className="font-display text-2xl">{doc.title}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {doc.file_name || "Uploaded file"}{doc.file_size ? ` · ${formatFileSize(doc.file_size)}` : ""}
+              {[...docs]
+                .sort(
+                  (left, right) =>
+                    new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+                )
+                .map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <div className="eyebrow">{doc.document_type}</div>
+                        {canManageDocs && (
+                          <FinalityBadge
+                            estimate={doc.finality_estimate}
+                            override={doc.finality_override}
+                            superseded={Boolean(doc.superseded_by_document_id)}
+                          />
+                        )}
+                      </div>
+                      <div className="font-display text-2xl">{doc.title}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {doc.file_name || "Uploaded file"}
+                        {doc.file_size ? ` · ${formatFileSize(doc.file_size)}` : ""}
+                      </div>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        Uploaded {formatUploadedAt(doc.created_at)}
+                      </div>
+                      {canManageDocs && doc.finality_override && (
+                        <div className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+                          Marked manually
+                          {doc.finality_overridden_at
+                            ? ` ${formatUploadedAt(doc.finality_overridden_at)}`
+                            : ""}
+                          . The email estimate remains available below.
+                        </div>
+                      )}
+                      {canManageDocs && doc.finality_reason && (
+                        <div className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+                          Email estimate ({doc.finality_confidence || "low"} confidence):{" "}
+                          {doc.finality_reason}
+                        </div>
+                      )}
+                      {canManageDocs && (doc.finality_revision || doc.finality_document_date) && (
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          {doc.finality_revision && <span>Revision {doc.finality_revision}</span>}
+                          {doc.finality_document_date && (
+                            <span>
+                              Document date {formatDocumentDate(doc.finality_document_date)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {canManageDocs && doc.finality_evidence?.length > 0 && (
+                        <div className="mt-3 max-w-2xl space-y-1 border-l border-border pl-3 text-xs leading-5 text-muted-foreground">
+                          {doc.finality_evidence.slice(0, 3).map((item, index) => (
+                            <div key={`${item.source}-${item.page || 0}-${index}`}>
+                              <span className="font-medium text-ink">
+                                {item.source === "pdf"
+                                  ? `PDF${item.page ? ` page ${item.page}` : ""}`
+                                  : item.source === "email"
+                                    ? "Current email"
+                                    : item.source === "history"
+                                      ? "Email history"
+                                      : "Filename"}
+                                :
+                              </span>{" "}
+                              “{item.text}”
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {canManageDocs && (
+                        <Select
+                          value={doc.finality_override || "automatic"}
+                          disabled={
+                            statusMutation.isPending &&
+                            statusMutation.variables?.documentId === doc.id
+                          }
+                          onValueChange={(value) =>
+                            statusMutation.mutate({
+                              documentId: doc.id,
+                              status:
+                                value === "automatic"
+                                  ? null
+                                  : (value as "final" | "in_progress" | "superseded"),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue aria-label="Document status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="automatic">Use email estimate</SelectItem>
+                            <SelectItem value="final">Final</SelectItem>
+                            <SelectItem value="in_progress">In progress</SelectItem>
+                            <SelectItem value="superseded">Superseded</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {canManageDocs && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={
+                            analysisMutation.isPending && analysisMutation.variables === doc.id
+                          }
+                          onClick={() => analysisMutation.mutate(doc.id)}
+                        >
+                          <RefreshCw
+                            className={`h-4 w-4 ${
+                              analysisMutation.isPending && analysisMutation.variables === doc.id
+                                ? "animate-spin"
+                                : ""
+                            }`}
+                          />
+                          Recheck estimate
+                        </Button>
+                      )}
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+                      >
+                        <ExternalLink className="h-4 w-4" /> Open
+                      </a>
+                      {canDownloadDocs && (
+                        <a
+                          href={doc.file_url}
+                          download
+                          className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+                        >
+                          <Download className="h-4 w-4" /> Download
+                        </a>
+                      )}
+                      {canManageDocs && (
+                        <button
+                          type="button"
+                          onClick={() => deleteMutation.mutate(doc.id)}
+                          className="inline-flex items-center gap-2 border border-destructive/30 px-4 py-2 text-sm text-destructive hover:border-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" /> Delete
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <a href={doc.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
-                      <ExternalLink className="h-4 w-4" /> Open
-                    </a>
-                    {canDownloadDocs && (
-                      <a href={doc.file_url} download className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink">
-                        <Download className="h-4 w-4" /> Download
-                      </a>
-                    )}
-                    {canManageDocs && (
-                      <button
-                        type="button"
-                        onClick={() => deleteMutation.mutate(doc.id)}
-                        className="inline-flex items-center gap-2 border border-destructive/30 px-4 py-2 text-sm text-destructive hover:border-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </section>
       </div>
     </AppShell>
   );
+}
+
+function FinalityBadge({
+  estimate,
+  override,
+  superseded,
+}: {
+  estimate?: string | null;
+  override?: string | null;
+  superseded?: boolean;
+}) {
+  if (override) {
+    const label =
+      override === "final" ? "Final" : override === "in_progress" ? "In progress" : "Superseded";
+    const classes =
+      override === "final"
+        ? "border-emerald-700/30 bg-emerald-50 text-emerald-900"
+        : override === "in_progress"
+          ? "border-amber-700/30 bg-amber-50 text-amber-900"
+          : "border-border bg-muted text-muted-foreground";
+    return <span className={`border px-2 py-1 text-[11px] font-medium ${classes}`}>{label}</span>;
+  }
+  if (superseded) {
+    return (
+      <span className="border border-border bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">
+        Superseded
+      </span>
+    );
+  }
+  const label =
+    estimate === "likely_final"
+      ? "Likely final"
+      : estimate === "likely_not_final"
+        ? "Likely not final"
+        : "Final status unclear";
+  const classes =
+    estimate === "likely_final"
+      ? "border-emerald-700/30 bg-emerald-50 text-emerald-900"
+      : estimate === "likely_not_final"
+        ? "border-amber-700/30 bg-amber-50 text-amber-900"
+        : "border-border bg-muted/40 text-muted-foreground";
+  return <span className={`border px-2 py-1 text-[11px] font-medium ${classes}`}>{label}</span>;
+}
+
+function formatDocumentDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatUploadedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "at an unknown time";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function formatFileSize(size: number) {

@@ -48,6 +48,7 @@ import { Route as ApiProjectsRouteImport } from './routes/api/projects'
 import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
 import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
 import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
+import { Route as ApiProjectDocumentFinalityRouteImport } from './routes/api/project-document-finality'
 import { Route as ApiProjectCapturesRouteImport } from './routes/api/project-captures'
 import { Route as ApiProjectAccessRouteImport } from './routes/api/project-access'
 import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
@@ -80,6 +81,7 @@ import { Route as ApiConstructionDocumentNotificationsRouteImport } from './rout
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
+import { Route as ApiAnalyzeProjectDocumentRouteImport } from './routes/api/analyze-project-document'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
 import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
 import { Route as ProjectsIdRoomDesignRouteImport } from './routes/projects.$id.room-design'
@@ -311,6 +313,12 @@ const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
   path: '/api/project-management',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProjectDocumentFinalityRoute =
+  ApiProjectDocumentFinalityRouteImport.update({
+    id: '/api/project-document-finality',
+    path: '/api/project-document-finality',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiProjectCapturesRoute = ApiProjectCapturesRouteImport.update({
   id: '/api/project-captures',
   path: '/api/project-captures',
@@ -477,6 +485,12 @@ const ApiCalendarNotificationsRoute =
   ApiCalendarNotificationsRouteImport.update({
     id: '/api/calendar-notifications',
     path: '/api/calendar-notifications',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAnalyzeProjectDocumentRoute =
+  ApiAnalyzeProjectDocumentRouteImport.update({
+    id: '/api/analyze-project-document',
+    path: '/api/analyze-project-document',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
@@ -649,6 +663,7 @@ export interface FileRoutesByFullPath {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/analyze-project-document': typeof ApiAnalyzeProjectDocumentRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
@@ -681,6 +696,7 @@ export interface FileRoutesByFullPath {
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-access': typeof ApiProjectAccessRoute
   '/api/project-captures': typeof ApiProjectCapturesRoute
+  '/api/project-document-finality': typeof ApiProjectDocumentFinalityRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -752,6 +768,7 @@ export interface FileRoutesByTo {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/analyze-project-document': typeof ApiAnalyzeProjectDocumentRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
@@ -784,6 +801,7 @@ export interface FileRoutesByTo {
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-access': typeof ApiProjectAccessRoute
   '/api/project-captures': typeof ApiProjectCapturesRoute
+  '/api/project-document-finality': typeof ApiProjectDocumentFinalityRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -856,6 +874,7 @@ export interface FileRoutesById {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/api/analyze-project-document': typeof ApiAnalyzeProjectDocumentRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
@@ -888,6 +907,7 @@ export interface FileRoutesById {
   '/api/procurement-runs': typeof ApiProcurementRunsRoute
   '/api/project-access': typeof ApiProjectAccessRoute
   '/api/project-captures': typeof ApiProjectCapturesRoute
+  '/api/project-document-finality': typeof ApiProjectDocumentFinalityRoute
   '/api/project-management': typeof ApiProjectManagementRoute
   '/api/project-task-attachment': typeof ApiProjectTaskAttachmentRoute
   '/api/project-todos': typeof ApiProjectTodosRoute
@@ -961,6 +981,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/analyze-project-document'
     | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
@@ -993,6 +1014,7 @@ export interface FileRouteTypes {
     | '/api/procurement-runs'
     | '/api/project-access'
     | '/api/project-captures'
+    | '/api/project-document-finality'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -1064,6 +1086,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/analyze-project-document'
     | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
@@ -1096,6 +1119,7 @@ export interface FileRouteTypes {
     | '/api/procurement-runs'
     | '/api/project-access'
     | '/api/project-captures'
+    | '/api/project-document-finality'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -1167,6 +1191,7 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/api/analyze-project-document'
     | '/api/calendar-notifications'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
@@ -1199,6 +1224,7 @@ export interface FileRouteTypes {
     | '/api/procurement-runs'
     | '/api/project-access'
     | '/api/project-captures'
+    | '/api/project-document-finality'
     | '/api/project-management'
     | '/api/project-task-attachment'
     | '/api/project-todos'
@@ -1271,6 +1297,7 @@ export interface RootRouteChildren {
   ProcurementRoute: typeof ProcurementRoute
   ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
+  ApiAnalyzeProjectDocumentRoute: typeof ApiAnalyzeProjectDocumentRoute
   ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
   ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
@@ -1303,6 +1330,7 @@ export interface RootRouteChildren {
   ApiProcurementRunsRoute: typeof ApiProcurementRunsRoute
   ApiProjectAccessRoute: typeof ApiProjectAccessRoute
   ApiProjectCapturesRoute: typeof ApiProjectCapturesRoute
+  ApiProjectDocumentFinalityRoute: typeof ApiProjectDocumentFinalityRoute
   ApiProjectManagementRoute: typeof ApiProjectManagementRoute
   ApiProjectTaskAttachmentRoute: typeof ApiProjectTaskAttachmentRoute
   ApiProjectTodosRoute: typeof ApiProjectTodosRoute
@@ -1638,6 +1666,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiProjectManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/project-document-finality': {
+      id: '/api/project-document-finality'
+      path: '/api/project-document-finality'
+      fullPath: '/api/project-document-finality'
+      preLoaderRoute: typeof ApiProjectDocumentFinalityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/project-captures': {
       id: '/api/project-captures'
       path: '/api/project-captures'
@@ -1860,6 +1895,13 @@ declare module '@tanstack/react-router' {
       path: '/api/calendar-notifications'
       fullPath: '/api/calendar-notifications'
       preLoaderRoute: typeof ApiCalendarNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/analyze-project-document': {
+      id: '/api/analyze-project-document'
+      path: '/api/analyze-project-document'
+      fullPath: '/api/analyze-project-document'
+      preLoaderRoute: typeof ApiAnalyzeProjectDocumentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/$id/': {
@@ -2098,6 +2140,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProcurementRoute: ProcurementRoute,
   ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
+  ApiAnalyzeProjectDocumentRoute: ApiAnalyzeProjectDocumentRoute,
   ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
   ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
@@ -2131,6 +2174,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProcurementRunsRoute: ApiProcurementRunsRoute,
   ApiProjectAccessRoute: ApiProjectAccessRoute,
   ApiProjectCapturesRoute: ApiProjectCapturesRoute,
+  ApiProjectDocumentFinalityRoute: ApiProjectDocumentFinalityRoute,
   ApiProjectManagementRoute: ApiProjectManagementRoute,
   ApiProjectTaskAttachmentRoute: ApiProjectTaskAttachmentRoute,
   ApiProjectTodosRoute: ApiProjectTodosRoute,

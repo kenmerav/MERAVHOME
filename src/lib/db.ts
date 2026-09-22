@@ -200,6 +200,23 @@ export interface ProjectDocument {
   visible_to_contractors: boolean;
   visible_to_clients: boolean;
   created_by: string | null;
+  finality_estimate: "likely_final" | "likely_not_final" | "unclear";
+  finality_confidence: "high" | "medium" | "low";
+  finality_reason: string | null;
+  finality_estimated_at: string | null;
+  finality_evidence: Array<{
+    source: "filename" | "email" | "pdf" | "history";
+    text: string;
+    page?: number;
+  }>;
+  finality_revision: string | null;
+  finality_document_date: string | null;
+  finality_method: "rules" | "rules_and_ai" | "legacy_rules";
+  finality_pdf_text_available: boolean;
+  finality_override: "final" | "in_progress" | "superseded" | null;
+  finality_overridden_at: string | null;
+  finality_overridden_by: string | null;
+  superseded_by_document_id: string | null;
   created_at: string;
   updated_at: string;
 }

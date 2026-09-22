@@ -10,6 +10,11 @@ import {
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { matchConstructionDocumentProject } from "@/lib/constructionDocumentMatching";
 import { isConstructionDocumentQuestion } from "@/lib/constructionDocumentQuestion";
+import {
+  constructionDocumentFamilyKey,
+  isConstructionDocumentVersionLater,
+} from "@/lib/constructionDocumentFinality";
+import { analyzeConstructionDocumentFinality } from "@/lib/constructionDocumentFinality.server";
 import { canReconnectMarvinInbox, canUseMarvin } from "@/lib/permissions";
 import {
   buildGmailThreadKnowledge,
@@ -787,6 +792,36 @@ async function promoteConstructionAttachment(
     if (existingDocument) return { source, document: existingDocument };
   }
 
+  const parentSourceId = String(source?.metadata?.parent_email_source_id || "");
+  const { data: parentSource } = parentSourceId
+    ? await admin
+        .from("marvin_sources")
+        .select("title,body_text")
+        .eq("id", parentSourceId)
+        .maybeSingle()
+    : { data: null };
+  const { data: priorDocuments } = await admin
+    .from("project_documents")
+    .select(
+      "id,file_name,title,created_at,finality_override,finality_revision,finality_document_date,superseded_by_document_id",
+    )
+    .eq("project_id", projectId)
+    .eq("document_type", "Construction Doc")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const finality = await analyzeConstructionDocumentFinality({
+    file,
+    fileName: file.name,
+    emailSubject: source?.metadata?.email_subject || parentSource?.title || null,
+    emailBody:
+      source?.external_provider === "gmail_attachment" ? String(source?.body_text || "") : null,
+    emailThread:
+      source?.external_provider === "gmail_attachment"
+        ? String(parentSource?.body_text || "")
+        : null,
+    priorDocuments: priorDocuments ?? [],
+  });
+
   const baseName = safeFileName(file.name.replace(/\.pdf$/i, ""));
   const storagePath = `${projectId}/construction-docs/${Date.now()}-${crypto.randomUUID()}-${baseName}.pdf`;
   const { error: uploadError } = await admin.storage
@@ -813,10 +848,49 @@ async function promoteConstructionAttachment(
         visible_to_contractors: false,
         visible_to_clients: false,
         created_by: createdBy || null,
+        finality_estimate: finality.estimate,
+        finality_confidence: finality.confidence,
+        finality_reason: finality.reason,
+        finality_estimated_at: new Date().toISOString(),
+        finality_evidence: finality.evidence,
+        finality_revision: finality.revision,
+        finality_document_date: finality.documentDate,
+        finality_method: finality.method,
+        finality_pdf_text_available: finality.pdfTextAvailable,
       })
       .select("*")
       .single();
     if (documentError) throw documentError;
+
+    const newFamily = constructionDocumentFamilyKey(document.file_name || document.title);
+    const hasSequenceEvidence = Boolean(finality.revision || finality.documentDate);
+    if (newFamily.length >= 4 && hasSequenceEvidence) {
+      const olderVersionIds = (priorDocuments ?? [])
+        .filter(
+          (candidate: any) =>
+            !candidate.finality_override &&
+            constructionDocumentFamilyKey(candidate.file_name || candidate.title) === newFamily &&
+            isConstructionDocumentVersionLater(
+              {
+                fileName: document.file_name || document.title,
+                revision: finality.revision,
+                documentDate: finality.documentDate,
+              },
+              {
+                fileName: candidate.file_name || candidate.title,
+                revision: candidate.finality_revision,
+                documentDate: candidate.finality_document_date,
+              },
+            ),
+        )
+        .map((candidate: any) => candidate.id);
+      if (olderVersionIds.length) {
+        await admin
+          .from("project_documents")
+          .update({ superseded_by_document_id: document.id })
+          .in("id", olderVersionIds);
+      }
+    }
 
     const { data: updatedSource, error: sourceError } = await admin
       .from("marvin_sources")
@@ -923,7 +997,10 @@ async function ingestBlueSkyConstructionAttachments(input: {
           external_id: externalId,
           external_thread_id: input.message.threadId,
           title: attachment.fileName,
-          body_text: `PDF attached to “${input.headers.get("subject") || "Email"}” from Jessica Marchant at Blue Sky Creative. ${emailPreview(input.body, 240)}`,
+          body_text: [
+            `PDF attached to “${input.headers.get("subject") || "Email"}” from Jessica Marchant at Blue Sky Creative.`,
+            String(input.body || "").slice(0, 50_000),
+          ].join("\n\n"),
           author_name: input.headers.get("from") || null,
           author_email: senderEmail,
           participants: input.participants,
@@ -953,6 +1030,7 @@ async function ingestBlueSkyConstructionAttachments(input: {
             candidate_project_ids: attachmentMatch.candidateProjectIds,
             blue_sky_construction_candidate: true,
             trusted_sender: senderEmail,
+            email_subject: input.headers.get("subject") || "Email",
           },
           created_by: input.integration.owner_user_id,
         },
