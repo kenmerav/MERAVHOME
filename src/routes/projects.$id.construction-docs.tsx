@@ -11,6 +11,7 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  Send,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -35,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import {
   estimateConstructionDocumentFinality,
@@ -43,12 +45,18 @@ import {
 import { db, type ProjectDocument } from "@/lib/db";
 import {
   canDownloadConstructionDocs,
+  canUseEaWorkspace,
   canViewProjectSurface,
   isStudioTeamRole,
 } from "@/lib/permissions";
 
 const PROJECT_FILES_BUCKET = "project-files";
 const PROJECT_FILE_LIMIT = 50 * 1024 * 1024;
+
+type DocumentViewerSelection = {
+  document: ProjectDocument;
+  previousDocument: ProjectDocument | null;
+};
 
 export const Route = createFileRoute("/projects/$id/construction-docs")({
   head: () => ({ meta: [{ title: "Construction Docs — MERAV Studio" }] }),
@@ -61,7 +69,7 @@ function ConstructionDocsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [title, setTitle] = useState("");
   const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
-  const [viewingDocument, setViewingDocument] = useState<ProjectDocument | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<DocumentViewerSelection | null>(null);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -72,6 +80,7 @@ function ConstructionDocsPage() {
     queryFn: () => db.getProject(id),
   });
   const canManageDocs = profile?.is_active === true && isStudioTeamRole(profile.role);
+  const canChatDocs = canUseEaWorkspace(profile);
   const canViewDocs = canViewProjectSurface(profile, project, "constructionDocs");
   const canDownloadDocs = canDownloadConstructionDocs(profile, project);
   const { data: docs = [], isLoading: loadingDocs } = useQuery({
@@ -362,7 +371,12 @@ function ConstructionDocsPage() {
                       onStatusChange={(status) =>
                         statusMutation.mutate({ documentId: group.current.id, status })
                       }
-                      onView={() => setViewingDocument(group.current)}
+                      onView={() =>
+                        setViewingDocument({
+                          document: group.current,
+                          previousDocument: group.previous[0] ?? null,
+                        })
+                      }
                       onAnalyze={() => analysisMutation.mutate(group.current.id)}
                       onDelete={() => deleteMutation.mutate(group.current.id)}
                     />
@@ -387,7 +401,7 @@ function ConstructionDocsPage() {
                         </button>
                         {isExpanded && (
                           <div className="divide-y divide-border border-t border-border">
-                            {group.previous.map((doc) => (
+                            {group.previous.map((doc, index) => (
                               <DocumentRow
                                 key={doc.id}
                                 doc={doc}
@@ -405,7 +419,12 @@ function ConstructionDocsPage() {
                                 onStatusChange={(status) =>
                                   statusMutation.mutate({ documentId: doc.id, status })
                                 }
-                                onView={() => setViewingDocument(doc)}
+                                onView={() =>
+                                  setViewingDocument({
+                                    document: doc,
+                                    previousDocument: group.previous[index + 1] ?? null,
+                                  })
+                                }
                                 onAnalyze={() => analysisMutation.mutate(doc.id)}
                                 onDelete={() => deleteMutation.mutate(doc.id)}
                               />
@@ -422,8 +441,10 @@ function ConstructionDocsPage() {
         </section>
       </div>
       <ConstructionDocumentViewer
-        document={viewingDocument}
+        document={viewingDocument?.document ?? null}
+        previousDocument={viewingDocument?.previousDocument ?? null}
         canDownload={canDownloadDocs}
+        canChat={canChatDocs}
         onClose={() => setViewingDocument(null)}
       />
     </AppShell>
@@ -580,11 +601,15 @@ function DocumentRow({
 
 function ConstructionDocumentViewer({
   document,
+  previousDocument,
   canDownload,
+  canChat,
   onClose,
 }: {
   document: ProjectDocument | null;
+  previousDocument: ProjectDocument | null;
   canDownload: boolean;
+  canChat: boolean;
   onClose: () => void;
 }) {
   return (
@@ -623,7 +648,16 @@ function ConstructionDocumentViewer({
                 </div>
               </div>
             </DialogHeader>
-            <PdfDocumentCanvas url={document.file_url} title={document.title} />
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              <PdfDocumentCanvas url={document.file_url} title={document.title} />
+              {canChat && (
+                <ConstructionDocumentChat
+                  key={document.id}
+                  document={document}
+                  previousDocument={previousDocument}
+                />
+              )}
+            </div>
           </>
         )}
       </DialogContent>
@@ -837,6 +871,269 @@ function PdfDocumentCanvas({ url, title }: { url: string; title: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+type DocumentChatCitation = {
+  documentId: string;
+  documentTitle: string;
+  version: "current" | "previous";
+  pageNumber: number;
+  support: string;
+};
+
+type DocumentChatMessage =
+  | { id: string; role: "user"; content: string }
+  | {
+      id: string;
+      role: "assistant";
+      content: string;
+      confidence: "high" | "medium" | "low";
+      confidenceReason: string;
+      citations: DocumentChatCitation[];
+      comparedWithPrevious: boolean;
+      previousDocumentTitle: string | null;
+    };
+
+const DOCUMENT_CHAT_PROMPTS = [
+  "How many square feet is the office?",
+  "What changed from the previous version?",
+  "What appliances and sizes are shown?",
+];
+
+function ConstructionDocumentChat({
+  document,
+  previousDocument,
+}: {
+  document: ProjectDocument;
+  previousDocument: ProjectDocument | null;
+}) {
+  const [messages, setMessages] = useState<DocumentChatMessage[]>([]);
+  const [question, setQuestion] = useState("");
+  const [pending, setPending] = useState(false);
+
+  const ask = async (value: string) => {
+    const nextQuestion = value.trim();
+    if (!nextQuestion || pending) return;
+    const userMessage: DocumentChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: nextQuestion,
+    };
+    const history = messages.map((message) => ({ role: message.role, content: message.content }));
+    setMessages((current) => [...current, userMessage]);
+    setQuestion("");
+    setPending(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sign in again to ask this document a question.");
+      const response = await fetch("/api/chat-project-document", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          documentId: document.id,
+          previousDocumentId: previousDocument?.id ?? null,
+          question: nextQuestion,
+          history,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "The document could not answer right now.");
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: String(body.answer || "I could not find that in this document."),
+          confidence: ["high", "medium", "low"].includes(body.confidence) ? body.confidence : "low",
+          confidenceReason: String(body.confidenceReason || "Based on the cited PDF pages."),
+          citations: Array.isArray(body.citations) ? body.citations : [],
+          comparedWithPrevious: body.comparedWithPrevious === true,
+          previousDocumentTitle: body.previousDocumentTitle || null,
+        },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content:
+            error instanceof Error ? error.message : "The document could not answer right now.",
+          confidence: "low",
+          confidenceReason: "No answer was generated.",
+          citations: [],
+          comparedWithPrevious: false,
+          previousDocumentTitle: null,
+        },
+      ]);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <aside className="flex min-h-[320px] max-h-[44%] flex-col border-t border-border bg-background lg:max-h-none lg:w-[410px] lg:flex-none lg:border-l lg:border-t-0">
+      <div className="border-b border-border px-4 py-3">
+        <div className="eyebrow">Document assistant</div>
+        <h3 className="mt-1 font-display text-2xl">Ask this drawing</h3>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          Answers use the open PDF and show the evidence page. Comparison questions also use the
+          prior version when available.
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        {messages.length === 0 && (
+          <div className="space-y-2">
+            {DOCUMENT_CHAT_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                disabled={pending || (!previousDocument && /previous version/i.test(prompt))}
+                onClick={() => void ask(prompt)}
+                className="w-full border border-border px-3 py-2 text-left text-sm hover:border-ink disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {prompt}
+              </button>
+            ))}
+            {!previousDocument && (
+              <p className="pt-1 text-xs text-muted-foreground">
+                No earlier version is available for this document set.
+              </p>
+            )}
+          </div>
+        )}
+        {messages.map((message) =>
+          message.role === "user" ? (
+            <div key={message.id} className="ml-8 bg-ink px-3 py-2 text-sm text-background">
+              {message.content}
+            </div>
+          ) : (
+            <div key={message.id} className="space-y-3 border border-border p-3">
+              <div className="whitespace-pre-wrap text-sm leading-6">{message.content}</div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="border border-border px-2 py-1 uppercase tracking-[0.16em]">
+                  {message.confidence} confidence
+                </span>
+                {message.comparedWithPrevious && message.previousDocumentTitle && (
+                  <span>Compared with {message.previousDocumentTitle}</span>
+                )}
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">{message.confidenceReason}</p>
+              {message.citations.map((citation, index) => (
+                <DocumentChatEvidence
+                  key={`${message.id}-${citation.documentId}-${citation.pageNumber}-${index}`}
+                  citation={citation}
+                />
+              ))}
+              {message.citations.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No drawing page directly supported an answer.
+                </p>
+              )}
+            </div>
+          ),
+        )}
+        {pending && (
+          <div className="flex items-center border border-border p-3 text-sm text-muted-foreground">
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Reading the drawing...
+          </div>
+        )}
+      </div>
+      <form
+        className="border-t border-border p-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void ask(question);
+        }}
+      >
+        <Textarea
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder="Ask about rooms, dimensions, appliances, or revisions..."
+          className="min-h-20 resize-none"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              void ask(question);
+            }
+          }}
+        />
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+          Asking sends this PDF to MERAV's OpenAI account for analysis. A prior version is included
+          only for comparison questions. Chats are not saved, and nothing is emailed.
+        </p>
+        <Button type="submit" className="mt-2 w-full" disabled={pending || !question.trim()}>
+          <Send className="h-4 w-4" /> Ask document
+        </Button>
+      </form>
+    </aside>
+  );
+}
+
+function DocumentChatEvidence({ citation }: { citation: DocumentChatCitation }) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    void supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        const token = data.session?.access_token;
+        if (!token) throw new Error("Sign in again to view evidence.");
+        const params = new URLSearchParams({
+          document_id: citation.documentId,
+          page: String(citation.pageNumber),
+        });
+        const response = await fetch(`/api/ea-document-evidence?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error("Evidence page could not be rendered.");
+        objectUrl = URL.createObjectURL(await response.blob());
+        if (!cancelled) setImageUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [citation.documentId, citation.pageNumber]);
+
+  return (
+    <figure className="border border-border bg-muted/20 p-2">
+      <figcaption className="mb-2 text-xs leading-5">
+        <div className="font-medium text-ink">
+          {citation.version === "previous" ? "Previous version" : "Current document"} · Page{" "}
+          {citation.pageNumber}
+        </div>
+        <div className="text-muted-foreground">{citation.support}</div>
+      </figcaption>
+      {imageUrl ? (
+        <a href={imageUrl} target="_blank" rel="noreferrer" title="Open evidence image">
+          <img
+            src={imageUrl}
+            alt={`${citation.documentTitle}, evidence page ${citation.pageNumber}`}
+            className="max-h-52 w-full border border-border bg-white object-contain"
+          />
+        </a>
+      ) : error ? (
+        <div className="py-5 text-center text-xs text-muted-foreground">
+          Evidence screenshot unavailable.
+        </div>
+      ) : (
+        <div className="flex items-center justify-center py-5 text-xs text-muted-foreground">
+          <RefreshCw className="mr-2 h-3 w-3 animate-spin" /> Loading evidence page...
+        </div>
+      )}
+    </figure>
   );
 }
 
