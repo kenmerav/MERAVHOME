@@ -25,7 +25,7 @@ const NOT_FINAL_PATTERN =
   /\b(?:not\s+final|not\s+for\s+construction|draft|preliminary|progress\s+(?:set|print)|for\s+review|review\s+set|redlines?|markups?|schematic|concept(?:ual)?|working\s+set|bid\s+set|pricing\s+set|\d{2}\s*%\s*(?:set|complete|documents?|drawings?))\b/i;
 const FINAL_PATTERN =
   /\b(?:final(?:\s+(?:set|documents?|drawings?|plans?|construction\s+documents?))?|issued\s+for\s+construction|ifc(?:\s+set)?|permit\s+set|signed\s+and\s+sealed|record\s+set|as[-\s]?built)\b/i;
-const REVISION_PATTERN = /\b(?:rev(?:ision)?)\s*[:#.-]?\s*([A-Z0-9]{1,8})\b/i;
+const REVISION_PATTERN = /\b(?:rev(?:ision)?)\b\s*[:#.-]?\s*([A-Z0-9]{1,8})\b/i;
 
 function classifyText(value: string) {
   const notFinal = NOT_FINAL_PATTERN.test(value);

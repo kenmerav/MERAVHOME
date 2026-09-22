@@ -113,4 +113,13 @@ describe("construction document finality estimates", () => {
       ),
     ).toBe(true);
   });
+
+  it("does not mistake review wording for a revision number", () => {
+    expect(
+      estimateConstructionDocumentFinality({
+        fileName: "Cambridge.pdf",
+        emailBody: "Attached for review before we proceed.",
+      }).revision,
+    ).toBeNull();
+  });
 });
