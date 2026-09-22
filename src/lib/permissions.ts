@@ -1,6 +1,7 @@
 import type { Project, UserProfile } from "@/lib/db";
 
 const FINANCIAL_EMAILS = new Set(["ken@meravinteriors.com", "katie@meravinteriors.com"]);
+const CONSTRUCTION_DOCUMENT_CHAT_EMAILS = new Set(FINANCIAL_EMAILS);
 const SPEC_BOOK_EDITOR_EMAILS = new Set(["homebycastellani@gmail.com"]);
 const MARVIN_EMAILS = new Set([
   "ken@meravinteriors.com",
@@ -49,6 +50,16 @@ export function canUseEaWorkspace(
 ) {
   return (
     !!profile?.is_active && isStudioTeamRole(profile.role) && isEaWorkspaceEmail(profile.email)
+  );
+}
+
+export function canChatWithConstructionDocuments(
+  profile?: Pick<UserProfile, "email" | "is_active" | "role"> | null,
+) {
+  return (
+    !!profile?.is_active &&
+    isStudioTeamRole(profile.role) &&
+    CONSTRUCTION_DOCUMENT_CHAT_EMAILS.has(profile.email.toLowerCase())
   );
 }
 export function isContractorRole(role?: string | null) {

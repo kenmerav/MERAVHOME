@@ -44,8 +44,8 @@ import {
 } from "@/lib/constructionDocumentFinality";
 import { db, type ProjectDocument } from "@/lib/db";
 import {
+  canChatWithConstructionDocuments,
   canDownloadConstructionDocs,
-  canUseEaWorkspace,
   canViewProjectSurface,
   isStudioTeamRole,
 } from "@/lib/permissions";
@@ -80,7 +80,7 @@ function ConstructionDocsPage() {
     queryFn: () => db.getProject(id),
   });
   const canManageDocs = profile?.is_active === true && isStudioTeamRole(profile.role);
-  const canChatDocs = canUseEaWorkspace(profile);
+  const canChatDocs = canChatWithConstructionDocuments(profile);
   const canViewDocs = canViewProjectSurface(profile, project, "constructionDocs");
   const canDownloadDocs = canDownloadConstructionDocs(profile, project);
   const { data: docs = [], isLoading: loadingDocs } = useQuery({

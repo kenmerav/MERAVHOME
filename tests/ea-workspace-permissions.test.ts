@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canChatWithConstructionDocuments,
   canReconnectMarvinInbox,
   canUseEaWorkspace,
   canUseMarvin,
@@ -58,5 +59,34 @@ describe("EA Desk account access", () => {
     expect(canReconnectMarvinInbox("katie@meravinteriors.com")).toBe(false);
     expect(canReconnectMarvinInbox("brynn@meravinteriors.com")).toBe(false);
     expect(canReconnectMarvinInbox(null)).toBe(false);
+  });
+
+  it("allows construction-document chat only for active Ken and Katie Studio accounts", () => {
+    for (const email of ["ken@meravinteriors.com", "katie@meravinteriors.com"]) {
+      expect(canChatWithConstructionDocuments({ email, is_active: true, role: "Admin" })).toBe(
+        true,
+      );
+    }
+    expect(
+      canChatWithConstructionDocuments({
+        email: "brynn@meravinteriors.com",
+        is_active: true,
+        role: "Employee",
+      }),
+    ).toBe(false);
+    expect(
+      canChatWithConstructionDocuments({
+        email: "ken@meravinteriors.com",
+        is_active: false,
+        role: "Admin",
+      }),
+    ).toBe(false);
+    expect(
+      canChatWithConstructionDocuments({
+        email: "katie@meravinteriors.com",
+        is_active: true,
+        role: "Client",
+      }),
+    ).toBe(false);
   });
 });
