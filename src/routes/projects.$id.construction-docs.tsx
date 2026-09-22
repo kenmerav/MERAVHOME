@@ -3,17 +3,29 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   ExternalLink,
   FileText,
+  Minus,
+  Plus,
   RefreshCw,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -49,6 +61,7 @@ function ConstructionDocsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [title, setTitle] = useState("");
   const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
+  const [viewingDocument, setViewingDocument] = useState<ProjectDocument | null>(null);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -349,6 +362,7 @@ function ConstructionDocsPage() {
                       onStatusChange={(status) =>
                         statusMutation.mutate({ documentId: group.current.id, status })
                       }
+                      onView={() => setViewingDocument(group.current)}
                       onAnalyze={() => analysisMutation.mutate(group.current.id)}
                       onDelete={() => deleteMutation.mutate(group.current.id)}
                     />
@@ -391,6 +405,7 @@ function ConstructionDocsPage() {
                                 onStatusChange={(status) =>
                                   statusMutation.mutate({ documentId: doc.id, status })
                                 }
+                                onView={() => setViewingDocument(doc)}
                                 onAnalyze={() => analysisMutation.mutate(doc.id)}
                                 onDelete={() => deleteMutation.mutate(doc.id)}
                               />
@@ -406,6 +421,11 @@ function ConstructionDocsPage() {
           )}
         </section>
       </div>
+      <ConstructionDocumentViewer
+        document={viewingDocument}
+        canDownload={canDownloadDocs}
+        onClose={() => setViewingDocument(null)}
+      />
     </AppShell>
   );
 }
@@ -420,6 +440,7 @@ function DocumentRow({
   statusPending,
   analysisPending,
   onStatusChange,
+  onView,
   onAnalyze,
   onDelete,
 }: {
@@ -430,6 +451,7 @@ function DocumentRow({
   statusPending: boolean;
   analysisPending: boolean;
   onStatusChange: (status: DocumentStatus) => void;
+  onView: () => void;
   onAnalyze: () => void;
   onDelete: () => void;
 }) {
@@ -526,14 +548,13 @@ function DocumentRow({
             Recheck estimate
           </Button>
         )}
-        <a
-          href={doc.file_url}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={onView}
           className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
         >
-          <ExternalLink className="h-4 w-4" /> Open
-        </a>
+          <FileText className="h-4 w-4" /> View document
+        </button>
         {canDownloadDocs && (
           <a
             href={doc.file_url}
@@ -551,6 +572,268 @@ function DocumentRow({
           >
             <Trash2 className="h-4 w-4" /> Delete
           </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConstructionDocumentViewer({
+  document,
+  canDownload,
+  onClose,
+}: {
+  document: ProjectDocument | null;
+  canDownload: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={Boolean(document)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex h-[94vh] w-[96vw] max-w-[1500px] flex-col gap-0 overflow-hidden p-0">
+        {document && (
+          <>
+            <DialogHeader className="border-b border-border px-5 py-4 pr-12">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <DialogTitle className="truncate font-display text-2xl font-normal">
+                    {document.title}
+                  </DialogTitle>
+                  <DialogDescription className="truncate">
+                    {document.file_name || "Construction document"}
+                  </DialogDescription>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <a
+                    href={document.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+                  >
+                    <ExternalLink className="h-4 w-4" /> Open in new tab
+                  </a>
+                  {canDownload && (
+                    <a
+                      href={document.file_url}
+                      download
+                      className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+                    >
+                      <Download className="h-4 w-4" /> Download
+                    </a>
+                  )}
+                </div>
+              </div>
+            </DialogHeader>
+            <PdfDocumentCanvas url={document.file_url} title={document.title} />
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type PdfPageProxy = {
+  getViewport: (options: { scale: number }) => { width: number; height: number };
+  render: (options: {
+    canvas: HTMLCanvasElement;
+    canvasContext: CanvasRenderingContext2D;
+    viewport: { width: number; height: number };
+  }) => { promise: Promise<void>; cancel: () => void };
+};
+
+type PdfDocumentProxy = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfPageProxy>;
+  destroy: () => Promise<void>;
+};
+
+function PdfDocumentCanvas({ url, title }: { url: string; title: string }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [pdf, setPdf] = useState<PdfDocumentProxy | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const [viewportWidth, setViewportWidth] = useState(900);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const updateWidth = () => setViewportWidth(Math.max(320, viewport.clientWidth - 32));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loadedDocument: PdfDocumentProxy | null = null;
+    setLoading(true);
+    setError(null);
+    setPageNumber(1);
+    setZoom(1);
+
+    void import("pdfjs-dist/build/pdf.mjs")
+      .then(async (pdfjs) => {
+        pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+        loadedDocument = (await pdfjs.getDocument({ url }).promise) as PdfDocumentProxy;
+        if (cancelled) {
+          await loadedDocument.destroy();
+          return;
+        }
+        setPdf(loadedDocument);
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "The PDF could not be loaded.");
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      setPdf(null);
+      if (loadedDocument) void loadedDocument.destroy();
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (!pdf || !canvasRef.current) return;
+    let cancelled = false;
+    let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
+    setLoading(true);
+    setError(null);
+
+    void pdf
+      .getPage(pageNumber)
+      .then((page) => {
+        if (cancelled || !canvasRef.current) return;
+        const naturalViewport = page.getViewport({ scale: 1 });
+        const fitScale = viewportWidth / naturalViewport.width;
+        const renderScale = Math.max(0.1, fitScale * zoom);
+        const renderViewport = page.getViewport({ scale: renderScale });
+        const canvas = canvasRef.current;
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(renderViewport.width * pixelRatio);
+        canvas.height = Math.floor(renderViewport.height * pixelRatio);
+        canvas.style.width = `${Math.floor(renderViewport.width)}px`;
+        canvas.style.height = `${Math.floor(renderViewport.height)}px`;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("The PDF canvas is unavailable.");
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        renderTask = page.render({
+          canvas,
+          canvasContext: context,
+          viewport: renderViewport,
+        });
+        return renderTask.promise;
+      })
+      .then(() => {
+        if (!cancelled) setLoading(false);
+      })
+      .catch((renderError) => {
+        if (
+          !cancelled &&
+          !(renderError instanceof Error && renderError.name === "RenderingCancelledException")
+        ) {
+          setError(
+            renderError instanceof Error
+              ? renderError.message
+              : "This PDF page could not be shown.",
+          );
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+    };
+  }, [pageNumber, pdf, viewportWidth, zoom]);
+
+  const totalPages = pdf?.numPages ?? 0;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-muted/30">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-2">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            disabled={!pdf || pageNumber <= 1}
+            onClick={() => setPageNumber((current) => Math.max(1, current - 1))}
+            aria-label="Previous PDF page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-24 text-center text-sm">
+            {pdf ? `Page ${pageNumber} of ${totalPages}` : "Loading pages..."}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            disabled={!pdf || pageNumber >= totalPages}
+            onClick={() => setPageNumber((current) => Math.min(totalPages, current + 1))}
+            aria-label="Next PDF page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            disabled={!pdf || zoom <= 0.6}
+            onClick={() => setZoom((current) => Math.max(0.6, current - 0.2))}
+            aria-label="Zoom out"
+          >
+            <Minus className="h-4 w-4" />
+          </Button>
+          <span className="min-w-14 text-center text-sm">{Math.round(zoom * 100)}%</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            disabled={!pdf || zoom >= 2}
+            onClick={() => setZoom((current) => Math.min(2, current + 0.2))}
+            aria-label="Zoom in"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      <div ref={viewportRef} className="relative min-h-0 flex-1 overflow-auto p-4">
+        {error ? (
+          <div className="mx-auto mt-16 max-w-md border border-border bg-background p-6 text-center">
+            <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <div className="font-medium">This PDF could not be displayed inside Studio.</div>
+            <div className="mt-2 text-sm text-muted-foreground">{error}</div>
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-5 inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+            >
+              <ExternalLink className="h-4 w-4" /> Open {title} in a new tab
+            </a>
+          </div>
+        ) : (
+          <div className="flex min-h-full min-w-full items-start justify-center">
+            <canvas
+              ref={canvasRef}
+              aria-label={`${title}, page ${pageNumber}`}
+              className="bg-white shadow-lg"
+            />
+          </div>
+        )}
+        {loading && !error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/70 text-sm text-muted-foreground">
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Loading PDF...
+          </div>
         )}
       </div>
     </div>
