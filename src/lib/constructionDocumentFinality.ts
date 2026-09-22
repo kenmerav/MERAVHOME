@@ -217,3 +217,82 @@ export function isConstructionDocumentVersionLater(
 
   return false;
 }
+
+type ConstructionDocumentVersionRecord = {
+  id: string;
+  file_name?: string | null;
+  title?: string | null;
+  created_at: string;
+  finality_document_date?: string | null;
+  finality_override?: string | null;
+  superseded_by_document_id?: string | null;
+};
+
+function createdAtTime(value: ConstructionDocumentVersionRecord) {
+  const time = new Date(value.created_at).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function documentDateTime(value: ConstructionDocumentVersionRecord) {
+  if (!value.finality_document_date) return null;
+  const time = new Date(`${value.finality_document_date}T12:00:00Z`).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function newestVersion<T extends ConstructionDocumentVersionRecord>(documents: T[]) {
+  const dated = documents
+    .map((document) => ({ document, time: documentDateTime(document) }))
+    .filter((item): item is { document: T; time: number } => item.time !== null);
+  const hasVersionSequence = new Set(dated.map((item) => item.time)).size > 1;
+
+  return [...documents].sort((left, right) => {
+    if (hasVersionSequence) {
+      const leftDate = documentDateTime(left);
+      const rightDate = documentDateTime(right);
+      if (leftDate !== null && rightDate !== null && leftDate !== rightDate) {
+        return rightDate - leftDate;
+      }
+    }
+    return createdAtTime(right) - createdAtTime(left);
+  })[0];
+}
+
+export function groupConstructionDocumentVersions<T extends ConstructionDocumentVersionRecord>(
+  documents: T[],
+) {
+  const families = new Map<string, T[]>();
+  for (const document of documents) {
+    const family =
+      constructionDocumentFamilyKey(document.file_name || document.title) ||
+      `document-${document.id}`;
+    families.set(family, [...(families.get(family) ?? []), document]);
+  }
+
+  return [...families.entries()]
+    .map(([key, familyDocuments]) => {
+      const active = familyDocuments.filter(
+        (document) =>
+          !document.superseded_by_document_id && document.finality_override !== "superseded",
+      );
+      const current = newestVersion(active.length ? active : familyDocuments);
+      const previous = familyDocuments
+        .filter((document) => document.id !== current.id)
+        .sort((left, right) => {
+          const leftDate = documentDateTime(left);
+          const rightDate = documentDateTime(right);
+          if (leftDate !== null && rightDate !== null && leftDate !== rightDate) {
+            return rightDate - leftDate;
+          }
+          return createdAtTime(right) - createdAtTime(left);
+        });
+      return { key, current, previous };
+    })
+    .sort((left, right) => {
+      const leftDate = documentDateTime(left.current);
+      const rightDate = documentDateTime(right.current);
+      if (leftDate !== null && rightDate !== null && leftDate !== rightDate) {
+        return rightDate - leftDate;
+      }
+      return createdAtTime(right.current) - createdAtTime(left.current);
+    });
+}

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ChevronDown,
   Download,
   ExternalLink,
   FileText,
@@ -23,8 +24,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { estimateConstructionDocumentFinality } from "@/lib/constructionDocumentFinality";
-import { db } from "@/lib/db";
+import {
+  estimateConstructionDocumentFinality,
+  groupConstructionDocumentVersions,
+} from "@/lib/constructionDocumentFinality";
+import { db, type ProjectDocument } from "@/lib/db";
 import {
   canDownloadConstructionDocs,
   canViewProjectSurface,
@@ -44,6 +48,7 @@ function ConstructionDocsPage() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [title, setTitle] = useState("");
+  const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["currentUserProfile"],
@@ -61,6 +66,7 @@ function ConstructionDocsPage() {
     queryFn: async () => (await db.listProjectDocuments(id)) ?? [],
     enabled: canViewDocs,
   });
+  const documentGroups = groupConstructionDocumentVersions(docs);
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -323,163 +329,231 @@ function ConstructionDocsPage() {
               No construction docs have been uploaded yet.
             </div>
           ) : (
-            <div className="divide-y divide-border">
-              {[...docs]
-                .sort(
-                  (left, right) =>
-                    new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
-                )
-                .map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between"
-                  >
-                    <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <div className="eyebrow">{doc.document_type}</div>
-                        {canManageDocs && (
-                          <FinalityBadge
-                            estimate={doc.finality_estimate}
-                            override={doc.finality_override}
-                            superseded={Boolean(doc.superseded_by_document_id)}
-                          />
-                        )}
-                      </div>
-                      <div className="font-display text-2xl">{doc.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        {doc.file_name || "Uploaded file"}
-                        {doc.file_size ? ` · ${formatFileSize(doc.file_size)}` : ""}
-                      </div>
-                      <div className="mt-1 text-sm text-muted-foreground">
-                        Uploaded {formatUploadedAt(doc.created_at)}
-                      </div>
-                      {canManageDocs && doc.finality_override && (
-                        <div className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
-                          Marked manually
-                          {doc.finality_overridden_at
-                            ? ` ${formatUploadedAt(doc.finality_overridden_at)}`
-                            : ""}
-                          . The email estimate remains available below.
-                        </div>
-                      )}
-                      {canManageDocs && doc.finality_reason && (
-                        <div className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
-                          Email estimate ({doc.finality_confidence || "low"} confidence):{" "}
-                          {doc.finality_reason}
-                        </div>
-                      )}
-                      {canManageDocs && (doc.finality_revision || doc.finality_document_date) && (
-                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                          {doc.finality_revision && <span>Revision {doc.finality_revision}</span>}
-                          {doc.finality_document_date && (
-                            <span>
-                              Document date {formatDocumentDate(doc.finality_document_date)}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {canManageDocs && doc.finality_evidence?.length > 0 && (
-                        <div className="mt-3 max-w-2xl space-y-1 border-l border-border pl-3 text-xs leading-5 text-muted-foreground">
-                          {doc.finality_evidence.slice(0, 3).map((item, index) => (
-                            <div key={`${item.source}-${item.page || 0}-${index}`}>
-                              <span className="font-medium text-ink">
-                                {item.source === "pdf"
-                                  ? `PDF${item.page ? ` page ${item.page}` : ""}`
-                                  : item.source === "email"
-                                    ? "Current email"
-                                    : item.source === "history"
-                                      ? "Email history"
-                                      : "Filename"}
-                                :
-                              </span>{" "}
-                              “{item.text}”
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {canManageDocs && (
-                        <Select
-                          value={doc.finality_override || "automatic"}
-                          disabled={
-                            statusMutation.isPending &&
-                            statusMutation.variables?.documentId === doc.id
-                          }
-                          onValueChange={(value) =>
-                            statusMutation.mutate({
-                              documentId: doc.id,
-                              status:
-                                value === "automatic"
-                                  ? null
-                                  : (value as "final" | "in_progress" | "superseded"),
-                            })
-                          }
-                        >
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue aria-label="Document status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="automatic">Use email estimate</SelectItem>
-                            <SelectItem value="final">Final</SelectItem>
-                            <SelectItem value="in_progress">In progress</SelectItem>
-                            <SelectItem value="superseded">Superseded</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                      {canManageDocs && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={
-                            analysisMutation.isPending && analysisMutation.variables === doc.id
-                          }
-                          onClick={() => analysisMutation.mutate(doc.id)}
-                        >
-                          <RefreshCw
-                            className={`h-4 w-4 ${
-                              analysisMutation.isPending && analysisMutation.variables === doc.id
-                                ? "animate-spin"
-                                : ""
-                            }`}
-                          />
-                          Recheck estimate
-                        </Button>
-                      )}
-                      <a
-                        href={doc.file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
-                      >
-                        <ExternalLink className="h-4 w-4" /> Open
-                      </a>
-                      {canDownloadDocs && (
-                        <a
-                          href={doc.file_url}
-                          download
-                          className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
-                        >
-                          <Download className="h-4 w-4" /> Download
-                        </a>
-                      )}
-                      {canManageDocs && (
+            <div>
+              {documentGroups.map((group) => {
+                const isExpanded = Boolean(expandedFamilies[group.key]);
+                return (
+                  <div key={group.key} className="border-b border-border last:border-b-0">
+                    <DocumentRow
+                      doc={group.current}
+                      canManageDocs={canManageDocs}
+                      canDownloadDocs={canDownloadDocs}
+                      statusPending={
+                        statusMutation.isPending &&
+                        statusMutation.variables?.documentId === group.current.id
+                      }
+                      analysisPending={
+                        analysisMutation.isPending &&
+                        analysisMutation.variables === group.current.id
+                      }
+                      onStatusChange={(status) =>
+                        statusMutation.mutate({ documentId: group.current.id, status })
+                      }
+                      onAnalyze={() => analysisMutation.mutate(group.current.id)}
+                      onDelete={() => deleteMutation.mutate(group.current.id)}
+                    />
+                    {group.previous.length > 0 && (
+                      <div className="border-t border-border bg-muted/15">
                         <button
                           type="button"
-                          onClick={() => deleteMutation.mutate(doc.id)}
-                          className="inline-flex items-center gap-2 border border-destructive/30 px-4 py-2 text-sm text-destructive hover:border-destructive"
+                          aria-expanded={isExpanded}
+                          onClick={() =>
+                            setExpandedFamilies((current) => ({
+                              ...current,
+                              [group.key]: !current[group.key],
+                            }))
+                          }
+                          className="flex w-full items-center gap-2 px-5 py-3 text-left text-sm text-muted-foreground hover:text-ink"
                         >
-                          <Trash2 className="h-4 w-4" /> Delete
+                          <ChevronDown
+                            className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          />
+                          {isExpanded ? "Hide" : "View"} {group.previous.length} previous{" "}
+                          {group.previous.length === 1 ? "version" : "versions"}
                         </button>
-                      )}
-                    </div>
+                        {isExpanded && (
+                          <div className="divide-y divide-border border-t border-border">
+                            {group.previous.map((doc) => (
+                              <DocumentRow
+                                key={doc.id}
+                                doc={doc}
+                                compact
+                                canManageDocs={canManageDocs}
+                                canDownloadDocs={canDownloadDocs}
+                                statusPending={
+                                  statusMutation.isPending &&
+                                  statusMutation.variables?.documentId === doc.id
+                                }
+                                analysisPending={
+                                  analysisMutation.isPending &&
+                                  analysisMutation.variables === doc.id
+                                }
+                                onStatusChange={(status) =>
+                                  statusMutation.mutate({ documentId: doc.id, status })
+                                }
+                                onAnalyze={() => analysisMutation.mutate(doc.id)}
+                                onDelete={() => deleteMutation.mutate(doc.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                ))}
+                );
+              })}
             </div>
           )}
         </section>
       </div>
     </AppShell>
+  );
+}
+
+type DocumentStatus = "final" | "in_progress" | "superseded" | null;
+
+function DocumentRow({
+  doc,
+  compact = false,
+  canManageDocs,
+  canDownloadDocs,
+  statusPending,
+  analysisPending,
+  onStatusChange,
+  onAnalyze,
+  onDelete,
+}: {
+  doc: ProjectDocument;
+  compact?: boolean;
+  canManageDocs: boolean;
+  canDownloadDocs: boolean;
+  statusPending: boolean;
+  analysisPending: boolean;
+  onStatusChange: (status: DocumentStatus) => void;
+  onAnalyze: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={`flex flex-col gap-4 md:flex-row md:items-center md:justify-between ${
+        compact ? "bg-muted/10 px-5 py-4 pl-10" : "p-5"
+      }`}
+    >
+      <div>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <div className="eyebrow">{compact ? "Previous version" : doc.document_type}</div>
+          {canManageDocs && (
+            <FinalityBadge
+              estimate={doc.finality_estimate}
+              override={doc.finality_override}
+              superseded={Boolean(doc.superseded_by_document_id)}
+            />
+          )}
+        </div>
+        <div className={`font-display ${compact ? "text-xl" : "text-2xl"}`}>{doc.title}</div>
+        <div className="mt-1 text-sm text-muted-foreground">
+          {doc.file_name || "Uploaded file"}
+          {doc.file_size ? ` · ${formatFileSize(doc.file_size)}` : ""}
+        </div>
+        <div className="mt-1 text-sm text-muted-foreground">
+          Uploaded {formatUploadedAt(doc.created_at)}
+        </div>
+        {!compact && canManageDocs && doc.finality_override && (
+          <div className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+            Marked manually
+            {doc.finality_overridden_at ? ` ${formatUploadedAt(doc.finality_overridden_at)}` : ""}.
+            The email estimate remains available below.
+          </div>
+        )}
+        {!compact && canManageDocs && doc.finality_reason && (
+          <div className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+            Email estimate ({doc.finality_confidence || "low"} confidence): {doc.finality_reason}
+          </div>
+        )}
+        {canManageDocs && (doc.finality_revision || doc.finality_document_date) && (
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+            {doc.finality_revision && <span>Revision {doc.finality_revision}</span>}
+            {doc.finality_document_date && (
+              <span>Document date {formatDocumentDate(doc.finality_document_date)}</span>
+            )}
+          </div>
+        )}
+        {!compact && canManageDocs && doc.finality_evidence?.length > 0 && (
+          <div className="mt-3 max-w-2xl space-y-1 border-l border-border pl-3 text-xs leading-5 text-muted-foreground">
+            {doc.finality_evidence.slice(0, 3).map((item, index) => (
+              <div key={`${item.source}-${item.page || 0}-${index}`}>
+                <span className="font-medium text-ink">
+                  {item.source === "pdf"
+                    ? `PDF${item.page ? ` page ${item.page}` : ""}`
+                    : item.source === "email"
+                      ? "Current email"
+                      : item.source === "history"
+                        ? "Email history"
+                        : "Filename"}
+                  :
+                </span>{" "}
+                “{item.text}”
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {canManageDocs && (
+          <Select
+            value={doc.finality_override || "automatic"}
+            disabled={statusPending}
+            onValueChange={(value) =>
+              onStatusChange(
+                value === "automatic" ? null : (value as "final" | "in_progress" | "superseded"),
+              )
+            }
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue aria-label="Document status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="automatic">Use email estimate</SelectItem>
+              <SelectItem value="final">Final</SelectItem>
+              <SelectItem value="in_progress">In progress</SelectItem>
+              <SelectItem value="superseded">Superseded</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        {canManageDocs && (
+          <Button type="button" variant="outline" disabled={analysisPending} onClick={onAnalyze}>
+            <RefreshCw className={`h-4 w-4 ${analysisPending ? "animate-spin" : ""}`} />
+            Recheck estimate
+          </Button>
+        )}
+        <a
+          href={doc.file_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+        >
+          <ExternalLink className="h-4 w-4" /> Open
+        </a>
+        {canDownloadDocs && (
+          <a
+            href={doc.file_url}
+            download
+            className="inline-flex items-center gap-2 border border-border px-4 py-2 text-sm hover:border-ink"
+          >
+            <Download className="h-4 w-4" /> Download
+          </a>
+        )}
+        {canManageDocs && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex items-center gap-2 border border-destructive/30 px-4 py-2 text-sm text-destructive hover:border-destructive"
+          >
+            <Trash2 className="h-4 w-4" /> Delete
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

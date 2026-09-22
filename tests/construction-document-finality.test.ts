@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   constructionDocumentFamilyKey,
   estimateConstructionDocumentFinality,
+  groupConstructionDocumentVersions,
   isConstructionDocumentVersionLater,
 } from "../src/lib/constructionDocumentFinality";
 
@@ -121,5 +122,45 @@ describe("construction document finality estimates", () => {
         emailBody: "Attached for review before we proceed.",
       }).revision,
     ).toBeNull();
+  });
+
+  it("shows the newest dated version and keeps older versions in history", () => {
+    const groups = groupConstructionDocumentVersions([
+      {
+        id: "old",
+        file_name: "CAMBRIDGE_MI_260826.pdf",
+        created_at: "2026-09-09T23:20:00Z",
+        finality_document_date: "2026-08-26",
+        superseded_by_document_id: "latest",
+      },
+      {
+        id: "latest",
+        file_name: "CAMBRIDGE_MI_260909.pdf",
+        created_at: "2026-09-09T23:10:00Z",
+        finality_document_date: "2026-09-09",
+      },
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].current.id).toBe("latest");
+    expect(groups[0].previous.map((document) => document.id)).toEqual(["old"]);
+  });
+
+  it("uses upload time when a family does not have a comparable date sequence", () => {
+    const groups = groupConstructionDocumentVersions([
+      {
+        id: "older-upload",
+        file_name: "Merged Scans.pdf",
+        created_at: "2026-09-09T23:16:00Z",
+        finality_document_date: "2026-08-26",
+      },
+      {
+        id: "newer-upload",
+        file_name: "Merged Scans.pdf",
+        created_at: "2026-09-09T23:17:00Z",
+      },
+    ]);
+
+    expect(groups[0].current.id).toBe("newer-upload");
   });
 });
