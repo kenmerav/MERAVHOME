@@ -3,16 +3,24 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
-import { db, type FinancialInvoice } from "@/lib/db";
+import { db, type FinancialInvoice, type Product } from "@/lib/db";
 import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
-import { formatMoney, moneyValue, normalizeMoneyInput, procurementTotals } from "@/lib/money";
+import {
+  clientPriceFromMarkup,
+  formatMoney,
+  moneyValue,
+  normalizeMoneyInput,
+  procurementTotals,
+  type MarkupBasis,
+} from "@/lib/money";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "sonner";
 
 type ProcurementMaterialDetails = {
   id: string;
@@ -185,24 +193,40 @@ function ProcurementPage() {
         const room = item.room_product?.room;
         const category = item.material?.category || product?.category;
         if (roomFilters.length > 0 && (!room?.id || !roomFilters.includes(room.id))) return false;
-        if (
-          categoryFilters.length > 0 &&
-          (!category || !categoryFilters.includes(category))
-        )
+        if (categoryFilters.length > 0 && (!category || !categoryFilters.includes(category)))
           return false;
         if (
           vendorFilters.length > 0 &&
           (!product?.vendor || !vendorFilters.includes(product.vendor))
         )
           return false;
-        if (approvalFilter === "needs_reselection" && item.room_product?.approval_status !== "declined") {
+        if (
+          approvalFilter === "needs_reselection" &&
+          item.room_product?.approval_status !== "declined"
+        ) {
           return false;
         }
         if (selectedInvoiceItemIds && !selectedInvoiceItemIds.has(item.id)) return false;
         return true;
       }),
-    [approvalFilter, projectItems, roomFilters, categoryFilters, selectedInvoiceItemIds, vendorFilters],
+    [
+      approvalFilter,
+      projectItems,
+      roomFilters,
+      categoryFilters,
+      selectedInvoiceItemIds,
+      vendorFilters,
+    ],
   );
+
+  const visibleProducts = useMemo(() => {
+    const productsById = new Map<string, Product>();
+    visibleItems.forEach((item) => {
+      const product = item.room_product?.product;
+      if (product?.id) productsById.set(product.id, product);
+    });
+    return Array.from(productsById.values());
+  }, [visibleItems]);
 
   const toggle = async (
     materialItemId: string,
@@ -215,16 +239,86 @@ function ProcurementPage() {
 
   const updateProductPricing = async (
     productId: string,
-    values: { price: string; unit_cost: string; shipping: string },
+    values: {
+      retail_price: string;
+      unit_cost: string;
+      markup_percent: string;
+      markup_basis: MarkupBasis;
+      shipping: string;
+    },
   ) => {
+    const clientPrice = clientPriceFromMarkup({
+      retailPrice: values.retail_price,
+      ourPrice: values.unit_cost,
+      markupPercent: values.markup_percent,
+      markupBasis: values.markup_basis,
+    });
+    const markupPercent = values.markup_percent.trim()
+      ? Number(values.markup_percent.trim())
+      : null;
     await db.updateProduct(productId, {
-      price: normalizeMoneyInput(values.price),
+      retail_price: normalizeMoneyInput(values.retail_price),
       unit_cost: normalizeMoneyInput(values.unit_cost),
+      markup_percent: Number.isFinite(markupPercent) ? markupPercent : null,
+      markup_basis: values.markup_basis,
+      ...(clientPrice == null ? {} : { price: normalizeMoneyInput(clientPrice.toFixed(2)) }),
       shipping: normalizeMoneyInput(values.shipping),
     });
     qc.invalidateQueries({ queryKey: ["procurement"] });
     qc.invalidateQueries({ queryKey: ["catalog"] });
     qc.invalidateQueries({ queryKey: ["product", productId] });
+  };
+
+  const applyBulkMarkup = async (markupBasis: MarkupBasis, markupPercent: number) => {
+    const updates = visibleProducts.flatMap((product) => {
+      const retailPrice =
+        product.retail_price || (product.markup_percent == null ? product.price : null);
+      const clientPrice = clientPriceFromMarkup({
+        retailPrice,
+        ourPrice: product.unit_cost,
+        markupPercent,
+        markupBasis,
+      });
+
+      if (clientPrice == null) return [];
+
+      return [
+        {
+          product,
+          patch: {
+            markup_percent: markupPercent,
+            markup_basis: markupBasis,
+            price: normalizeMoneyInput(clientPrice.toFixed(2)),
+            ...(markupBasis === "retail_price" && !product.retail_price && retailPrice
+              ? { retail_price: normalizeMoneyInput(retailPrice) }
+              : {}),
+          },
+        },
+      ];
+    });
+
+    for (let start = 0; start < updates.length; start += 20) {
+      const chunk = updates.slice(start, start + 20);
+      await Promise.all(
+        chunk.map(async ({ product, patch }) => {
+          const saved = await db.updateProduct(product.id, patch);
+          if (!saved) throw new Error(`Could not update ${product.name}.`);
+        }),
+      );
+    }
+
+    if (updates.length > 0) {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["procurement"] }),
+        qc.invalidateQueries({ queryKey: ["catalog"] }),
+        qc.invalidateQueries({ queryKey: ["product"] }),
+      ]);
+    }
+
+    return {
+      updated: updates.length,
+      skipped: visibleProducts.length - updates.length,
+    };
   };
 
   const updateProductText = async (
@@ -326,7 +420,7 @@ function ProcurementPage() {
           </MoneyStat>
           <MoneyStat label="Shipping" value={money.shipping} />
           <MoneyStat label="Client Total" value={money.total} />
-          <MoneyStat label="Studio Cost" value={money.cost} />
+          <MoneyStat label="Our Price" value={money.cost} />
           <MoneyStat label="Profit" value={money.profit} />
         </div>
 
@@ -423,6 +517,10 @@ function ProcurementPage() {
               </button>
             </div>
           )}
+          <div className="w-full sm:w-auto">
+            <label className="eyebrow block mb-2">Bulk Pricing</label>
+            <BulkMarkupEditor products={visibleProducts} onApply={applyBulkMarkup} />
+          </div>
           <div className="w-full sm:w-auto sm:ml-auto">
             <label className="eyebrow block mb-2">Invoice</label>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -501,7 +599,13 @@ function ProcurementPage() {
                   "—";
                 const needsReselection = item.room_product?.approval_status === "declined";
                 return (
-                  <tr key={item.id} className={cn("border-b border-border align-top", needsReselection && "bg-red-50/35")}>
+                  <tr
+                    key={item.id}
+                    className={cn(
+                      "border-b border-border align-top",
+                      needsReselection && "bg-red-50/35",
+                    )}
+                  >
                     <td className="px-3 py-3">
                       <div className="flex items-start gap-3 text-left">
                         <div className="w-12 h-12 bg-bone overflow-hidden flex-shrink-0 border border-border">
@@ -613,8 +717,11 @@ function ProcurementPage() {
                     <td className="px-3 py-3 text-xs">
                       <PricingEditor
                         productName={clientName}
+                        retailPrice={p?.retail_price ?? ""}
                         price={p?.price ?? ""}
                         unitCost={p?.unit_cost ?? ""}
+                        markupPercent={p?.markup_percent ?? null}
+                        markupBasis={p?.markup_basis ?? null}
                         shipping={p?.shipping ?? ""}
                         disabled={!p?.id}
                         onSave={(values) =>
@@ -656,38 +763,177 @@ function ProcurementPage() {
   );
 }
 
+function BulkMarkupEditor({
+  products,
+  onApply,
+}: {
+  products: Product[];
+  onApply: (
+    markupBasis: MarkupBasis,
+    markupPercent: number,
+  ) => Promise<{ updated: number; skipped: number }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [markupBasis, setMarkupBasis] = useState<MarkupBasis>("retail_price");
+  const [markupPercent, setMarkupPercent] = useState("");
+
+  const availableCount = products.filter((product) => {
+    if (markupBasis === "our_price") return !!product.unit_cost?.trim();
+    return !!(
+      product.retail_price?.trim() ||
+      (product.markup_percent == null && product.price?.trim())
+    );
+  }).length;
+  const percent = Number(markupPercent.trim());
+  const canApply = products.length > 0 && markupPercent.trim() !== "" && Number.isFinite(percent);
+
+  const apply = async () => {
+    if (!canApply) return;
+    setApplying(true);
+    try {
+      const result = await onApply(markupBasis, percent);
+      if (result.updated === 0) {
+        toast.warning(
+          `No products have a ${markupBasis === "our_price" ? "Our Price" : "Retail Price"} to mark up.`,
+        );
+        return;
+      }
+
+      toast.success(
+        `Markup applied to ${result.updated} product${result.updated === 1 ? "" : "s"}${
+          result.skipped > 0 ? `; ${result.skipped} skipped because the base price is missing` : ""
+        }.`,
+      );
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not apply the markup.");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={products.length === 0}
+          className="h-10 border border-ink bg-ink px-4 text-xs uppercase tracking-[0.12em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Set Markup for All
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-4" align="start">
+        <div className="eyebrow mb-1">Set Markup for All Shown</div>
+        <div className="font-display text-xl">{products.length} unique products</div>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          This applies one markup to every product in the current filtered view.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <label className="block">
+            <span className="eyebrow mb-1.5 block">Markup Based On</span>
+            <select
+              value={markupBasis}
+              onChange={(event) => setMarkupBasis(event.target.value as MarkupBasis)}
+              className="h-10 w-full border border-input bg-background px-3 text-sm"
+            >
+              <option value="retail_price">Retail Price</option>
+              <option value="our_price">Our Price</option>
+            </select>
+          </label>
+          <PercentInput label="Markup" value={markupPercent} onChange={setMarkupPercent} />
+          <div className="border border-border bg-bone/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            <span className="font-medium text-ink">{availableCount}</span> product
+            {availableCount === 1 ? "" : "s"} will be updated.
+            {products.length - availableCount > 0 && (
+              <>
+                {" "}
+                {products.length - availableCount} without a{" "}
+                {markupBasis === "our_price" ? "Our Price" : "Retail Price"} will be skipped.
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="h-9 border border-border px-4 text-xs"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={!canApply || applying}
+            className="h-9 bg-ink px-4 text-xs text-primary-foreground disabled:opacity-40"
+          >
+            {applying ? "Applying..." : "Apply to All Shown"}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function PricingEditor({
   productName,
+  retailPrice,
   price,
   unitCost,
+  markupPercent,
+  markupBasis,
   shipping,
   disabled,
   onSave,
 }: {
   productName: string;
+  retailPrice: string;
   price: string;
   unitCost: string;
+  markupPercent: number | null;
+  markupBasis: MarkupBasis | null;
   shipping: string;
   disabled?: boolean;
-  onSave: (values: { price: string; unit_cost: string; shipping: string }) => Promise<void>;
+  onSave: (values: {
+    retail_price: string;
+    unit_cost: string;
+    markup_percent: string;
+    markup_basis: MarkupBasis;
+    shipping: string;
+  }) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => ({
-    price: moneyDraft(price),
+    retail_price: moneyDraft(retailPrice || (markupPercent == null ? price : "")),
     unit_cost: moneyDraft(unitCost),
+    markup_percent: markupPercent?.toString() ?? "",
+    markup_basis: markupBasis ?? ("retail_price" as MarkupBasis),
     shipping: moneyDraft(shipping),
   }));
 
   useEffect(() => {
     if (!open) {
       setDraft({
-        price: moneyDraft(price),
+        retail_price: moneyDraft(retailPrice || (markupPercent == null ? price : "")),
         unit_cost: moneyDraft(unitCost),
+        markup_percent: markupPercent?.toString() ?? "",
+        markup_basis: markupBasis ?? "retail_price",
         shipping: moneyDraft(shipping),
       });
     }
-  }, [open, price, shipping, unitCost]);
+  }, [markupBasis, markupPercent, open, price, retailPrice, shipping, unitCost]);
+
+  const calculatedClientPrice = clientPriceFromMarkup({
+    retailPrice: draft.retail_price,
+    ourPrice: draft.unit_cost,
+    markupPercent: draft.markup_percent,
+    markupBasis: draft.markup_basis,
+  });
 
   const save = async () => {
     setSaving(true);
@@ -709,13 +955,25 @@ function PricingEditor({
             "min-w-[170px] border border-border bg-background px-3 py-2 text-left transition-colors",
             disabled ? "cursor-not-allowed text-muted-foreground" : "hover:border-ink",
           )}
-          title={disabled ? undefined : "Edit client price, studio cost, and shipping"}
+          title={disabled ? undefined : "Edit retail price, our price, markup, and shipping"}
         >
           <span className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             <DollarSign className="h-3 w-3" /> Edit Pricing
           </span>
+          <PricingSummary
+            label="Retail"
+            value={retailPrice || (markupPercent == null ? price : "")}
+          />
+          <PricingSummary label="Our Price" value={unitCost} />
+          <PricingTextSummary
+            label="Markup"
+            value={
+              markupPercent == null
+                ? "—"
+                : `${markupPercent}% on ${markupBasis === "our_price" ? "Our Price" : "Retail"}`
+            }
+          />
           <PricingSummary label="Client" value={price} />
-          <PricingSummary label="Studio Cost" value={unitCost} />
           <PricingSummary label="Shipping" value={shipping} />
         </button>
       </PopoverTrigger>
@@ -729,15 +987,49 @@ function PricingEditor({
         </div>
         <div className="space-y-3">
           <MoneyInput
-            label="Client Price"
-            value={draft.price}
-            onChange={(value) => setDraft((current) => ({ ...current, price: value }))}
+            label="Retail Price"
+            value={draft.retail_price}
+            onChange={(value) => setDraft((current) => ({ ...current, retail_price: value }))}
           />
           <MoneyInput
-            label="Studio Cost"
+            label="Our Price"
             value={draft.unit_cost}
             onChange={(value) => setDraft((current) => ({ ...current, unit_cost: value }))}
           />
+          <label className="block">
+            <span className="eyebrow mb-1.5 block">Markup Based On</span>
+            <select
+              value={draft.markup_basis}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  markup_basis: event.target.value as MarkupBasis,
+                }))
+              }
+              className="h-10 w-full border border-input bg-background px-3 text-sm"
+            >
+              <option value="retail_price">Retail Price</option>
+              <option value="our_price">Our Price</option>
+            </select>
+          </label>
+          <PercentInput
+            label="Markup"
+            value={draft.markup_percent}
+            onChange={(value) => setDraft((current) => ({ ...current, markup_percent: value }))}
+          />
+          <div className="border border-border bg-bone/40 px-3 py-2.5">
+            <div className="eyebrow mb-1">Client Price</div>
+            <div className="font-display text-xl">
+              {calculatedClientPrice == null
+                ? displayMoney(price)
+                : formatMoney(calculatedClientPrice)}
+            </div>
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              {calculatedClientPrice == null
+                ? "Enter the selected base price and a markup to calculate a new client price."
+                : `Calculated from ${draft.markup_basis === "our_price" ? "Our Price" : "Retail Price"}.`}
+            </p>
+          </div>
           <MoneyInput
             label="Shipping"
             value={draft.shipping}
@@ -783,6 +1075,15 @@ function PricingSummary({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PricingTextSummary({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="flex items-center justify-between gap-3 text-xs leading-5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="max-w-[105px] truncate font-medium text-ink">{value}</span>
+    </span>
+  );
+}
+
 function MoneyInput({
   label,
   value,
@@ -804,6 +1105,32 @@ function MoneyInput({
           className="h-full min-w-0 flex-1 bg-transparent pr-3 text-right text-sm outline-none"
           placeholder="0.00"
         />
+      </span>
+    </label>
+  );
+}
+
+function PercentInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="eyebrow mb-1.5 block">{label}</span>
+      <span className="flex h-10 items-center border border-input bg-background focus-within:border-ink">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          inputMode="decimal"
+          className="h-full min-w-0 flex-1 bg-transparent pl-3 text-right text-sm outline-none"
+          placeholder="0"
+        />
+        <span className="px-3 text-sm text-muted-foreground">%</span>
       </span>
     </label>
   );

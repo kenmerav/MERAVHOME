@@ -105,8 +105,11 @@ beforeEach(() => {
     products: [
       {
         id: "product",
+        retail_price: "$20.00",
         price: "$20.00",
         unit_cost: "$15.00",
+        markup_percent: null,
+        markup_basis: null,
         sku: item.sku,
         product_url: productUrl,
         shipping: "$5.00",
@@ -132,10 +135,11 @@ describe("verified cart pricing", () => {
     await expect(update()).rejects.toThrow("Ken only");
     expect(state.writes).toHaveLength(0);
   });
-  it("saves retail for the client and discounted cart unit cost for Studio, after Added", async () => {
+  it("saves retail and our price without overwriting client price before markup is set", async () => {
     const result = await update();
     expect(state.tables.products[0]).toMatchObject({
-      price: "$25",
+      retail_price: "$25",
+      price: "$20.00",
       unit_cost: "$18",
       shipping: "$5.00",
     });
@@ -145,7 +149,7 @@ describe("verified cart pricing", () => {
     });
     expect(state.writes[1]).toMatchObject({
       table: "products",
-      patch: { price: "$25", unit_cost: "$18" },
+      patch: { retail_price: "$25", unit_cost: "$18" },
     });
     expect(result.observed_options.cart_pricing).toMatchObject({
       state: "synced",
@@ -158,9 +162,20 @@ describe("verified cart pricing", () => {
   it("keeps verified per-item shipping separate from both unit prices", async () => {
     await update({ observedShipping: 7 });
     expect(state.tables.products[0]).toMatchObject({
-      price: "$25",
+      retail_price: "$25",
+      price: "$20.00",
       unit_cost: "$18",
       shipping: "7.00",
+    });
+  });
+  it("recalculates client price when a markup is configured", async () => {
+    state.tables.products[0].markup_percent = 20;
+    state.tables.products[0].markup_basis = "retail_price";
+    await update();
+    expect(state.tables.products[0]).toMatchObject({
+      retail_price: "$25",
+      unit_cost: "$18",
+      price: "$30.00",
     });
   });
   it("keeps Added and records a review warning if product-price saving fails", async () => {

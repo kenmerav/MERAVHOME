@@ -316,8 +316,11 @@ export interface Product {
   sku: string | null;
   notes: string | null;
   dimensions: string | null;
+  retail_price: string | null;
   price: string | null;
   unit_cost: string | null;
+  markup_percent: number | null;
+  markup_basis: "retail_price" | "our_price" | null;
   shipping: string | null;
   carton_coverage_sq_ft?: number | null;
   carton_coverage_source_url?: string | null;

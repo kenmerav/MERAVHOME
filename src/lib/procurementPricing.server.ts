@@ -1,5 +1,6 @@
 import { parseMoney, type ProcurementSnapshot } from "@/lib/procurementCart";
 import { type CartPricingSync, type verifiedProductPrices } from "@/lib/procurementPricing";
+import { clientPriceFromMarkup, normalizeMoneyInput, type MarkupBasis } from "@/lib/money";
 
 // Both product prices change in one update. A failed sync never reopens an Added
 // item or loses its cart result; the recorded pricing evidence can be retried.
@@ -31,7 +32,9 @@ export async function syncCartProductPrices(
       throw new Error("The Spec Book product link changed; review prices manually.");
     const current = await admin
       .from("products")
-      .select("id,price,unit_cost,shipping,sku,product_url")
+      .select(
+        "id,retail_price,price,unit_cost,markup_percent,markup_basis,shipping,sku,product_url",
+      )
       .eq("id", item.product_id)
       .maybeSingle();
     if (current.error || !current.data)
@@ -41,25 +44,36 @@ export async function syncCartProductPrices(
       throw new Error(
         "The product SKU or URL changed since this run was prepared; review prices manually.",
       );
-    result.previous_retail = product.price;
+    result.previous_retail = product.retail_price;
     result.previous_cost = product.unit_cost;
+    const clientPrice = clientPriceFromMarkup({
+      retailPrice: prices.retail,
+      ourPrice: prices.cost,
+      markupPercent: product.markup_percent,
+      markupBasis: (product.markup_basis ?? "retail_price") as MarkupBasis,
+    });
+    const nextClientPrice =
+      clientPrice == null ? null : normalizeMoneyInput(clientPrice.toFixed(2));
     if (
-      parseMoney(product.price) !== prices.retail ||
+      parseMoney(product.retail_price) !== prices.retail ||
       parseMoney(product.unit_cost) !== prices.cost ||
+      (nextClientPrice != null && parseMoney(product.price) !== clientPrice) ||
       (shipping != null && parseMoney(product.shipping) !== shipping)
     ) {
-      let update = admin
-        .from("products")
-        .update({
-          price: `$${prices.retail}`,
-          unit_cost: `$${prices.cost}`,
-          ...(shipping != null ? { shipping: shipping.toFixed(2) } : {}),
-        })
-        .eq("id", item.product_id);
+      const patch = {
+        retail_price: normalizeMoneyInput(prices.retail.toString()),
+        unit_cost: normalizeMoneyInput(prices.cost.toString()),
+        ...(nextClientPrice != null ? { price: nextClientPrice } : {}),
+        ...(shipping != null ? { shipping: shipping.toFixed(2) } : {}),
+      };
+      let update = admin.from("products").update(patch).eq("id", item.product_id);
       // Do not overwrite a concurrent manual edit to either price or product identity.
       for (const field of [
-        "price",
+        "retail_price",
         "unit_cost",
+        "markup_percent",
+        "markup_basis",
+        ...(nextClientPrice != null ? ["price"] : []),
         "sku",
         "product_url",
         ...(shipping != null ? ["shipping"] : []),
@@ -74,7 +88,10 @@ export async function syncCartProductPrices(
     return {
       ...result,
       state: "synced",
-      message: "Client retail price and Studio cart cost are up to date.",
+      message:
+        nextClientPrice == null
+          ? "Retail and our prices are up to date. Set markup in Procurement to calculate client price."
+          : "Retail price, our price, and calculated client price are up to date.",
     };
   } catch (error) {
     return {

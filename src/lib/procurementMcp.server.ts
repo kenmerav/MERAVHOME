@@ -25,7 +25,7 @@ const SAFETY_RULES = [
   "Never bypass a CAPTCHA or ask the user for a password; pause for the user to sign in.",
   `For Email rep items, use only Studio's create_retailer_draft tool. It creates a reviewable draft in ${KEN_PROCUREMENT_EMAIL} and has no Send operation.`,
   "Adding to a cart never authorizes purchasing.",
-  "After verifying an Added item, provide verified_pricing: public retail price for the client and actual discounted cart unit price for Studio. Exclude tax and shipping. Never use an unverified price or substitute a cart total for a unit price.",
+  "After verifying an Added item, provide verified_pricing: public retail price and actual discounted cart unit price for Studio. Client price is calculated separately from the saved markup settings. Exclude tax and shipping. Never use an unverified price or substitute a cart total for a unit price.",
 ] as const;
 
 type ProcurementMcpServices = {
@@ -185,7 +185,7 @@ export function createMeravCartMcpServer(services: ProcurementMcpServices = defa
     {
       title: "Update procurement item",
       description:
-        "Record a retailer result for one product in the authorized run. For an exact verified Added item, verified_pricing also updates the linked product's client retail price and Studio unit cost. Requirements, options, quantity, and ordering status are never changed.",
+        "Record a retailer result for one product in the authorized run. For an exact verified Added item, verified_pricing updates the linked product's retail price and Studio's actual unit price; client price is recalculated only when markup is configured. Requirements, options, quantity, and ordering status are never changed.",
       inputSchema: {
         run_authorization: z.string().min(32),
         run_item_id: z.string().uuid(),

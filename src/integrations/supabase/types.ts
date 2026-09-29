@@ -419,8 +419,11 @@ export type Database = {
           image_url: string | null
           name: string
           notes: string | null
+          markup_basis: string | null
+          markup_percent: number | null
           price: string | null
           product_url: string | null
+          retail_price: string | null
           shipping: string | null
           sku: string | null
           subcategory: string | null
@@ -439,8 +442,11 @@ export type Database = {
           image_url?: string | null
           name: string
           notes?: string | null
+          markup_basis?: string | null
+          markup_percent?: number | null
           price?: string | null
           product_url?: string | null
+          retail_price?: string | null
           shipping?: string | null
           sku?: string | null
           subcategory?: string | null
@@ -459,8 +465,11 @@ export type Database = {
           image_url?: string | null
           name?: string
           notes?: string | null
+          markup_basis?: string | null
+          markup_percent?: number | null
           price?: string | null
           product_url?: string | null
+          retail_price?: string | null
           shipping?: string | null
           sku?: string | null
           subcategory?: string | null
