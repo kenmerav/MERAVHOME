@@ -40,6 +40,7 @@ type ProductInvoiceSummary = {
   projectId: string | null;
   name: string;
   documentUrl: string | null;
+  paymentUrl: string | null;
   total: number;
   sortDate: string;
   sourceIds: Set<string>;
@@ -190,18 +191,28 @@ function ProcurementPage() {
   const selectedInvoiceItemIds = selectedProductInvoice?.sourceIds ?? null;
 
   const viewSelectedInvoice = async () => {
-    if (!selectedProductInvoice?.documentUrl) return toast.error("This invoice does not have a saved document.");
+    if (!selectedProductInvoice?.documentUrl)
+      return toast.error("This invoice does not have a saved document.");
     try {
-      await openInvoiceDocument(selectedProductInvoice.documentUrl, selectedProductInvoice.name);
+      await openInvoiceDocument(selectedProductInvoice.documentUrl, selectedProductInvoice.name, {
+        paymentUrl: selectedProductInvoice.paymentUrl,
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not open the invoice.");
     }
   };
 
   const downloadSelectedInvoice = async () => {
-    if (!selectedProductInvoice?.documentUrl) return toast.error("This invoice does not have a saved document.");
+    if (!selectedProductInvoice?.documentUrl)
+      return toast.error("This invoice does not have a saved document.");
     try {
-      await downloadInvoiceDocument(selectedProductInvoice.documentUrl, selectedProductInvoice.name);
+      await downloadInvoiceDocument(
+        selectedProductInvoice.documentUrl,
+        selectedProductInvoice.name,
+        {
+          paymentUrl: selectedProductInvoice.paymentUrl,
+        },
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not download the invoice.");
     }
@@ -1494,6 +1505,7 @@ function productInvoiceFromFinancialInvoice(
       projectId: invoice.project_id,
       name: invoice.file_name || parsed.draft?.invoiceName || "Product Invoice",
       documentUrl: invoice.pdf_data_url,
+      paymentUrl: currentInvoicePaymentUrl(invoice),
       total: financialInvoiceLedger(invoice).adjustedTotal,
       sortDate: invoice.invoice_date || invoice.created_at || "",
       sourceIds,
@@ -1501,4 +1513,15 @@ function productInvoiceFromFinancialInvoice(
   } catch {
     return null;
   }
+}
+
+function currentInvoicePaymentUrl(invoice: FinancialInvoice) {
+  const duePayment = invoice.payments?.find(
+    (payment) => payment.status === "due" && stripeLinkFromNotes(payment.notes),
+  );
+  return stripeLinkFromNotes(duePayment?.notes);
+}
+
+function stripeLinkFromNotes(notes?: string | null) {
+  return notes?.match(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/i)?.[0] ?? null;
 }

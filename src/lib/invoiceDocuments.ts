@@ -9,7 +9,11 @@ type InvoiceDocumentOptions = {
   paymentUrl?: string | null;
 };
 
-export async function openInvoiceDocument(documentUrl: string | null, fileName?: string | null, options: InvoiceDocumentOptions = {}) {
+export async function openInvoiceDocument(
+  documentUrl: string | null,
+  fileName?: string | null,
+  options: InvoiceDocumentOptions = {},
+) {
   if (!documentUrl) return;
   const target = window.open("", "_blank");
   if (target) target.opener = null;
@@ -17,7 +21,9 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
   try {
     const blob = await (await fetch(documentUrl)).blob();
     if (isHtmlInvoice(blob, documentUrl)) {
-      const html = optimizeInvoiceImages(applyInvoicePaymentLink(await blob.text(), options.paymentUrl));
+      const html = optimizeInvoiceImages(
+        applyInvoicePaymentLink(await blob.text(), options.paymentUrl),
+      );
       if (target) {
         target.document.open();
         target.document.write(html);
@@ -30,7 +36,9 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
       return;
     }
 
-    const pdfBlob = await sanitizeInvoicePdfBlob(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
+    const pdfBlob = await sanitizeInvoicePdfBlob(
+      blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }),
+    );
     const url = URL.createObjectURL(pdfBlob);
     if (target) {
       target.document.title = invoicePdfFileName(fileName);
@@ -45,7 +53,11 @@ export async function openInvoiceDocument(documentUrl: string | null, fileName?:
   }
 }
 
-export async function downloadInvoiceDocument(documentUrl: string | null, fileName?: string | null, options: InvoiceDocumentOptions = {}) {
+export async function downloadInvoiceDocument(
+  documentUrl: string | null,
+  fileName?: string | null,
+  options: InvoiceDocumentOptions = {},
+) {
   if (!documentUrl) return;
 
   const blob = await (await fetch(documentUrl)).blob();
@@ -57,7 +69,9 @@ export async function downloadInvoiceDocument(documentUrl: string | null, fileNa
     return;
   }
 
-  const pdfBlob = await sanitizeInvoicePdfBlob(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
+  const pdfBlob = await sanitizeInvoicePdfBlob(
+    blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }),
+  );
   const url = URL.createObjectURL(pdfBlob);
   triggerDownload(url, invoicePdfFileName(fileName));
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -79,7 +93,8 @@ async function sanitizeInvoicePdfBlob(blob: Blob) {
         const annotation = pdfDoc.context.lookup(annotationRef) as any;
         const action = annotation?.lookup?.(PDFName.of("A"));
         const uri = action?.lookup?.(PDFName.of("URI"));
-        const uriText = typeof uri?.decodeText === "function" ? uri.decodeText() : uri?.asString?.() || "";
+        const uriText =
+          typeof uri?.decodeText === "function" ? uri.decodeText() : uri?.asString?.() || "";
 
         if (/https:\/\/(?:buy|checkout)\.stripe\.com\//i.test(uriText)) {
           removedStripeLink = true;
@@ -117,16 +132,36 @@ async function sanitizeInvoicePdfBlob(blob: Blob) {
   }
 }
 
-function applyInvoicePaymentLink(html: string, paymentUrl?: string | null) {
-  const withoutEmbeddedPayRow = removeEmbeddedPayRow(html);
+export function applyInvoicePaymentLink(html: string, paymentUrl?: string | null) {
+  const currentPaymentUrl = paymentUrl?.trim();
 
-  // The client portal has its own current Pay Online button. Strip stale
-  // Stripe URLs from saved invoice HTML so old phase links cannot be reused.
-  if (!paymentUrl) {
-    return withoutEmbeddedPayRow.replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, "#");
+  // Remove the embedded pay row when there is no currently-due Stripe link so
+  // an old saved link cannot be reused after an invoice is paid or replaced.
+  if (!currentPaymentUrl) {
+    return removeEmbeddedPayRow(html).replace(
+      /https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi,
+      "#",
+    );
   }
 
-  return withoutEmbeddedPayRow.replace(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi, escapeHtmlAttribute(paymentUrl));
+  const escapedPaymentUrl = escapeHtmlAttribute(currentPaymentUrl);
+  const withCurrentUrl = html.replace(
+    /https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/gi,
+    escapedPaymentUrl,
+  );
+
+  if (
+    /<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/i.test(
+      withCurrentUrl,
+    )
+  ) {
+    return withCurrentUrl;
+  }
+
+  return withCurrentUrl.replace(
+    /(<div\s+class=["']pay["'][^>]*>\s*<div[^>]*>)\s*(CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY)\s*(<\/div>)/i,
+    `$1<a href="${escapedPaymentUrl}">$2</a>$3`,
+  );
 }
 
 function removeEmbeddedPayRow(html: string) {
@@ -138,12 +173,22 @@ function removeEmbeddedPayRow(html: string) {
   if (withoutPayBlock !== html) return withoutPayBlock;
 
   return withoutPayBlock
-    .replace(/<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/gi, "CLICK HERE TO PAY")
-    .replace(/(?<![>\w])CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY(?!\s*<\/a>)/gi, "");
+    .replace(
+      /<a\b[^>]*>\s*CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY\s*<\/a>/gi,
+      "CLICK HERE TO PAY",
+    )
+    .replace(
+      /(?<![>\w])CLICK(?:\s|&nbsp;)+HERE(?:\s|&nbsp;)+TO(?:\s|&nbsp;)+PAY(?!\s*<\/a>)/gi,
+      "",
+    );
 }
 
 function isHtmlInvoice(blob: Blob, documentUrl: string) {
-  return blob.type.toLowerCase().includes("text/html") || /^data:text\/html/i.test(documentUrl) || /\.html?(?:$|\?)/i.test(documentUrl);
+  return (
+    blob.type.toLowerCase().includes("text/html") ||
+    /^data:text\/html/i.test(documentUrl) ||
+    /\.html?(?:$|\?)/i.test(documentUrl)
+  );
 }
 
 function optimizeInvoiceImages(html: string) {
