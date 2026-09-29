@@ -21,6 +21,8 @@ import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { financialInvoiceLedger } from "@/lib/financialInvoiceLedger";
+import { downloadInvoiceDocument, openInvoiceDocument } from "@/lib/invoiceDocuments";
 
 type ProcurementMaterialDetails = {
   id: string;
@@ -37,6 +39,7 @@ type ProductInvoiceSummary = {
   id: string;
   projectId: string | null;
   name: string;
+  documentUrl: string | null;
   total: number;
   sortDate: string;
   sourceIds: Set<string>;
@@ -179,12 +182,30 @@ function ProcurementPage() {
     [productInvoices, projectFilter],
   );
 
-  const selectedInvoiceItemIds = useMemo(() => {
-    if (invoiceFilter === "__all") return null;
-    return (
-      selectedProjectInvoices.find((invoice) => invoice.id === invoiceFilter)?.sourceIds ?? null
-    );
-  }, [invoiceFilter, selectedProjectInvoices]);
+  const selectedProductInvoice = useMemo(
+    () => selectedProjectInvoices.find((invoice) => invoice.id === invoiceFilter) ?? null,
+    [invoiceFilter, selectedProjectInvoices],
+  );
+
+  const selectedInvoiceItemIds = selectedProductInvoice?.sourceIds ?? null;
+
+  const viewSelectedInvoice = async () => {
+    if (!selectedProductInvoice?.documentUrl) return toast.error("This invoice does not have a saved document.");
+    try {
+      await openInvoiceDocument(selectedProductInvoice.documentUrl, selectedProductInvoice.name);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not open the invoice.");
+    }
+  };
+
+  const downloadSelectedInvoice = async () => {
+    if (!selectedProductInvoice?.documentUrl) return toast.error("This invoice does not have a saved document.");
+    try {
+      await downloadInvoiceDocument(selectedProductInvoice.documentUrl, selectedProductInvoice.name);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not download the invoice.");
+    }
+  };
 
   const visibleItems = useMemo(
     () =>
@@ -453,6 +474,15 @@ function ProcurementPage() {
                 </option>
               ))}
             </select>
+            {selectedProject && (
+              <Link
+                to="/projects/$id/financials"
+                params={{ id: selectedProject.id }}
+                className="mt-2 inline-flex text-xs text-muted-foreground underline-offset-4 hover:text-ink hover:underline"
+              >
+                Manage invoice adjustments
+              </Link>
+            )}
           </div>
           <div className="w-full sm:min-w-[200px] sm:w-auto">
             <MultiFilter
@@ -483,18 +513,40 @@ function ProcurementPage() {
           </div>
           <div className="w-full sm:min-w-[240px] sm:w-auto">
             <label className="eyebrow block mb-2">Invoice</label>
-            <select
-              value={invoiceFilter}
-              onChange={(e) => setInvoiceFilter(e.target.value)}
-              className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="__all">All Product Invoices</option>
-              {selectedProjectInvoices.map((invoice) => (
-                <option key={invoice.id} value={invoice.id}>
-                  {invoice.name} · {formatMoney(invoice.total)}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-2">
+              <select
+                value={invoiceFilter}
+                onChange={(e) => setInvoiceFilter(e.target.value)}
+                className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="__all">All Product Invoices</option>
+                {selectedProjectInvoices.map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {invoice.name} · {formatMoney(invoice.total)}
+                  </option>
+                ))}
+              </select>
+              {selectedProductInvoice && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={viewSelectedInvoice}
+                    disabled={!selectedProductInvoice.documentUrl}
+                    className="h-9 flex-1 border border-border px-3 text-xs hover:border-ink disabled:opacity-50"
+                  >
+                    View Invoice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadSelectedInvoice}
+                    disabled={!selectedProductInvoice.documentUrl}
+                    className="h-9 flex-1 bg-ink px-3 text-xs text-primary-foreground disabled:opacity-50"
+                  >
+                    Download PDF
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           {needsReselectionCount > 0 && (
             <div className="w-full sm:w-auto">
@@ -1441,7 +1493,8 @@ function productInvoiceFromFinancialInvoice(
       id: invoice.id,
       projectId: invoice.project_id,
       name: invoice.file_name || parsed.draft?.invoiceName || "Product Invoice",
-      total: Number(invoice.total_amount || 0),
+      documentUrl: invoice.pdf_data_url,
+      total: financialInvoiceLedger(invoice).adjustedTotal,
       sortDate: invoice.invoice_date || invoice.created_at || "",
       sourceIds,
     };

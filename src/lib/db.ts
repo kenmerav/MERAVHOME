@@ -4,6 +4,10 @@ import type {
   RenderingStudioAssetType,
   RenderingStudioPresentationMode,
 } from "@/lib/renderingStudioPackage";
+import type {
+  FinancialAdjustmentStatus,
+  FinancialAdjustmentType,
+} from "@/lib/financialInvoiceLedger";
 
 export { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory };
 
@@ -452,6 +456,7 @@ export interface FinancialInvoice {
   created_at: string;
   updated_at: string;
   payments?: FinancialInvoicePayment[];
+  adjustments?: FinancialInvoiceAdjustment[];
   project?: Pick<Project, "id" | "name" | "client_name" | "status"> | null;
 }
 
@@ -472,6 +477,22 @@ export interface FinancialInvoicePayment {
   quickbooks_synced_at?: string | null;
   quickbooks_sync_error?: string | null;
   sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FinancialInvoiceAdjustment {
+  id: string;
+  invoice_id: string;
+  project_id: string | null;
+  adjustment_type: FinancialAdjustmentType;
+  label: string;
+  amount: number;
+  status: FinancialAdjustmentStatus;
+  notes: string | null;
+  settled_at: string | null;
+  sort_order: number;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1162,7 +1183,7 @@ export const db = {
       await supabase
         .from("financial_invoices")
         .select(
-          "*, project:projects(id, name, client_name, status), payments:financial_invoice_payments(*)",
+          "*, project:projects(id, name, client_name, status), payments:financial_invoice_payments(*), adjustments:financial_invoice_adjustments(*)",
         )
         .order("invoice_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -1172,7 +1193,7 @@ export const db = {
     (
       await supabase
         .from("financial_invoices")
-        .select("*, payments:financial_invoice_payments(*)")
+        .select("*, payments:financial_invoice_payments(*), adjustments:financial_invoice_adjustments(*)")
         .eq("project_id", projectId)
         .order("invoice_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -1182,7 +1203,7 @@ export const db = {
     (
       await supabase
         .from("financial_invoices")
-        .select("*, payments:financial_invoice_payments(*)")
+        .select("*, payments:financial_invoice_payments(*), adjustments:financial_invoice_adjustments(*)")
         .is("project_id", null)
         .order("invoice_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -1249,6 +1270,31 @@ export const db = {
 
     return payment;
   },
+  createFinancialInvoiceAdjustment: async (
+    adjustment: Omit<
+      FinancialInvoiceAdjustment,
+      "id" | "created_by" | "created_at" | "updated_at"
+    >,
+  ) =>
+    (
+      await supabase
+        .from("financial_invoice_adjustments")
+        .insert(adjustment)
+        .select()
+        .single()
+    ).data as FinancialInvoiceAdjustment | null,
+  updateFinancialInvoiceAdjustment: async (
+    id: string,
+    patch: Partial<FinancialInvoiceAdjustment>,
+  ) =>
+    (
+      await supabase
+        .from("financial_invoice_adjustments")
+        .update(patch)
+        .eq("id", id)
+        .select()
+        .single()
+    ).data as FinancialInvoiceAdjustment | null,
   updateFinancialInvoice: async (id: string, patch: Partial<FinancialInvoice>) =>
     (
       await supabase

@@ -4,12 +4,22 @@ import { ArrowLeft, FileText, Send, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
-import { db, type FinancialInvoice, type FinancialInvoicePayment } from "@/lib/db";
+import {
+  db,
+  type FinancialInvoice,
+  type FinancialInvoiceAdjustment,
+  type FinancialInvoicePayment,
+} from "@/lib/db";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { formatMoney, procurementTotals } from "@/lib/money";
+import {
+  financialInvoiceLedger,
+  type FinancialAdjustmentStatus,
+  type FinancialAdjustmentType,
+} from "@/lib/financialInvoiceLedger";
 
 export const Route = createFileRoute("/projects/$id/financials")({
   head: () => ({ meta: [{ title: "Financials — MERAV Studio" }] }),
@@ -32,6 +42,13 @@ type ReviewInvoice = {
 };
 
 type ReviewPayment = Pick<FinancialInvoicePayment, "label" | "amount" | "due_date" | "status" | "notes" | "sort_order">;
+type AdjustmentDraft = {
+  adjustment_type: FinancialAdjustmentType;
+  label: string;
+  amount: number;
+  status: FinancialAdjustmentStatus;
+  notes: string | null;
+};
 type QuickBooksStatus = {
   configured: boolean;
   connected: boolean;
@@ -199,9 +216,14 @@ function FinancialsPage() {
 
   const totals = useMemo(() => {
     const payments = invoices.flatMap((invoice) => invoice.payments ?? []);
-    const due = payments.filter((payment) => payment.status === "due").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    const paid = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    return { due, paid, total: due + paid, count: payments.length };
+    const ledgers = invoices.map(financialInvoiceLedger);
+    return {
+      due: ledgers.reduce((sum, ledger) => sum + ledger.balanceDue, 0),
+      paid: ledgers.reduce((sum, ledger) => sum + ledger.grossPaid, 0),
+      total: ledgers.reduce((sum, ledger) => sum + ledger.adjustedTotal, 0),
+      credit: ledgers.reduce((sum, ledger) => sum + ledger.creditOwed, 0),
+      count: payments.length,
+    };
   }, [invoices]);
   const projectProcurement = useMemo(
     () => procurementTotals(procurementItems.filter((item) => item.room_product?.room?.project?.id === id), taxRate),
@@ -529,6 +551,38 @@ function FinancialsPage() {
     }
   };
 
+  const createInvoiceAdjustment = async (invoice: FinancialInvoice, draft: AdjustmentDraft) => {
+    if (!allowed) throw new Error("Only Ken and Katie can add invoice adjustments.");
+    await db.createFinancialInvoiceAdjustment({
+      invoice_id: invoice.id,
+      project_id: invoice.project_id,
+      adjustment_type: draft.adjustment_type,
+      label: draft.label,
+      amount: draft.amount,
+      status: draft.status,
+      notes: draft.notes,
+      settled_at: adjustmentIsSettled(draft.status) ? new Date().toISOString() : null,
+      sort_order: invoice.adjustments?.length ?? 0,
+    });
+    qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+    qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+  };
+
+  const updateInvoiceAdjustment = async (
+    adjustment: FinancialInvoiceAdjustment,
+    status: FinancialAdjustmentStatus,
+  ) => {
+    if (!allowed) throw new Error("Only Ken and Katie can update invoice adjustments.");
+    await db.updateFinancialInvoiceAdjustment(adjustment.id, {
+      status,
+      settled_at: adjustmentIsSettled(status)
+        ? adjustment.settled_at ?? new Date().toISOString()
+        : null,
+    });
+    qc.invalidateQueries({ queryKey: ["financialInvoices", id] });
+    qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
+  };
+
   const deleteInvoice = async (invoice: FinancialInvoice) => {
     if (!allowed) return toast.error("Only Ken and Katie can delete invoices.");
     const label = invoice.file_name || "this invoice";
@@ -668,10 +722,11 @@ function FinancialsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 mb-10">
           <Stat label="Invoice Revenue" value={formatMoney(totals.total)} />
           <Stat label="Paid" value={formatMoney(totals.paid)} />
           <Stat label="Due" value={formatMoney(totals.due)} />
+          <Stat label="Client Credit Owed" value={formatMoney(totals.credit)} />
           <Stat label="Procurement Profit" value={formatMoney(projectProcurement.profit)} />
           <Stat label="Total Project Profit" value={formatMoney(totalProjectProfit)} />
           <Stat label="Payment Lines" value={String(totals.count)} />
@@ -929,6 +984,8 @@ function FinancialsPage() {
               invoice={invoice}
               onStatus={updatePaymentStatus}
               onPaymentUpdate={updateSavedPayment}
+              onAdjustmentCreate={createInvoiceAdjustment}
+              onAdjustmentStatus={updateInvoiceAdjustment}
               savingPaymentId={savingPaymentId}
               onDelete={deleteInvoice}
               onClientVisible={toggleClientVisible}
@@ -947,6 +1004,8 @@ function InvoiceCard({
   invoice,
   onStatus,
   onPaymentUpdate,
+  onAdjustmentCreate,
+  onAdjustmentStatus,
   savingPaymentId,
   onDelete,
   onClientVisible,
@@ -957,6 +1016,11 @@ function InvoiceCard({
   invoice: FinancialInvoice;
   onStatus: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void;
   onPaymentUpdate: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
+  onAdjustmentCreate: (invoice: FinancialInvoice, draft: AdjustmentDraft) => Promise<void>;
+  onAdjustmentStatus: (
+    adjustment: FinancialInvoiceAdjustment,
+    status: FinancialAdjustmentStatus,
+  ) => Promise<void>;
   savingPaymentId?: string | null;
   onDelete: (invoice: FinancialInvoice) => void;
   onClientVisible: (invoice: FinancialInvoice) => void;
@@ -968,6 +1032,7 @@ function InvoiceCard({
   const printableDataUrl = printableInvoiceDataUrl(invoice);
   const quickBooksStatus = invoice.quickbooks_sync_status ?? "not_sent";
   const paidTotal = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const ledger = financialInvoiceLedger(invoice);
   return (
     <section className="border border-border">
       <div className="p-6 border-b border-border flex items-start justify-between gap-4">
@@ -975,8 +1040,13 @@ function InvoiceCard({
           <div className="eyebrow mb-2">{invoice.invoice_date || "Invoice"}</div>
           <h2 className="font-display text-3xl">{invoice.file_name || "Invoice PDF"}</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            {[invoice.client_name, invoice.provider_name, invoice.balance_due != null && `Balance ${formatMoney(invoice.balance_due)}`].filter(Boolean).join(" - ")}
+            {[invoice.client_name, invoice.provider_name, `Balance ${formatMoney(ledger.balanceDue)}`].filter(Boolean).join(" - ")}
           </p>
+          {ledger.creditOwed > 0 && (
+            <p className="mt-2 text-sm font-medium text-emerald-800">
+              Client credit owed: {formatMoney(ledger.creditOwed)}
+            </p>
+          )}
           {quickBooksStatus !== "not_sent" && (
             <p className={`text-xs mt-2 ${quickBooksStatus === "failed" ? "text-destructive" : "text-emerald-800"}`}>
               QuickBooks: {quickBooksStatus === "failed" ? invoice.quickbooks_sync_error || "Sync failed" : `sent${invoice.quickbooks_synced_at ? ` ${new Date(invoice.quickbooks_synced_at).toLocaleString()}` : ""}`}
@@ -1016,7 +1086,181 @@ function InvoiceCard({
         </div>
       </div>
       <PaymentTable payments={payments} onStatus={onStatus} onSavedPaymentChange={onPaymentUpdate} savingPaymentId={savingPaymentId} />
+      <InvoiceAdjustments
+        invoice={invoice}
+        ledger={ledger}
+        onCreate={onAdjustmentCreate}
+        onStatus={onAdjustmentStatus}
+      />
     </section>
+  );
+}
+
+function InvoiceAdjustments({
+  invoice,
+  ledger,
+  onCreate,
+  onStatus,
+}: {
+  invoice: FinancialInvoice;
+  ledger: ReturnType<typeof financialInvoiceLedger>;
+  onCreate: (invoice: FinancialInvoice, draft: AdjustmentDraft) => Promise<void>;
+  onStatus: (
+    adjustment: FinancialInvoiceAdjustment,
+    status: FinancialAdjustmentStatus,
+  ) => Promise<void>;
+}) {
+  const [kind, setKind] = useState<FinancialAdjustmentType>("credit");
+  const [label, setLabel] = useState("");
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const adjustments = [...(invoice.adjustments ?? [])].sort(
+    (a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at),
+  );
+
+  const addAdjustment = async () => {
+    const parsedAmount = numberValue(amount) ?? 0;
+    if (!label.trim()) return toast.error("Add a reason for the adjustment.");
+    if (parsedAmount <= 0) return toast.error("Enter an adjustment amount greater than $0.");
+    setSaving(true);
+    try {
+      await onCreate(invoice, {
+        adjustment_type: kind,
+        label: label.trim(),
+        amount: parsedAmount,
+        status: "open",
+        notes: notes.trim() || null,
+      });
+      setLabel("");
+      setAmount("");
+      setNotes("");
+      toast.success(kind === "credit" ? "Client credit added" : "Additional charge added");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not add the adjustment.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeStatus = async (
+    adjustment: FinancialInvoiceAdjustment,
+    status: FinancialAdjustmentStatus,
+  ) => {
+    setSavingStatusId(adjustment.id);
+    try {
+      await onStatus(adjustment, status);
+      toast.success("Adjustment status updated");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not update the adjustment.");
+    } finally {
+      setSavingStatusId(null);
+    }
+  };
+
+  return (
+    <div className="border-t border-border bg-bone/20 p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="eyebrow mb-2">Adjustments</div>
+          <h3 className="font-display text-2xl">Returns, substitutions & price changes</h3>
+          <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+            Add a credit when an item is removed, returned, or replaced with something less expensive. Add a charge when the replacement costs more. This records the accounting in Studio; issue the actual refund separately in Stripe or QuickBooks, then mark it refunded here.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+          <AdjustmentMetric label="Adjusted Total" value={ledger.adjustedTotal} />
+          <AdjustmentMetric label="Remaining Due" value={ledger.balanceDue} />
+          <AdjustmentMetric label="Credit Owed" value={ledger.creditOwed} credit />
+          <AdjustmentMetric label="Refunded" value={ledger.refundedTotal} />
+        </div>
+      </div>
+
+      {adjustments.length > 0 && (
+        <div className="mobile-card-scroll mt-5 border border-border bg-background">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Reason</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adjustments.map((adjustment) => (
+                <tr key={adjustment.id} className={`border-b border-border ${adjustment.status === "void" ? "opacity-50" : ""}`}>
+                  <td className="px-4 py-3 capitalize">{adjustment.adjustment_type}</td>
+                  <td className="px-4 py-3 min-w-[260px]">
+                    <div>{adjustment.label}</div>
+                    {adjustment.notes && <div className="mt-1 text-xs text-muted-foreground">{adjustment.notes}</div>}
+                  </td>
+                  <td className={`px-4 py-3 text-right ${adjustment.adjustment_type === "credit" ? "text-emerald-800" : ""}`}>
+                    {adjustment.adjustment_type === "credit" ? "−" : "+"}{formatMoney(adjustment.amount)}
+                  </td>
+                  <td className="px-4 py-3 min-w-[180px]">
+                    <select
+                      value={adjustment.status}
+                      disabled={savingStatusId === adjustment.id}
+                      onChange={(event) => changeStatus(adjustment, event.target.value as FinancialAdjustmentStatus)}
+                      className="h-9 w-full border border-input bg-background px-2 text-xs capitalize disabled:opacity-60"
+                    >
+                      {adjustmentStatusOptions(adjustment.adjustment_type).map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-5 grid gap-3 md:grid-cols-[150px_1.2fr_150px_1fr_auto] md:items-end">
+        <div>
+          <Label className="eyebrow">Type</Label>
+          <select
+            value={kind}
+            onChange={(event) => setKind(event.target.value as FinancialAdjustmentType)}
+            className="h-10 w-full border border-input bg-background px-3 text-sm"
+          >
+            <option value="credit">Client Credit</option>
+            <option value="charge">Additional Charge</option>
+          </select>
+        </div>
+        <div>
+          <Label className="eyebrow">Reason</Label>
+          <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Returned faucet or replacement price difference" />
+        </div>
+        <div>
+          <Label className="eyebrow">Amount</Label>
+          <Input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="100.00" />
+        </div>
+        <div>
+          <Label className="eyebrow">Internal / Client Note</Label>
+          <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional details" />
+        </div>
+        <button
+          type="button"
+          onClick={addAdjustment}
+          disabled={saving}
+          className="h-10 whitespace-nowrap bg-ink px-4 text-sm text-primary-foreground disabled:opacity-50"
+        >
+          {saving ? "Adding..." : "Add Adjustment"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AdjustmentMetric({ label, value, credit }: { label: string; value: number; credit?: boolean }) {
+  return (
+    <div className={`border px-3 py-2 ${credit && value > 0 ? "border-emerald-700 bg-emerald-50 text-emerald-900" : "border-border bg-background"}`}>
+      <div className="text-[9px] uppercase tracking-[0.13em] text-muted-foreground">{label}</div>
+      <div className="mt-1 font-display text-xl">{formatMoney(value)}</div>
+    </div>
   );
 }
 
@@ -1442,6 +1686,26 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="font-display text-3xl">{value}</div>
     </div>
   );
+}
+
+function adjustmentStatusOptions(type: FinancialAdjustmentType) {
+  return type === "credit"
+    ? [
+        { value: "open" as const, label: "Credit owed" },
+        { value: "refunded" as const, label: "Refunded" },
+        { value: "applied" as const, label: "Applied to another balance" },
+        { value: "void" as const, label: "Void" },
+      ]
+    : [
+        { value: "open" as const, label: "Additional amount due" },
+        { value: "paid" as const, label: "Paid" },
+        { value: "waived" as const, label: "Waived" },
+        { value: "void" as const, label: "Void" },
+      ];
+}
+
+function adjustmentIsSettled(status: FinancialAdjustmentStatus) {
+  return status === "refunded" || status === "applied" || status === "paid";
 }
 
 function readFile(file: File) {

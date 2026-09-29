@@ -7,6 +7,7 @@ import { db, PROJECT_LABELS, type ProjectLabel } from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { formatMoney, procurementTotals } from "@/lib/money";
+import { financialInvoiceLedger } from "@/lib/financialInvoiceLedger";
 
 export const Route = createFileRoute("/financials")({
   head: () => ({ meta: [{ title: "Financials — MERAV Studio" }] }),
@@ -69,12 +70,13 @@ function FinancialsOverviewPage() {
 
     return filteredProjects.map((project) => {
       const projectInvoices = invoices.filter((invoice) => invoice.project_id === project.id);
-      const payments = projectInvoices.flatMap((invoice) =>
-        (invoice.payments ?? []).filter((payment) => isInDateRange(payment.due_date || invoice.invoice_date || invoice.created_at, selectedRange)),
+      const rangedInvoices = projectInvoices.filter((invoice) =>
+        isInDateRange(invoice.invoice_date || invoice.created_at, selectedRange),
       );
-      const paid = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-      const due = payments.filter((payment) => payment.status === "due").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-      const revenue = paid + due;
+      const ledgers = rangedInvoices.map(financialInvoiceLedger);
+      const paid = ledgers.reduce((sum, ledger) => sum + ledger.grossPaid, 0);
+      const due = ledgers.reduce((sum, ledger) => sum + ledger.balanceDue, 0);
+      const revenue = ledgers.reduce((sum, ledger) => sum + ledger.adjustedTotal, 0);
       const procurement = procurementTotals(
         procurementItems.filter((item) => item.room_product?.room?.project?.id === project.id && isInDateRange(item.updated_at, selectedRange)),
         taxRate,
@@ -86,7 +88,7 @@ function FinancialsOverviewPage() {
         due,
         procurementProfit: procurement.profit,
         totalProfit: revenue + procurement.profit,
-        invoiceCount: projectInvoices.filter((invoice) => isInDateRange(invoice.invoice_date || invoice.created_at, selectedRange)).length,
+        invoiceCount: rangedInvoices.length,
       };
     }).sort((a, b) => b.totalProfit - a.totalProfit);
   }, [invoices, procurementItems, projects, selectedLabels, selectedRange, taxRate]);

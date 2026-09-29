@@ -16,8 +16,12 @@ type ClientInvoice = {
   pdf_data_url: string | null;
   invoice_date: string | null;
   total_amount: number | null;
+  original_total_amount: number | null;
   paid_amount: number | null;
   balance_due: number | null;
+  credit_owed: number;
+  refunded_amount: number;
+  applied_credit_amount: number;
   payments: Array<{
     id: string;
     label: string;
@@ -26,6 +30,15 @@ type ClientInvoice = {
     status: string;
     notes: string | null;
     paid_at: string | null;
+  }>;
+  adjustments: Array<{
+    id: string;
+    adjustment_type: "credit" | "charge";
+    label: string;
+    amount: number;
+    status: string;
+    notes: string | null;
+    settled_at: string | null;
   }>;
 };
 
@@ -139,6 +152,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
   const duePayments = invoice.payments.filter((payment) => payment.status === "due");
   const paidPayments = invoice.payments.filter((payment) => payment.status === "paid");
   const paymentUrl = currentPaymentUrl(invoice);
+  const hasAdjustments = invoice.adjustments.length > 0;
 
   const handleOpen = async () => {
     try {
@@ -166,11 +180,54 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:min-w-[360px]">
-          <InvoiceMetric label="Total" value={formatMoney(invoice.total_amount ?? 0)} />
+          <InvoiceMetric label={hasAdjustments ? "Adjusted Total" : "Total"} value={formatMoney(invoice.total_amount ?? 0)} />
           <InvoiceMetric label="Paid" value={formatMoney(invoice.paid_amount ?? 0)} />
           <InvoiceMetric label="Remaining Due" value={formatMoney(invoice.balance_due ?? 0)} />
+          {(invoice.credit_owed ?? 0) > 0 && (
+            <InvoiceMetric label="Credit Owed to You" value={formatMoney(invoice.credit_owed)} accent="credit" />
+          )}
+          {(invoice.refunded_amount ?? 0) > 0 && (
+            <InvoiceMetric label="Refunded" value={formatMoney(invoice.refunded_amount)} />
+          )}
+          {(invoice.applied_credit_amount ?? 0) > 0 && (
+            <InvoiceMetric label="Credit Applied" value={formatMoney(invoice.applied_credit_amount)} />
+          )}
         </div>
       </div>
+
+      {hasAdjustments && (
+        <div className="mt-6 overflow-x-auto border border-border">
+          <div className="border-b border-border bg-bone/30 px-4 py-3">
+            <div className="eyebrow">Invoice Adjustments</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Returns, substitutions, and price changes are recorded here without changing the original payment history.
+            </p>
+          </div>
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                <th className="px-4 py-3">Adjustment</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {invoice.adjustments.map((adjustment) => (
+                <tr key={adjustment.id}>
+                  <td className="px-4 py-3">
+                    <div>{adjustment.label}</div>
+                    {adjustment.notes && <div className="mt-1 text-xs text-muted-foreground">{adjustment.notes}</div>}
+                  </td>
+                  <td className={`px-4 py-3 text-right ${adjustment.adjustment_type === "credit" ? "text-emerald-800" : ""}`}>
+                    {adjustment.adjustment_type === "credit" ? "−" : "+"}{formatMoney(adjustment.amount)}
+                  </td>
+                  <td className="px-4 py-3 capitalize">{adjustmentStatusLabel(adjustment)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {invoice.payments.length > 0 && (
         <div className="mt-6 overflow-x-auto border border-border">
@@ -197,8 +254,12 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-muted-foreground">
-          {duePayments.length > 0
-            ? `${duePayments.length} payment${duePayments.length === 1 ? "" : "s"} currently due`
+          {(invoice.credit_owed ?? 0) > 0
+            ? `${formatMoney(invoice.credit_owed)} credit owed to you`
+            : (invoice.balance_due ?? 0) > 0
+              ? `${formatMoney(invoice.balance_due ?? 0)} currently due`
+              : duePayments.length > 0
+                ? `${duePayments.length} payment${duePayments.length === 1 ? "" : "s"} currently due`
             : paidPayments.length === invoice.payments.length && invoice.payments.length > 0
               ? "Paid"
               : "No payment currently due"}
@@ -239,13 +300,25 @@ function stripeLinkFromNotes(notes?: string | null) {
   return notes?.match(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/i)?.[0] ?? null;
 }
 
-function InvoiceMetric({ label, value }: { label: string; value: string }) {
+function InvoiceMetric({ label, value, accent }: { label: string; value: string; accent?: "credit" }) {
   return (
-    <div className="border border-border px-4 py-3">
+    <div className={`border px-4 py-3 ${accent === "credit" ? "border-emerald-700 bg-emerald-50 text-emerald-900" : "border-border"}`}>
       <div className="eyebrow mb-1">{label}</div>
       <div className="font-display text-2xl">{value}</div>
     </div>
   );
+}
+
+function adjustmentStatusLabel(adjustment: ClientInvoice["adjustments"][number]) {
+  if (adjustment.adjustment_type === "credit") {
+    if (adjustment.status === "open") return "Credit owed";
+    if (adjustment.status === "refunded") return "Refunded";
+    if (adjustment.status === "applied") return "Applied to balance";
+  }
+  if (adjustment.status === "open") return "Additional amount due";
+  if (adjustment.status === "paid") return "Paid";
+  if (adjustment.status === "waived") return "Waived";
+  return adjustment.status.replaceAll("_", " ");
 }
 
 function formatDashboardDate(value: string) {

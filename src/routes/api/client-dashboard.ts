@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Project, UserProfile } from "@/lib/db";
+import { financialInvoiceLedger } from "@/lib/financialInvoiceLedger";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -164,7 +165,7 @@ export const Route = createFileRoute("/api/client-dashboard")({
           if (shared.profile.role === "Client") {
             const { data: invoiceRows, error: invoicesError } = await supabaseAdmin
               .from("financial_invoices" as any)
-              .select("id,project_id,file_name,pdf_data_url,invoice_date,client_name,total_amount,paid_amount,balance_due,client_visible,created_at,updated_at,payments:financial_invoice_payments(id,label,amount,due_date,status,notes,sort_order,paid_at)")
+              .select("id,project_id,file_name,pdf_data_url,invoice_date,client_name,total_amount,paid_amount,balance_due,client_visible,created_at,updated_at,payments:financial_invoice_payments(id,label,amount,due_date,status,notes,sort_order,paid_at),adjustments:financial_invoice_adjustments(id,adjustment_type,label,amount,status,notes,settled_at,sort_order)")
               .in("project_id", projectIds)
               .eq("client_visible", true)
               .order("invoice_date", { ascending: false, nullsFirst: false })
@@ -174,13 +175,10 @@ export const Route = createFileRoute("/api/client-dashboard")({
             invoices = (invoiceRows ?? []).map((invoice: any) => {
               const project = projects.find((item) => item.id === invoice.project_id);
               const payments = [...(invoice.payments ?? [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-              const paymentTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-              const totalAmount = paymentTotal > 0 ? paymentTotal : Number(invoice.total_amount || 0);
-              const paidAmount = payments.length
-                ? payments
-                    .filter((payment) => payment.status === "paid")
-                    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
-                : Number(invoice.paid_amount || 0);
+              const adjustments = [...(invoice.adjustments ?? [])]
+                .filter((adjustment) => adjustment.status !== "void")
+                .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+              const ledger = financialInvoiceLedger({ ...invoice, payments, adjustments });
               return {
                 id: invoice.id,
                 project_id: invoice.project_id,
@@ -188,11 +186,16 @@ export const Route = createFileRoute("/api/client-dashboard")({
                 file_name: invoice.file_name ?? "Invoice",
                 pdf_data_url: invoice.pdf_data_url,
                 invoice_date: invoice.invoice_date,
-                total_amount: totalAmount,
-                paid_amount: paidAmount,
-                balance_due: Math.max(totalAmount - paidAmount, 0),
+                total_amount: ledger.adjustedTotal,
+                original_total_amount: ledger.originalTotal,
+                paid_amount: ledger.grossPaid,
+                balance_due: ledger.balanceDue,
+                credit_owed: ledger.creditOwed,
+                refunded_amount: ledger.refundedTotal,
+                applied_credit_amount: ledger.appliedTotal,
                 created_at: invoice.created_at,
                 payments,
+                adjustments,
               };
             });
           }

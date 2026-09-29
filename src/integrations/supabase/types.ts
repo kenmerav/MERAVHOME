@@ -64,6 +64,76 @@ export type Database = {
           },
         ]
       }
+      financial_invoice_adjustments: {
+        Row: {
+          adjustment_type: string
+          amount: number
+          created_at: string
+          created_by: string | null
+          id: string
+          invoice_id: string
+          label: string
+          notes: string | null
+          project_id: string | null
+          settled_at: string | null
+          sort_order: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          adjustment_type: string
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          invoice_id: string
+          label: string
+          notes?: string | null
+          project_id?: string | null
+          settled_at?: string | null
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          adjustment_type?: string
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          invoice_id?: string
+          label?: string
+          notes?: string | null
+          project_id?: string | null
+          settled_at?: string | null
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_invoice_adjustments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_invoice_adjustments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "financial_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_invoice_adjustments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_invoice_payments: {
         Row: {
           amount: number
