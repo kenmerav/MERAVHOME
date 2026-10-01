@@ -14,6 +14,7 @@ import {
   ScanSearch,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import {
   ALL_CATEGORIES,
@@ -828,6 +829,17 @@ function MaterialsPage() {
                 value={jumpRoomId}
                 onJump={jumpToRoom}
                 className="min-w-[220px]"
+              />
+              <ImportSelectionSheetDialog
+                projectId={projectId}
+                rooms={rooms}
+                disabled={importingPdf || checkingFinishes || scraping}
+                onImport={() => {
+                  qc.invalidateQueries({ queryKey: ["rooms", projectId] });
+                  qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+                  qc.invalidateQueries({ queryKey: ["products"] });
+                  qc.invalidateQueries({ queryKey: ["catalog"] });
+                }}
               />
               <input
                 ref={pdfInputRef}

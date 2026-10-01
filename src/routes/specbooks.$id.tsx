@@ -679,7 +679,7 @@ export function SpecBookDocument({
                         <td className="py-3 pr-4 text-muted-foreground">
                           {it.product?.vendor || "—"}
                         </td>
-                        <td className="py-3 pr-4">{it.quantity ?? "—"}</td>
+                        <td className="py-3 pr-4">{it.quantity ?? ""}</td>
                       </tr>
                     ));
                   })}
