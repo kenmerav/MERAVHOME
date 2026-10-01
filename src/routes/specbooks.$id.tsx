@@ -32,6 +32,7 @@ import {
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
 import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
+import { SpecSpreadsheetTextValue, SpecSpreadsheetWrapContext } from "@/components/SpecSpreadsheetTextValue";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -789,6 +790,7 @@ function SpecSpreadsheetView({
   );
   const [hiddenColumns, setHiddenColumns] = useState<Set<SpreadsheetColumnKey>>(new Set());
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
+  const [wrapText, setWrapText] = useState(true);
   const visibleColumns = useMemo(
     () => availableColumns.filter((column) => !hiddenColumns.has(column.key)).map((column) => column.key),
     [availableColumns, hiddenColumns],
@@ -922,6 +924,24 @@ function SpecSpreadsheetView({
         </div>
       </div>
       <div className="mb-5 flex flex-wrap items-center gap-3 print:hidden">
+        <div role="group" aria-label="Spreadsheet row display" className="inline-flex border border-border">
+          <button
+            type="button"
+            aria-pressed={wrapText}
+            onClick={() => setWrapText(true)}
+            className={`h-10 px-3 text-sm ${wrapText ? "bg-ink text-white" : "bg-white hover:bg-bone"}`}
+          >
+            Wrap text
+          </button>
+          <button
+            type="button"
+            aria-pressed={!wrapText}
+            onClick={() => setWrapText(false)}
+            className={`h-10 border-l border-border px-3 text-sm ${!wrapText ? "bg-ink text-white" : "bg-white hover:bg-bone"}`}
+          >
+            Compact
+          </button>
+        </div>
         <details className="relative">
           <summary className="flex h-10 cursor-pointer list-none items-center border border-border bg-white px-3 text-xs uppercase tracking-[0.16em] text-muted-foreground hover:text-ink">
             Columns
@@ -976,6 +996,7 @@ function SpecSpreadsheetView({
         )}
       </div>
 
+      <SpecSpreadsheetWrapContext.Provider value={wrapText}>
       {groups.length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground">No products selected yet.</div>
       ) : (
@@ -1007,6 +1028,7 @@ function SpecSpreadsheetView({
           ))}
         </div>
       )}
+      </SpecSpreadsheetWrapContext.Provider>
     </section>
   );
 }
@@ -1160,7 +1182,6 @@ function spreadsheetCellForColumn({
           value={row.clientProductName}
           disabled={!canEditProducts}
           className="font-medium text-ink"
-          compactOnPrint
           onSave={(value) => onSaveMaterialText(row, "client_product_name", value)}
         />
       );
@@ -1169,7 +1190,6 @@ function spreadsheetCellForColumn({
         <EditableSpecTextCell
           value={row.productName}
           disabled={!canEditProducts}
-          compactOnPrint
           onSave={(value) => onSaveProductText(row, "name", value)}
         />
       );
@@ -1297,14 +1317,12 @@ function EditableSpecTextCell({
   onSave,
   className = "",
   inputMode,
-  compactOnPrint = false,
 }: {
   value: string;
   disabled?: boolean;
   onSave: (value: string) => Promise<void>;
   className?: string;
   inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
-  compactOnPrint?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -1322,17 +1340,12 @@ function EditableSpecTextCell({
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setEditing(true)}
-        className={`max-w-[180px] truncate text-left underline-offset-4 print:max-w-none ${
-          disabled ? "" : "hover:text-ink hover:underline"
-        } ${compactOnPrint ? "spec-sheet-compact-print" : ""} ${className}`}
-        title={disabled ? value || undefined : "Click to edit"}
-      >
-        {value || "—"}
-      </button>
+      <SpecSpreadsheetTextValue
+        value={value}
+        canEdit={!disabled}
+        onEdit={() => setEditing(true)}
+        className={className}
+      />
     );
   }
 
