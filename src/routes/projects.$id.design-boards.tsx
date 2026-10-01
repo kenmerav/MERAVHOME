@@ -62,6 +62,7 @@ import {
 } from "@/lib/db";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { createDesignBoardExportImageLoader } from "@/lib/designBoardExportImages";
 import { materialImageUrl } from "@/lib/materialImages";
 import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
@@ -7110,20 +7111,37 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1) {
   ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
   const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
-  for (const element of sortedElements) {
-    await drawBoardElementForExport(ctx, element);
+  const loadExportImage = createDesignBoardExportImageLoader();
+  for (const [index, element] of sortedElements.entries()) {
+    try {
+      await drawBoardElementForExport(ctx, element, loadExportImage);
+    } catch (error) {
+      console.warn(
+        "[Design Board] Could not export page image",
+        { pageId: page.id, elementId: element.id },
+        error,
+      );
+      const imageName = element.label || element.productName || `image ${index + 1}`;
+      throw new Error(
+        `Could not export "${page.title}": ${imageName} could not be loaded. Try exporting again.`,
+      );
+    }
   }
 
   return canvas.toDataURL("image/png");
 }
 
-async function drawBoardElementForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
+async function drawBoardElementForExport(
+  ctx: CanvasRenderingContext2D,
+  element: BoardElement,
+  loadExportImage: ReturnType<typeof createDesignBoardExportImageLoader>,
+) {
   ctx.save();
   ctx.globalAlpha = element.visible === false ? 0.22 : 1;
 
   if (element.type === "image") {
     ctx.translate(element.x, element.y);
-    await drawBoardImageForExport(ctx, element);
+    await drawBoardImageForExport(ctx, element, loadExportImage);
     ctx.restore();
     return;
   }
@@ -7143,28 +7161,23 @@ async function drawBoardElementForExport(ctx: CanvasRenderingContext2D, element:
     drawBoardTextForExport(ctx, element);
   }
 
-  if (element.type === "image") {
-    await drawBoardImageForExport(ctx, element);
-  }
-
   ctx.restore();
 }
 
-async function drawBoardImageForExport(ctx: CanvasRenderingContext2D, element: BoardElement) {
+async function drawBoardImageForExport(
+  ctx: CanvasRenderingContext2D,
+  element: BoardElement,
+  loadExportImage: ReturnType<typeof createDesignBoardExportImageLoader>,
+) {
   if (element.src) {
-    try {
-      const image = await loadImageElement(await imageSourceForCanvas(element.src));
-      ctx.save();
-      ctx.translate(element.width / 2, element.height / 2);
-      ctx.rotate(((element.rotation ?? 0) * Math.PI) / 180);
-      ctx.scale(element.flipHorizontal ? -1 : 1, element.flipVertical ? -1 : 1);
-      ctx.translate(-element.width / 2, -element.height / 2);
-      drawImageContain(ctx, image, 0, 0, element.width, element.height, element);
-      ctx.restore();
-    } catch (error) {
-      console.warn("[Design Board] Could not draw image into PDF", error);
-      drawImageFallback(ctx, element);
-    }
+    const image = await loadExportImage(element.src);
+    ctx.save();
+    ctx.translate(element.width / 2, element.height / 2);
+    ctx.rotate(((element.rotation ?? 0) * Math.PI) / 180);
+    ctx.scale(element.flipHorizontal ? -1 : 1, element.flipVertical ? -1 : 1);
+    ctx.translate(-element.width / 2, -element.height / 2);
+    drawImageContain(ctx, image, 0, 0, element.width, element.height, element);
+    ctx.restore();
   } else {
     drawImageFallback(ctx, element);
   }
