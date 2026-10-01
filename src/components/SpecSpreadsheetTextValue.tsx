@@ -9,16 +9,18 @@ export function SpecSpreadsheetTextValue({
   canEdit = false,
   onEdit,
   className = "",
+  wide = false,
 }: {
   value: string;
   canEdit?: boolean;
   onEdit?: () => void;
   className?: string;
+  wide?: boolean;
 }) {
   const wrapText = useContext(SpecSpreadsheetWrapContext);
-  const textClassName = `block max-w-[240px] text-left underline-offset-4 ${
+  const textClassName = `block ${wide && wrapText ? "w-[480px] max-w-[480px]" : "max-w-[240px]"} text-left underline-offset-4 ${
     wrapText ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "truncate"
-  } print:max-w-none print:whitespace-pre-wrap print:overflow-visible print:text-clip print:[overflow-wrap:anywhere] ${className}`;
+  } print:w-auto print:max-w-none print:whitespace-pre-wrap print:overflow-visible print:text-clip print:[overflow-wrap:anywhere] ${className}`;
   const display = canEdit ? (
     <button
       type="button"

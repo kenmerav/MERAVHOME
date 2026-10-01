@@ -1300,6 +1300,7 @@ function spreadsheetCellForColumn({
       return (
         <EditableSpecTextCell
           value={row.notes}
+          wide
           disabled={!canEditProducts}
           onSave={(value) => onSaveMaterialText(row, "notes", value)}
         />
@@ -1317,12 +1318,14 @@ function EditableSpecTextCell({
   onSave,
   className = "",
   inputMode,
+  wide = false,
 }: {
   value: string;
   disabled?: boolean;
   onSave: (value: string) => Promise<void>;
   className?: string;
   inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
+  wide?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -1345,6 +1348,7 @@ function EditableSpecTextCell({
         canEdit={!disabled}
         onEdit={() => setEditing(true)}
         className={className}
+        wide={wide}
       />
     );
   }

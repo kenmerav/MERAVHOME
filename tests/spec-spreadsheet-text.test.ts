@@ -55,4 +55,14 @@ describe("Spec Book spreadsheet full-text display", () => {
     expect(html).not.toContain("tabindex");
     expect(html).not.toContain("title=");
   });
+
+  it("gives long notes room to wrap without forcing a wide compact or printed column", () => {
+    const cell = createElement(SpecSpreadsheetTextValue, { value: longName, wide: true });
+    expect(renderToStaticMarkup(cell)).toContain("w-[480px]");
+    const compact = renderToStaticMarkup(
+      createElement(SpecSpreadsheetWrapContext.Provider, { value: false }, cell),
+    );
+    expect(compact).not.toContain("w-[480px]");
+    expect(compact).toContain("print:w-auto");
+  });
 });
