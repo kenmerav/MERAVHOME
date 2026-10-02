@@ -1,4 +1,11 @@
 import { supabaseImageTransformUrl } from "@/lib/local-assets";
+import { restyleServiceInvoiceHtml, waitForInvoiceAssets } from "@/lib/serviceInvoiceTemplate";
+import {
+  currentDueInvoicePayment,
+  invoicePaymentStripeUrl,
+  refreshServiceInvoicePayments,
+  type ServiceInvoicePaymentSummary,
+} from "@/lib/serviceInvoicePayments";
 
 export function invoicePdfFileName(fileName?: string | null) {
   const safeName = (fileName || "Invoice").replace(/\.(html?|pdf)$/i, "").trim() || "Invoice";
@@ -7,7 +14,16 @@ export function invoicePdfFileName(fileName?: string | null) {
 
 type InvoiceDocumentOptions = {
   paymentUrl?: string | null;
+  servicePayments?: ServiceInvoicePaymentSummary;
 };
+
+export function prepareInvoiceHtml(html: string, options: InvoiceDocumentOptions = {}) {
+  const paymentUrl = options.servicePayments
+    ? invoicePaymentStripeUrl(currentDueInvoicePayment(options.servicePayments.payments))
+    : options.paymentUrl;
+  const safeHtml = applyInvoicePaymentLink(restyleServiceInvoiceHtml(html), paymentUrl);
+  return options.servicePayments ? refreshServiceInvoicePayments(safeHtml, options.servicePayments) : safeHtml;
+}
 
 export async function openInvoiceDocument(
   documentUrl: string | null,
@@ -22,7 +38,7 @@ export async function openInvoiceDocument(
     const blob = await (await fetch(documentUrl)).blob();
     if (isHtmlInvoice(blob, documentUrl)) {
       const html = optimizeInvoiceImages(
-        applyInvoicePaymentLink(await blob.text(), options.paymentUrl),
+        prepareInvoiceHtml(await blob.text(), options),
       );
       if (target) {
         target.document.open();
@@ -62,8 +78,8 @@ export async function downloadInvoiceDocument(
 
   const blob = await (await fetch(documentUrl)).blob();
   if (isHtmlInvoice(blob, documentUrl)) {
-    printHtmlAsPdf(
-      optimizeInvoiceImages(applyInvoicePaymentLink(await blob.text(), options.paymentUrl)),
+    await printHtmlAsPdf(
+      optimizeInvoiceImages(prepareInvoiceHtml(await blob.text(), options)),
       fileName,
     );
     return;
@@ -125,7 +141,10 @@ async function sanitizeInvoicePdfBlob(blob: Blob) {
       });
     }
 
-    return new Blob([await pdfDoc.save()], { type: "application/pdf" });
+    const saved = await pdfDoc.save();
+    const bytes = new Uint8Array(saved.length);
+    bytes.set(saved);
+    return new Blob([bytes.buffer], { type: "application/pdf" });
   } catch (error) {
     console.warn("Could not sanitize invoice PDF payment link.", error);
     return blob;
@@ -220,7 +239,7 @@ function escapeHtmlAttribute(value: string) {
     .replaceAll(">", "&gt;");
 }
 
-function printHtmlAsPdf(html: string, fileName?: string | null) {
+async function printHtmlAsPdf(html: string, fileName?: string | null) {
   const target = window.open("", "_blank");
   if (!target) {
     throw new Error("Allow popups to download the invoice PDF.");
@@ -231,10 +250,14 @@ function printHtmlAsPdf(html: string, fileName?: string | null) {
   target.document.write(html);
   target.document.close();
   target.document.title = invoicePdfFileName(fileName);
-  target.setTimeout(() => {
+  try {
+    await waitForInvoiceAssets(target.document);
     target.focus();
     target.print();
-  }, 350);
+  } catch {
+    target.close();
+    throw new Error("Could not load the invoice logo or fonts. Please try the PDF again.");
+  }
 }
 
 function triggerDownload(url: string, fileName: string) {

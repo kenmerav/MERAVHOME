@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadInvoiceDocument, openInvoiceDocument } from "@/lib/invoiceDocuments";
 import { formatMoney } from "@/lib/money";
+import { currentDueInvoicePayment, invoicePaymentStripeUrl } from "@/lib/serviceInvoicePayments";
 
 type ClientInvoice = {
   id: string;
@@ -30,6 +31,7 @@ type ClientInvoice = {
     status: string;
     notes: string | null;
     paid_at: string | null;
+    sort_order: number;
   }>;
   adjustments: Array<{
     id: string;
@@ -152,11 +154,20 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
   const duePayments = invoice.payments.filter((payment) => payment.status === "due");
   const paidPayments = invoice.payments.filter((payment) => payment.status === "paid");
   const paymentUrl = currentPaymentUrl(invoice);
+  const documentOptions = {
+    paymentUrl,
+    servicePayments: {
+      payments: invoice.payments,
+      totalAmount: invoice.original_total_amount ?? invoice.total_amount ?? 0,
+      paidAmount: invoice.paid_amount ?? 0,
+      balanceDue: invoice.balance_due ?? 0,
+    },
+  };
   const hasAdjustments = invoice.adjustments.length > 0;
 
   const handleOpen = async () => {
     try {
-      await openInvoiceDocument(invoice.pdf_data_url, invoice.file_name, { paymentUrl });
+      await openInvoiceDocument(invoice.pdf_data_url, invoice.file_name, documentOptions);
     } catch {
       toast.error("Could not open invoice.");
     }
@@ -164,7 +175,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 
   const handleDownload = async () => {
     try {
-      await downloadInvoiceDocument(invoice.pdf_data_url, invoice.file_name, { paymentUrl });
+      await downloadInvoiceDocument(invoice.pdf_data_url, invoice.file_name, documentOptions);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not download invoice.");
     }
@@ -287,17 +298,12 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 }
 
 function currentPaymentUrl(invoice: ClientInvoice) {
-  const dueWithLink = invoice.payments.find((payment) => payment.status === "due" && stripeLinkFromNotes(payment.notes));
-  return stripeLinkFromNotes(dueWithLink?.notes);
+  return invoicePaymentStripeUrl(currentDueInvoicePayment(invoice.payments));
 }
 
 function invoiceTitle(invoice: ClientInvoice) {
   const projectName = invoice.project_name?.trim();
   return projectName ? `${projectName} Invoice` : "Invoice";
-}
-
-function stripeLinkFromNotes(notes?: string | null) {
-  return notes?.match(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<]+/i)?.[0] ?? null;
 }
 
 function InvoiceMetric({ label, value, accent }: { label: string; value: string; accent?: "credit" }) {

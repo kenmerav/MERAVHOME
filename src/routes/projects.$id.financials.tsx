@@ -15,6 +15,9 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { formatMoney, procurementTotals } from "@/lib/money";
+import { invoiceDraftPricingChanged, type ServiceInvoicePaymentSummary } from "@/lib/serviceInvoicePayments";
+import { buildServiceInvoiceTemplate, waitForInvoiceAssets } from "@/lib/serviceInvoiceTemplate";
+import { openInvoiceDocument, downloadInvoiceDocument } from "@/lib/invoiceDocuments";
 import {
   financialInvoiceLedger,
   type FinancialAdjustmentStatus,
@@ -366,7 +369,10 @@ function FinancialsPage() {
 
   const updateServiceDraft = (patch: Partial<ServiceInvoiceDraft>) => {
     if (!serviceDraft) return;
-    setServiceDraft({ ...serviceDraft, ...patch });
+    setServiceDraft({
+      ...serviceDraft, ...patch,
+      ...(invoiceDraftPricingChanged(serviceDraft, patch) ? { stripeLink: "", stripePaymentLinkId: "" } : {}),
+    });
   };
 
   const updateServicePhase = (index: number, patch: Partial<ServiceInvoiceDraft["phases"][number]>) => {
@@ -374,6 +380,8 @@ function FinancialsPage() {
     setServiceDraft({
       ...serviceDraft,
       phases: serviceDraft.phases.map((phase, i) => i === index ? { ...phase, ...patch } : phase),
+      stripeLink: "",
+      stripePaymentLinkId: "",
     });
   };
 
@@ -400,7 +408,7 @@ function FinancialsPage() {
         label: `Phase ${index + 1} - ${phase.name}`,
         amount: phaseAmounts[index],
         due_date: null,
-        status: (index === 0 ? "due" : "not_due") as const,
+        status: (serviceDraft.currentPhase === phase.name ? "due" : "not_due") as "due" | "not_due",
         notes: serviceDraft.currentPhase === phase.name && serviceDraft.stripeLink ? `Stripe payment link: ${serviceDraft.stripeLink}` : null,
         stripe_payment_link_id: serviceDraft.currentPhase === phase.name ? serviceDraft.stripePaymentLinkId || null : null,
         stripe_checkout_session_id: null,
@@ -1033,6 +1041,23 @@ function InvoiceCard({
   const quickBooksStatus = invoice.quickbooks_sync_status ?? "not_sent";
   const paidTotal = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const ledger = financialInvoiceLedger(invoice);
+  const documentOptions = {
+    servicePayments: {
+      payments,
+      totalAmount: ledger.originalTotal,
+      paidAmount: ledger.grossPaid,
+      balanceDue: ledger.balanceDue,
+    },
+  };
+  const openPdf = async (download = false) => {
+    try {
+      await (download ? downloadInvoiceDocument : openInvoiceDocument)(
+        printableDataUrl, invoice.file_name, documentOptions,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not open invoice PDF.");
+    }
+  };
   return (
     <section className="border border-border">
       <div className="p-6 border-b border-border flex items-start justify-between gap-4">
@@ -1062,12 +1087,12 @@ function InvoiceCard({
             {invoice.client_visible ? "Client Visible" : "Show to Client"}
           </button>
           {printableDataUrl && (
-            <button type="button" onClick={() => openInvoicePdf(printableDataUrl, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+            <button type="button" onClick={() => openPdf()} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
               <FileText className="w-4 h-4" /> PDF
             </button>
           )}
           {printableDataUrl && (
-            <button type="button" onClick={() => downloadInvoicePdf(printableDataUrl, invoice.file_name)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
+            <button type="button" onClick={() => openPdf(true)} className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink">
               <FileText className="w-4 h-4" /> Download PDF
             </button>
           )}
@@ -1768,13 +1793,13 @@ function calculatedDesignFee(draft: ServiceInvoiceDraft) {
   return roundMoney(invoiceDesignSections(draft).reduce((sum, section) => sum + section.amount, 0));
 }
 
-function invoiceDesignSections(draft: ServiceInvoiceDraft): InvoiceDesignSection[] {
+function invoiceDesignSections(draft: ServiceInvoiceDraft, includeEmpty = false): InvoiceDesignSection[] {
   const squareFeet = numberValue(draft.squareFeet) ?? 0;
   const sections: InvoiceDesignSection[] = [];
   const renovationAmount = roundMoney(squareFeet * activeRate(draft, "renovation"));
   const furnitureAmount = roundMoney(squareFeet * activeRate(draft, "furniture"));
 
-  if (renovationAmount > 0) {
+  if (renovationAmount > 0 || includeEmpty) {
     sections.push({
       kind: "renovation",
       title: "Renovation Design",
@@ -1784,7 +1809,7 @@ function invoiceDesignSections(draft: ServiceInvoiceDraft): InvoiceDesignSection
     });
   }
 
-  if (furnitureAmount > 0) {
+  if (furnitureAmount > 0 || includeEmpty) {
     sections.push({
       kind: "furniture",
       title: "Furniture Design",
@@ -1891,8 +1916,8 @@ function serviceInvoiceHtmlFromInvoice(invoice: FinancialInvoice) {
       label: `Phase ${index + 1} - ${phase.name}`,
       amount: phaseAmounts[index],
       due_date: null,
-      status: index === 0 ? "due" : "not_due",
-      notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
+      status: "not_due",
+      notes: null,
       sort_order: index,
     }))).map((payment) => ({
       label: payment.label,
@@ -1902,7 +1927,11 @@ function serviceInvoiceHtmlFromInvoice(invoice: FinancialInvoice) {
       notes: payment.notes,
       sort_order: payment.sort_order,
     }));
-    return buildServiceInvoiceHtml(draft, fee, payments);
+    const ledger = financialInvoiceLedger(invoice);
+    return buildServiceInvoiceHtml(draft, fee, payments, {
+      paidAmount: ledger.grossPaid,
+      balanceDue: ledger.balanceDue,
+    });
   } catch {
     return null;
   }
@@ -1912,115 +1941,18 @@ function buildServiceInvoiceHtml(
   draft: ServiceInvoiceDraft,
   fee: number,
   payments: Array<{ label: string; amount: number; due_date: string | null; status: string; notes: string | null; sort_order: number }>,
+  totals: Pick<ServiceInvoicePaymentSummary, "paidAmount" | "balanceDue"> = {},
 ) {
-  const selectedAmount = payments.find((payment) => payment.label.includes(draft.currentPhase))?.amount ?? 0;
-  const paid = paidDesignFee(draft, fee);
-  const address = addressLines(draft.projectAddress).map(escapeHtml).join("<br>");
-  const sectionTables = invoiceDesignSections(draft).map((section) => `
-    <table class="line-table">
-      <thead>
-        <tr><th colspan="3" class="center">${escapeHtml(section.title)}</th></tr>
-        <tr><th style="width:30%">Location</th><th style="width:56%">Description</th><th style="width:14%">Subtotal</th></tr>
-      </thead>
-      <tbody>
-        <tr class="item-row">
-          <td class="center"><strong>${escapeHtml(section.location)}</strong></td>
-          <td class="center">${escapeHtml(section.description)}</td>
-          <td class="right">${formatMoney(section.amount)}</td>
-        </tr>
-        <tr class="subtotal-row"><td class="subtotal-spacer" colspan="2"></td><td class="right" style="background:#e9e7de"><strong>${formatMoney(section.amount)}</strong></td></tr>
-      </tbody>
-    </table>
-  `).join("");
-  const phaseLines = payments
-    .filter((payment) => payment.amount > 0 && /^Phase \d+ - /.test(payment.label))
-    .map((payment) => {
-      const clean = payment.label.replace(/^Phase \d+ - /, "");
-      const currentClass = clean === draft.currentPhase ? " current-phase" : "";
-      return `<div class="summary-row${currentClass}"><span>Due ${clean === "Project Start" ? "on" : "at"} ${escapeHtml(clean)}:</span><span>${formatMoney(payment.amount)}</span></div>`;
-    }).join("");
-
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(draft.projectName || "Design Service Invoice")}</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&display=swap');
-    @page { size: letter; margin: 0; }
-    html, body { width: 8.5in; min-height: 11in; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body { margin: 0; font-family: "Times New Roman", Times, serif; color: #000; background: #fff; }
-    .page { width: 7in; min-height: 8.5in; margin: 0.5in auto 0; padding: 0 0.17in 0.3in; border: 0.5px solid #9a9a9a; box-sizing: border-box; }
-    .brand { text-align: center; margin: 0 0 0.42in; }
-    .logo { font-family: "Cormorant Garamond", Georgia, serif; font-size: 69px; line-height: 0.82; letter-spacing: -0.07em; font-weight: 300; white-space: nowrap; }
-    .byline { margin-top: 10px; font-family: Arial, sans-serif; letter-spacing: 0.4em; color: #99958f; font-size: 12px; }
-    .top { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 0.45in; min-height: 1.18in; font-size: 10px; margin-bottom: 0.18in; }
-    .provider { margin-top: 0.58in; }
-    .provider-row { display: grid; grid-template-columns: 0.76in 1fr; }
-    .title { text-align: right; font-size: 20px; font-weight: 700; margin-bottom: 0.28in; }
-    .meta { display: grid; grid-template-columns: 0.82in 1fr; row-gap: 0.35in; }
-    table { border-collapse: collapse; width: 100%; font-size: 10px; }
-    th, td { border: 1px solid #000; padding: 0.09in 0.03in; vertical-align: middle; }
-    th { background: #e9e7de; text-align: left; }
-    .center { text-align: center; }
-    .right { text-align: right; }
-    .line-table { table-layout: fixed; }
-    .line-table .item-row td { height: 0.62in; }
-    .line-table .subtotal-row td { height: 0.22in; padding: 0.06in 0.03in; }
-    .line-table .subtotal-spacer { border: 0; height: 0; padding: 0; background: transparent; }
-    .line-table + .line-table { margin-top: 0.35in; }
-    .summary { width: 2.67in; margin-left: auto; margin-top: 0.5in; font-size: 10px; }
-    .fee-row { display: grid; grid-template-columns: 1fr 0.95in; align-items: stretch; margin-bottom: 0.05in; }
-    .fee-label { align-self: center; padding-right: 0.03in; text-align: right; font-size: 15px; }
-    .fee-box { border: 1px solid #000; background: #e9e7de; padding: 0.09in 0.03in; text-align: right; font-size: 15px; font-weight: 700; }
-    .summary-row { display: grid; grid-template-columns: 1fr 0.95in; text-align: right; gap: 0.03in; margin: 0.035in 0; }
-    .current-phase { font-weight: 700; }
-    .pay { display: grid; grid-template-columns: 1fr 0.95in; border: 2px solid #000; margin: 0.18in 0 0.42in; }
-    .pay div { background: #e9e7de; padding: 0.025in 0.03in; font-weight: 700; text-align: center; }
-    .pay div + div { border-left: 1px solid #000; text-align: right; }
-    .pay a { color: #00f; text-decoration: underline; }
-    .sig { margin-top: 0.38in; border-top: 1px solid #000; padding: 0.03in 0.03in 0; display: flex; justify-content: space-between; font-size: 10px; font-style: italic; }
-    a { color: #00f; }
-  </style>
-</head>
-<body>
-  <main class="page">
-    <section class="brand">
-      <div class="logo">MERAV INTERIORS</div>
-      <div class="byline">BY KATIE ROBERTS</div>
-    </section>
-    <section class="top">
-      <div>
-        <div><strong>Client:</strong><span style="margin-left:0.55in">${escapeHtml(draft.clientName || "Client Name")}</span></div>
-        <div class="provider provider-row">
-          <strong>Provider:</strong>
-          <span>MERAV INTERIORS<br><a href="mailto:katie@meravinteriors.com">katie@meravinteriors.com</a></span>
-        </div>
-      </div>
-      <div>
-        <div class="title">SERVICE INVOICE</div>
-        <div class="meta">
-          <strong>Date:</strong><span>${escapeHtml(formatDateForInvoice(draft.invoiceDate))}</span>
-          <strong>Address:</strong><span>${address}</span>
-        </div>
-      </div>
-    </section>
-    ${sectionTables}
-    <section class="summary">
-      <div class="fee-row"><strong class="fee-label">Total Design Fee:</strong><span class="fee-box">${formatMoney(fee)}</span></div>
-      <div class="summary-row"><strong>Paid:</strong><span>${paid ? formatMoney(paid) : ""}</span></div>
-      <div class="summary-row"><strong><u>Design Fee Due:</u></strong><strong><u>${formatMoney(Math.max(fee - paid, 0))}</u></strong></div>
-      ${phaseLines}
-      <div class="pay">
-        <div>${draft.stripeLink ? `<a href="${escapeHtml(draft.stripeLink)}">CLICK HERE TO PAY</a>` : "CLICK HERE TO PAY"}</div>
-        <div>${formatMoney(selectedAmount)}</div>
-      </div>
-      <div class="sig"><span>Authorized by Client</span><span>Date</span></div>
-      <div class="sig"><span>Authorized by MERAV INTERIORS</span><span>Date</span></div>
-    </section>
-  </main>
-</body>
-</html>`;
+  return buildServiceInvoiceTemplate({
+    projectName: draft.projectName,
+    clientName: draft.clientName,
+    projectAddress: draft.projectAddress,
+    invoiceDate: draft.invoiceDate,
+    sections: invoiceDesignSections(draft, true),
+    totalAmount: fee,
+    payments,
+    ...totals,
+  });
 }
 
 function escapeHtml(value: string) {
@@ -2037,27 +1969,6 @@ function invoicePdfFileName(fileName?: string | null) {
   return `${safeName}.pdf`;
 }
 
-async function downloadInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
-  if (!pdfDataUrl) return;
-  try {
-    if (pdfDataUrl.startsWith("data:")) {
-      const blob = await (await fetch(pdfDataUrl)).blob();
-      if (blob.type === "text/html") {
-        printHtmlAsPdf(await blob.text(), fileName);
-        return;
-      }
-
-      const url = URL.createObjectURL(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
-      triggerDownload(url, invoicePdfFileName(fileName));
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      return;
-    }
-
-    triggerDownload(pdfDataUrl, invoicePdfFileName(fileName));
-  } catch {
-    toast.error("Could not download invoice PDF.");
-  }
-}
 
 function printServiceInvoiceDraft(draft: ServiceInvoiceDraft) {
   const fee = calculatedDesignFee(draft);
@@ -2067,11 +1978,11 @@ function printServiceInvoiceDraft(draft: ServiceInvoiceDraft) {
     label: `Phase ${index + 1} - ${phase.name}`,
     amount: phaseAmounts[index],
     due_date: null,
-    status: index === 0 ? "due" : "not_due",
+    status: draft.currentPhase === phase.name ? "due" : "not_due",
     notes: draft.currentPhase === phase.name && draft.stripeLink ? `Stripe payment link: ${draft.stripeLink}` : null,
     sort_order: index,
   }));
-  printHtmlAsPdf(buildServiceInvoiceHtml(draft, fee, payments), `${draft.projectName || "Project"} Design Service Invoice`);
+  printHtmlAsPdf(buildServiceInvoiceHtml(draft, fee, payments, { paidAmount: paidDesignFee(draft, fee) }), `${draft.projectName || "Project"} Design Service Invoice`);
 }
 
 function printHtmlAsPdf(html: string, fileName?: string | null) {
@@ -2096,60 +2007,13 @@ function printHtmlAsPdf(html: string, fileName?: string | null) {
   target.document.title = invoicePdfFileName(fileName);
   target.setTimeout(async () => {
     try {
-      await target.document.fonts.ready;
+      await waitForInvoiceAssets(target.document);
     } catch {
-      // The invoice can still print with the browser's fallback font.
+      toast.error("Could not load the invoice logo or fonts. Please try again.");
+      target.close();
+      return;
     }
     target.focus();
     target.print();
   }, 350);
-}
-
-function triggerDownload(url: string, fileName: string) {
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
-async function openInvoicePdf(pdfDataUrl: string | null, fileName?: string | null) {
-  if (!pdfDataUrl) return;
-  const target = window.open("", "_blank");
-  if (target) target.opener = null;
-  try {
-    if (!pdfDataUrl.startsWith("data:")) {
-      if (target) target.location.href = pdfDataUrl;
-      else window.open(pdfDataUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    const blob = await (await fetch(pdfDataUrl)).blob();
-    if (blob.type === "text/html") {
-      const html = await blob.text();
-      if (target) {
-        target.document.open();
-        target.document.write(html);
-        target.document.close();
-      } else {
-        const htmlUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-        window.open(htmlUrl, "_blank", "noopener,noreferrer");
-        window.setTimeout(() => URL.revokeObjectURL(htmlUrl), 60_000);
-      }
-      return;
-    }
-    const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
-    const url = URL.createObjectURL(pdfBlob);
-    if (target) {
-      target.document.title = fileName || "Invoice PDF";
-      target.location.href = url;
-    } else {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch {
-    if (target) target.close();
-    toast.error("Could not open invoice PDF.");
-  }
 }
