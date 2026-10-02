@@ -1067,7 +1067,19 @@ function SpreadsheetTable({
               <SpreadsheetTd
                 key={column}
                 fullTextColumn={column === "notes" ? "notes" : column === "productName" ? "productName" : column === "clientProductName" ? "name" : undefined}
-                className={column === "room" ? "font-display text-sm print:text-[9px]" : column === "finish" || column === "color" ? "min-w-[120px] print:min-w-0" : column === "dimensions" ? "min-w-[200px] print:min-w-0" : ""}
+                className={
+                  column === "room"
+                    ? "min-w-[200px] whitespace-nowrap font-display text-sm print:min-w-0 print:text-[9px]"
+                    : column === "quantityUnit"
+                      ? "min-w-[64px] whitespace-nowrap print:min-w-0"
+                      : column === "quantity"
+                        ? "min-w-[48px] whitespace-nowrap print:min-w-0"
+                        : column === "finish" || column === "color"
+                          ? "min-w-[120px] print:min-w-0"
+                          : column === "dimensions"
+                            ? "min-w-[200px] print:min-w-0"
+                            : ""
+                }
               >
                 {spreadsheetCellForColumn({
                   column,
