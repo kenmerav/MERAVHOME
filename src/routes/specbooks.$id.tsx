@@ -1064,7 +1064,7 @@ function SpreadsheetTable({
             {columns.map((column) => (
               <SpreadsheetTd
                 key={column}
-                fullTextColumn={column === "notes" ? "notes" : column === "clientProductName" || column === "productName" ? "name" : undefined}
+                fullTextColumn={column === "notes" ? "notes" : column === "productName" ? "productName" : column === "clientProductName" ? "name" : undefined}
                 className={column === "room" ? "font-display text-sm print:text-[9px]" : ""}
               >
                 {spreadsheetCellForColumn({
@@ -1177,6 +1177,7 @@ function spreadsheetCellForColumn({
           value={row.productName}
           disabled={!canEditProducts}
           alwaysWrap
+          narrow
           onSave={(value) => onSaveProductText(row, "name", value)}
         />
       );
@@ -1308,6 +1309,7 @@ function EditableSpecTextCell({
   inputMode,
   wide = false,
   alwaysWrap = false,
+  narrow = false,
 }: {
   value: string;
   disabled?: boolean;
@@ -1316,6 +1318,7 @@ function EditableSpecTextCell({
   inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
   wide?: boolean;
   alwaysWrap?: boolean;
+  narrow?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -1340,6 +1343,7 @@ function EditableSpecTextCell({
         className={className}
         wide={wide}
         alwaysWrap={alwaysWrap}
+        narrow={narrow}
       />
     );
   }
@@ -1443,13 +1447,15 @@ function SpreadsheetTd({
 }: {
   children: ReactNode;
   className?: string;
-  fullTextColumn?: "name" | "notes";
+  fullTextColumn?: "name" | "productName" | "notes";
 }) {
   const widthClassName = fullTextColumn === "notes"
     ? "min-w-[496px] max-w-[496px] print:min-w-0"
-    : fullTextColumn === "name"
-      ? "min-w-[256px] max-w-[256px] print:min-w-0"
-      : "max-w-[180px]";
+    : fullTextColumn === "productName"
+      ? "min-w-[196px] max-w-[196px] print:min-w-0"
+      : fullTextColumn === "name"
+        ? "min-w-[256px] max-w-[256px] print:min-w-0"
+        : "max-w-[180px]";
   return (
     <td className={`${widthClassName} px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
       {children || "—"}

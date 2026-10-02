@@ -95,4 +95,16 @@ describe("Spec Book spreadsheet full-text display", () => {
     expect(html).toContain("print:w-auto");
     expect(html).not.toContain("truncate");
   });
+
+  it.each([false, true])("keeps the complete product name in a narrower column (editable: %s)", (canEdit) => {
+    const value = "Full manufacturer product description. ".repeat(15) + "END OF PRODUCT NAME";
+    const cell = createElement(SpecSpreadsheetTextValue, { value, alwaysWrap: true, narrow: true, canEdit });
+    const html = renderToStaticMarkup(createElement(SpecSpreadsheetWrapContext.Provider, { value: false }, cell));
+    expect(html).toContain(value);
+    expect(html).toContain("min-w-[180px]");
+    expect(html).toContain("whitespace-pre-wrap");
+    expect(html).toContain("print:min-w-0");
+    expect(html).not.toContain("min-w-[240px]");
+    expect(html).not.toContain("truncate");
+  });
 });
