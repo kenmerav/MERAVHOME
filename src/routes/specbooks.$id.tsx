@@ -790,7 +790,6 @@ function SpecSpreadsheetView({
   );
   const [hiddenColumns, setHiddenColumns] = useState<Set<SpreadsheetColumnKey>>(new Set());
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
-  const [wrapText, setWrapText] = useState(true);
   const visibleColumns = useMemo(
     () => availableColumns.filter((column) => !hiddenColumns.has(column.key)).map((column) => column.key),
     [availableColumns, hiddenColumns],
@@ -924,24 +923,6 @@ function SpecSpreadsheetView({
         </div>
       </div>
       <div className="mb-5 flex flex-wrap items-center gap-3 print:hidden">
-        <div role="group" aria-label="Spreadsheet row display" className="inline-flex border border-border">
-          <button
-            type="button"
-            aria-pressed={wrapText}
-            onClick={() => setWrapText(true)}
-            className={`h-10 px-3 text-sm ${wrapText ? "bg-ink text-white" : "bg-white hover:bg-bone"}`}
-          >
-            Wrap text
-          </button>
-          <button
-            type="button"
-            aria-pressed={!wrapText}
-            onClick={() => setWrapText(false)}
-            className={`h-10 border-l border-border px-3 text-sm ${!wrapText ? "bg-ink text-white" : "bg-white hover:bg-bone"}`}
-          >
-            Compact
-          </button>
-        </div>
         <details className="relative">
           <summary className="flex h-10 cursor-pointer list-none items-center border border-border bg-white px-3 text-xs uppercase tracking-[0.16em] text-muted-foreground hover:text-ink">
             Columns
@@ -996,7 +977,7 @@ function SpecSpreadsheetView({
         )}
       </div>
 
-      <SpecSpreadsheetWrapContext.Provider value={wrapText}>
+      <SpecSpreadsheetWrapContext.Provider value={false}>
       {groups.length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground">No products selected yet.</div>
       ) : (
