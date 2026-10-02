@@ -617,7 +617,7 @@ function MaterialsPage() {
       if (rows.length === 0) {
         const parts = [
           alreadyScrapedCount > 0
-            ? `${alreadyScrapedCount} already scraped item${alreadyScrapedCount === 1 ? "" : "s"} with pricing`
+            ? `${alreadyScrapedCount} item${alreadyScrapedCount === 1 ? "" : "s"} already checked or complete`
             : "",
           invalidLinkCount > 0
             ? `${invalidLinkCount} item${invalidLinkCount === 1 ? "" : "s"} without a valid link`

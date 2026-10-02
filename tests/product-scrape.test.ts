@@ -18,6 +18,8 @@ describe("product scraper client", () => {
             name: "Thin Metal Frame Mirror",
             vendor: "Rejuvenation",
             finish: "Aged brass",
+            color: "Brass",
+            dimensions: '24" W × 36" H',
             price: "$699",
             image_url: "https://images.example.com/mirror.jpg",
           }),
@@ -85,6 +87,10 @@ describe("product scraper client", () => {
 
   it("marks missing images as partial", () => {
     expect(scrapedProductStatus({ name: "Known product", vendor: "Vendor" })).toBe("partial");
+  });
+
+  it("marks products with missing specifications as partial", () => {
+    expect(scrapedProductStatus({ name: "Mirror", image_url: "https://example.com/image.jpg", color: "Black" })).toBe("partial");
   });
 
   it("flags collection pages and retailer redirects for review", () => {

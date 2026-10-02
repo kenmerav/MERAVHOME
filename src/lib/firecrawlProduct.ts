@@ -14,14 +14,18 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
       type: "string",
       description: "Selected color option when the page shows one",
     },
-    finish: { type: "string", description: "Finish, color, or material variant" },
+    finish: {
+      type: "string",
+      description: "Selected surface finish or treatment (for example polished, matte, brushed brass). Keep separate from color.",
+    },
+    selected_finish: { type: "string", description: "Exact selected finish option" },
     selected_variant: {
       type: "string",
       description: "Selected variant or option when the page shows one",
     },
     dimensions: {
       type: "string",
-      description: "Product dimensions or size, exactly as shown on the page",
+      description: "Full product dimensions for the exact selected size, including units and width, depth, height, length or diameter as published. Exclude packaging and shipping dimensions.",
     },
     price: {
       type: "string",
@@ -41,12 +45,13 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
 };
 
 export const FIRECRAWL_PRODUCT_PROMPT =
-  "Extract product details from this page. If the URL or page has a selected color, selected swatch, finish, or variant already chosen, capture that exact selected value. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Do not invent a color or price.";
+  "Extract product details from this page, including finish, color, and dimensions whenever published. Read specifications, product details, dimensions, and selected options, not just the title and price. Keep surface finish/treatment separate from color/colorway. Capture the exact selected color, finish, and size for this URL; never pick an arbitrary option from a list of variants. Include all published product measurements with labels and units, excluding packaging/shipping dimensions. Do not infer measurements from an image or substitute another size. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Leave unavailable or ambiguous specifications empty; do not invent a color, finish, dimension, or price.";
 
 export type NormalizedFirecrawlProduct = {
   name: string;
   vendor: string;
   sku: string;
+  color: string;
   finish: string;
   dimensions: string;
   price: string;
@@ -63,6 +68,16 @@ export function firstString(...values: unknown[]) {
 
 export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+export function missingProductSpecifications(value: {
+  finish?: unknown;
+  color?: unknown;
+  dimensions?: unknown;
+}) {
+  return (["finish", "color", "dimensions"] as const).filter(
+    (field) => !firstString(value[field]),
+  );
 }
 
 function firstPrice(...values: unknown[]) {
@@ -121,12 +136,11 @@ export function normalizeFirecrawlProduct(
       metadata["og:site_name"],
     ),
     sku: firstString(extracted.sku, extracted.model, extracted.model_number),
+    color: firstString(extracted.selected_color, extracted.color, extracted.colorway),
     finish: firstString(
+      extracted.selected_finish,
       extracted.finish,
-      extracted.color,
-      extracted.selected_color,
-      extracted.selected_variant,
-      extracted.variant,
+      extracted.material_finish,
     ),
     dimensions: firstString(extracted.dimensions, extracted.dimension, extracted.size),
     price: firstPrice(
