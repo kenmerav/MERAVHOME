@@ -1081,7 +1081,11 @@ function SpreadsheetTable({
         {rows.map((row) => (
           <tr key={row.id} className="break-inside-avoid border-b border-border/70 align-top">
             {columns.map((column) => (
-              <SpreadsheetTd key={column} className={column === "room" ? "font-display text-sm print:text-[9px]" : ""}>
+              <SpreadsheetTd
+                key={column}
+                fullTextColumn={column === "notes" ? "notes" : column === "clientProductName" || column === "productName" ? "name" : undefined}
+                className={column === "room" ? "font-display text-sm print:text-[9px]" : ""}
+              >
                 {spreadsheetCellForColumn({
                   column,
                   row,
@@ -1303,6 +1307,7 @@ function spreadsheetCellForColumn({
         <EditableSpecTextCell
           value={row.notes}
           wide
+          alwaysWrap
           disabled={!canEditProducts}
           onSave={(value) => onSaveMaterialText(row, "notes", value)}
         />
@@ -1453,12 +1458,19 @@ function SpreadsheetTh({ children }: { children: ReactNode }) {
 function SpreadsheetTd({
   children,
   className = "",
+  fullTextColumn,
 }: {
   children: ReactNode;
   className?: string;
+  fullTextColumn?: "name" | "notes";
 }) {
+  const widthClassName = fullTextColumn === "notes"
+    ? "min-w-[496px] max-w-[496px] print:min-w-0"
+    : fullTextColumn === "name"
+      ? "min-w-[256px] max-w-[256px] print:min-w-0"
+      : "max-w-[180px]";
   return (
-    <td className={`max-w-[180px] px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
+    <td className={`${widthClassName} px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
       {children || "—"}
     </td>
   );
@@ -1828,7 +1840,7 @@ function SpecCard({
         {item.notes && (
           <div className="mt-5 print:mt-2">
             <dt className="eyebrow mb-1">Notes</dt>
-            <p className="text-sm text-muted-foreground italic leading-relaxed print:text-[10px] print:leading-snug">
+            <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-muted-foreground italic leading-relaxed print:text-[10px] print:leading-snug">
               {item.notes}
             </p>
           </div>

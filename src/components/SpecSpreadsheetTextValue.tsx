@@ -20,9 +20,9 @@ export function SpecSpreadsheetTextValue({
   alwaysWrap?: boolean;
 }) {
   const preferredWrap = useContext(SpecSpreadsheetWrapContext);
-  // Product identities stay readable even when other columns use compact rows.
+  // Product identities and notes stay readable even when other columns use compact rows.
   const wrapText = alwaysWrap || preferredWrap;
-  const textClassName = `block ${wide && wrapText ? "w-[480px] max-w-[480px]" : alwaysWrap ? "w-[240px] min-w-[240px] max-w-[240px] print:min-w-0" : "max-w-[240px]"} text-left underline-offset-4 ${
+  const textClassName = `block ${wide && wrapText ? "w-[480px] min-w-[480px] max-w-[480px] print:min-w-0" : alwaysWrap ? "w-[240px] min-w-[240px] max-w-[240px] print:min-w-0" : "max-w-[240px]"} text-left underline-offset-4 ${
     wrapText ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "truncate"
   } print:w-auto print:max-w-none print:whitespace-pre-wrap print:overflow-visible print:text-clip print:[overflow-wrap:anywhere] ${className}`;
   const display = canEdit ? (
