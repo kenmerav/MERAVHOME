@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
+import { normalizeExtensionBoardState, type ExtensionBoardState } from "@/lib/extensionBoardState";
 import {
   createDefaultRoomDesignWorkflowState,
   mergeExtensionProductIntoRoomDesignWorkflow,
@@ -46,19 +47,7 @@ type BoardElement = {
   visible?: boolean;
 };
 
-type BoardPage = {
-  id: string;
-  title: string;
-  roomId: string | null;
-  elements: BoardElement[];
-};
-
-type BoardState = {
-  pages: BoardPage[];
-  selectedPageId: string;
-  comments?: unknown[];
-  versions?: unknown[];
-};
+type BoardState = ExtensionBoardState<BoardElement>;
 
 type ExtensionProductPayload = {
   projectId?: string;
@@ -321,43 +310,6 @@ async function tryFreeBackgroundRemoval(buffer: Buffer, contentType: string) {
   }
 }
 
-function normalizeBoardState(value: unknown): BoardState {
-  const candidate = value && typeof value === "object" ? (value as Partial<BoardState>) : {};
-  const pages = Array.isArray(candidate.pages)
-    ? candidate.pages
-        .map((page, index) => {
-          if (!page || typeof page !== "object") return null;
-          const typed = page as Partial<BoardPage>;
-          return {
-            id: typeof typed.id === "string" && typed.id ? typed.id : crypto.randomUUID(),
-            title: typeof typed.title === "string" ? typed.title : `Design Board ${index + 1}`,
-            roomId: typeof typed.roomId === "string" && typed.roomId ? typed.roomId : null,
-            elements: Array.isArray(typed.elements)
-              ? (typed.elements.filter(
-                  (element) => element && typeof element === "object",
-                ) as BoardElement[])
-              : [],
-          };
-        })
-        .filter((page): page is BoardPage => Boolean(page))
-    : [];
-
-  const safePages = pages.length
-    ? pages
-    : [{ id: "board-1", title: "Design Board 1", roomId: null, elements: [] }];
-  const selectedPageId =
-    typeof candidate.selectedPageId === "string" &&
-    safePages.some((page) => page.id === candidate.selectedPageId)
-      ? candidate.selectedPageId
-      : safePages[0].id;
-  return {
-    pages: safePages,
-    selectedPageId,
-    comments: Array.isArray(candidate.comments) ? candidate.comments : [],
-    versions: Array.isArray(candidate.versions) ? candidate.versions : [],
-  };
-}
-
 function nextBoardPlacement(elements: BoardElement[], width: number, height: number) {
   const margin = 40;
   const step = 28;
@@ -404,7 +356,7 @@ async function saveBoardWithRetry(projectId: string, updater: (state: BoardState
       .maybeSingle();
     if (error) throw error;
 
-    const state = normalizeBoardState((existing as any)?.board_state);
+    const state = normalizeExtensionBoardState<BoardElement>((existing as any)?.board_state);
     const nextState = updater(state);
 
     if (!existing) {
