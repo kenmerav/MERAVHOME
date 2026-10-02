@@ -65,4 +65,22 @@ describe("Spec Book spreadsheet full-text display", () => {
     expect(compact).not.toContain("w-[480px]");
     expect(compact).toContain("print:w-auto");
   });
+
+  it.each([false, true])("keeps full names wrapped in compact mode (editable: %s)", (canEdit) => {
+    const cell = createElement(SpecSpreadsheetTextValue, { value: longName, alwaysWrap: true, canEdit });
+    const html = renderToStaticMarkup(createElement(SpecSpreadsheetWrapContext.Provider, { value: false }, cell));
+    expect(html).toContain(longName);
+    expect(html).toContain("whitespace-pre-wrap");
+    expect(html).not.toContain("truncate");
+    expect(html).toContain("min-w-[240px]");
+    expect(html).toContain("print:min-w-0");
+  });
+
+  it("does not require spaces to wrap a long model identifier", () => {
+    const value = "IntegratedRefrigerator".repeat(20);
+    const html = renderToStaticMarkup(createElement(SpecSpreadsheetTextValue, { value, alwaysWrap: true }));
+    expect(html).toContain(value);
+    expect(html).toContain("[overflow-wrap:anywhere]");
+    expect(html).not.toContain("truncate");
+  });
 });

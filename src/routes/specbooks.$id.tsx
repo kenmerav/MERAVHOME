@@ -664,7 +664,7 @@ export function SpecBookDocument({
                       <tr key={it.id} className="border-b border-border/60 align-top">
                         <td className="py-3 pr-4 font-display">{room.name}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{normalizeItemCategory(it.category) ?? it.category ?? "—"}</td>
-                        <td className="py-3 pr-4">
+                        <td className="py-3 pr-4 whitespace-pre-wrap [overflow-wrap:anywhere]">
                           <div>{clientProductName(it, room)}</div>
                           {!isSharedSpecView && materialNeedsReselection(it) && (
                             <div className="mt-1">
@@ -1182,6 +1182,7 @@ function spreadsheetCellForColumn({
           value={row.clientProductName}
           disabled={!canEditProducts}
           className="font-medium text-ink"
+          alwaysWrap
           onSave={(value) => onSaveMaterialText(row, "client_product_name", value)}
         />
       );
@@ -1190,6 +1191,7 @@ function spreadsheetCellForColumn({
         <EditableSpecTextCell
           value={row.productName}
           disabled={!canEditProducts}
+          alwaysWrap
           onSave={(value) => onSaveProductText(row, "name", value)}
         />
       );
@@ -1319,6 +1321,7 @@ function EditableSpecTextCell({
   className = "",
   inputMode,
   wide = false,
+  alwaysWrap = false,
 }: {
   value: string;
   disabled?: boolean;
@@ -1326,6 +1329,7 @@ function EditableSpecTextCell({
   className?: string;
   inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
   wide?: boolean;
+  alwaysWrap?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -1349,6 +1353,7 @@ function EditableSpecTextCell({
         onEdit={() => setEditing(true)}
         className={className}
         wide={wide}
+        alwaysWrap={alwaysWrap}
       />
     );
   }
@@ -1720,7 +1725,7 @@ function SpecCard({
   return (
     <>
     <article
-      className={`grid grid-cols-1 md:grid-cols-[280px_1fr] gap-8 pb-10 border-b border-border last:border-0 print:grid-cols-[120px_minmax(0,1fr)] print:gap-4 print:pb-3 print:break-inside-avoid ${
+      className={`grid grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)] gap-8 pb-10 border-b border-border last:border-0 print:grid-cols-[120px_minmax(0,1fr)] print:gap-4 print:pb-3 print:break-inside-avoid ${
         canEditProducts && p ? "cursor-pointer transition-colors hover:bg-bone/30" : ""
       }`}
       onClick={() => {
@@ -1742,18 +1747,18 @@ function SpecCard({
           </div>
         )}
       </div>
-      <div>
+      <div className="min-w-0">
         <div className="flex items-baseline justify-between gap-4 mb-1 print:mb-0.5">
-          <div className="eyebrow">{item.item_label}</div>
+          <div className="eyebrow min-w-0 [overflow-wrap:anywhere]">{item.item_label}</div>
           {item.cad_label && (
-            <span className="text-[10px] tracking-[0.18em] uppercase px-2 py-0.5 border border-border">
+            <span className="shrink-0 text-[10px] tracking-[0.18em] uppercase px-2 py-0.5 border border-border">
               {item.cad_label}
             </span>
           )}
         </div>
         <div className="flex items-start justify-between gap-5">
           <h3
-            className={`min-w-0 break-words font-display leading-tight ${
+            className={`min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-display leading-tight ${
               displayName.length > 70
                 ? "text-2xl print:text-[16px]"
                 : displayName.length > 42
@@ -1776,7 +1781,7 @@ function SpecCard({
           </div>
         )}
         {!hideInternalProductDetails && actualProductName(item, room) && (
-          <p className="spec-book-product-name text-sm text-muted-foreground mt-1 tracking-wide print:text-[9px] print:leading-snug">
+          <p className="spec-book-product-name whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-muted-foreground mt-1 tracking-wide print:text-[9px] print:leading-snug">
             {actualProductName(item, room)}
           </p>
         )}

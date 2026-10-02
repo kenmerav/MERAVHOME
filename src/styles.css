@@ -164,13 +164,13 @@
   img { break-inside: avoid; page-break-inside: avoid; }
   .spec-book-product-name,
   .spec-sheet-compact-print {
-    display: -webkit-box !important;
-    overflow: hidden !important;
-    white-space: normal !important;
-    text-overflow: ellipsis;
+    display: block !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    text-overflow: clip;
     overflow-wrap: anywhere;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: unset;
   }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
