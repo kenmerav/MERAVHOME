@@ -1067,7 +1067,7 @@ function SpreadsheetTable({
               <SpreadsheetTd
                 key={column}
                 fullTextColumn={column === "notes" ? "notes" : column === "productName" ? "productName" : column === "clientProductName" ? "name" : undefined}
-                className={column === "room" ? "font-display text-sm print:text-[9px]" : ""}
+                className={column === "room" ? "font-display text-sm print:text-[9px]" : column === "finish" || column === "color" ? "min-w-[120px] print:min-w-0" : column === "dimensions" ? "min-w-[200px] print:min-w-0" : ""}
               >
                 {spreadsheetCellForColumn({
                   column,
@@ -1195,6 +1195,7 @@ function spreadsheetCellForColumn({
       return (
         <EditableSpecTextCell
           value={row.finish}
+          fitCell
           disabled={!canEditProducts}
           onSave={(value) => onSaveProductText(row, "finish", value)}
         />
@@ -1203,6 +1204,7 @@ function spreadsheetCellForColumn({
       return (
         <EditableSpecTextCell
           value={row.color}
+          fitCell
           disabled={!canEditProducts}
           onSave={(value) => onSaveMaterialText(row, "color", value)}
         />
@@ -1222,6 +1224,7 @@ function spreadsheetCellForColumn({
       return (
         <EditableSpecTextCell
           value={row.dimensions}
+          fitCell
           disabled={!canEditProducts}
           onSave={(value) => onSaveProductText(row, "dimensions", value)}
         />
@@ -1314,6 +1317,7 @@ function EditableSpecTextCell({
   wide = false,
   alwaysWrap = false,
   narrow = false,
+  fitCell = false,
 }: {
   value: string;
   disabled?: boolean;
@@ -1323,6 +1327,7 @@ function EditableSpecTextCell({
   wide?: boolean;
   alwaysWrap?: boolean;
   narrow?: boolean;
+  fitCell?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -1348,6 +1353,7 @@ function EditableSpecTextCell({
         wide={wide}
         alwaysWrap={alwaysWrap}
         narrow={narrow}
+        fitCell={fitCell}
       />
     );
   }
@@ -1366,7 +1372,7 @@ function EditableSpecTextCell({
           setEditing(false);
         }
       }}
-      className="h-8 w-40 border border-input bg-background px-2 text-xs"
+      className="h-8 w-full min-w-0 max-w-full border border-input bg-background px-2 text-xs"
     />
   );
 }
@@ -1409,7 +1415,7 @@ function EditableSpecLinkCell({
             setEditing(false);
           }
         }}
-        className="h-8 w-48 border border-input bg-background px-2 text-xs"
+        className="h-8 w-full min-w-0 max-w-full border border-input bg-background px-2 text-xs"
       />
     );
   }
@@ -1461,7 +1467,7 @@ function SpreadsheetTd({
         ? "min-w-[256px] max-w-[256px] print:min-w-0"
         : "max-w-[180px]";
   return (
-    <td className={`${widthClassName} px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
+    <td className={`${widthClassName} whitespace-normal [overflow-wrap:anywhere] px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
       {children || "—"}
     </td>
   );
@@ -2079,9 +2085,9 @@ function priceLabel(value: string | number | null | undefined) {
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="eyebrow mb-1 print:mb-0">{label}</dt>
-      <dd>{value}</dd>
+      <dd className="whitespace-pre-wrap [overflow-wrap:anywhere]">{value}</dd>
     </div>
   );
 }

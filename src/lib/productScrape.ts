@@ -1,7 +1,10 @@
+import { missingProductSpecifications } from "@/lib/firecrawlProduct";
+
 export type ScrapedProductData = {
   name?: string;
   vendor?: string;
   sku?: string;
+  color?: string;
   finish?: string;
   dimensions?: string;
   price?: string;
@@ -228,7 +231,9 @@ export async function scrapeProductUrl(
 }
 
 export function scrapedProductStatus(result: ScrapedProductData): "complete" | "partial" {
-  return result.name && result.image_url ? "complete" : "partial";
+  return result.name && result.image_url && !missingProductSpecifications(result).length
+    ? "complete"
+    : "partial";
 }
 
 export function productScrapeReviewMessage(

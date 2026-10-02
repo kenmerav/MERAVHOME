@@ -12,6 +12,14 @@ const render = (value: string, wrap?: boolean, canEdit = false) => {
 };
 
 describe("Spec Book spreadsheet full-text display", () => {
+  it.each([false, true])("confines specification values to their cells and wraps even in compact mode (editable: %s)", (canEdit) => {
+    const cell = createElement(SpecSpreadsheetTextValue, { value: longName, fitCell: true, canEdit });
+    const html = renderToStaticMarkup(createElement(SpecSpreadsheetWrapContext.Provider, { value: false }, cell));
+    expect(html).toContain("w-full min-w-0 max-w-full");
+    expect(html).toContain("whitespace-pre-wrap");
+    expect(html).not.toContain("truncate");
+    expect(html).not.toContain("max-w-[240px]");
+  });
   it("defaults to wrapping the entire value without an ellipsis", () => {
     const html = render(longName);
     expect(html).toContain(longName);

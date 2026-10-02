@@ -6,9 +6,18 @@ import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
 import {
+  FIRECRAWL_PRODUCT_PROMPT,
+  FIRECRAWL_PRODUCT_SCHEMA,
+  missingProductSpecifications,
+  normalizeFirecrawlProduct,
+} from "@/lib/firecrawlProduct";
+
+import {
   CATALOG_NAME_PENDING_NOTE,
   shouldReplaceCatalogProductName,
 } from "@/lib/catalogProductName";
+
+const MATERIAL_SCRAPE_PROMPT = `${FIRECRAWL_PRODUCT_PROMPT} For tile, capture total square feet per unopened box/carton/case only when it clearly matches the exact selected size or SKU. Ignore pieces per box, price per square foot, pallet coverage, installation services, financing thresholds, shipping offers, and related or recommended product prices. Never invent carton coverage.`;
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
@@ -271,6 +280,7 @@ type ShopifyProduct = {
   featured_image?: string;
   images?: string[];
   variants?: ShopifyVariant[];
+  options?: Array<string | { name?: string }>;
 };
 
 type FirecrawlPage = {
@@ -364,11 +374,21 @@ async function scrapeShopifyProduct(url: string): Promise<Scraped | null> {
       product.featured_image,
       Array.isArray(product.images) ? product.images[0] : "",
     );
+    // Without a selected variant, a multi-option product has no confirmed finish/color/size.
+    const specVariant = selected ?? (variants.length === 1 ? variants[0] : undefined);
+    const option = (pattern: RegExp) => {
+      const index =
+        product.options?.findIndex((value) =>
+          pattern.test(typeof value === "string" ? value : (value.name ?? "")),
+        ) ?? -1;
+      return index >= 0 ? firstString(specVariant?.options?.[index]) : "";
+    };
     return {
       name: firstString(product.title),
       vendor: firstString(inferVendorFromUrl(url), product.vendor),
       sku: firstString(representative?.sku),
-      finish: firstString(representative?.title === "Default Title" ? "" : representative?.title),
+      color: option(/colou?r|colorway/i),
+      finish: option(/finish|surface|treatment/i),
       price: shopifyPrice(variants, selectedVariantId),
       image_url: image.startsWith("//") ? `https:${image}` : image,
     };
@@ -496,16 +516,13 @@ async function fetchBatchResult(batchId: string, fcKey: string) {
 const scrapeSchema = {
   type: "object",
   properties: {
+    ...FIRECRAWL_PRODUCT_SCHEMA.properties,
     name: { type: "string" },
     vendor: { type: "string" },
     sku: { type: "string" },
-    color: { type: "string" },
-    selected_color: { type: "string" },
-    finish: { type: "string" },
     selected_variant: { type: "string" },
     variant: { type: "string" },
     colorway: { type: "string" },
-    dimensions: { type: "string" },
     price: {
       type: "string",
       description: "Exact visible price for the selected product variant. Never invent a price.",
@@ -536,6 +553,7 @@ const scrapeSchema = {
 };
 
 function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scraped {
+  const product = normalizeFirecrawlProduct(data, sourceUrl);
   const ex = data.json ?? data.extract ?? {};
   const meta = data.metadata ?? {};
   const pagePrice = priceFromPageText(data.markdown, data.html, sourceUrl);
@@ -563,16 +581,9 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
       meta["og:site_name"],
     ),
     sku: firstString(ex.sku, ex.model, ex.model_number),
-    color: firstString(ex.color, ex.selected_color, ex.selected_variant, ex.colorway),
-    finish: firstString(
-      ex.finish,
-      ex.color,
-      ex.selected_color,
-      ex.selected_variant,
-      ex.variant,
-      ex.colorway,
-    ),
-    dimensions: firstString(ex.dimensions, ex.size),
+    color: product.color,
+    finish: product.finish,
+    dimensions: product.dimensions,
     price: firstPrice(
       ex.price,
       ex.current_price,
@@ -595,46 +606,7 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
 
 async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
   const directProduct = await scrapeDirectProduct(url);
-  if (directProduct?.price) return directProduct;
-  const schema = {
-    type: "object",
-    properties: {
-      name: { type: "string" },
-      vendor: { type: "string" },
-      sku: { type: "string" },
-      color: {
-        type: "string",
-        description:
-          "Selected color, selected swatch, colorway, or color option shown for this exact product URL",
-      },
-      selected_color: { type: "string" },
-      finish: { type: "string" },
-      selected_variant: { type: "string" },
-      variant: { type: "string" },
-      colorway: { type: "string" },
-      dimensions: { type: "string" },
-      price: {
-        type: "string",
-        description:
-          "Exact customer-visible price for the selected product variant. If no exact selected variant price is visible, use the product price range.",
-      },
-      current_price: { type: "string" },
-      sale_price: { type: "string" },
-      regular_price: { type: "string" },
-      list_price: { type: "string" },
-      price_per_item: { type: "string" },
-      unit_cost: { type: "string" },
-      shipping: { type: "string" },
-      image_url: { type: "string" },
-      carton_coverage_sq_ft: {
-        type: "number",
-        description:
-          "Total square feet contained in one unopened box, carton, or case for the exact selected product size.",
-      },
-      carton_coverage_text: { type: "string" },
-      coverage_matches_requested_variant: { type: "boolean" },
-    },
-  };
+  // The direct retailer response may have pricing but omit the specifications.
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
     const controller = new AbortController();
@@ -654,8 +626,7 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
           {
             type: "json",
             schema: scrapeSchema,
-            prompt:
-              "Extract product details from this page. If the URL or product page has a selected color, selected swatch, colorway, finish, SKU, or variant already chosen, capture that exact selected value. Capture only the primary product price matching the URL and selected SKU. For tile, capture the total square feet in one box/carton/case only when it clearly matches the exact selected size or SKU; never use pieces per box, price per square foot, pallet coverage, or another size. Ignore installation services, financing thresholds, shipping offers, and related or recommended product prices. If no exact variant price is visible, capture the primary product price range. Do not invent a color, price, or carton coverage.",
+            prompt: MATERIAL_SCRAPE_PROMPT,
           },
         ],
         onlyMainContent: false,
@@ -798,7 +769,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
             .select(
-              "id, category, product_url, product_id, scrape_status, product:products(id, price, carton_coverage_sq_ft)",
+              "id, category, color, product_url, product_id, scrape_status, product:products(id, price, finish, dimensions, carton_coverage_sq_ft)",
             )
             .eq("project_id", projectId)
             .not("product_url", "is", null);
@@ -811,6 +782,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
             return (
               !excludedIds.has(item.id) &&
               (!hasValue(item.product?.price) ||
+                missingProductSpecifications({
+                  finish: item.product?.finish,
+                  color: item.color,
+                  dimensions: item.product?.dimensions,
+                }).length > 0 ||
                 (tileItem && !hasValue(item.product?.carton_coverage_sq_ft)))
             );
           });
@@ -844,7 +820,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
             })),
           );
           const prefetchedRows = directRows
-            .filter((row) => row.scraped?.price && !row.needs_carton_coverage)
+            .filter(
+              (row) => row.scraped?.price && !row.needs_carton_coverage && !missingProductSpecifications(row.scraped).length,
+            )
             .map((row) => ({ ...row, scraped: row.scraped as Scraped }));
           const prefetchedIds = new Set(prefetchedRows.map((row) => row.material_item_id));
           const firecrawlCandidates = batchCandidates.filter(
@@ -872,8 +850,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 {
                   type: "json",
                   schema: scrapeSchema,
-                  prompt:
-                    "Extract product details and the exact current visible price for the primary product matching the URL and selected SKU. For tile, capture total square feet per unopened box/carton/case only when it clearly matches the exact selected size or SKU. Ignore pieces per box, price per square foot, pallet coverage, installation services, financing thresholds, shipping offers, and related or recommended product prices. Do not invent a price or carton coverage.",
+                  prompt: MATERIAL_SCRAPE_PROMPT,
                 },
               ],
               onlyMainContent: false,
@@ -945,7 +922,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               vendor: firstString(row.scraped.vendor, inferVendorFromUrl(row.url)) || null,
               product_url: row.url,
               image_url: row.scraped.image_url || null,
-              finish: row.scraped.finish || row.scraped.color || null,
+              finish: row.scraped.finish || null,
               sku: row.scraped.sku || null,
               dimensions: row.scraped.dimensions || null,
               price: normalizeMoneyInput(row.scraped.price),
@@ -1020,8 +997,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
                   ? null
                   : "No reliable price found. Use the Studio extension to fill or verify this price.",
               };
-              const scrapedColor = firstString(row.scraped.color, row.scraped.finish);
-              if (scrapedColor && !matItem?.color) {
+              const scrapedColor = firstString(row.scraped.color);
+              if (scrapedColor && !hasValue(matItem?.color)) {
                 materialUpdate.color = scrapedColor;
               }
 
