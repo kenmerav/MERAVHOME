@@ -1467,7 +1467,7 @@ function SpreadsheetTd({
         ? "min-w-[256px] max-w-[256px] print:min-w-0"
         : "max-w-[180px]";
   return (
-    <td className={`${widthClassName} whitespace-normal [overflow-wrap:anywhere] px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
+    <td className={`${widthClassName} px-2 py-2 text-muted-foreground print:max-w-none print:px-1 print:py-1 ${className}`}>
       {children || "—"}
     </td>
   );
