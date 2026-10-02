@@ -18,6 +18,8 @@ import {
 } from "@/lib/money";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
+import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
+import type { SpecQuantityPatch, SpecQuantityUnit } from "@/lib/specQuantity";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
@@ -29,6 +31,8 @@ type ProcurementMaterialDetails = {
   client_product_name: string | null;
   category: string | null;
   quantity: number | null;
+  quantity_tbd?: boolean;
+  quantity_unit?: SpecQuantityUnit;
   color: string | null;
   image_url: string | null;
   product_url: string | null;
@@ -375,12 +379,12 @@ function ProcurementPage() {
     qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
-  const updateMaterialQuantity = async (materialId: string, value: string) => {
-    const trimmed = value.trim();
-    const quantity = trimmed === "" ? null : Number(trimmed);
-    if (quantity !== null && !Number.isFinite(quantity)) return;
-    await db.updateMaterialItem(materialId, { quantity });
-    qc.invalidateQueries({ queryKey: ["procurement"] });
+  const updateMaterialQuantity = async (materialId: string, patch: SpecQuantityPatch) => {
+    await db.updateMaterialQuantity(materialId, patch);
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+      qc.invalidateQueries({ queryKey: ["materialItems"] }),
+    ]);
   };
 
   const total = visibleItems.length;
@@ -745,8 +749,9 @@ function ProcurementPage() {
                       />
                     </td>
                     <td className="px-3 py-3 text-center font-display text-base">
-                      <EditableNumberCell
-                        value={m?.quantity?.toString() ?? ""}
+                      <SpecQuantityEditor
+                        item={m ?? { quantity: null }}
+                        label={m?.client_product_name || p?.name || "Product"}
                         disabled={!m?.id}
                         onSave={(value) =>
                           m?.id ? updateMaterialQuantity(m.id, value) : Promise.resolve()

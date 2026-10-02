@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { validateSpecQuantityPatch, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/productCategories";
 import type {
   RenderingStudioAssetType,
@@ -387,6 +388,8 @@ export interface MaterialItem {
   cad_label: string | null;
   product_url: string | null;
   quantity: number | null;
+  quantity_tbd?: boolean;
+  quantity_unit?: SpecQuantityUnit;
   color: string | null;
   image_url: string | null;
   notes: string | null;
@@ -1091,6 +1094,8 @@ export const db = {
           category: string | null;
           id: string;
           quantity: number | null;
+          quantity_tbd?: boolean;
+          quantity_unit?: SpecQuantityUnit;
           color: string | null;
           image_url: string | null;
           product_url: string | null;
@@ -1166,6 +1171,18 @@ export const db = {
       .from("material_items")
       .update(patch as any)
       .eq("product_id", productId),
+  updateMaterialQuantity: async (id: string, patch: SpecQuantityPatch) => {
+    const values = validateSpecQuantityPatch(patch);
+    const { data, error } = await supabase
+      .from("material_items")
+      .update(values as any)
+      .eq("id", id)
+      .select("id,quantity,quantity_tbd,quantity_unit")
+      .single();
+    if (error) throw new Error(error.message || "Could not save quantity.");
+    if (!data) throw new Error("Could not save quantity. Please refresh and try again.");
+    return data;
+  },
   deleteMaterialItem: async (id: string) => supabase.from("material_items").delete().eq("id", id),
   findProductByUrl: async (url: string) =>
     (await supabase.from("products").select("*").eq("product_url", url).maybeSingle())

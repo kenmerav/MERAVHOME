@@ -27,7 +27,7 @@ export function SpecSpreadsheetTextValue({
   const widthClassName = wide && wrapText
     ? "w-[480px] min-w-[480px] max-w-[480px] print:min-w-0"
     : alwaysWrap && narrow
-      ? "w-[180px] min-w-[180px] max-w-[180px] print:min-w-0"
+      ? "w-[120px] min-w-[120px] max-w-[120px] print:min-w-0"
       : alwaysWrap
         ? "w-[240px] min-w-[240px] max-w-[240px] print:min-w-0"
         : "max-w-[240px]";

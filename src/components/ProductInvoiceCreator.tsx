@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { normalizeSupabaseImageUrl, supabaseImageTransformUrl } from "@/lib/local-assets";
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
+import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -45,6 +46,8 @@ type ProcurementInvoiceItem = {
     category: string | null;
     image_url: string | null;
     quantity: number | null;
+    quantity_tbd?: boolean;
+    quantity_unit?: SpecQuantityUnit;
     color: string | null;
     product_url: string | null;
     cad_label: string | null;
@@ -67,6 +70,7 @@ type ProductInvoiceLine = {
   dimensions: string;
   sku: string;
   quantity: string;
+  quantityUnit: SpecQuantityUnit;
   unitPrice: string;
   unitCost: string;
   shipping: string;
@@ -154,7 +158,8 @@ export function ProductInvoiceCreator({
     () => new Set(visibleLines.map((line) => line.sourceId)),
     [visibleLines],
   );
-  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0;
+  const invalidQuantities = draft.lines.filter((line) => line.selected && !invoiceQuantityReady(line.quantity, line.quantityUnit));
+  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0;
   const html = useMemo(() => buildProductInvoiceHtml(draft, totals), [draft, totals]);
 
   const updateDraft = (patch: Partial<ProductInvoiceDraft>) =>
@@ -280,6 +285,12 @@ export function ProductInvoiceCreator({
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
           <div className="space-y-6">
+            {draft.lines.some((line) => line.quantity === "TBD") && (
+              <p className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Items with TBD quantities start unchecked. Confirm their quantity before including them in an invoice.</p>
+            )}
+            {invalidQuantities.length > 0 && (
+              <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">Enter a known, positive quantity for every selected item before saving, downloading, or creating a payment link.</p>
+            )}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Field
                 label="Invoice Name"
@@ -481,6 +492,7 @@ export function ProductInvoiceCreator({
                               }
                               className="text-right"
                             />
+                            <div className="mt-1 text-right text-xs text-muted-foreground">{specQuantityUnitLabel(line.quantityUnit)}</div>
                           </td>
                           <td className="px-3 py-3">
                             <Input
@@ -598,7 +610,7 @@ function makeDraft({
       return {
         sourceId: item.id,
         productId: product?.id ?? null,
-        selected: true,
+        selected: material?.quantity_tbd !== true,
         name: material?.client_product_name || product?.name || "Product",
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",
@@ -609,7 +621,8 @@ function makeDraft({
         finish: material?.color || product?.finish || "",
         dimensions: product?.dimensions || "",
         sku: product?.sku || "",
-        quantity: String(material?.quantity && material.quantity > 0 ? material.quantity : 1),
+        quantity: invoiceQuantityInput(material),
+        quantityUnit: specQuantityUnit(material ?? { quantity: null }),
         unitPrice: normalizeMoneyInput(product?.price) || "",
         unitCost: normalizeMoneyInput(product?.unit_cost) || "",
         shipping: normalizeMoneyInput(product?.shipping) || "",
@@ -643,8 +656,7 @@ function lineProductSubtotal(line: ProductInvoiceLine) {
 }
 
 function quantityValue(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  return invoiceQuantityNumber(value);
 }
 
 function FilterSelect({
@@ -744,7 +756,7 @@ function buildProductInvoiceHtml(
           </div>
         </div>
       </td>
-      <td class="center">${escapeHtml(line.quantity || "1")}</td>
+      <td class="center">${escapeHtml(line.quantity)}${line.quantityUnit === "square_feet" ? " Sq Ft" : ""}</td>
       <td class="right">${formatMoney(moneyValue(line.unitPrice))}</td>
       <td class="right">${formatMoney(lineProductSubtotal(line))}</td>
     </tr>

@@ -16,6 +16,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
+import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
 import {
   ALL_CATEGORIES,
   PRODUCT_CATEGORIES,
@@ -237,6 +238,8 @@ function materialHasUserSelection(item: MaterialItem) {
       item.image_url?.trim() ||
       item.color?.trim() ||
       item.quantity != null ||
+      item.quantity_tbd === true ||
+      item.quantity_unit === "square_feet" ||
       item.notes?.trim() ||
       item.cad_label?.trim() ||
       item.ordered_by ||
@@ -1565,11 +1568,8 @@ function RoomMaterialsSection({
                       {it.product?.price || "—"}
                     </td>
                     <td className="py-2 pr-3">
-                      <InlineInput
-                        type="number"
-                        value={it.quantity?.toString() ?? ""}
-                        onSave={(v) => update(it.id, { quantity: v ? parseInt(v, 10) : null })}
-                      />
+                      <SpecQuantityEditor item={it} label={it.item_label}
+                        onSave={async (patch) => { await db.updateMaterialQuantity(it.id, patch); invalidate(); }} />
                     </td>
                     <td className="py-2 pr-3">
                       <Select

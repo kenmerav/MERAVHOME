@@ -288,6 +288,8 @@ export type Database = {
           product_url: string | null
           project_id: string
           quantity: number | null
+          quantity_tbd: boolean
+          quantity_unit: "count" | "square_feet"
           room_id: string
           scrape_error: string | null
           scrape_status: string
@@ -322,6 +324,8 @@ export type Database = {
           product_url?: string | null
           project_id: string
           quantity?: number | null
+          quantity_tbd?: boolean
+          quantity_unit?: "count" | "square_feet"
           room_id: string
           scrape_error?: string | null
           scrape_status?: string
@@ -356,6 +360,8 @@ export type Database = {
           product_url?: string | null
           project_id?: string
           quantity?: number | null
+          quantity_tbd?: boolean
+          quantity_unit?: "count" | "square_feet"
           room_id?: string
           scrape_error?: string | null
           scrape_status?: string

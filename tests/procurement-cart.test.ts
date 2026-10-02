@@ -101,6 +101,20 @@ function readyDraft() {
   );
 }
 
+describe("Spec Book quantities in procurement", () => {
+  it("blocks TBD items rather than ordering one", () => {
+    const draft = buildProcurementDraft(material({ quantity: null, quantity_tbd: true }), { id: "project", name: "QA" }, undefined, true);
+    expect(draft.quantity).toBeNull();
+    expect(classifyProcurementDraft(draft)).toBe("missing_quantity");
+  });
+  it("retains Sq Ft and requires carton coverage before a cart run", () => {
+    const draft = buildProcurementDraft(material({ quantity: 12.75, quantity_unit: "square_feet" }), { id: "project", name: "QA" }, undefined, true);
+    expect(draft.quantity).toBe(12.75);
+    expect(draft.quantityUnit).toBe("square_feet");
+    expect(classifyProcurementDraft(draft)).toBe("missing_carton_coverage");
+  });
+});
+
 describe("Spec Book selection and preflight", () => {
   it("selects an existing Spec Book product and classifies it Ready", () => {
     const draft = readyDraft();

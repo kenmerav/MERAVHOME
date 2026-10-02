@@ -452,8 +452,8 @@ export function buildProcurementDraft(
     vendor: text(product?.vendor),
     productUrl,
     sku: text(product?.sku),
-    quantity: item.quantity,
-    quantityUnit: "pieces",
+    quantity: item.quantity_tbd ? null : item.quantity,
+    quantityUnit: item.quantity_unit === "square_feet" ? "square_feet" : "pieces",
     cartonCoverageSquareFeet:
       typeof product?.carton_coverage_sq_ft === "number"
         ? product.carton_coverage_sq_ft

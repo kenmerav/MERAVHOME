@@ -33,6 +33,8 @@ import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
 import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
 import { SpecSpreadsheetTextValue, SpecSpreadsheetWrapContext } from "@/components/SpecSpreadsheetTextValue";
+import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
+import { formatSpecQuantity, specQuantityInput, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
 
 export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
@@ -60,6 +62,7 @@ type SpecSpreadsheetRow = {
   finish: string;
   color: string;
   quantity: string;
+  quantityUnit: SpecQuantityUnit;
   dimensions: string;
   sku: string;
   clientPrice: string;
@@ -81,6 +84,7 @@ type SpreadsheetColumnKey =
   | "finish"
   | "color"
   | "quantity"
+  | "quantityUnit"
   | "dimensions"
   | "sku"
   | "clientPrice"
@@ -98,6 +102,7 @@ const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> =
   { key: "cad", label: "CAD" },
   { key: "clientProductName", label: "Client Product Name" },
   { key: "quantity", label: "Qty" },
+  { key: "quantityUnit", label: "Unit" },
   { key: "productName", label: "Product Name" },
   { key: "vendor", label: "Vendor" },
   { key: "finish", label: "Finish" },
@@ -680,7 +685,7 @@ export function SpecBookDocument({
                         <td className="py-3 pr-4 text-muted-foreground">
                           {it.product?.vendor || "—"}
                         </td>
-                        <td className="py-3 pr-4">{it.quantity ?? ""}</td>
+                        <td className="py-3 pr-4">{formatSpecQuantity(it)}</td>
                       </tr>
                     ));
                   })}
@@ -843,11 +848,8 @@ function SpecSpreadsheetView({
     toast.success("Spec updated");
   };
 
-  const saveQuantity = async (row: SpecSpreadsheetRow, value: string) => {
-    const next = value.trim();
-    const quantity = next === "" ? null : Number(next);
-    if (quantity !== null && !Number.isFinite(quantity)) return toast.error("Enter a valid quantity");
-    await db.updateMaterialItem(row.id, { quantity });
+  const saveQuantity = async (row: SpecSpreadsheetRow, patch: SpecQuantityPatch) => {
+    await db.updateMaterialQuantity(row.id, patch);
     await refreshSpec(row.productId);
     toast.success("Spec updated");
   };
@@ -1042,7 +1044,7 @@ function SpreadsheetTable({
     value: string,
   ) => Promise<void>;
   onSaveCategory: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
-  onSaveQuantity: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveQuantity: (row: SpecSpreadsheetRow, patch: SpecQuantityPatch) => Promise<void>;
   onSavePrice: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
   onSaveOrderedBy: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
   onSaveOrdered: (row: SpecSpreadsheetRow, value: boolean) => Promise<void>;
@@ -1117,7 +1119,7 @@ function spreadsheetCellForColumn({
     value: string,
   ) => Promise<void>;
   onSaveCategory: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
-  onSaveQuantity: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
+  onSaveQuantity: (row: SpecSpreadsheetRow, patch: SpecQuantityPatch) => Promise<void>;
   onSavePrice: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
   onSaveOrderedBy: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
   onSaveOrdered: (row: SpecSpreadsheetRow, value: boolean) => Promise<void>;
@@ -1206,12 +1208,14 @@ function spreadsheetCellForColumn({
         />
       );
     case "quantity":
+    case "quantityUnit":
       return (
-        <EditableSpecTextCell
-          value={row.quantity}
+        <SpecQuantityEditor
+          item={{ quantity: row.quantity === "TBD" || !row.quantity ? null : Number(row.quantity), quantity_tbd: row.quantity === "TBD", quantity_unit: row.quantityUnit }}
+          label={row.itemLabel}
+          display={column === "quantityUnit" ? "unit" : "quantity"}
           disabled={!canEditProducts}
-          inputMode="decimal"
-          onSave={(value) => onSaveQuantity(row, value)}
+          onSave={(patch) => onSaveQuantity(row, patch)}
         />
       );
     case "dimensions":
@@ -1452,7 +1456,7 @@ function SpreadsheetTd({
   const widthClassName = fullTextColumn === "notes"
     ? "min-w-[496px] max-w-[496px] print:min-w-0"
     : fullTextColumn === "productName"
-      ? "min-w-[196px] max-w-[196px] print:min-w-0"
+      ? "min-w-[136px] max-w-[136px] print:min-w-0"
       : fullTextColumn === "name"
         ? "min-w-[256px] max-w-[256px] print:min-w-0"
         : "max-w-[180px]";
@@ -1718,6 +1722,15 @@ function SpecCard({
   hideInternalProductDetails: boolean;
 }) {
   const p = item.product;
+  const qc = useQueryClient();
+  const saveQuantity = async (patch: SpecQuantityPatch) => {
+    await db.updateMaterialQuantity(item.id, patch);
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+    ]);
+    toast.success("Quantity updated");
+  };
   const displayName = clientProductName(item, room);
   const imageUrl = materialImageUrl(item);
   const [open, setOpen] = useState(false);
@@ -1767,10 +1780,11 @@ function SpecCard({
           >
             {displayName}
           </h3>
-          {item.quantity != null && (
+          {(canEditProducts || item.quantity != null || item.quantity_tbd) && (
             <div className="shrink-0 border-l border-border pl-4 text-right print:pl-3">
               <div className="eyebrow mb-1 print:mb-0">Qty</div>
-              <div className="font-display text-2xl leading-none print:text-lg">{item.quantity}</div>
+              <SpecQuantityEditor item={item} label={item.item_label} disabled={!canEditProducts}
+                onSave={saveQuantity} className="font-display text-2xl leading-none print:text-lg" />
             </div>
           )}
         </div>
@@ -2110,7 +2124,8 @@ function buildSpecSpreadsheetRows(
         vendor: product?.vendor ?? "",
         finish: product?.finish ?? "",
         color: item.color ?? "",
-        quantity: item.quantity != null ? String(item.quantity) : "",
+        quantity: specQuantityInput(item),
+        quantityUnit: specQuantityUnit(item),
         dimensions: product?.dimensions ?? "",
         sku: product?.sku ?? "",
         clientPrice: priceLabel(product?.price) ?? "",
@@ -2289,6 +2304,8 @@ function spreadsheetCellValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey
       return row.color;
     case "quantity":
       return row.quantity;
+    case "quantityUnit":
+      return specQuantityUnitLabel(row.quantityUnit);
     case "dimensions":
       return row.dimensions;
     case "sku":
