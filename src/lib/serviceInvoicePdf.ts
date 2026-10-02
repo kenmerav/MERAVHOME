@@ -101,7 +101,9 @@ function removeStripeAnnotations(document: PDFDocument) {
   }
 }
 
-async function paymentFonts(document: PDFDocument, suppliedBytes?: Uint8Array) {
+type PaymentFontBytes = { regular: Uint8Array; bold: Uint8Array };
+
+async function paymentFonts(document: PDFDocument, suppliedBytes?: PaymentFontBytes) {
   const names = document.getPages().flatMap(page => {
     const fonts = page.node.Resources()?.lookup(PDFName.of("Font")) as any;
     return fonts?.values?.().map((reference: any) => {
@@ -116,17 +118,17 @@ async function paymentFonts(document: PDFDocument, suppliedBytes?: Uint8Array) {
       bold: await document.embedFont(sans ? StandardFonts.HelveticaBold : StandardFonts.TimesRomanBold),
     };
   }
-  const response = suppliedBytes ? null : await fetch("/invoice-assets/v1/PlayfairDisplay.ttf");
-  if (response && !response.ok) throw new Error("Could not load the invoice font. Please try again.");
-  const bytes = suppliedBytes ?? new Uint8Array(await response!.arrayBuffer());
-  const embed = async (weight: number) => {
-    document.registerFontkit({ create: data => {
-      const font = fontkit.create(data) as any;
-      return font.getVariation({ wght: weight });
-    } });
+  // Fontkit's variable-font subset conversion corrupts some outlines (e.g. R
+  // and y). Embed pre-instantiated fixed weights, not getVariation() subsets.
+  document.registerFontkit(fontkit);
+  const embed = async (style: "Regular" | "Bold") => {
+    const supplied = suppliedBytes?.[style === "Regular" ? "regular" : "bold"];
+    const response = supplied ? null : await fetch(`/invoice-assets/v2/MeravInvoiceSerif-${style}.ttf`);
+    if (response && !response.ok) throw new Error("Could not load the invoice font. Please try again.");
+    const bytes = supplied ?? new Uint8Array(await response!.arrayBuffer());
     return document.embedFont(bytes.slice(), { subset: true });
   };
-  return { regular: await embed(400), bold: await embed(700) };
+  return { regular: await embed("Regular"), bold: await embed("Bold") };
 }
 
 function drawRight(page: PDFPage, text: string, right: number, y: number, size: number, font: PDFFont, width?: number) {
@@ -140,7 +142,7 @@ function drawRight(page: PDFPage, text: string, right: number, y: number, size: 
 // onto the uploaded source, so status reversals cannot leave old strikes behind.
 export async function updateServiceInvoicePdf(
   bytes: Uint8Array, summary: ServiceInvoicePaymentSummary,
-  testing: { pages?: InvoicePdfPage[]; fontBytes?: Uint8Array } = {},
+  testing: { pages?: InvoicePdfPage[]; fontBytes?: PaymentFontBytes } = {},
 ): Promise<Uint8Array | null> {
   const plan = planInvoicePdfPayments(testing.pages ?? await readPdfText(bytes), summary);
   if (!plan) return null;

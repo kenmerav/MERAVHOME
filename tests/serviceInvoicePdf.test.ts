@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { PDFDocument, PDFName, StandardFonts } from "pdf-lib";
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import { PDFDocument, PDFName, StandardFonts, decodePDFRawStream } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { planInvoicePdfPayments, updateServiceInvoicePdf, type InvoicePdfPage } from "../src/lib/serviceInvoicePdf";
 import { sanitizeInvoicePdfBlob } from "../src/lib/invoiceDocuments";
 
@@ -23,9 +25,14 @@ const pages: InvoicePdfPage[] = [{ index: 0, rotation: 0, items: [
   { text: "9,000.00", x: 510, y: 300, width: 36, size: 9 },
 ] }];
 
-async function sourcePdf() {
+const fontAsset = (file: string) => new Uint8Array(readFileSync(new URL(`../public/invoice-assets/${file}`, import.meta.url)));
+
+async function sourcePdf(branded = false) {
   const document = await PDFDocument.create();
-  const font = await document.embedFont(StandardFonts.TimesRoman);
+  document.registerFontkit(fontkit);
+  const font = branded
+    ? await document.embedFont(fontAsset("v1/PlayfairDisplay.ttf"), { subset: true })
+    : await document.embedFont(StandardFonts.TimesRoman);
   const page = document.addPage([612, 792]);
   for (const item of pages[0].items) page.drawText(item.text, { x: item.x, y: item.y, size: item.size, font });
   page.drawText("Original scope and client stay here", { x: 60, y: 500, size: 10, font });
@@ -91,5 +98,55 @@ describe("uploaded service invoice payment refresh", () => {
     const result = await sanitizeInvoicePdfBlob(blob, { servicePayments: summary });
     expect(links(await PDFDocument.load(await result.arrayBuffer()))).toContain("https://buy.stripe.com/test_current");
     await expect(sanitizeInvoicePdfBlob(blob, { servicePayments: { ...summary, payments: [] } })).rejects.toThrow("Could not safely update");
+  });
+  it("embeds intact fixed-weight outlines, including the R in HERE and y in Delivery", async () => {
+    const fetched: string[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+      const path = String(input);
+      fetched.push(path);
+      const bytes = fontAsset(path.replace("/invoice-assets/", ""));
+      return new Response(bytes.buffer as ArrayBuffer, { status: 200 });
+    });
+    try {
+      const source = await sourcePdf(true);
+      const result = await PDFDocument.load((await updateServiceInvoicePdf(source, summary, { pages }))!);
+      const resources = result.getPages()[0].node.Resources()!.lookup(PDFName.of("Font")) as any;
+      const checked = new Set<string>();
+      const letters = new Set<string>();
+      for (const reference of resources.values()) {
+        const dictionary = result.context.lookup(reference) as any;
+        const name = String(dictionary.get(PDFName.of("BaseFont")));
+        if (!name.includes("MeravInvoiceSerif") || checked.has(name)) continue;
+        checked.add(name);
+        const style = name.includes("Bold") ? "Bold" : "Regular";
+        const original = fontkit.create(fontAsset(`v2/MeravInvoiceSerif-${style}.ttf`)) as any;
+        const descriptor = dictionary.lookup(PDFName.of("DescendantFonts")).lookup(0).lookup(PDFName.of("FontDescriptor"));
+        const embedded = fontkit.create(decodePDFRawStream(descriptor.lookup(PDFName.of("FontFile2"))).decode()) as any;
+        const cmap = Buffer.from(decodePDFRawStream(dictionary.lookup(PDFName.of("ToUnicode"))).decode()).toString();
+        for (const match of cmap.matchAll(/^<([0-9a-f]+)> <([0-9a-f]{4})>$/gim)) {
+          const codePoint = parseInt(match[2], 16);
+          if (codePoint < 32 || codePoint > 126) continue;
+          const actual = embedded.getGlyph(parseInt(match[1], 16));
+          const expected = original.glyphForCodePoint(codePoint);
+          letters.add(String.fromCodePoint(codePoint));
+          expect(actual.path.commands, `${style} ${String.fromCodePoint(codePoint)} outline`).toEqual(expected.path.commands);
+        }
+      }
+      expect(checked.size).toBe(2);
+      expect(letters.has("R")).toBe(true);
+      expect(letters.has("y")).toBe(true);
+      expect(fetched).toEqual([
+        "/invoice-assets/v2/MeravInvoiceSerif-Regular.ttf",
+        "/invoice-assets/v2/MeravInvoiceSerif-Bold.ttf",
+      ]);
+      expect(links(result)).toContain("https://buy.stripe.com/test_current");
+    } finally { fetchMock.mockRestore(); }
+  });
+  it("reports a missing PDF font rather than generating a broken payment copy", async () => {
+    const source = await sourcePdf(true);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 404 }));
+    try {
+      await expect(updateServiceInvoicePdf(source, summary, { pages })).rejects.toThrow("Could not load the invoice font");
+    } finally { fetchMock.mockRestore(); }
   });
 });
