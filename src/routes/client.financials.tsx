@@ -168,8 +168,8 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
   const handleOpen = async () => {
     try {
       await openInvoiceDocument(invoice.pdf_data_url, invoice.file_name, documentOptions);
-    } catch {
-      toast.error("Could not open invoice.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not open invoice.");
     }
   };
 

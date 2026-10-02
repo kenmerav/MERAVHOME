@@ -54,6 +54,7 @@ export async function openInvoiceDocument(
 
     const pdfBlob = await sanitizeInvoicePdfBlob(
       blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }),
+      options,
     );
     const url = URL.createObjectURL(pdfBlob);
     if (target) {
@@ -87,13 +88,23 @@ export async function downloadInvoiceDocument(
 
   const pdfBlob = await sanitizeInvoicePdfBlob(
     blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }),
+    options,
   );
   const url = URL.createObjectURL(pdfBlob);
   triggerDownload(url, invoicePdfFileName(fileName));
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-async function sanitizeInvoicePdfBlob(blob: Blob) {
+export async function sanitizeInvoicePdfBlob(blob: Blob, options: InvoiceDocumentOptions = {}) {
+  if (options.servicePayments) {
+    const { updateServiceInvoicePdf } = await import("@/lib/serviceInvoicePdf");
+    const updated = await updateServiceInvoicePdf(new Uint8Array(await blob.arrayBuffer()), options.servicePayments);
+    if (updated) {
+      const bytes = new Uint8Array(updated.length);
+      bytes.set(updated);
+      return new Blob([bytes.buffer], { type: "application/pdf" });
+    }
+  }
   try {
     const { PDFDocument, PDFName, rgb } = await import("pdf-lib");
     const pdfDoc = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true });
