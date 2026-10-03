@@ -409,7 +409,7 @@ export function SpecBookDocument({
   ]);
 
   return (
-      <div className={`page-pad print:p-0 bg-white text-ink ${publicView ? "max-w-[1500px] mx-auto" : ""}`}>
+      <div className={`page-pad print:p-0 bg-white text-ink ${publicView && layout === "book" ? "max-w-[1500px] mx-auto" : ""}`}>
         <div
           className={`print:hidden fixed bottom-6 right-6 z-40 hidden items-center gap-2 rounded-full border border-border bg-white/95 p-2 shadow-lg backdrop-blur md:flex ${
             layout === "book" ? "" : "md:hidden"
