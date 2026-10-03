@@ -109,7 +109,7 @@ const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> =
   { key: "color", label: "Color" },
   { key: "dimensions", label: "Dimensions" },
   { key: "sku", label: "SKU" },
-  { key: "clientPrice", label: "Client Price" },
+  { key: "clientPrice", label: "Price" },
   { key: "orderedBy", label: "Ordered By" },
   { key: "ordered", label: "Ordered" },
   { key: "link", label: "Link" },
@@ -1823,7 +1823,7 @@ function SpecCard({
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-2 print:gap-x-4 print:gap-y-1 print:text-[10px] print:leading-snug">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
-          {showPricing && <Detail label="Client Price" value={priceLabel(p?.price)} />}
+          {showPricing && <Detail label="Price" value={priceLabel(p?.price)} />}
           {!hideInternalProductDetails && <Detail label="SKU" value={p?.sku} />}
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />
@@ -2064,7 +2064,7 @@ function SpecProductEditDialog({
               </SelectContent>
             </Select>
           </div>
-          <Field label="Client Price" value={form.price ?? ""} onChange={(value) => update({ price: value })} />
+          <Field label="Price" value={form.price ?? ""} onChange={(value) => update({ price: value })} />
           <Field label="Unit Cost" value={form.unit_cost ?? ""} onChange={(value) => update({ unit_cost: value })} />
           <Field label="Shipping" value={form.shipping ?? ""} onChange={(value) => update({ shipping: value })} />
           <Field label="Dimensions" value={form.dimensions ?? ""} onChange={(value) => update({ dimensions: value })} />
