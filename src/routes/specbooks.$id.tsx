@@ -294,9 +294,9 @@ export function SpecBookDocument({
     queryKey: ["rooms", id],
     queryFn: async () => (await db.listRooms(id)) ?? [],
   });
-  const { data: items = [] } = useQuery({
-    queryKey: ["materialItems", id],
-    queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
+  const { data: items = [], isPending: itemsPending, error: itemsError, refetch: retryItems } = useQuery({
+    queryKey: ["materialItems", id, "specBook"],
+    queryFn: async () => (await db.listSpecBookMaterialItems(id)) ?? [],
   });
 
   const byRoom = useMemo(() => {
@@ -367,7 +367,13 @@ export function SpecBookDocument({
     jumpToSection("table-of-contents");
   };
 
-  if (!project) return <div className="p-16 text-muted-foreground">Loading…</div>;
+  if (itemsError) return (
+    <div className="p-16 text-muted-foreground">
+      <p>Could not check the current design selections.</p>
+      <button className="mt-4 underline" onClick={() => void retryItems()}>Retry</button>
+    </div>
+  );
+  if (!project || itemsPending) return <div className="p-16 text-muted-foreground">Loading…</div>;
 
   if (!publicView && profile && !canViewProjectSurface(profile, project, "specBook")) {
     return (

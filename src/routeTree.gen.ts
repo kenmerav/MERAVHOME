@@ -34,6 +34,7 @@ import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
 import { Route as ApiUploadProjectDocumentRouteImport } from './routes/api/upload-project-document'
 import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
+import { Route as ApiSpecBookSourceStatusRouteImport } from './routes/api/spec-book-source-status'
 import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
 import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
@@ -237,6 +238,11 @@ const ApiUploadDesignBoardImageRoute =
     path: '/api/upload-design-board-image',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiSpecBookSourceStatusRoute = ApiSpecBookSourceStatusRouteImport.update({
+  id: '/api/spec-book-source-status',
+  path: '/api/spec-book-source-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStudioRemindersRoute = ApiStudioRemindersRouteImport.update({
   id: '/api/studio-reminders',
   path: '/api/studio-reminders',
@@ -687,6 +693,7 @@ export interface FileRoutesByFullPath {
   '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
+  '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
@@ -789,6 +796,7 @@ export interface FileRoutesByTo {
   '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
+  '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
@@ -892,6 +900,7 @@ export interface FileRoutesById {
   '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
+  '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
@@ -996,6 +1005,7 @@ export interface FileRouteTypes {
     | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
+    | '/api/spec-book-source-status'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
@@ -1098,6 +1108,7 @@ export interface FileRouteTypes {
     | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
+    | '/api/spec-book-source-status'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
@@ -1200,6 +1211,7 @@ export interface FileRouteTypes {
     | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
+    | '/api/spec-book-source-status'
     | '/api/studio-reminders'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
@@ -1303,6 +1315,7 @@ export interface RootRouteChildren {
   ApiScrapeProductsRoute: typeof ApiScrapeProductsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiSharedDesignBoardRoute: typeof ApiSharedDesignBoardRoute
+  ApiSpecBookSourceStatusRoute: typeof ApiSpecBookSourceStatusRoute
   ApiStudioRemindersRoute: typeof ApiStudioRemindersRoute
   ApiUploadDesignBoardImageRoute: typeof ApiUploadDesignBoardImageRoute
   ApiUploadProjectDocumentRoute: typeof ApiUploadProjectDocumentRoute
@@ -1525,6 +1538,13 @@ declare module '@tanstack/react-router' {
       path: '/api/upload-design-board-image'
       fullPath: '/api/upload-design-board-image'
       preLoaderRoute: typeof ApiUploadDesignBoardImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-book-source-status': {
+      id: '/api/spec-book-source-status'
+      path: '/api/spec-book-source-status'
+      fullPath: '/api/spec-book-source-status'
+      preLoaderRoute: typeof ApiSpecBookSourceStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/studio-reminders': {
@@ -2123,6 +2143,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiScrapeProductsRoute: ApiScrapeProductsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiSharedDesignBoardRoute: ApiSharedDesignBoardRoute,
+  ApiSpecBookSourceStatusRoute: ApiSpecBookSourceStatusRoute,
   ApiStudioRemindersRoute: ApiStudioRemindersRoute,
   ApiUploadDesignBoardImageRoute: ApiUploadDesignBoardImageRoute,
   ApiUploadProjectDocumentRoute: ApiUploadProjectDocumentRoute,

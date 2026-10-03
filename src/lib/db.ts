@@ -1118,6 +1118,22 @@ export const db = {
   },
 
   /* MATERIAL ITEMS (guided checklist) */
+  listSpecBookMaterialItems: async (projectId: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const [items, response] = await Promise.all([
+      db.listMaterialItemsByProject(projectId),
+      fetch(`/api/spec-book-source-status?projectId=${encodeURIComponent(projectId)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store",
+      }),
+    ]);
+    if (!response.ok) throw new Error("Could not check the current design selections. Please retry.");
+    const body = await response.json() as { staleMaterialIds: string[] };
+    if (!Array.isArray(body.staleMaterialIds)) throw new Error("Could not check the current design selections. Please retry.");
+    const staleIds = new Set(body.staleMaterialIds);
+    return items.filter((item) => !staleIds.has(item.id));
+  },
   listMaterialItemsByProject: async (projectId: string) => {
     const { data } = await supabase
       .from("material_items")
