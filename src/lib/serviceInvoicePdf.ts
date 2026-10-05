@@ -6,7 +6,7 @@ import { activeInvoiceAdjustments, adjustedInvoiceTotal } from "@/lib/invoiceAdj
 
 export type InvoicePdfText = { text: string; x: number; y: number; width: number; size: number };
 export type InvoicePdfPage = { index: number; rotation: number; items: InvoicePdfText[] };
-type Row = { page: number; label: InvoicePdfText; amounts: InvoicePdfText[] };
+type Row = { page: number; label: InvoicePdfText; amounts: InvoicePdfText[]; labelLines?: InvoicePdfText[] };
 type PhaseRow = Row & { payment: ServiceInvoicePaymentSummary["payments"][number]; current: boolean };
 
 const refreshError = "Could not safely update this invoice's payment section. The original is preserved; please ask the team to review its PDF layout.";
@@ -25,6 +25,31 @@ function findRows(pages: InvoicePdfPage[], matches: (text: string) => boolean): 
   })));
 }
 
+function findPhaseRows(pages: InvoicePdfPage[]): Row[] {
+  return findRows(pages, text => /^Due\s+(?:on|at)\s+/i.test(text)).map(row => {
+    const lines = [row.label];
+    const items = pages.find(page => page.index === row.page)!.items;
+    const right = row.label.x + row.label.width;
+    while (!/:\s*$/.test(lines.at(-1)!.text) && lines.length < 4) {
+      const previous = lines.at(-1)!;
+      const candidates = items.filter(item => item.y < previous.y - previous.size * .5
+        && item.y >= previous.y - previous.size * 1.65
+        && Math.abs(item.x + item.width - right) < 2
+        && Math.abs(item.size - previous.size) < .5
+        && !/^[\d$.,\s-]+$/.test(item.text)
+        && !/^(Due\s|Paid\s*:|Design Fee Due|CLICK HERE TO PAY|Amount due now|No payment due)/i.test(item.text));
+      if (!candidates.length) break;
+      if (candidates.length !== 1) throw new Error(refreshError);
+      lines.push(candidates[0]);
+    }
+    if (lines.length === 1) return row;
+    const amounts = items.filter(item => item.x >= right - 1
+      && lines.some(line => Math.abs(item.y - line.y) < Math.max(2.5, line.size * .35))
+      && /^[\d$.,\s-]+$/.test(item.text));
+    return { ...row, label: { ...row.label, text: lines.map(line => line.text).join(" ") }, labelLines: lines, amounts };
+  });
+}
+
 // Locate text, never a guessed fixed rectangle. Ambiguous or changed layouts
 // fail visibly instead of quietly producing a stale or partially updated bill.
 export function planInvoicePdfPayments(pages: InvoicePdfPage[], summary: ServiceInvoicePaymentSummary) {
@@ -37,7 +62,7 @@ export function planInvoicePdfPayments(pages: InvoicePdfPage[], summary: Service
   const paid = unique(text => /^Paid\s*:\s*$/i.test(text));
   const balance = unique(text => /^Design Fee Due\s*:\s*$/i.test(text));
   const pay = unique(text => /^(?:CLICK HERE TO PAY|Amount due now|No payment due)$/i.test(text));
-  const originalPhases = findRows(pages, text => /^Due\s+(?:on|at)\s+/i.test(text));
+  const originalPhases = findPhaseRows(pages);
   const current = currentDueInvoicePayment(summary.payments);
   const phases: PhaseRow[] = originalPhases.map(row => {
     const payments = summary.payments.filter(payment => normalizeLabel(payment.label) === normalizeLabel(row.label.text));
@@ -113,10 +138,12 @@ export async function paymentFonts(document: PDFDocument, suppliedBytes?: Paymen
     }) ?? [];
   });
   if (!names.some(name => /PlayfairDisplay/i.test(name))) {
-    const sans = names.some(name => /Helvetica|Arial/i.test(name));
+    const sans = !names.some(name => /Times|Georgia|Palatino|Baskerville/i.test(name))
+      && names.some(name => /Helvetica|Arial/i.test(name));
     return {
       regular: await document.embedFont(sans ? StandardFonts.Helvetica : StandardFonts.TimesRoman),
       bold: await document.embedFont(sans ? StandardFonts.HelveticaBold : StandardFonts.TimesRomanBold),
+      paperFill: rgb(1, 1, 1),
     };
   }
   // Fontkit's variable-font subset conversion corrupts some outlines (e.g. R
@@ -129,7 +156,7 @@ export async function paymentFonts(document: PDFDocument, suppliedBytes?: Paymen
     const bytes = supplied ?? new Uint8Array(await response!.arrayBuffer());
     return document.embedFont(bytes.slice(), { subset: true });
   };
-  return { regular: await embed("Regular"), bold: await embed("Bold") };
+  return { regular: await embed("Regular"), bold: await embed("Bold"), paperFill: rgb(230 / 255, 228 / 255, 218 / 255) };
 }
 
 function drawRight(page: PDFPage, text: string, right: number, y: number, size: number, font: PDFFont, width?: number) {
@@ -163,16 +190,16 @@ export async function updateServiceInvoicePdf(
     const box = amountBox(row, fallback);
     // Clear just the existing payment text; retain the table, logo, scopes,
     // border, signature lines, and every page in its original position.
-    const labelRight = row.label.x + row.label.width;
+    const lines = row.labelLines ?? [row.label];
+    const labelRight = Math.max(...lines.map(line => line.x + line.width));
     const font = bold ? fonts.bold : fonts.regular;
-    const labelWidth = font.widthOfTextAtSize(row.label.text, row.label.size);
-    const left = Math.min(row.label.x, labelRight - labelWidth) - 1;
-    const bottom = Math.min(row.label.y - row.label.size * .28, box.y - box.size * .28);
-    const top = Math.max(row.label.y + row.label.size * 1.09, box.y + box.size * 1.09);
+    const left = Math.min(...lines.flatMap(line => [line.x, labelRight - font.widthOfTextAtSize(line.text, line.size)])) - 1;
+    const bottom = Math.min(...lines.map(line => line.y - line.size * .28), box.y - box.size * .28);
+    const top = Math.max(...lines.map(line => line.y + line.size * 1.09), box.y + box.size * 1.09);
     page.drawRectangle({ x: left, y: bottom, width: box.right + 1 - left, height: top - bottom, color: rgb(1, 1, 1) });
-    const label = drawRight(page, row.label.text, labelRight, row.label.y, row.label.size, font);
+    const labels = lines.map(line => drawRight(page, line.text, labelRight, line.y, line.size, font));
     const value = drawRight(page, formatMoney(amount), box.right, box.y, box.size, bold ? fonts.bold : fonts.regular, box.right - labelRight - 3);
-    if (strike || underline) for (const text of [label, value]) page.drawLine({
+    if (strike || underline) for (const text of [...labels, value]) page.drawLine({
       start: { x: text.x, y: text.y + text.size * (strike ? .32 : -.12) },
       end: { x: text.right, y: text.y + text.size * (strike ? .32 : -.12) }, thickness: .45, color: rgb(0, 0, 0),
     });
@@ -186,7 +213,7 @@ export async function updateServiceInvoicePdf(
   if (additions.length) {
     const phases = plan.phases.filter(row => row.page === plan.pay.page);
     if (!phases.length) throw new Error(refreshError);
-    const lastY = Math.min(...phases.map(row => row.label.y));
+    const lastY = Math.min(...phases.flatMap(row => (row.labelLines ?? [row.label]).map(line => line.y)));
     const size = Math.max(...phases.flatMap(row => row.amounts.map(item => item.size)));
     const step = Math.max(12, size * 1.45);
     const firstY = lastY - step;
@@ -228,7 +255,7 @@ export async function updateServiceInvoicePdf(
   const label = dueNow > 0 ? (link ? "CLICK HERE TO PAY" : "AMOUNT DUE NOW") : "NO PAYMENT DUE";
   const left = Math.min(plan.pay.label.x, ...plan.phases.filter(row => row.page === plan.pay.page).map(row => row.label.x)) - 8;
   // The MERAV invoice payment cell uses the same warm paper fill as its tables.
-  const fill = rgb(230 / 255, 228 / 255, 218 / 255);
+  const fill = fonts.paperFill;
   payPage.drawRectangle({ x: left, y: box.y - box.size * .11, width: labelRight + 1 - left,
     height: box.size * 1.16, color: fill });
   payPage.drawRectangle({ x: box.left - .5, y: box.y - box.size * .11, width: box.right + .5 - box.left,

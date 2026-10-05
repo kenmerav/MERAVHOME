@@ -53,6 +53,32 @@ function links(document: PDFDocument) {
 }
 
 describe("uploaded service invoice payment refresh", () => {
+  it("matches a wrapped delivery label and preserves its two-line layout", async () => {
+    const wrapped: InvoicePdfPage[] = [{ ...pages[0], items: pages[0].items.flatMap(item => item.text === "Due at Design Document Delivery:" ? [
+      { ...item, text: "Due at Design Document", width: 130 },
+      { ...item, text: "Delivery:", x: 438, y: item.y - 11, width: 42 },
+    ] : [item]) }];
+    const plan = planInvoicePdfPayments(wrapped, { ...summary, payments: payments.map(payment => ({ ...payment, label: payment.label.replace("Due at", "Due on") })) });
+    expect(plan!.phases[1].label.text).toBe("Due at Design Document Delivery:");
+    expect(plan!.phases[1].labelLines).toHaveLength(2);
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.TimesRoman);
+    const page = document.addPage([612, 792]);
+    for (const item of wrapped[0].items) {
+      const firstLine = wrapped[0].items.find(line => line.text === "Due at Design Document")!;
+      const x = item.text === "Delivery:" ? firstLine.x + font.widthOfTextAtSize(firstLine.text, firstLine.size)
+        - font.widthOfTextAtSize(item.text, item.size) : item.x;
+      page.drawText(item.text, { x, y: item.y, size: item.size, font });
+    }
+    const updated = await updateServiceInvoicePdf(await document.save(), summary);
+    expect((await PDFDocument.load(updated!)).getPageCount()).toBe(1);
+  });
+  it("does not join nearby text from another column into a wrapped phase", () => {
+    const fragment = { ...pages[0].items.find(item => item.text === "Due at Design Document Delivery:")!, text: "Due at Design Document" };
+    const unrelated = { text: "Delivery:", x: 100, y: fragment.y - 11, width: 42, size: fragment.size };
+    const mismatched = [{ ...pages[0], items: pages[0].items.map(item => item.text === "Due at Design Document Delivery:" ? fragment : item).concat(unrelated) }];
+    expect(() => planInvoicePdfPayments(mismatched, summary)).toThrow("Could not safely update");
+  });
   it("keeps an extra inline on the original page and links the combined amount", async () => {
     const source = await sourcePdf();
     const extra = { id: "extra", adjustment_type: "charge" as const, label: "Material Ordering", amount: 2500, status: "open" };
