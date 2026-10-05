@@ -138,7 +138,7 @@ export async function paymentFonts(document: PDFDocument, suppliedBytes?: Paymen
       return String(font?.get?.(PDFName.of("BaseFont")) ?? "");
     }) ?? [];
   });
-  if (!names.some(name => /PlayfairDisplay/i.test(name))) {
+  if (!names.some(name => /PlayfairDisplay|MeravInvoiceSerif/i.test(name))) {
     const sans = !names.some(name => /Times|Georgia|Palatino|Baskerville/i.test(name))
       && names.some(name => /Helvetica|Arial/i.test(name));
     return {
