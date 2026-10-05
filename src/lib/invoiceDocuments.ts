@@ -1,6 +1,7 @@
 import { supabaseImageTransformUrl } from "@/lib/local-assets";
 import { restyleServiceInvoiceHtml, waitForInvoiceAssets } from "@/lib/serviceInvoiceTemplate";
 import { refreshInvoiceAdjustmentsHtml } from "@/lib/invoiceAdjustments";
+import { refreshInvoiceDateHtml } from "@/lib/invoiceDate";
 import {
   invoiceDueNow,
   refreshServiceInvoicePayments,
@@ -23,7 +24,7 @@ export function prepareInvoiceHtml(html: string, options: InvoiceDocumentOptions
   const paymentUrl = options.servicePayments
     ? invoiceDueNow(options.servicePayments).link
     : options.paymentUrl;
-  const safeHtml = applyInvoicePaymentLink(restyleServiceInvoiceHtml(html), paymentUrl);
+  const safeHtml = applyInvoicePaymentLink(refreshInvoiceDateHtml(restyleServiceInvoiceHtml(html)), paymentUrl);
   if (!options.servicePayments) return safeHtml;
   const refreshed = refreshServiceInvoicePayments(safeHtml, options.servicePayments);
   if (/SERVICE\s+INVOICE/.test(html)) return refreshInvoiceAdjustmentsHtml(refreshed, []);

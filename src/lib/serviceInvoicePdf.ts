@@ -3,6 +3,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { formatMoney } from "@/lib/money";
 import { currentDueInvoicePayment, invoiceDueNow, type ServiceInvoicePaymentSummary } from "@/lib/serviceInvoicePayments";
 import { activeInvoiceAdjustments, adjustedInvoiceTotal } from "@/lib/invoiceAdjustments";
+import { currentInvoiceDate } from "@/lib/invoiceDate";
 
 export type InvoicePdfText = { text: string; x: number; y: number; width: number; size: number };
 export type InvoicePdfPage = { index: number; rotation: number; items: InvoicePdfText[] };
@@ -181,6 +182,23 @@ export async function updateServiceInvoicePdf(
   }
   const fonts = await paymentFonts(document, testing.fontBytes);
   removeStripeAnnotations(document);
+  const dateRows = findRows(sourcePages, text => /^Date\s*:\s*$/i.test(text));
+  if (dateRows.length === 1) {
+    const row = dateRows[0];
+    const dates = sourcePages.find(page => page.index === row.page)!.items.filter(item =>
+      item.x >= row.label.x + row.label.width
+      && Math.abs(item.y - row.label.y) < Math.max(2.5, row.label.size * .35)
+      && /^(?:\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2})$/.test(item.text));
+    if (dates.length === 1) {
+      const date = dates[0];
+      const text = currentInvoiceDate();
+      const page = document.getPages()[row.page];
+      page.drawRectangle({ x: date.x - 1, y: date.y - date.size * .28,
+        width: Math.max(date.width, fonts.regular.widthOfTextAtSize(text, date.size)) + 2,
+        height: date.size * 1.4, color: rgb(1, 1, 1) });
+      page.drawText(text, { x: date.x, y: date.y, size: date.size, font: fonts.regular });
+    }
+  }
   const paid = summary.paidAmount ?? summary.payments.reduce((sum, payment) => sum + (payment.status === "paid" ? Number(payment.amount) : 0), 0);
   const waived = summary.payments.reduce((sum, payment) => sum + (payment.status === "waived" ? Number(payment.amount) : 0), 0);
   const balance = summary.balanceDue ?? Math.max(adjustedInvoiceTotal(summary.totalAmount, summary.adjustments) - paid - waived, 0);
@@ -214,8 +232,11 @@ export async function updateServiceInvoicePdf(
     const phases = plan.phases.filter(row => row.page === plan.pay.page);
     if (!phases.length) throw new Error(refreshError);
     const lastY = Math.min(...phases.flatMap(row => (row.labelLines ?? [row.label]).map(line => line.y)));
-    const size = Math.max(...phases.flatMap(row => row.amounts.map(item => item.size)));
-    const step = Math.max(12, size * 1.45);
+    const reference = phases.find(row => row.current) ?? phases[phases.length - 1];
+    const labelSize = reference.label.size;
+    const amountSize = amountBox(reference, fallback).size;
+    const font = reference.current ? fonts.bold : fonts.regular;
+    const step = Math.max(12, Math.max(labelSize, amountSize) * 1.45);
     const firstY = lastY - step;
     const lastItemY = firstY - (additions.length - 1) * step;
     const shift = Math.max(0, plan.pay.label.y - (lastItemY - step * 1.7));
@@ -239,9 +260,9 @@ export async function updateServiceInvoicePdf(
     }
     additions.forEach((row, index) => {
       const y = firstY - index * step;
-      const label = drawRight(payPage, row.label, labelRight, y, size, fonts.bold, labelRight - left - 4);
+      const label = drawRight(payPage, row.label, labelRight, y, labelSize, font, labelRight - left - 4);
       const amount = `${row.adjustment_type === "credit" ? "-" : ""}${formatMoney(Number(row.amount))}`;
-      const value = drawRight(payPage, amount, originalBox.right, y, size, fonts.bold, originalBox.right - labelRight - 4);
+      const value = drawRight(payPage, amount, originalBox.right, y, amountSize, font, originalBox.right - labelRight - 4);
       if (row.status !== "open") for (const text of [label, value]) payPage.drawLine({
         start: { x: text.x, y: y + text.size * .32 }, end: { x: text.right, y: y + text.size * .32 }, thickness: .45,
       });
