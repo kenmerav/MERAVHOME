@@ -1,7 +1,8 @@
 import { PDFDocument, PDFName, PDFSignature, PDFString, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { formatMoney } from "@/lib/money";
-import { currentDueInvoicePayment, invoicePaymentStripeUrl, type ServiceInvoicePaymentSummary } from "@/lib/serviceInvoicePayments";
+import { currentDueInvoicePayment, invoiceDueNow, type ServiceInvoicePaymentSummary } from "@/lib/serviceInvoicePayments";
+import { activeInvoiceAdjustments, adjustedInvoiceTotal } from "@/lib/invoiceAdjustments";
 
 export type InvoicePdfText = { text: string; x: number; y: number; width: number; size: number };
 export type InvoicePdfPage = { index: number; rotation: number; items: InvoicePdfText[] };
@@ -144,7 +145,8 @@ export async function updateServiceInvoicePdf(
   bytes: Uint8Array, summary: ServiceInvoicePaymentSummary,
   testing: { pages?: InvoicePdfPage[]; fontBytes?: PaymentFontBytes } = {},
 ): Promise<Uint8Array | null> {
-  const plan = planInvoicePdfPayments(testing.pages ?? await readPdfText(bytes), summary);
+  const sourcePages = testing.pages ?? await readPdfText(bytes);
+  const plan = planInvoicePdfPayments(sourcePages, summary);
   if (!plan) return null;
   const document = await PDFDocument.load(bytes);
   if (document.getForm().getFields().some(field => field instanceof PDFSignature)) {
@@ -154,7 +156,7 @@ export async function updateServiceInvoicePdf(
   removeStripeAnnotations(document);
   const paid = summary.paidAmount ?? summary.payments.reduce((sum, payment) => sum + (payment.status === "paid" ? Number(payment.amount) : 0), 0);
   const waived = summary.payments.reduce((sum, payment) => sum + (payment.status === "waived" ? Number(payment.amount) : 0), 0);
-  const balance = summary.balanceDue ?? Math.max(summary.totalAmount - paid - waived, 0);
+  const balance = summary.balanceDue ?? Math.max(adjustedInvoiceTotal(summary.totalAmount, summary.adjustments) - paid - waived, 0);
   const fallback = plan.balance;
   const updateRow = (row: Row, amount: number, bold: boolean, strike = false, underline = false) => {
     const page = document.getPages()[row.page];
@@ -180,11 +182,50 @@ export async function updateServiceInvoicePdf(
   for (const row of plan.phases) updateRow(row, Number(row.payment.amount), row.current,
     row.payment.status === "paid" || row.payment.status === "waived");
 
+  const additions = activeInvoiceAdjustments(summary.adjustments);
+  if (additions.length) {
+    const phases = plan.phases.filter(row => row.page === plan.pay.page);
+    if (!phases.length) throw new Error(refreshError);
+    const lastY = Math.min(...phases.map(row => row.label.y));
+    const size = Math.max(...phases.flatMap(row => row.amounts.map(item => item.size)));
+    const step = Math.max(12, size * 1.45);
+    const firstY = lastY - step;
+    const lastItemY = firstY - (additions.length - 1) * step;
+    const shift = Math.max(0, plan.pay.label.y - (lastItemY - step * 1.7));
+    const payPage = document.getPages()[plan.pay.page];
+    const originalBox = amountBox(plan.pay, fallback);
+    const labelRight = phases[phases.length - 1].label.x + phases[phases.length - 1].label.width;
+    const left = Math.min(...phases.map(row => row.label.x), plan.pay.label.x) - 20;
+    const right = originalBox.right + 4;
+    const top = lastY - phases[phases.length - 1].label.size * .35 - 2;
+    const lowerText = sourcePages[plan.pay.page].items.filter(item => item.x >= left && item.x < right && item.y < top);
+    const bottom = Math.min(...lowerText.map(item => item.y - item.size * .3)) - 12;
+    if (bottom - shift < 65 || shift > 80) throw new Error(refreshError);
+    if (shift > 0) {
+      const source = await PDFDocument.load(bytes);
+      const region = await document.embedPage(source.getPages()[plan.pay.page], { left, right, top, bottom });
+      payPage.drawRectangle({ x: left, y: bottom - shift, width: right - left,
+        height: top - bottom + shift, color: rgb(1, 1, 1) });
+      payPage.drawPage(region, { x: left, y: bottom - shift, width: right - left, height: top - bottom });
+      plan.pay.label = { ...plan.pay.label, y: plan.pay.label.y - shift };
+      plan.pay.amounts = plan.pay.amounts.map(item => ({ ...item, y: item.y - shift }));
+    }
+    additions.forEach((row, index) => {
+      const y = firstY - index * step;
+      const label = drawRight(payPage, row.label, labelRight, y, size, fonts.bold, labelRight - left - 4);
+      const amount = `${row.adjustment_type === "credit" ? "-" : ""}${formatMoney(Number(row.amount))}`;
+      const value = drawRight(payPage, amount, originalBox.right, y, size, fonts.bold, originalBox.right - labelRight - 4);
+      if (row.status !== "open") for (const text of [label, value]) payPage.drawLine({
+        start: { x: text.x, y: y + text.size * .32 }, end: { x: text.right, y: y + text.size * .32 }, thickness: .45,
+      });
+    });
+  }
+
   const payPage = document.getPages()[plan.pay.page];
   const box = amountBox(plan.pay, fallback);
   const labelRight = plan.pay.label.x + plan.pay.label.width;
-  const link = invoicePaymentStripeUrl(plan.current);
-  const label = plan.current ? (link ? "CLICK HERE TO PAY" : "AMOUNT DUE NOW") : "NO PAYMENT DUE";
+  const { amount: dueNow, link } = invoiceDueNow(summary);
+  const label = dueNow > 0 ? (link ? "CLICK HERE TO PAY" : "AMOUNT DUE NOW") : "NO PAYMENT DUE";
   const left = Math.min(plan.pay.label.x, ...plan.phases.filter(row => row.page === plan.pay.page).map(row => row.label.x)) - 8;
   // The MERAV invoice payment cell uses the same warm paper fill as its tables.
   const fill = rgb(230 / 255, 228 / 255, 218 / 255);
@@ -195,7 +236,7 @@ export async function updateServiceInvoicePdf(
   const labelSize = Math.min(plan.pay.label.size, (labelRight - left - 1) / fonts.regular.widthOfTextAtSize(label, 1));
   const labelX = labelRight - fonts.regular.widthOfTextAtSize(label, labelSize);
   payPage.drawText(label, { x: labelX, y: plan.pay.label.y, size: labelSize, font: fonts.regular, color: link ? rgb(0, 0, 1) : rgb(0, 0, 0) });
-  drawRight(payPage, formatMoney(plan.current ? Number(plan.current.amount) : 0), box.right, box.y, box.size, fonts.bold, box.right - box.left);
+  drawRight(payPage, formatMoney(dueNow), box.right, box.y, box.size, fonts.bold, box.right - box.left);
   if (link) {
     payPage.drawLine({ start: { x: labelX, y: plan.pay.label.y - .8 }, end: { x: labelRight, y: plan.pay.label.y - .8 }, thickness: .4, color: rgb(0, 0, 1) });
     const annotation = document.context.obj({ Type: "Annot", Subtype: "Link", Rect: [labelX, plan.pay.label.y - 1, labelRight, plan.pay.label.y + labelSize * 1.1],

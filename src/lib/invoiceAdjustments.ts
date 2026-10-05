@@ -1,6 +1,7 @@
 import { formatMoney } from "@/lib/money";
 
 export type InvoiceDocumentAdjustment = {
+  id?: string;
   adjustment_type: "credit" | "charge";
   label: string;
   amount: number;

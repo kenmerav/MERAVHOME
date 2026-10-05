@@ -20,6 +20,7 @@ import { buildServiceInvoiceTemplate, waitForInvoiceAssets } from "@/lib/service
 import { openInvoiceDocument, downloadInvoiceDocument } from "@/lib/invoiceDocuments";
 import {
   financialInvoiceLedger,
+  INVOICE_ADJUSTMENT_PAYMENT_NOTE,
   type FinancialAdjustmentStatus,
   type FinancialAdjustmentType,
 } from "@/lib/financialInvoiceLedger";
@@ -493,7 +494,7 @@ function FinancialsPage() {
     }
   };
 
-  const updatePaymentStatus = async (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => {
+  const updatePaymentStatus = async (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"], includeCharges = false) => {
     if (!allowed) return toast.error("Only Ken and Katie can edit invoices.");
     setSavingPaymentId(payment.id);
     try {
@@ -504,7 +505,7 @@ function FinancialsPage() {
         const res = await fetch("/api/mark-financial-payment-due", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ paymentId: payment.id }),
+          body: JSON.stringify({ paymentId: payment.id, includeCharges }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body?.error || "Could not mark payment due.");
@@ -1022,7 +1023,7 @@ function InvoiceCard({
   deleting,
 }: {
   invoice: FinancialInvoice;
-  onStatus: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"]) => void;
+  onStatus: (payment: FinancialInvoicePayment, status: FinancialInvoicePayment["status"], includeCharges?: boolean) => void;
   onPaymentUpdate: (payment: FinancialInvoicePayment, patch: Partial<FinancialInvoicePayment>) => void;
   onAdjustmentCreate: (invoice: FinancialInvoice, draft: AdjustmentDraft) => Promise<void>;
   onAdjustmentStatus: (
@@ -1036,7 +1037,8 @@ function InvoiceCard({
   quickBooksSyncing?: boolean;
   deleting?: boolean;
 }) {
-  const payments = [...(invoice.payments ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+  const payments = [...(invoice.payments ?? [])].filter(payment => !payment.notes?.startsWith(INVOICE_ADJUSTMENT_PAYMENT_NOTE))
+    .sort((a, b) => a.sort_order - b.sort_order);
   const printableDataUrl = printableInvoiceDataUrl(invoice);
   const quickBooksStatus = invoice.quickbooks_sync_status ?? "not_sent";
   const paidTotal = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -1082,6 +1084,13 @@ function InvoiceCard({
           )}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {payments.filter(payment => payment.status === "due").slice(-1).map(payment => (
+            <button key={payment.id} type="button" disabled={savingPaymentId === payment.id}
+              onClick={() => onStatus(payment, "due", true)}
+              className="inline-flex items-center gap-2 text-sm px-4 py-2 border border-border hover:border-ink disabled:opacity-50">
+              {savingPaymentId === payment.id ? "Creating link..." : "Refresh Payment Link"}
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => onClientVisible(invoice)}
@@ -1913,7 +1922,7 @@ function serviceInvoiceHtmlFromInvoice(invoice: FinancialInvoice) {
     const raw = JSON.parse(invoice.raw_text || "{}") as Partial<ServiceInvoiceDraft> & { type?: string };
     if (raw.type !== "design_service_invoice") return null;
     const draft = raw as ServiceInvoiceDraft;
-    const fee = invoice.total_amount ?? calculatedDesignFee(draft);
+    const fee = financialInvoiceLedger(invoice).originalTotal || calculatedDesignFee(draft);
     const phaseAmounts = servicePhaseAmounts(draft, fee);
     const payments = (invoice.payments?.length ? invoice.payments : draft.phases.map((phase, index) => ({
       label: `Phase ${index + 1} - ${phase.name}`,

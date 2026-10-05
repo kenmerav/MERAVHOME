@@ -10,7 +10,10 @@ export type FinancialAdjustmentStatus =
 type PaymentLike = {
   amount?: number | null;
   status?: string | null;
+  notes?: string | null;
 };
+
+export const INVOICE_ADJUSTMENT_PAYMENT_NOTE = "Invoice adjustment payment:";
 
 type AdjustmentLike = {
   adjustment_type: FinancialAdjustmentType;
@@ -26,7 +29,10 @@ type InvoiceLedgerInput = {
 };
 
 export function financialInvoiceLedger(invoice: InvoiceLedgerInput) {
-  const payments = invoice.payments ?? [];
+  // Adjustment settlement rows feed QuickBooks and retain their receipt IDs.
+  // Their amounts are already counted by adjustments, never add them twice.
+  const payments = (invoice.payments ?? []).filter(payment =>
+    !payment.notes?.startsWith(INVOICE_ADJUSTMENT_PAYMENT_NOTE));
   const adjustments = invoice.adjustments ?? [];
   const paymentTotal = roundMoney(
     payments.reduce((sum, payment) => sum + money(payment.amount), 0),

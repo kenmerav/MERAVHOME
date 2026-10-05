@@ -1,5 +1,5 @@
 import { formatMoney } from "@/lib/money";
-import { adjustedInvoiceTotal, type InvoiceDocumentAdjustment } from "@/lib/invoiceAdjustments";
+import { activeInvoiceAdjustments, adjustedInvoiceTotal, type InvoiceDocumentAdjustment } from "@/lib/invoiceAdjustments";
 
 export type InvoicePaymentSummaryRow = {
   label: string;
@@ -35,10 +35,24 @@ export function invoicePaymentStripeUrl(payment: InvoicePaymentSummaryRow | null
   return payment.notes?.match(/https:\/\/(?:buy|checkout)\.stripe\.com\/[^\s"')<>]+/i)?.[0] ?? null;
 }
 
+export function invoiceDueNow(summary: ServiceInvoicePaymentSummary) {
+  const current = currentDueInvoicePayment(summary.payments);
+  const openItems = activeInvoiceAdjustments(summary.adjustments).filter(row => row.status === "open");
+  const extra = openItems.reduce((sum, row) => sum + Number(row.amount) * (row.adjustment_type === "credit" ? -1 : 1), 0);
+  const amount = Math.max(0, Math.round(((current?.amount ?? 0) + extra) * 100) / 100);
+  let link = invoicePaymentStripeUrl(current);
+  if (openItems.length || /Stripe payment amount:/i.test(current?.notes ?? "")) {
+    const quoted = Number(current?.notes?.match(/Stripe payment amount:\s*([\d.]+)/i)?.[1]);
+    const quotedIds = current?.notes?.match(/Stripe adjustment ids:[ \t]*([^\n]*)/i)?.[1].split(",").filter(Boolean).sort().join(",") ?? "";
+    const currentIds = openItems.map(row => row.id).filter(Boolean).sort().join(",");
+    if (Math.round(quoted * 100) !== Math.round(amount * 100) || quotedIds !== currentIds || openItems.some(row => !row.id)) link = null;
+  }
+  return { current, amount, link: amount > 0 ? link : null };
+}
+
 export function renderServiceInvoicePayments(summary: ServiceInvoicePaymentSummary) {
   const { payments } = summary;
-  const current = currentDueInvoicePayment(payments);
-  const link = invoicePaymentStripeUrl(current);
+  const { current, amount: dueNow, link } = invoiceDueNow(summary);
   const paid = summary.paidAmount ?? payments.reduce(
     (sum, payment) => sum + (payment.status === "paid" ? money(payment.amount) : 0), 0,
   );
@@ -47,9 +61,9 @@ export function renderServiceInvoicePayments(summary: ServiceInvoicePaymentSumma
   );
   const balance = summary.balanceDue ?? Math.max(adjustedInvoiceTotal(summary.totalAmount, summary.adjustments) - paid - waived, 0);
   const phases = [...payments].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-    .filter(payment => money(payment.amount) > 0 && /^Phase \d+ - /.test(payment.label))
+    .filter(payment => money(payment.amount) > 0 && /^(Phase \d+ - |Due (on|at) )/i.test(payment.label))
     .map(payment => {
-      const name = payment.label.replace(/^Phase \d+ - /, "");
+      const name = payment.label.replace(/^Phase \d+ - /, "").replace(/^Due (on|at) /i, "").replace(/:$/, "");
       const label = `Due ${name === "Project Start" ? "on" : "at"} ${escapeHtml(name)}:`;
       const amount = formatMoney(money(payment.amount));
       const closed = payment.status === "paid" || payment.status === "waived";
@@ -58,14 +72,21 @@ export function renderServiceInvoicePayments(summary: ServiceInvoicePaymentSumma
         : `<span>${label}</span><span>${amount}</span>`;
       return `<div class="summary-row${current === payment ? " current-phase" : ""}"${current === payment ? ' style="font-weight:700"' : ""}>${content}</div>`;
     }).join("\n");
-  const pay = current
-    ? `<div class="pay"><div>${link ? `<a href="${escapeHtml(link)}">CLICK HERE TO PAY</a>` : "Amount due now"}</div><div>${formatMoney(money(current.amount))}</div></div>`
+  const items = activeInvoiceAdjustments(summary.adjustments).map(row => {
+    const amount = `${row.adjustment_type === "credit" ? "-" : ""}${formatMoney(Number(row.amount))}`;
+    const closed = row.status !== "open";
+    return `<div class="summary-row" style="font-weight:700"><span>${closed ? "<s>" : ""}${escapeHtml(row.label)}${closed ? "</s>" : ""}</span><span>${closed ? "<s>" : ""}${amount}${closed ? "</s>" : ""}</span></div>`;
+  }).join("\n");
+  const pay = dueNow > 0
+    ? `<div class="pay"><div>${link ? `<a href="${escapeHtml(link)}">CLICK HERE TO PAY</a>` : "Amount due now"}</div><div>${formatMoney(dueNow)}</div></div>`
     : '<div class="summary-row"><span>No payment currently due</span><span></span></div>';
   return `<!-- service-payments:start -->
     <style>@media print { html, body { min-height: 0 !important; height: auto !important; } .summary-row, .pay { break-inside: avoid; } }</style>
+    ${activeInvoiceAdjustments(summary.adjustments).length ? `<div class="summary-row"><strong>Revised Invoice Total:</strong><strong>${formatMoney(adjustedInvoiceTotal(summary.totalAmount, summary.adjustments))}</strong></div>` : ""}
     <div class="summary-row"><strong>Paid:</strong><span>${formatMoney(paid)}</span></div>
     <div class="summary-row"><strong><u>Design Fee Due:</u></strong><strong><u>${formatMoney(Math.max(balance, 0))}</u></strong></div>
     ${phases}
+    ${items}
     ${pay}
     <!-- service-payments:end -->`;
 }

@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadInvoiceDocument, openInvoiceDocument } from "@/lib/invoiceDocuments";
 import { formatMoney } from "@/lib/money";
-import { currentDueInvoicePayment, invoicePaymentStripeUrl } from "@/lib/serviceInvoicePayments";
+import { invoiceDueNow } from "@/lib/serviceInvoicePayments";
+import { INVOICE_ADJUSTMENT_PAYMENT_NOTE } from "@/lib/financialInvoiceLedger";
 
 type ClientInvoice = {
   id: string;
@@ -151,15 +152,16 @@ function ClientFinancialsPage() {
 }
 
 function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
-  const duePayments = invoice.payments.filter((payment) => payment.status === "due");
-  const paidPayments = invoice.payments.filter((payment) => payment.status === "paid");
+  const payments = invoice.payments.filter(payment => !payment.notes?.startsWith(INVOICE_ADJUSTMENT_PAYMENT_NOTE));
+  const duePayments = payments.filter((payment) => payment.status === "due");
+  const paidPayments = payments.filter((payment) => payment.status === "paid");
   const paymentUrl = currentPaymentUrl(invoice);
   const documentOptions = {
     paymentUrl,
     invoiceTitle: invoice.file_name,
     clientName: invoice.project_name,
     servicePayments: {
-      payments: invoice.payments,
+      payments,
       adjustments: invoice.adjustments,
       totalAmount: invoice.original_total_amount ?? invoice.total_amount ?? 0,
       paidAmount: invoice.paid_amount ?? 0,
@@ -243,7 +245,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
         </div>
       )}
 
-      {invoice.payments.length > 0 && (
+      {payments.length > 0 && (
         <div className="mt-6 overflow-x-auto border border-border">
           <table className="min-w-full text-sm">
             <thead>
@@ -254,7 +256,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {invoice.payments.map((payment) => (
+              {payments.map((payment) => (
                 <tr key={payment.id}>
                   <td className="px-4 py-3">{payment.label}</td>
                   <td className="px-4 py-3 text-right">{formatMoney(payment.amount)}</td>
@@ -274,7 +276,7 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
               ? `${formatMoney(invoice.balance_due ?? 0)} currently due`
               : duePayments.length > 0
                 ? `${duePayments.length} payment${duePayments.length === 1 ? "" : "s"} currently due`
-            : paidPayments.length === invoice.payments.length && invoice.payments.length > 0
+            : paidPayments.length === payments.length && payments.length > 0
               ? "Paid"
               : "No payment currently due"}
         </div>
@@ -301,7 +303,8 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
 }
 
 function currentPaymentUrl(invoice: ClientInvoice) {
-  return invoicePaymentStripeUrl(currentDueInvoicePayment(invoice.payments));
+  return invoiceDueNow({ payments: invoice.payments, adjustments: invoice.adjustments,
+    totalAmount: invoice.original_total_amount ?? invoice.total_amount ?? 0 }).link;
 }
 
 function invoiceTitle(invoice: ClientInvoice) {

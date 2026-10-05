@@ -2,8 +2,7 @@ import { supabaseImageTransformUrl } from "@/lib/local-assets";
 import { restyleServiceInvoiceHtml, waitForInvoiceAssets } from "@/lib/serviceInvoiceTemplate";
 import { refreshInvoiceAdjustmentsHtml } from "@/lib/invoiceAdjustments";
 import {
-  currentDueInvoicePayment,
-  invoicePaymentStripeUrl,
+  invoiceDueNow,
   refreshServiceInvoicePayments,
   type ServiceInvoicePaymentSummary,
 } from "@/lib/serviceInvoicePayments";
@@ -22,12 +21,14 @@ type InvoiceDocumentOptions = {
 
 export function prepareInvoiceHtml(html: string, options: InvoiceDocumentOptions = {}) {
   const paymentUrl = options.servicePayments
-    ? invoicePaymentStripeUrl(currentDueInvoicePayment(options.servicePayments.payments))
+    ? invoiceDueNow(options.servicePayments).link
     : options.paymentUrl;
   const safeHtml = applyInvoicePaymentLink(restyleServiceInvoiceHtml(html), paymentUrl);
   if (!options.servicePayments) return safeHtml;
+  const refreshed = refreshServiceInvoicePayments(safeHtml, options.servicePayments);
+  if (/SERVICE\s+INVOICE/.test(html)) return refreshInvoiceAdjustmentsHtml(refreshed, []);
   return refreshInvoiceAdjustmentsHtml(
-    refreshServiceInvoicePayments(safeHtml, options.servicePayments),
+    refreshed,
     options.servicePayments.adjustments, options.servicePayments.totalAmount,
   );
 }
@@ -103,8 +104,8 @@ export async function downloadInvoiceDocument(
 }
 
 export async function sanitizeInvoicePdfBlob(blob: Blob, options: InvoiceDocumentOptions = {}) {
-  const base = await refreshInvoicePdfBlob(blob, options);
-  if (!options.servicePayments?.adjustments?.length) return base;
+  const { blob: base, inline } = await refreshInvoicePdfBlob(blob, options);
+  if (inline || !options.servicePayments?.adjustments?.length) return base;
   const { appendInvoiceAdjustmentsPdf } = await import("@/lib/invoiceAdjustmentsPdf");
   const updated = await appendInvoiceAdjustmentsPdf(new Uint8Array(await base.arrayBuffer()), options.servicePayments, {
     title: options.invoiceTitle, clientName: options.clientName,
@@ -121,7 +122,7 @@ async function refreshInvoicePdfBlob(blob: Blob, options: InvoiceDocumentOptions
     if (updated) {
       const bytes = new Uint8Array(updated.length);
       bytes.set(updated);
-      return new Blob([bytes.buffer], { type: "application/pdf" });
+      return { blob: new Blob([bytes.buffer], { type: "application/pdf" }), inline: true };
     }
   }
   try {
@@ -174,10 +175,10 @@ async function refreshInvoicePdfBlob(blob: Blob, options: InvoiceDocumentOptions
     const saved = await pdfDoc.save();
     const bytes = new Uint8Array(saved.length);
     bytes.set(saved);
-    return new Blob([bytes.buffer], { type: "application/pdf" });
+    return { blob: new Blob([bytes.buffer], { type: "application/pdf" }), inline: false };
   } catch (error) {
     console.warn("Could not sanitize invoice PDF payment link.", error);
-    return blob;
+    return { blob, inline: false };
   }
 }
 

@@ -29,7 +29,7 @@ describe("existing invoice items and credits", () => {
   it("includes the saved $2,500 charge, revised $20,500 total and $11,500 balance in HTML", () => {
     const result = prepareInvoiceHtml(html, { servicePayments: summary });
     expect(result).toContain("Material Ordering");
-    expect(result).toContain("+$2,500.00");
+    expect(result).toContain("$2,500.00");
     expect(result).toContain("$20,500.00");
     expect(result).toContain("$11,500.00");
     expect(result).toContain("Original scope");

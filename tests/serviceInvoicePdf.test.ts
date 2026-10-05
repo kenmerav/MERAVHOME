@@ -53,6 +53,26 @@ function links(document: PDFDocument) {
 }
 
 describe("uploaded service invoice payment refresh", () => {
+  it("keeps an extra inline on the original page and links the combined amount", async () => {
+    const source = await sourcePdf();
+    const extra = { id: "extra", adjustment_type: "charge" as const, label: "Material Ordering", amount: 2500, status: "open" };
+    const rows = payments.map(payment => payment.status === "due" ? { ...payment,
+      notes: "Stripe payment link: https://buy.stripe.com/test_combined\nStripe payment amount: 11500.00\nStripe adjustment ids: extra" } : payment);
+    const updated = await updateServiceInvoicePdf(source, { ...summary, payments: rows, adjustments: [extra], balanceDue: 11500 });
+    const result = await PDFDocument.load(updated!);
+    expect(result.getPageCount()).toBe(1);
+    expect(links(result)).toContain("https://buy.stripe.com/test_combined");
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: updated!.slice(), isEvalSupported: false }).promise;
+    try {
+      const items = (await (await parsed.getPage(1)).getTextContent()).items.filter((item: any) => "str" in item) as any[];
+      const extraText = items.find(item => item.str === "Material Ordering");
+      const payText = items.filter(item => item.str === "CLICK HERE TO PAY").at(-1);
+      expect(extraText.transform[5]).toBeGreaterThan(payText.transform[5]);
+      expect(items.some(item => item.str === "$2,500.00")).toBe(true);
+      expect(items.some(item => item.str === "$11,500.00")).toBe(true);
+    } finally { await parsed.destroy(); }
+  });
   it("matches imported Due labels and generated Phase labels to the same original rows", () => {
     expect(planInvoicePdfPayments(pages, summary)?.phases.map(row => [row.payment.status, row.current])).toEqual([["paid", false], ["due", true]]);
     const generated = summary.payments.map((payment, index) => ({ ...payment, label: `Phase ${index + 1} - ${index ? "Design Document Delivery" : "Project Start"}` }));
