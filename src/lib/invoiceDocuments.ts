@@ -1,5 +1,6 @@
 import { supabaseImageTransformUrl } from "@/lib/local-assets";
 import { restyleServiceInvoiceHtml, waitForInvoiceAssets } from "@/lib/serviceInvoiceTemplate";
+import { refreshInvoiceAdjustmentsHtml } from "@/lib/invoiceAdjustments";
 import {
   currentDueInvoicePayment,
   invoicePaymentStripeUrl,
@@ -15,6 +16,8 @@ export function invoicePdfFileName(fileName?: string | null) {
 type InvoiceDocumentOptions = {
   paymentUrl?: string | null;
   servicePayments?: ServiceInvoicePaymentSummary;
+  invoiceTitle?: string | null;
+  clientName?: string | null;
 };
 
 export function prepareInvoiceHtml(html: string, options: InvoiceDocumentOptions = {}) {
@@ -22,7 +25,11 @@ export function prepareInvoiceHtml(html: string, options: InvoiceDocumentOptions
     ? invoicePaymentStripeUrl(currentDueInvoicePayment(options.servicePayments.payments))
     : options.paymentUrl;
   const safeHtml = applyInvoicePaymentLink(restyleServiceInvoiceHtml(html), paymentUrl);
-  return options.servicePayments ? refreshServiceInvoicePayments(safeHtml, options.servicePayments) : safeHtml;
+  if (!options.servicePayments) return safeHtml;
+  return refreshInvoiceAdjustmentsHtml(
+    refreshServiceInvoicePayments(safeHtml, options.servicePayments),
+    options.servicePayments.adjustments, options.servicePayments.totalAmount,
+  );
 }
 
 export async function openInvoiceDocument(
@@ -96,6 +103,18 @@ export async function downloadInvoiceDocument(
 }
 
 export async function sanitizeInvoicePdfBlob(blob: Blob, options: InvoiceDocumentOptions = {}) {
+  const base = await refreshInvoicePdfBlob(blob, options);
+  if (!options.servicePayments?.adjustments?.length) return base;
+  const { appendInvoiceAdjustmentsPdf } = await import("@/lib/invoiceAdjustmentsPdf");
+  const updated = await appendInvoiceAdjustmentsPdf(new Uint8Array(await base.arrayBuffer()), options.servicePayments, {
+    title: options.invoiceTitle, clientName: options.clientName,
+  });
+  const bytes = new Uint8Array(updated.length);
+  bytes.set(updated);
+  return new Blob([bytes.buffer], { type: "application/pdf" });
+}
+
+async function refreshInvoicePdfBlob(blob: Blob, options: InvoiceDocumentOptions = {}) {
   if (options.servicePayments) {
     const { updateServiceInvoicePdf } = await import("@/lib/serviceInvoicePdf");
     const updated = await updateServiceInvoicePdf(new Uint8Array(await blob.arrayBuffer()), options.servicePayments);

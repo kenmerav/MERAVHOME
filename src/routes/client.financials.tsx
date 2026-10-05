@@ -156,8 +156,11 @@ function InvoiceCard({ invoice }: { invoice: ClientInvoice }) {
   const paymentUrl = currentPaymentUrl(invoice);
   const documentOptions = {
     paymentUrl,
+    invoiceTitle: invoice.file_name,
+    clientName: invoice.project_name,
     servicePayments: {
       payments: invoice.payments,
+      adjustments: invoice.adjustments,
       totalAmount: invoice.original_total_amount ?? invoice.total_amount ?? 0,
       paidAmount: invoice.paid_amount ?? 0,
       balanceDue: invoice.balance_due ?? 0,

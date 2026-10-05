@@ -1,4 +1,5 @@
 import { formatMoney } from "@/lib/money";
+import { adjustedInvoiceTotal, type InvoiceDocumentAdjustment } from "@/lib/invoiceAdjustments";
 
 export type InvoicePaymentSummaryRow = {
   label: string;
@@ -13,6 +14,7 @@ export type ServiceInvoicePaymentSummary = {
   totalAmount: number;
   paidAmount?: number;
   balanceDue?: number;
+  adjustments?: InvoiceDocumentAdjustment[];
 };
 
 export function invoiceDraftPricingChanged<T extends object>(draft: T, patch: Partial<T>) {
@@ -43,7 +45,7 @@ export function renderServiceInvoicePayments(summary: ServiceInvoicePaymentSumma
   const waived = payments.reduce(
     (sum, payment) => sum + (payment.status === "waived" ? money(payment.amount) : 0), 0,
   );
-  const balance = summary.balanceDue ?? Math.max(money(summary.totalAmount) - paid - waived, 0);
+  const balance = summary.balanceDue ?? Math.max(adjustedInvoiceTotal(summary.totalAmount, summary.adjustments) - paid - waived, 0);
   const phases = [...payments].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     .filter(payment => money(payment.amount) > 0 && /^Phase \d+ - /.test(payment.label))
     .map(payment => {

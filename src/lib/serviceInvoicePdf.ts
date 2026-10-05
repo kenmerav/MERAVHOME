@@ -103,7 +103,7 @@ function removeStripeAnnotations(document: PDFDocument) {
 
 type PaymentFontBytes = { regular: Uint8Array; bold: Uint8Array };
 
-async function paymentFonts(document: PDFDocument, suppliedBytes?: PaymentFontBytes) {
+export async function paymentFonts(document: PDFDocument, suppliedBytes?: PaymentFontBytes) {
   const names = document.getPages().flatMap(page => {
     const fonts = page.node.Resources()?.lookup(PDFName.of("Font")) as any;
     return fonts?.values?.().map((reference: any) => {

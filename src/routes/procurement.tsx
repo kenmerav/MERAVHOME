@@ -45,6 +45,7 @@ type ProductInvoiceSummary = {
   name: string;
   documentUrl: string | null;
   paymentUrl: string | null;
+  documentOptions: Parameters<typeof openInvoiceDocument>[2];
   total: number;
   sortDate: string;
   sourceIds: Set<string>;
@@ -200,6 +201,7 @@ function ProcurementPage() {
     try {
       await openInvoiceDocument(selectedProductInvoice.documentUrl, selectedProductInvoice.name, {
         paymentUrl: selectedProductInvoice.paymentUrl,
+        ...selectedProductInvoice.documentOptions,
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not open the invoice.");
@@ -215,6 +217,7 @@ function ProcurementPage() {
         selectedProductInvoice.name,
         {
           paymentUrl: selectedProductInvoice.paymentUrl,
+          ...selectedProductInvoice.documentOptions,
         },
       );
     } catch (error) {
@@ -1505,13 +1508,22 @@ function productInvoiceFromFinancialInvoice(
         .filter((line) => line.selected !== false && line.sourceId)
         .map((line) => line.sourceId as string),
     );
+    const ledger = financialInvoiceLedger(invoice);
     return {
       id: invoice.id,
       projectId: invoice.project_id,
       name: invoice.file_name || parsed.draft?.invoiceName || "Product Invoice",
       documentUrl: invoice.pdf_data_url,
       paymentUrl: currentInvoicePaymentUrl(invoice),
-      total: financialInvoiceLedger(invoice).adjustedTotal,
+      documentOptions: invoice.adjustments?.length ? {
+        invoiceTitle: invoice.file_name,
+        clientName: invoice.client_name,
+        servicePayments: {
+          payments: invoice.payments ?? [], adjustments: invoice.adjustments,
+          totalAmount: ledger.originalTotal, paidAmount: ledger.grossPaid, balanceDue: ledger.balanceDue,
+        },
+      } : {},
+      total: ledger.adjustedTotal,
       sortDate: invoice.invoice_date || invoice.created_at || "",
       sourceIds,
     };

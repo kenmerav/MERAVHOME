@@ -1042,8 +1042,11 @@ function InvoiceCard({
   const paidTotal = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const ledger = financialInvoiceLedger(invoice);
   const documentOptions = {
+    invoiceTitle: invoice.file_name,
+    clientName: invoice.client_name,
     servicePayments: {
       payments,
+      adjustments: invoice.adjustments,
       totalAmount: ledger.originalTotal,
       paidAmount: ledger.grossPaid,
       balanceDue: ledger.balanceDue,
@@ -1135,7 +1138,7 @@ function InvoiceAdjustments({
     status: FinancialAdjustmentStatus,
   ) => Promise<void>;
 }) {
-  const [kind, setKind] = useState<FinancialAdjustmentType>("credit");
+  const [kind, setKind] = useState<FinancialAdjustmentType>("charge");
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
@@ -1189,9 +1192,9 @@ function InvoiceAdjustments({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="eyebrow mb-2">Adjustments</div>
-          <h3 className="font-display text-2xl">Returns, substitutions & price changes</h3>
+          <h3 className="font-display text-2xl">Invoice items, extras & credits</h3>
           <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
-            Add a credit when an item is removed, returned, or replaced with something less expensive. Add a charge when the replacement costs more. This records the accounting in Studio; issue the actual refund separately in Stripe or QuickBooks, then mark it refunded here.
+            Add services or extra items to this invoice as an additional charge. Added items and credits appear when you open or download the invoice. Record refunds separately in Stripe or QuickBooks, then mark them refunded here.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
@@ -1257,7 +1260,7 @@ function InvoiceAdjustments({
         </div>
         <div>
           <Label className="eyebrow">Reason</Label>
-          <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Returned faucet or replacement price difference" />
+          <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Material ordering, additional services, or credit" />
         </div>
         <div>
           <Label className="eyebrow">Amount</Label>
@@ -1273,7 +1276,7 @@ function InvoiceAdjustments({
           disabled={saving}
           className="h-10 whitespace-nowrap bg-ink px-4 text-sm text-primary-foreground disabled:opacity-50"
         >
-          {saving ? "Adding..." : "Add Adjustment"}
+          {saving ? "Adding..." : kind === "charge" ? "Add Invoice Item" : "Add Credit"}
         </button>
       </div>
     </div>
