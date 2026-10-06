@@ -38,7 +38,11 @@ function words(value: unknown) {
 }
 
 function fileWords(value: unknown) {
-  return words(value).filter((word) => !FILE_NOISE.has(word));
+  // Revision/option suffixes are not project names. Keep actual lot/room numbers.
+  const fileName = String(value || "")
+    .replace(/\b(?:v(?:ersion)?|opt(?:ion)?|rev(?:ision)?)\s*[_-]?\s*\d+\b/gi, " ")
+    .replace(/_(?:v(?:ersion)?|opt(?:ion)?|rev(?:ision)?)\s*\d+\b/gi, " ");
+  return words(fileName).filter((word) => !FILE_NOISE.has(word));
 }
 
 function normalized(value: unknown) {

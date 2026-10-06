@@ -272,6 +272,7 @@ async function gmailAccessToken(integration: any) {
   if (!credentials.refresh_token) throw new Error("Reconnect Gmail to resume syncing.");
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
+    signal: AbortSignal.timeout(30_000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: process.env.GOOGLE_MARVIN_CLIENT_ID || "",
@@ -281,7 +282,19 @@ async function gmailAccessToken(integration: any) {
     }),
   });
   const refreshed = await response.json();
-  if (!response.ok) throw new Error(refreshed?.error_description || "Gmail token refresh failed.");
+  if (!response.ok) {
+    if (refreshed?.error === "invalid_grant") {
+      await admin
+        .from("marvin_integrations")
+        .update({
+          status: "error",
+          last_error:
+            "Marvin's Google connection expired or was revoked. Ken must reconnect Marvin inbox to resume automatic construction-document uploads.",
+        })
+        .eq("id", integration.id);
+    }
+    throw new Error(refreshed?.error_description || "Gmail token refresh failed.");
+  }
   const next = {
     ...credentials,
     access_token: refreshed.access_token,
@@ -678,10 +691,11 @@ async function upsertSource(row: any, projectIds: string[] = []) {
   const { data: source, error } = await query.select("*").single();
   if (error) throw error;
   if (projectIds.length) {
-    await admin.from("marvin_source_projects").upsert(
+    const { error: linkError } = await admin.from("marvin_source_projects").upsert(
       projectIds.map((projectId) => ({ source_id: source.id, project_id: projectId })),
       { onConflict: "source_id,project_id", ignoreDuplicates: true },
     );
+    if (linkError) throw linkError;
   }
   return source;
 }
@@ -690,12 +704,18 @@ async function gmailAttachmentFile(
   messageId: string,
   attachment: GmailPdfAttachment,
   token: string,
+  deadline?: number,
 ) {
   let bytes = decodeBase64UrlBytes(attachment.data || undefined);
   if (!bytes.length && attachment.attachmentId) {
     const response = await fetch(
       `${GOOGLE_BASE}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.attachmentId)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(
+          Math.max(1, Math.min(30_000, (deadline ?? Date.now() + 30_000) - Date.now())),
+        ),
+      },
     );
     const payload = await response.json();
     if (!response.ok) {
@@ -822,6 +842,7 @@ async function promoteConstructionAttachment(
       .from("marvin_sources")
       .update({
         source_url: publicUrl.publicUrl,
+        review_status: "linked",
         metadata: {
           ...(source.metadata ?? {}),
           project_document_id: document.id,
@@ -865,11 +886,17 @@ async function ingestBlueSkyConstructionAttachments(input: {
   parentSource: any;
   match: any;
   matchingContext: Awaited<ReturnType<typeof projectMatchingContext>>;
+  deadline?: number;
 }) {
+  const result = { uploaded: 0, duplicates: 0, needsReview: 0, failed: 0, deferred: 0 };
   const senderEmail = extractEmails(input.headers.get("from") || "")[0] || "";
-  if (!BLUE_SKY_CONSTRUCTION_SENDERS.has(senderEmail)) return;
+  if (!BLUE_SKY_CONSTRUCTION_SENDERS.has(senderEmail)) return result;
   const attachments = gmailPdfAttachments(input.message.payload);
   for (const attachment of attachments) {
+    if (input.deadline && Date.now() >= input.deadline) {
+      result.deferred += 1;
+      continue;
+    }
     const fileNameMatch = matchConstructionDocumentProject(
       attachment.fileName,
       input.matchingContext.projects,
@@ -883,7 +910,7 @@ async function ingestBlueSkyConstructionAttachments(input: {
           reason: fileNameMatch.reason,
           generalBusiness: false,
         }
-      : input.match;
+      : { ...input.match, projectIds: [...input.match.projectIds] };
     const attachmentKey =
       attachment.attachmentId ||
       createHash("sha256")
@@ -897,14 +924,37 @@ async function ingestBlueSkyConstructionAttachments(input: {
         .eq("external_provider", "gmail_attachment")
         .eq("external_id", externalId)
         .maybeSingle();
-      if (existing?.metadata?.project_document_id) continue;
+      // A dismissal or human project assignment must survive scheduled retries.
+      if (existing?.review_status === "dismissed") continue;
+      if (existing?.metadata?.project_document_id) {
+        const { data: document } = await admin
+          .from("project_documents")
+          .select("id")
+          .eq("id", existing.metadata.project_document_id)
+          .maybeSingle();
+        if (document) {
+          result.duplicates += 1;
+          continue;
+        }
+      }
+      if (existing?.review_status === "linked") {
+        const { data: links, error } = await admin
+          .from("marvin_source_projects")
+          .select("project_id")
+          .eq("source_id", existing.id);
+        if (error) throw error;
+        if (links?.length === 1) {
+          attachmentMatch.projectIds = [links[0].project_id];
+          attachmentMatch.generalBusiness = false;
+        }
+      }
 
       let file: File;
       let storagePath = existing?.storage_path || "";
       if (storagePath) {
         file = (await sourceFile(existing)) as File;
       } else {
-        file = await gmailAttachmentFile(input.message.id, attachment, input.token);
+        file = await gmailAttachmentFile(input.message.id, attachment, input.token, input.deadline);
         storagePath = `gmail/${input.message.id}/${crypto.randomUUID()}-${safeFileName(attachment.fileName)}`;
         const { error: storageError } = await admin.storage
           .from("marvin-sources")
@@ -939,7 +989,7 @@ async function ingestBlueSkyConstructionAttachments(input: {
           match_reason: autoLink
             ? `${attachmentMatch.reason}; trusted Blue Sky construction PDF`
             : `${attachmentMatch.reason}; choose the project before filing this Blue Sky PDF`,
-          processing_status: autoLink ? "processing" : "pending",
+          processing_status: "pending",
           content_hash: createHash("sha256")
             .update(Buffer.from(await file.arrayBuffer()))
             .digest("hex"),
@@ -948,7 +998,9 @@ async function ingestBlueSkyConstructionAttachments(input: {
             gmail_message_id: input.message.id,
             gmail_attachment_id: attachment.attachmentId,
             gmail_thread_id: input.message.threadId,
-            parent_email_source_id: input.parentSource.id,
+            gmail_pdf_attachment_count: attachments.length,
+            parent_email_source_id:
+              input.parentSource?.id || existing?.metadata?.parent_email_source_id || null,
             account_email: input.integration.account_email,
             candidate_project_ids: attachmentMatch.candidateProjectIds,
             blue_sky_construction_candidate: true,
@@ -960,37 +1012,11 @@ async function ingestBlueSkyConstructionAttachments(input: {
       );
 
       if (autoLink) {
-        const duplicate = await promotedDuplicate(
-          source.content_hash,
-          attachmentMatch.projectIds[0],
-          source.id,
-        );
-        if (duplicate?.document) {
-          await admin
-            .from("marvin_sources")
-            .update({
-              review_status: "linked",
-              processing_status: "ready",
-              metadata: {
-                ...(source.metadata ?? {}),
-                project_document_id: duplicate.document.id,
-                duplicate_of_source_id: duplicate.source?.id || null,
-                auto_uploaded_to_construction_docs: true,
-                project_document_visibility: "studio_only",
-              },
-            })
-            .eq("id", source.id);
-        } else {
-          const promoted = await promoteConstructionAttachment(
-            source,
-            attachmentMatch.projectIds[0],
-            file,
-            input.integration.owner_user_id,
-          );
-          await indexSourceForProjects(promoted.source, attachmentMatch.projectIds, file);
-        }
-      }
+        const filed = await fileConstructionSource(source, attachmentMatch.projectIds[0], file);
+        result[filed ? "uploaded" : "duplicates"] += 1;
+      } else result.needsReview += 1;
     } catch (error) {
+      result.failed += 1;
       console.error(
         "Marvin Blue Sky construction attachment intake failed",
         input.message.id,
@@ -999,6 +1025,7 @@ async function ingestBlueSkyConstructionAttachments(input: {
       );
     }
   }
+  return result;
 }
 
 async function ingestGmailMessage(
@@ -1123,15 +1150,7 @@ async function ingestGmailMessage(
     );
     if (linkError) throw linkError;
   }
-  if (needsReindex) {
-    if (match.generalBusiness) await indexGeneralSource(source);
-    else if (match.projectIds.length > 1 || match.includeGeneral) {
-      await rebuildSourceSegments(source.id);
-    } else if (match.projectIds.length) {
-      await indexSourceForProjects(source, match.projectIds);
-    }
-  }
-
+  // File PDFs before any paid indexing. Exhausted AI credits must not lose documents.
   for (const rawMessage of rawMessages) {
     const headers = headerMap(rawMessage.payload?.headers);
     const normalized = gmailThreadMessage(rawMessage);
@@ -1146,6 +1165,15 @@ async function ingestGmailMessage(
       match,
       matchingContext,
     });
+  }
+
+  if (needsReindex) {
+    if (match.generalBusiness) await indexGeneralSource(source);
+    else if (match.projectIds.length > 1 || match.includeGeneral) {
+      await rebuildSourceSegments(source.id);
+    } else if (match.projectIds.length) {
+      await indexSourceForProjects(source, match.projectIds);
+    }
   }
 
   if (source.review_status === "linked") {
@@ -1692,6 +1720,324 @@ export async function syncSharedGmail(options: { maxMessages?: number; syncDrive
   if (error) throw error;
   if (!integration) throw new Error("marvinbotai@gmail.com is not connected.");
   return syncGmailIntegration(integration, options);
+}
+
+/** File one source without AI. A per-project/content claim prevents concurrent retries
+ * (including different emails carrying the same bytes) from creating duplicate documents. */
+async function fileConstructionSource(source: any, projectId: string, file: File) {
+  const attachDuplicate = async (duplicate: any) => {
+    const { error } = await admin
+      .from("marvin_sources")
+      .update({
+        source_url: duplicate.document.file_url,
+        review_status: "linked",
+        metadata: {
+          ...(source.metadata ?? {}),
+          project_document_id: duplicate.document.id,
+          duplicate_of_source_id: duplicate.source?.id === source.id ? null : duplicate.source?.id,
+          auto_uploaded_to_construction_docs: true,
+          project_document_visibility: "studio_only",
+        },
+      })
+      .eq("id", source.id);
+    if (error) throw error;
+    return false;
+  };
+  const duplicate = await promotedDuplicate(source.content_hash, projectId);
+  if (duplicate) return attachDuplicate(duplicate);
+
+  const key = `construction_document_upload:${projectId}:${source.content_hash}`;
+  const startedAt = new Date().toISOString();
+  const { error: claimError } = await admin.from("marvin_sync_jobs").insert({
+    job_type: "construction_document_upload",
+    idempotency_key: key,
+    status: "running",
+    started_at: startedAt,
+  });
+  if (claimError?.code === "23505") {
+    const { data: claim, error } = await admin
+      .from("marvin_sync_jobs")
+      .select("status,started_at")
+      .eq("idempotency_key", key)
+      .single();
+    if (error) throw error;
+    if (claim.status === "running" && Date.now() - new Date(claim.started_at).getTime() < 600_000) {
+      throw new Error("This PDF is already being filed. It will be checked on the next pass.");
+    }
+    const { data: reclaimed, error: reclaimError } = await admin
+      .from("marvin_sync_jobs")
+      .update({ status: "running", started_at: startedAt, finished_at: null, error: null })
+      .eq("idempotency_key", key)
+      .eq("status", claim.status)
+      .eq("started_at", claim.started_at)
+      .select("id");
+    if (reclaimError) throw reclaimError;
+    if (!reclaimed?.length) throw new Error("Another pass is filing this PDF. Retry later.");
+  } else if (claimError) throw claimError;
+
+  try {
+    // Recheck after claiming: a concurrent pass may have just finished.
+    const existing = await promotedDuplicate(source.content_hash, projectId);
+    const uploaded = existing ? await attachDuplicate(existing) : true;
+    const promoted =
+      existing || (await promoteConstructionAttachment(source, projectId, file, source.created_by));
+    const { error } = await admin
+      .from("marvin_sync_jobs")
+      .update({
+        status: "complete",
+        progress: { document_id: promoted.document.id },
+        finished_at: new Date().toISOString(),
+        error: null,
+      })
+      .eq("idempotency_key", key)
+      .eq("started_at", startedAt);
+    if (error) throw error;
+    return uploaded;
+  } catch (error) {
+    await admin
+      .from("marvin_sync_jobs")
+      .update({
+        status: "failed",
+        error: error instanceof Error ? error.message : "PDF filing failed.",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("idempotency_key", key)
+      .eq("started_at", startedAt);
+    throw error;
+  }
+}
+
+/** Jessica PDFs have their own small, newest-first pass. No thread AI, embeddings,
+ * tasks, drafts or Drive API calls occur here. Saved attachments are retried even
+ * when Google needs reconnecting. Cursor/retries live on this pass's job, not on
+ * the inbox integration metadata that concurrent inbox/Drive jobs modify. */
+export async function syncConstructionDocuments(
+  options: { maxMessages?: number; budgetMs?: number } = {},
+) {
+  const deadline = Date.now() + (options.budgetMs ?? 180_000);
+  const result = {
+    checked: 0,
+    uploaded: 0,
+    duplicates: 0,
+    needsReview: 0,
+    failed: 0,
+    deferred: 0,
+    needsReconnect: false,
+    error: null as string | null,
+    nextPageToken: null as string | null,
+    deferredMessageIds: [] as string[],
+  };
+  const context = await projectMatchingContext();
+  const { data: saved, error: savedError } = await admin
+    .from("marvin_sources")
+    .select("*,marvin_source_projects(project_id)")
+    .eq("external_provider", "gmail_attachment")
+    .eq("author_email", "jessica@blue-skycreative.com")
+    .in("review_status", ["pending", "linked"])
+    .contains("metadata", {
+      account_email: MARVIN_SHARED_GMAIL,
+      blue_sky_construction_candidate: true,
+    })
+    .is("metadata->>project_document_id", null)
+    .order("occurred_at", { ascending: false })
+    .limit(200);
+  if (savedError) throw savedError;
+  for (const source of saved ?? []) {
+    const confirmed =
+      source.review_status === "linked" && source.marvin_source_projects?.length === 1
+        ? source.marvin_source_projects[0].project_id
+        : null;
+    const projectId =
+      confirmed || matchConstructionDocumentProject(source.title, context.projects)?.projectId;
+    if (!projectId) {
+      result.needsReview += 1;
+      continue;
+    }
+    if (!source.storage_path) continue; // Download from Gmail below when the account is usable.
+    if (Date.now() >= deadline) {
+      result.deferred += 1;
+      continue;
+    }
+    try {
+      const file = await sourceFile(source);
+      if (!file) throw new Error("The saved PDF is unavailable.");
+      const { error } = await admin
+        .from("marvin_source_projects")
+        .upsert(
+          { source_id: source.id, project_id: projectId },
+          { onConflict: "source_id,project_id" },
+        );
+      if (error) throw error;
+      const uploaded = await fileConstructionSource(source, projectId, file);
+      result[uploaded ? "uploaded" : "duplicates"] += 1;
+    } catch (error) {
+      result.failed += 1;
+      result.error = error instanceof Error ? error.message : "Saved PDF filing failed.";
+    }
+  }
+
+  const { data: integration, error: integrationError } = await admin
+    .from("marvin_integrations")
+    .select("*")
+    .eq("provider", "gmail")
+    .ilike("account_email", MARVIN_SHARED_GMAIL)
+    .maybeSingle();
+  if (integrationError) throw integrationError;
+  if (Date.now() >= deadline) {
+    result.deferred += 1;
+    return result;
+  }
+  let token: string;
+  try {
+    if (!integration)
+      throw new Error("Ken must reconnect Marvin inbox to resume automatic PDF uploads.");
+    token = await gmailAccessToken(integration);
+  } catch (error) {
+    result.needsReconnect =
+      !integration ||
+      integration.status === "error" ||
+      /expired|revoked|reconnect/i.test(error instanceof Error ? error.message : "");
+    result.error = error instanceof Error ? error.message : "Google connection failed.";
+    return result;
+  }
+  try {
+    const googleJson = async (url: string) => {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(Math.max(1, Math.min(30_000, deadline - Date.now()))),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || "Construction PDF scan failed.");
+      return payload;
+    };
+    const { data: previous } = await admin
+      .from("marvin_sync_jobs")
+      .select("progress")
+      .in("job_type", ["scheduled_construction_docs", "manual_construction_docs"])
+      .not("finished_at", "is", null)
+      .order("finished_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const listUrl = new URL(`${GOOGLE_BASE}/messages`);
+    listUrl.searchParams.set(
+      "q",
+      "from:jessica@blue-skycreative.com has:attachment filename:pdf newer_than:60d",
+    );
+    listUrl.searchParams.set("maxResults", "100");
+    const latest = await googleJson(listUrl.toString());
+    let older: any = null;
+    if (previous?.progress?.nextPageToken && Date.now() < deadline) {
+      listUrl.searchParams.set("pageToken", previous.progress.nextPageToken);
+      older = await googleJson(listUrl.toString());
+    }
+    result.nextPageToken = older ? older.nextPageToken || null : latest.nextPageToken || null;
+    const { data: known, error: knownError } = await admin
+      .from("marvin_sources")
+      .select("external_id,review_status,storage_path,metadata")
+      .eq("external_provider", "gmail_attachment")
+      .contains("metadata", {
+        account_email: MARVIN_SHARED_GMAIL,
+        blue_sky_construction_candidate: true,
+      });
+    if (knownError) throw knownError;
+    const messageIds = [
+      ...new Set<string>([
+        ...(latest.messages ?? []).map((message: any) => message.id),
+        ...(previous?.progress?.deferredMessageIds ?? []),
+        ...(older?.messages ?? []).map((message: any) => message.id),
+      ]),
+    ];
+    const limit = Math.max(1, Math.min(12, options.maxMessages ?? 6));
+    for (const messageId of messageIds) {
+      const stored = (known ?? []).filter(
+        (source: any) => source.metadata?.gmail_message_id === messageId,
+      );
+      const expectedCount = Number(stored[0]?.metadata?.gmail_pdf_attachment_count || 0);
+      if (
+        expectedCount &&
+        new Set(stored.map((source: any) => source.external_id)).size === expectedCount &&
+        stored.every(
+          (source: any) =>
+            source.metadata?.project_document_id || source.review_status === "dismissed",
+        )
+      )
+        continue;
+      if (result.checked + result.failed >= limit || Date.now() >= deadline) {
+        result.deferredMessageIds.push(messageId);
+        continue;
+      }
+      // Fetch the individual message, never its AI-indexed thread. Inspect every PDF
+      // before deciding to skip: one message can contain multiple revisions.
+      try {
+        const message = await googleJson(
+          `${GOOGLE_BASE}/messages/${encodeURIComponent(messageId)}?format=full`,
+        );
+        const attachments = gmailPdfAttachments(message.payload);
+        const fullySaved =
+          attachments.length > 0 &&
+          attachments.every((attachment) => {
+            const externalId = `${messageId}:${
+              attachment.attachmentId ||
+              createHash("sha256")
+                .update(`${messageId}:${attachment.fileName}:${attachment.data || ""}`)
+                .digest("hex")
+            }`;
+            // Use the exact message + attachment identity, not just the message or filename.
+            return (known ?? []).some(
+              (source: any) =>
+                source.external_id === externalId &&
+                (source.metadata?.project_document_id ||
+                  source.review_status === "dismissed" ||
+                  (source.storage_path &&
+                    !matchConstructionDocumentProject(attachment.fileName, context.projects))),
+            );
+          });
+        if (fullySaved) continue;
+        result.checked += 1;
+        const headers = headerMap(message.payload?.headers) as Map<string, string>;
+        const normalized = gmailThreadMessage(message);
+        const intake = await ingestBlueSkyConstructionAttachments({
+          integration,
+          message,
+          token,
+          headers,
+          body: normalized.body,
+          participants: normalized.participantEmails,
+          parentSource: null,
+          matchingContext: context,
+          // No full-thread quoted text fallback: uncertain filenames stay for human review.
+          match: {
+            projectIds: [],
+            candidateProjectIds: [],
+            confidence: 0,
+            reason: "Construction PDF project is uncertain",
+            generalBusiness: false,
+          },
+          deadline,
+        });
+        for (const key of [
+          "uploaded",
+          "duplicates",
+          "needsReview",
+          "failed",
+          "deferred",
+        ] as const) {
+          result[key] += intake[key];
+        }
+        if (intake.failed || intake.deferred) result.deferredMessageIds.push(messageId);
+      } catch (error) {
+        result.failed += 1;
+        result.error = error instanceof Error ? error.message : "Construction PDF download failed.";
+        result.deferredMessageIds.push(messageId);
+      }
+    }
+    result.deferred += result.deferredMessageIds.length;
+    return result;
+  } catch (error) {
+    result.failed += 1;
+    result.error = error instanceof Error ? error.message : "Construction PDF scan failed.";
+    return result;
+  }
 }
 
 /** Keep Blue Sky Drive intake independent from the time-sensitive inbox cursor. */

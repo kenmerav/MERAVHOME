@@ -10,12 +10,14 @@ import {
   syncFathom,
   syncSharedDriveFolder,
   syncSharedGmail,
+  syncConstructionDocuments,
 } from "@/lib/marvin.server";
 
 const admin = supabaseAdmin as any;
 
 export const MARVIN_CRON_STAGES = [
   "inbox",
+  "construction-docs",
   "drive",
   "fathom",
   "matching",
@@ -48,6 +50,8 @@ function phoenixSlot(date: Date) {
 
 async function executeStage(stage: MarvinCronStage) {
   switch (stage) {
+    case "construction-docs":
+      return syncConstructionDocuments();
     case "inbox": {
       const result = await syncSharedGmail({
         maxMessages: MARVIN_SCHEDULED_GMAIL_BATCH_SIZE,
@@ -128,6 +132,7 @@ export async function runMarvinCronStage(stage: MarvinCronStage) {
       ("failed" in result && Number(result.failed) > 0) ||
       ("deferred" in result && Number(result.deferred) > 0) ||
       ("needsReconnect" in result && Boolean(result.needsReconnect)) ||
+      ("error" in result && Boolean(result.error)) ||
       ("draftFailures" in result && Number(result.draftFailures) > 0),
     );
     const { error } = await admin
@@ -135,7 +140,12 @@ export async function runMarvinCronStage(stage: MarvinCronStage) {
       .update({
         status: partial ? "partial" : "complete",
         progress: result,
-        error: partial ? "Some items remain for a later scheduled retry." : null,
+        error:
+          "error" in result && result.error
+            ? String(result.error)
+            : partial
+              ? "Some items remain for a later scheduled retry."
+              : null,
         finished_at: new Date().toISOString(),
       })
       .eq("idempotency_key", idempotencyKey);

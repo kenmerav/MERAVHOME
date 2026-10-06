@@ -144,6 +144,18 @@ export type EaWorkspaceData = {
     last_error: string | null;
     updated_at: string;
   }>;
+  constructionDocumentSync?: {
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+    error: string | null;
+    progress: {
+      uploaded?: number;
+      needsReconnect?: boolean;
+      needsReview?: number;
+      deferred?: number;
+    } | null;
+  } | null;
   fathomReview: Array<{
     id: string;
     title: string;

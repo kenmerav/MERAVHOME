@@ -18,6 +18,10 @@ describe("Blue Sky construction document matching", () => {
     ["CAMBRIDGE_MI_260826.pdf", "cambridge"],
     ["CORTEZ_MI_260826.pdf", "cortez"],
     ["QUARTZ_MI_260825.pdf", "quartz"],
+    ["QUARTZ_MI_260803 OPT 2.pdf", "quartz"],
+    ["QUARTZ_MI_260803_v2.pdf", "quartz"],
+    ["QUARTZ_MI_260803 version 3.pdf", "quartz"],
+    ["QUARTZ_MI_260803 rev1.pdf", "quartz"],
     ["Spec K_MI_260831.pdf", "spec-k"],
     ["Rinehart_MI_260909_colorized.pdf", "rinehart"],
   ])("matches %s to the one current project", (fileName, projectId) => {
@@ -34,5 +38,14 @@ describe("Blue Sky construction document matching", () => {
 
   it("does not guess from a generic filename", () => {
     expect(matchConstructionDocumentProject("Construction Documents.pdf", projects)).toBeNull();
+  });
+
+  it("keeps lot numbers rather than treating them as revision numbers", () => {
+    expect(
+      matchConstructionDocumentProject("LOT 2_MI_261006_v3.pdf", [
+        { id: "lot1", name: "LOT 1" },
+        { id: "lot2", name: "LOT 2" },
+      ])?.projectId,
+    ).toBe("lot2");
   });
 });

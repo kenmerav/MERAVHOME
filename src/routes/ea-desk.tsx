@@ -106,6 +106,7 @@ function EaDeskPage() {
   const [taskArtifact, setTaskArtifact] = useState<SeedArtifactKind | null>(null);
   const [refreshingEmailActions, setRefreshingEmailActions] = useState(false);
   const [reconnectingInbox, setReconnectingInbox] = useState(false);
+  const [refreshingConstructionDocs, setRefreshingConstructionDocs] = useState(false);
   const [inboxConnectionNotice, setInboxConnectionNotice] = useState<string | null>(null);
   const [runningOperations, setRunningOperations] = useState(false);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -131,6 +132,27 @@ function EaDeskPage() {
   const openTasks = tasks.filter(
     (item) => !["complete", "cancelled", "suggested"].includes(item.status),
   );
+  const constructionSync = data?.constructionDocumentSync;
+  const googleConnectionError = data?.syncStatus.find(
+    (row) => row.provider === "gmail" && row.account_email === "marvinbotai@gmail.com",
+  )?.last_error;
+  const refreshConstructionDocs = async () => {
+    setRefreshingConstructionDocs(true);
+    try {
+      const result = await saveEaWorkspace({ action: "refresh_construction_docs" });
+      if (result.error || result.needsReconnect)
+        toast.error(result.error || "Ken must reconnect Marvin inbox.");
+      else
+        toast.success(
+          `${Number(result.uploaded || 0)} new construction PDF${result.uploaded === 1 ? "" : "s"} uploaded.${result.needsReview ? " Some PDFs need a project match." : ""}`,
+        );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Construction PDF refresh failed.");
+    } finally {
+      setRefreshingConstructionDocs(false);
+      await refetch();
+    }
+  };
   const openTask = (selectedTask: EaTask, artifactKind: SeedArtifactKind | null = null) => {
     setTaskArtifact(artifactKind);
     setTask(selectedTask);
@@ -221,6 +243,28 @@ function EaDeskPage() {
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Studio action brief for {longDate(new Date())}
+              </p>
+              <button
+                type="button"
+                onClick={refreshConstructionDocs}
+                disabled={refreshingConstructionDocs || isLoading}
+                title="Save Jessica's construction PDFs without AI analysis or Drive access. Runs automatically at 7 AM and noon Phoenix time."
+                className="text-xs font-medium text-ink underline underline-offset-2 disabled:opacity-50"
+              >
+                {refreshingConstructionDocs
+                  ? "Checking construction PDFs…"
+                  : "Refresh construction docs"}
+              </button>
+              <p className="max-w-sm text-xs text-muted-foreground" aria-live="polite">
+                {googleConnectionError || constructionSync?.progress?.needsReconnect
+                  ? "Construction uploads blocked: Ken needs to reconnect Marvin inbox."
+                  : constructionSync?.status === "failed"
+                    ? "Construction PDF check failed. Try Refresh construction docs."
+                    : constructionSync?.status === "running"
+                      ? "Construction PDF check in progress…"
+                      : constructionSync?.finished_at
+                        ? `Construction PDFs checked ${formatInboxLastUpdated(constructionSync.finished_at)} · ${Number(constructionSync.progress?.uploaded || 0)} newly uploaded${constructionSync.status === "partial" ? " · some items need retry" : ""}`
+                        : "Automatic construction PDF checks: 7 AM and noon (Phoenix)."}
               </p>
             </div>
             <div className="flex flex-col items-start gap-2 lg:items-end">

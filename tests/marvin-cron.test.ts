@@ -53,6 +53,7 @@ describe("scheduled Marvin work", () => {
     const paths = new Set(config.crons.map((job) => job.path));
     for (const path of [
       "/api/marvin-cron",
+      "/api/marvin-cron/construction-docs",
       "/api/marvin-cron/fathom",
       "/api/marvin-cron/drive",
       "/api/marvin-cron/matching",
@@ -64,7 +65,12 @@ describe("scheduled Marvin work", () => {
     }
     const schedulesFor = (path: string) =>
       config.crons.filter((job) => job.path === path).map((job) => job.schedule);
-    for (const path of ["/api/marvin-cron", "/api/marvin-cron/fathom", "/api/marvin-cron/review"]) {
+    for (const path of [
+      "/api/marvin-cron",
+      "/api/marvin-cron/construction-docs",
+      "/api/marvin-cron/fathom",
+      "/api/marvin-cron/review",
+    ]) {
       expect(schedulesFor(path)).toEqual(["0 14 * * *", "0 19 * * *"]);
     }
     for (const path of [
@@ -78,6 +84,6 @@ describe("scheduled Marvin work", () => {
     for (const owner of ["ken", "katie", "brynn"]) {
       expect(schedulesFor(`/api/marvin-cron/briefing-${owner}`)).toEqual(["0 16 * * *"]);
     }
-    expect(config.crons).toHaveLength(17);
+    expect(config.crons).toHaveLength(19);
   });
 });

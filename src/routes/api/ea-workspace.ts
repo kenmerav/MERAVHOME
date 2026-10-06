@@ -21,6 +21,7 @@ import {
   syncEaEmailActions,
   syncFathom,
   syncSharedGmail,
+  syncConstructionDocuments,
 } from "@/lib/marvin.server";
 
 const admin = supabaseAdmin as any;
@@ -191,6 +192,7 @@ async function loadWorkspace(access: Access) {
     allProjectTasks,
     managementOwners,
     activitySources,
+    constructionSync,
   ] = await Promise.all([
     admin.from("ea_project_operations").select("*").in("project_id", projectIds),
     admin
@@ -244,6 +246,13 @@ async function loadWorkspace(access: Access) {
       .gte("occurred_at", new Date(Date.now() - 120 * 86400000).toISOString())
       .order("occurred_at", { ascending: false, nullsFirst: false })
       .limit(1000),
+    admin
+      .from("marvin_sync_jobs")
+      .select("status,started_at,finished_at,progress,error")
+      .in("job_type", ["scheduled_construction_docs", "manual_construction_docs"])
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   for (const result of [tasks, milestones, allProjectTasks]) if (result.error) throw result.error;
   for (const result of [operations, assignments, taskContexts]) {
@@ -397,6 +406,7 @@ async function loadWorkspace(access: Access) {
     importRows: imports.error ? [] : (imports.data ?? []),
     memoryRules: memoryRules.error ? [] : (memoryRules.data ?? []),
     syncStatus: integrations.error ? [] : (integrations.data ?? []),
+    constructionDocumentSync: constructionSync.error ? null : constructionSync.data,
     fathomReview,
     emails: (emailSources.data ?? []).map((source: any) => ({
       ...source,
@@ -428,6 +438,7 @@ function emptyWorkspace() {
     importRows: [],
     memoryRules: [],
     syncStatus: [],
+    constructionDocumentSync: null,
     fathomReview: [],
     emails: [],
     projectHealth: [],
@@ -941,6 +952,46 @@ async function refreshEmailActions(access: Access) {
   return json({ gmail, fathom, sourceMatches, emailActions, operatingReview });
 }
 
+async function refreshConstructionDocuments(access: Access) {
+  const key = `manual_construction_docs:${crypto.randomUUID()}`;
+  const { error: claimError } = await admin.from("marvin_sync_jobs").insert({
+    job_type: "manual_construction_docs",
+    idempotency_key: key,
+    status: "running",
+    started_at: new Date().toISOString(),
+    owner_user_id: access.user.id,
+  });
+  if (claimError) throw claimError;
+  try {
+    const result = await syncConstructionDocuments();
+    const { error } = await admin
+      .from("marvin_sync_jobs")
+      .update({
+        status:
+          result.failed || result.deferred || result.needsReconnect || result.error
+            ? "partial"
+            : "complete",
+        progress: result,
+        error: result.error,
+        finished_at: new Date().toISOString(),
+      })
+      .eq("idempotency_key", key);
+    if (error) throw error;
+    return json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Construction PDF refresh failed.";
+    await admin
+      .from("marvin_sync_jobs")
+      .update({
+        status: "failed",
+        error: message,
+        finished_at: new Date().toISOString(),
+      })
+      .eq("idempotency_key", key);
+    throw error;
+  }
+}
+
 async function saveMemoryRule(access: Access, body: any) {
   const title = text(body.title, 200);
   const rule = text(body.rule, 5000);
@@ -1130,6 +1181,8 @@ export const Route = createFileRoute("/api/ea-workspace")({
           if (body.action === "label_fathom_project") return labelFathomProject(access, body);
           if (body.action === "assign_suggested_owners") return assignSuggestedOwners(access);
           if (body.action === "refresh_email_actions") return refreshEmailActions(access);
+          if (body.action === "refresh_construction_docs")
+            return refreshConstructionDocuments(access);
           if (body.action === "run_operating_review") {
             return json({ operatingReview: await runEaOperatingReview(access.user.id) });
           }

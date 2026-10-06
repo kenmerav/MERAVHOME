@@ -1,5 +1,7 @@
 {
   "crons": [
+    { "path": "/api/marvin-cron/construction-docs", "schedule": "0 14 * * *" },
+    { "path": "/api/marvin-cron/construction-docs", "schedule": "0 19 * * *" },
     {
       "path": "/api/marvin-cron",
       "schedule": "0 14 * * *"
