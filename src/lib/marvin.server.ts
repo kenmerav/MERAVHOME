@@ -391,6 +391,7 @@ function gmailThreadMessage(message: any): GmailThreadMessage {
 }
 
 type GmailPdfAttachment = {
+  partKey: string;
   attachmentId: string | null;
   data: string | null;
   fileName: string;
@@ -399,7 +400,7 @@ type GmailPdfAttachment = {
 
 function gmailPdfAttachments(part: any) {
   const attachments: GmailPdfAttachment[] = [];
-  const walk = (node: any) => {
+  const walk = (node: any, path: string) => {
     const fileName = String(node?.filename || "").trim();
     const mimeType = String(node?.mimeType || "").toLowerCase();
     if (
@@ -408,15 +409,16 @@ function gmailPdfAttachments(part: any) {
       (node?.body?.attachmentId || node?.body?.data)
     ) {
       attachments.push({
+        partKey: String(node.partId ?? path),
         attachmentId: node.body.attachmentId || null,
         data: node.body.data || null,
         fileName,
         mimeType: "application/pdf",
       });
     }
-    for (const child of node?.parts ?? []) walk(child);
+    for (const [index, child] of (node?.parts ?? []).entries()) walk(child, `${path}.${index}`);
   };
-  walk(part);
+  walk(part, "root");
   return attachments;
 }
 
@@ -916,14 +918,63 @@ async function ingestBlueSkyConstructionAttachments(input: {
       createHash("sha256")
         .update(`${input.message.id}:${attachment.fileName}:${attachment.data || ""}`)
         .digest("hex");
-    const externalId = `${input.message.id}:${attachmentKey}`;
+    // Gmail's opaque download attachmentId can rotate. Message + MIME position is immutable.
+    const externalId = `${input.integration.account_email}:${input.message.id}:pdf:${attachment.partKey}`;
     try {
-      const { data: existing } = await admin
+      const { data: canonical, error: canonicalError } = await admin
         .from("marvin_sources")
         .select("*")
         .eq("external_provider", "gmail_attachment")
         .eq("external_id", externalId)
         .maybeSingle();
+      if (canonicalError) throw canonicalError;
+      let existing = canonical;
+      if (!existing) {
+        const { data: legacy, error: legacyError } = await admin
+          .from("marvin_sources")
+          .select("*")
+          .eq("external_provider", "gmail_attachment")
+          .eq("external_id", `${input.message.id}:${attachmentKey}`)
+          .contains("metadata", { account_email: input.integration.account_email })
+          .maybeSingle();
+        if (legacyError) throw legacyError;
+        existing = legacy;
+      }
+      if (
+        !existing &&
+        attachments.filter((part) => part.fileName === attachment.fileName).length === 1
+      ) {
+        // Recover old sources with rotating download IDs only when the filename identifies
+        // exactly one PDF inside this immutable message. Preserve their UUIDs and decisions.
+        const { data: legacy, error: legacyError } = await admin
+          .from("marvin_sources")
+          .select("*")
+          .eq("external_provider", "gmail_attachment")
+          .eq("title", attachment.fileName)
+          .contains("metadata", {
+            gmail_message_id: input.message.id,
+            account_email: input.integration.account_email,
+          })
+          .limit(100);
+        if (legacyError) throw legacyError;
+        existing =
+          (legacy ?? []).find((row: any) => row.review_status === "dismissed") ||
+          (legacy ?? []).find((row: any) => row.metadata?.project_document_id) ||
+          legacy?.[0];
+      }
+      if (existing) {
+        const metadata = {
+          ...(existing.metadata ?? {}),
+          gmail_pdf_part_key: attachment.partKey,
+          gmail_pdf_attachment_count: attachments.length,
+        };
+        const { error } = await admin
+          .from("marvin_sources")
+          .update({ external_id: externalId, metadata })
+          .eq("id", existing.id);
+        if (error) throw error;
+        existing = { ...existing, external_id: externalId, metadata };
+      }
       // A dismissal or human project assignment must survive scheduled retries.
       if (existing?.review_status === "dismissed") continue;
       if (existing?.metadata?.project_document_id) {
@@ -997,6 +1048,7 @@ async function ingestBlueSkyConstructionAttachments(input: {
             ...(existing?.metadata ?? {}),
             gmail_message_id: input.message.id,
             gmail_attachment_id: attachment.attachmentId,
+            gmail_pdf_part_key: attachment.partKey,
             gmail_thread_id: input.message.threadId,
             gmail_pdf_attachment_count: attachments.length,
             parent_email_source_id:
@@ -1933,7 +1985,7 @@ export async function syncConstructionDocuments(
     result.nextPageToken = older ? older.nextPageToken || null : latest.nextPageToken || null;
     const { data: known, error: knownError } = await admin
       .from("marvin_sources")
-      .select("external_id,review_status,storage_path,metadata")
+      .select("external_id,title,review_status,storage_path,metadata")
       .eq("external_provider", "gmail_attachment")
       .contains("metadata", {
         account_email: MARVIN_SHARED_GMAIL,
@@ -1949,17 +2001,41 @@ export async function syncConstructionDocuments(
     ];
     const limit = Math.max(1, Math.min(12, options.maxMessages ?? 6));
     for (const messageId of messageIds) {
-      const stored = (known ?? []).filter(
+      const messageSources = (known ?? []).filter(
         (source: any) => source.metadata?.gmail_message_id === messageId,
+      );
+      const finishedSource = (source: any) =>
+        source.metadata?.project_document_id ||
+        source.review_status === "dismissed" ||
+        (source.storage_path &&
+          source.review_status === "pending" &&
+          !matchConstructionDocumentProject(source.title, context.projects));
+      const legacyExpected = Number(
+        messageSources.find((source: any) => source.metadata?.gmail_pdf_attachment_count)?.metadata
+          .gmail_pdf_attachment_count || 0,
+      );
+      const titles = new Set(messageSources.map((source: any) => source.title));
+      // An immutable message whose entire PDF count is represented by unique filenames
+      // is already handled, even if old retries left several rotating-ID source rows.
+      // Same-filename PDFs must instead use the MIME-position check below.
+      if (
+        legacyExpected &&
+        titles.size === legacyExpected &&
+        [...titles].every((title) =>
+          messageSources.some((source: any) => source.title === title && finishedSource(source)),
+        )
+      )
+        continue;
+      const stored = (known ?? []).filter(
+        (source: any) =>
+          source.metadata?.gmail_message_id === messageId &&
+          String(source.external_id || "").startsWith(`${MARVIN_SHARED_GMAIL}:${messageId}:pdf:`),
       );
       const expectedCount = Number(stored[0]?.metadata?.gmail_pdf_attachment_count || 0);
       if (
         expectedCount &&
         new Set(stored.map((source: any) => source.external_id)).size === expectedCount &&
-        stored.every(
-          (source: any) =>
-            source.metadata?.project_document_id || source.review_status === "dismissed",
-        )
+        stored.every(finishedSource)
       )
         continue;
       if (result.checked + result.failed >= limit || Date.now() >= deadline) {
@@ -1976,12 +2052,7 @@ export async function syncConstructionDocuments(
         const fullySaved =
           attachments.length > 0 &&
           attachments.every((attachment) => {
-            const externalId = `${messageId}:${
-              attachment.attachmentId ||
-              createHash("sha256")
-                .update(`${messageId}:${attachment.fileName}:${attachment.data || ""}`)
-                .digest("hex")
-            }`;
+            const externalId = `${MARVIN_SHARED_GMAIL}:${messageId}:pdf:${attachment.partKey}`;
             // Use the exact message + attachment identity, not just the message or filename.
             return (known ?? []).some(
               (source: any) =>
@@ -1989,6 +2060,7 @@ export async function syncConstructionDocuments(
                 (source.metadata?.project_document_id ||
                   source.review_status === "dismissed" ||
                   (source.storage_path &&
+                    source.review_status === "pending" &&
                     !matchConstructionDocumentProject(attachment.fileName, context.projects))),
             );
           });

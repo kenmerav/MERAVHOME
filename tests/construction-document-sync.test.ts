@@ -214,6 +214,52 @@ beforeEach(() => {
 });
 
 describe("independent Jessica PDF filing", () => {
+  it("advances past legacy attachments when Gmail rotates their download IDs", async () => {
+    db.messages = [message("old"), message("new")];
+    db.tables.project_documents = [
+      { id: "old-document", project_id: "rinehart", file_url: "https://storage.test/old.pdf" },
+    ];
+    db.tables.marvin_sources = [
+      {
+        id: "legacy-source",
+        external_provider: "gmail_attachment",
+        external_id: "old:obsolete-download-id",
+        title: "RINEHART_MI_261006.pdf",
+        review_status: "linked",
+        content_hash: "old-hash",
+        metadata: {
+          gmail_message_id: "old",
+          project_document_id: "old-document",
+          account_email: "marvinbotai@gmail.com",
+          blue_sky_construction_candidate: true,
+        },
+      },
+    ];
+    expect(await syncConstructionDocuments({ maxMessages: 1 })).toMatchObject({
+      uploaded: 0,
+      duplicates: 1,
+      deferredMessageIds: ["new"],
+    });
+    expect(db.tables.marvin_sources[0].id).toBe("legacy-source");
+    expect(db.tables.marvin_sources[0].external_id).toBe("marvinbotai@gmail.com:old:pdf:root.0");
+    db.messages[0].payload.parts[0].body.attachmentId = "rotated-again";
+    expect(await syncConstructionDocuments({ maxMessages: 1 })).toMatchObject({
+      uploaded: 1,
+      deferred: 0,
+    });
+    expect(db.tables.project_documents).toHaveLength(2);
+  });
+
+  it("uses MIME positions to distinguish two PDFs with the same filename", async () => {
+    db.messages = [message("new", ["RINEHART_MI_261006.pdf", "RINEHART_MI_261006.pdf"])];
+    db.messages[0].payload.parts[0].partId = "1";
+    db.messages[0].payload.parts[1].partId = "2";
+    expect((await syncConstructionDocuments()).uploaded).toBe(2);
+    expect(new Set(db.tables.marvin_sources.map((source) => source.external_id)).size).toBe(2);
+    expect((await syncConstructionDocuments()).uploaded).toBe(0);
+    expect(db.tables.project_documents).toHaveLength(2);
+  });
+
   it("files every PDF in a message without AI or Drive and keeps uncertain PDFs for review", async () => {
     db.messages = [
       message("new", ["RINEHART_MI_261006.pdf", "RINEHART_MI_261006_v2.pdf", "AS9356.pdf"]),
