@@ -14,6 +14,7 @@ import {
   ScanSearch,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { MaterialPhotoUpload } from "@/components/MaterialPhotoUpload";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
@@ -46,7 +47,6 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
-import { materialImageUrl } from "@/lib/materialImages";
 import { materialHasUserSelection } from "@/lib/materialSelection";
 import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 import { supabase } from "@/integrations/supabase/client";
@@ -1454,21 +1454,13 @@ function RoomMaterialsSection({
                         products={products}
                         onSelect={(productId) => attachCatalogProduct(it, productId)}
                       />
+                      <MaterialPhotoUpload item={it} projectId={projectId} />
                       {it.product && linkedProductId && (
                         <Link
                           to="/catalog/$productId"
                           params={{ productId: linkedProductId }}
                           className="mt-2 flex items-center gap-2 pl-3.5 group/product"
                         >
-                          {materialImageUrl(it) ? (
-                            <img
-                              src={normalizeSupabaseImageUrl(materialImageUrl(it)!)}
-                              alt=""
-                              className="w-10 h-10 object-cover bg-bone border border-border transition-colors group-hover/product:border-ink"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-bone border border-border transition-colors group-hover/product:border-ink" />
-                          )}
                           <div className="min-w-0">
                             <div
                               className="text-xs text-ink truncate max-w-[200px] underline-offset-4 group-hover/product:underline"
