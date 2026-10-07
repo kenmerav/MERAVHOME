@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { MaterialPhotoUpload } from "@/components/MaterialPhotoUpload";
+import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
@@ -1455,6 +1456,7 @@ function RoomMaterialsSection({
                         onSelect={(productId) => attachCatalogProduct(it, productId)}
                       />
                       <MaterialPhotoUpload item={it} projectId={projectId} />
+                      <div className="mt-2 pl-3.5"><MaterialDetailsEditor item={it} /></div>
                       {it.product && linkedProductId && (
                         <Link
                           to="/catalog/$productId"
@@ -1542,7 +1544,7 @@ function RoomMaterialsSection({
                       )}
                     </td>
                     <td className="py-2 pr-3 text-xs text-muted-foreground">
-                      {it.product?.price || "—"}
+                      <MaterialDetailsEditor item={it} trigger="price" />
                     </td>
                     <td className="py-2 pr-3">
                       <SpecQuantityEditor item={it} label={it.item_label}

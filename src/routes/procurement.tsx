@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice, type Product } from "@/lib/db";
+import { saveMaterialProductDetails } from "@/lib/materialProductEdit";
+import { productPricingPatch, type ProductPricingDraft } from "@/lib/productPricingEdit";
 import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -278,36 +280,23 @@ function ProcurementPage() {
     qc.invalidateQueries({ queryKey: ["procurement"] });
   };
 
-  const updateProductPricing = async (
-    productId: string,
-    values: {
-      retail_price: string;
-      unit_cost: string;
-      markup_percent: string;
-      markup_basis: MarkupBasis;
-      shipping: string;
-    },
-  ) => {
-    const clientPrice = clientPriceFromMarkup({
-      retailPrice: values.retail_price,
-      ourPrice: values.unit_cost,
-      markupPercent: values.markup_percent,
-      markupBasis: values.markup_basis,
-    });
-    const markupPercent = values.markup_percent.trim()
-      ? Number(values.markup_percent.trim())
-      : null;
-    await db.updateProduct(productId, {
-      retail_price: normalizeMoneyInput(values.retail_price),
-      unit_cost: normalizeMoneyInput(values.unit_cost),
-      markup_percent: Number.isFinite(markupPercent) ? markupPercent : null,
-      markup_basis: values.markup_basis,
-      ...(clientPrice == null ? {} : { price: normalizeMoneyInput(clientPrice.toFixed(2)) }),
-      shipping: normalizeMoneyInput(values.shipping),
-    });
-    qc.invalidateQueries({ queryKey: ["procurement"] });
-    qc.invalidateQueries({ queryKey: ["catalog"] });
-    qc.invalidateQueries({ queryKey: ["product", productId] });
+  const saveProductPatch = async (productId: string | undefined, materialId: string | undefined, patch: Partial<Product>) => {
+    const savedId = materialId ? await saveMaterialProductDetails(materialId, patch) : productId;
+    if (!savedId) throw new Error("Could not find this item.");
+    if (!materialId && !await db.updateProduct(savedId, patch)) throw new Error("Could not save this item.");
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+      qc.invalidateQueries({ queryKey: ["materialItems"] }),
+      qc.invalidateQueries({ queryKey: ["catalog"] }),
+      qc.invalidateQueries({ queryKey: ["products"] }),
+      qc.invalidateQueries({ queryKey: ["product", savedId] }),
+      qc.invalidateQueries({ queryKey: ["roomProducts"] }),
+    ]);
+  };
+
+  const updateProductPricing = async (productId: string | undefined, values: ProductPricingDraft, initial: ProductPricingDraft, materialId?: string) => {
+    const patch = productPricingPatch(values, initial);
+    if (Object.keys(patch).length) await saveProductPatch(productId, materialId, patch);
   };
 
   const applyBulkMarkup = async (markupBasis: MarkupBasis, markupPercent: number) => {
@@ -363,16 +352,14 @@ function ProcurementPage() {
   };
 
   const updateProductText = async (
-    productId: string,
+    productId: string | undefined,
     key: "name" | "vendor" | "product_url" | "finish" | "dimensions",
     value: string,
+    materialId?: string,
   ) => {
     const next = value.trim();
     if (key === "name" && !next) return;
-    await db.updateProduct(productId, { [key]: next || null });
-    qc.invalidateQueries({ queryKey: ["procurement"] });
-    qc.invalidateQueries({ queryKey: ["catalog"] });
-    qc.invalidateQueries({ queryKey: ["product", productId] });
+    await saveProductPatch(productId, materialId, { [key]: next || null });
   };
 
   const updateMaterialText = async (
@@ -380,8 +367,12 @@ function ProcurementPage() {
     key: "client_product_name" | "product_url" | "color",
     value: string,
   ) => {
-    await db.updateMaterialItem(materialId, { [key]: value.trim() || null });
-    qc.invalidateQueries({ queryKey: ["procurement"] });
+    const result = await db.updateMaterialItem(materialId, { [key]: value.trim() || null });
+    if (result.error) throw result.error;
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+      qc.invalidateQueries({ queryKey: ["materialItems"] }),
+    ]);
   };
 
   const updateMaterialQuantity = async (materialId: string, patch: SpecQuantityPatch) => {
@@ -737,10 +728,10 @@ function ProcurementPage() {
                     <td className="px-3 py-3 text-xs">
                       <EditableTextCell
                         value={p?.vendor ?? ""}
-                        disabled={!p?.id}
+                        disabled={!p?.id && !m?.id}
                         placeholder="Vendor"
                         onSave={(value) =>
-                          p?.id ? updateProductText(p.id, "vendor", value) : Promise.resolve()
+                          updateProductText(p?.id, "vendor", value, m?.id)
                         }
                       />
                     </td>
@@ -785,10 +776,10 @@ function ProcurementPage() {
                     <td className="px-3 py-3 text-xs">
                       <EditableTextCell
                         value={p?.dimensions ?? ""}
-                        disabled={!p?.id}
+                        disabled={!p?.id && !m?.id}
                         placeholder="Dimensions"
                         onSave={(value) =>
-                          p?.id ? updateProductText(p.id, "dimensions", value) : Promise.resolve()
+                          updateProductText(p?.id, "dimensions", value, m?.id)
                         }
                       />
                     </td>
@@ -801,9 +792,9 @@ function ProcurementPage() {
                         markupPercent={p?.markup_percent ?? null}
                         markupBasis={p?.markup_basis ?? null}
                         shipping={p?.shipping ?? ""}
-                        disabled={!p?.id}
-                        onSave={(values) =>
-                          p?.id ? updateProductPricing(p.id, values) : Promise.resolve()
+                        disabled={!p?.id && !m?.id}
+                        onSave={(values, initial) =>
+                          updateProductPricing(p?.id, values, initial, m?.id)
                         }
                       />
                     </td>
@@ -976,33 +967,32 @@ function PricingEditor({
   markupBasis: MarkupBasis | null;
   shipping: string;
   disabled?: boolean;
-  onSave: (values: {
-    retail_price: string;
-    unit_cost: string;
-    markup_percent: string;
-    markup_basis: MarkupBasis;
-    shipping: string;
-  }) => Promise<void>;
+  onSave: (values: ProductPricingDraft, initial: ProductPricingDraft) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => ({
+    price: moneyDraft(price),
     retail_price: moneyDraft(retailPrice || (markupPercent == null ? price : "")),
     unit_cost: moneyDraft(unitCost),
     markup_percent: markupPercent?.toString() ?? "",
     markup_basis: markupBasis ?? ("retail_price" as MarkupBasis),
     shipping: moneyDraft(shipping),
   }));
+  const [initialDraft, setInitialDraft] = useState(draft);
 
   useEffect(() => {
     if (!open) {
-      setDraft({
+      const current = {
+        price: moneyDraft(price),
         retail_price: moneyDraft(retailPrice || (markupPercent == null ? price : "")),
         unit_cost: moneyDraft(unitCost),
         markup_percent: markupPercent?.toString() ?? "",
-        markup_basis: markupBasis ?? "retail_price",
+        markup_basis: markupBasis ?? ("retail_price" as MarkupBasis),
         shipping: moneyDraft(shipping),
-      });
+      };
+      setDraft(current);
+      setInitialDraft(current);
     }
   }, [markupBasis, markupPercent, open, price, retailPrice, shipping, unitCost]);
 
@@ -1016,8 +1006,10 @@ function PricingEditor({
   const save = async () => {
     setSaving(true);
     try {
-      await onSave(draft);
+      await onSave(draft, initialDraft);
       setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save pricing. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -1051,7 +1043,7 @@ function PricingEditor({
                 : `${markupPercent}% on ${markupBasis === "our_price" ? "Our Price" : "Retail"}`
             }
           />
-          <PricingSummary label="Client" value={price} />
+          <PricingSummary label="Price" value={price} />
           <PricingSummary label="Shipping" value={shipping} />
         </button>
       </PopoverTrigger>
@@ -1095,8 +1087,10 @@ function PricingEditor({
             value={draft.markup_percent}
             onChange={(value) => setDraft((current) => ({ ...current, markup_percent: value }))}
           />
-          <div className="border border-border bg-bone/40 px-3 py-2.5">
-            <div className="eyebrow mb-1">Client Price</div>
+          {calculatedClientPrice == null ? (
+            <MoneyInput label="Price" value={draft.price} onChange={(value) => setDraft((current) => ({ ...current, price: value }))} />
+          ) : <div className="border border-border bg-bone/40 px-3 py-2.5">
+            <div className="eyebrow mb-1">Price</div>
             <div className="font-display text-xl">
               {calculatedClientPrice == null
                 ? displayMoney(price)
@@ -1107,7 +1101,7 @@ function PricingEditor({
                 ? "Enter the selected base price and a markup to calculate a new client price."
                 : `Calculated from ${draft.markup_basis === "our_price" ? "Our Price" : "Retail Price"}.`}
             </p>
-          </div>
+          </div>}
           <MoneyInput
             label="Shipping"
             value={draft.shipping}
@@ -1241,7 +1235,7 @@ function EditableTextCell({
     const current = value.trim();
     setEditing(false);
     if (next === current) return;
-    await onSave(next);
+    try { await onSave(next); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save this item. Please try again."); }
   };
 
   if (!editing) {
