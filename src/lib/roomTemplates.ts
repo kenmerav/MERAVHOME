@@ -289,6 +289,7 @@ const BATHROOM: ItemTemplate[] = [
   { label: "Countertops", category: "Countertops" },
   { label: "Sink", category: "Plumbing" },
   { label: "Faucet", category: "Plumbing" },
+  { label: "Toilet", category: "Plumbing" },
   { label: "Shower System", category: "Plumbing" },
   { label: "Shower Drain", category: "Plumbing" },
   { label: "Sink Drain", category: "Plumbing" },
