@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { validateSpecQuantityPatch, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/productCategories";
 import type {
@@ -1000,8 +1001,8 @@ export const db = {
         .select(
           "*, product:products(*), room:rooms!material_items_room_id_fkey(*, project:projects(id, name, client_name, status))",
         )
-        .not("product_id", "is", null)
         .order("updated_at", { ascending: false })
+        .order("id")
         .range(from, from + pageSize - 1);
       if (error) throw error;
       materialRows.push(...(data ?? []));
@@ -1047,7 +1048,7 @@ export const db = {
     const items = (materialRows ?? [])
       .filter(
         (material: any) =>
-          !material.not_needed && material.product_id && material.product && material.room,
+          materialVisibleInProcurement(material) && material.room,
       )
       .map((material: any) => {
         const key = `${material.room_id}::${material.product_id}`;
@@ -1085,8 +1086,9 @@ export const db = {
 
     return items as Array<
       ProcurementItem & {
-        room_product: RoomProduct & {
-          product: Product;
+        room_product: Omit<RoomProduct, "product_id" | "product"> & {
+          product_id: string | null;
+          product: Product | null;
           room: Room & { project: Pick<Project, "id" | "name" | "client_name" | "status"> };
         };
         material?: {

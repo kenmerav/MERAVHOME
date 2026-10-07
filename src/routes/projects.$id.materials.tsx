@@ -47,6 +47,7 @@ import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
+import { materialHasUserSelection } from "@/lib/materialSelection";
 import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -228,28 +229,6 @@ function normalizeMaterialSuggestionLabel(value: string) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function materialHasUserSelection(item: MaterialItem) {
-  return Boolean(
-    item.product_id ||
-      item.product ||
-      item.product_url?.trim() ||
-      item.image_url?.trim() ||
-      item.color?.trim() ||
-      item.quantity != null ||
-      item.quantity_tbd === true ||
-      item.quantity_unit === "square_feet" ||
-      item.notes?.trim() ||
-      item.cad_label?.trim() ||
-      item.ordered_by ||
-      item.ordered === true ||
-      item.source_board_id ||
-      item.source_board_page_id ||
-      item.source_board_element_id ||
-      item.scrape_error ||
-      item.room_product,
-  );
 }
 
 function isUntouchedTemplatePlaceholder(item: MaterialItem) {
@@ -476,6 +455,7 @@ function MaterialsPage() {
       }
       qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["procurement"] });
     }
 
     if (announce && failedCount > 0) {
@@ -842,6 +822,7 @@ function MaterialsPage() {
                   qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
                   qc.invalidateQueries({ queryKey: ["products"] });
                   qc.invalidateQueries({ queryKey: ["catalog"] });
+                  qc.invalidateQueries({ queryKey: ["procurement"] });
                 }}
               />
               <input
@@ -1007,7 +988,11 @@ function RoomMaterialsSection({
     if (label && !cadLabelOwner.has(label)) cadLabelOwner.set(label, item.id);
   }
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+  const invalidate = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+    ]);
 
   const ensureProductConnection = async (item: MaterialItem, productUrl: string) => {
     const url = productUrl.trim();
@@ -2241,6 +2226,7 @@ function AddCustomItemButton({
       },
     ]);
     qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+    qc.invalidateQueries({ queryKey: ["procurement"] });
     setLabel("");
     setCategory("Other");
     setOpen(false);

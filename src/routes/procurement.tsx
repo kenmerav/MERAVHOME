@@ -105,6 +105,8 @@ function ProcurementPage() {
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
     enabled: allowed,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const { data: financialInvoices = [] } = useQuery({
     queryKey: ["financialInvoices", "all"],
@@ -395,10 +397,10 @@ function ProcurementPage() {
   const received = visibleItems.filter((i) => i.received).length;
   const installed = visibleItems.filter((i) => i.installed).length;
   const approvedVisibleItems = visibleItems.filter(
-    (item) => item.room_product?.approval_status === "approved",
+    (item) => item.room_product?.product && item.room_product.approval_status === "approved",
   );
   const orderableVisibleItems = visibleItems.filter(
-    (item) => item.room_product?.approval_status !== "declined",
+    (item) => item.room_product?.product && item.room_product.approval_status !== "declined",
   );
   const needsReselectionCount = projectItems.filter(
     (item) => item.room_product?.approval_status === "declined",
@@ -724,6 +726,11 @@ function ProcurementPage() {
                               .join(" · ")}
                           </div>
                           {needsReselection && <NeedsReselectionBadge />}
+                          {!p && (
+                            <div className="mt-1 text-[11px] text-amber-800">
+                              Product details pending
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
