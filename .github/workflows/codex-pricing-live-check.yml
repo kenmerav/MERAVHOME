@@ -1,76 +1,48 @@
-name: Verify Live Materials Pricing
+name: Verify Studio Hosting Access
 on:
   push:
     branches: [codex/pricing-live-check-20261008]
+    paths: [.github/workflows/codex-pricing-live-check.yml]
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 2
     steps:
-      - name: Check live Studio route and its imported JavaScript
+      - name: Read current Studio deployment through existing Vercel credentials
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID || vars.VERCEL_ORG_ID }}
         run: |
           python3 -u - <<'PY'
-          import re, time, urllib.request, urllib.parse
-          from collections import deque
-          host = 'https://studio.meravinteriors.com'
-          route = '/projects/34b12627-92b1-4cc4-8696-149b1979e8d9/materials'
-          wanted = ('projects._id.materials-', 'specbooks._id-', 'productPricingEdit-', 'MaterialDetailsEditor-', 'productPriceUnit-')
-          quoted_js = re.compile(r'''["'`]((?:/assets/|assets/|\./)[^"'`\s<>]+\.js(?:\?[^"'`\s<>]*)?)["'`]''')
-          def fetch(url):
-              request = urllib.request.Request(url, headers={'User-Agent': 'MERAV-deployment-verification', 'Cache-Control': 'no-cache'})
-              with urllib.request.urlopen(request, timeout=20) as response:
-                  if urllib.parse.urlparse(response.url).hostname != 'studio.meravinteriors.com':
-                      raise RuntimeError('Unexpected redirect; not verifying an external site')
-                  data = response.read(3_000_001)
-                  if len(data) > 3_000_000:
-                      raise RuntimeError('Asset exceeds verification size limit')
-                  return data.decode('utf-8', 'replace'), response.status, response.url
-          for attempt in range(1, 7):
-              try:
-                  html, status, final_url = fetch(host + route + '?release_check=e5e97b8&attempt=' + str(attempt))
-                  roots = list(dict.fromkeys(urllib.parse.urljoin(final_url, value) for value in quoted_js.findall(html)))
-                  queue = deque(roots[:20])
-                  seen, assets = set(), {}
-                  while queue and len(seen) < 24:
-                      url = queue.popleft()
-                      parsed = urllib.parse.urlparse(url)
-                      if url in seen or parsed.hostname != 'studio.meravinteriors.com' or not parsed.path.startswith('/assets/'):
-                          continue
-                      seen.add(url)
-                      try:
-                          text, asset_status, _ = fetch(url)
-                      except Exception as error:
-                          print('ASSET_UNAVAILABLE', parsed.path, type(error).__name__, flush=True)
-                          continue
-                      assets[url] = text
-                      for value in quoted_js.findall(text):
-                          child = urllib.parse.urljoin(url, value)
-                          # Vite's preload manifest uses root-relative assets/ strings.
-                          if value.startswith('assets/'):
-                              child = host + '/' + value
-                          name = urllib.parse.urlparse(child).path.rsplit('/', 1)[-1]
-                          if any(part in name for part in wanted) and child not in seen:
-                              queue.append(child)
-                  materials = '\n'.join(text for url, text in assets.items() if 'projects._id.materials-' in url or 'MaterialDetailsEditor-' in url)
-                  specs = '\n'.join(text for url, text in assets.items() if 'specbooks._id-' in url)
-                  all_text = '\n'.join(assets.values())
-                  checks = {
-                      'materials_price_basis_selector': 'Price is per' in materials,
-                      'materials_square_foot_option': 'Per square foot (sq ft)' in materials,
-                      'saved_product_refresh': 'Details were saved, but could not be refreshed' in materials,
-                      'spec_book_price_unit': 'price_unit' in specs and 'price basis not set' in all_text,
-                  }
-                  print('ATTEMPT', attempt, 'HTTP', status, 'ASSET_COUNT', len(assets), 'CHECKS', checks, flush=True)
-                  print('RELEVANT_LIVE_ASSETS', [urllib.parse.urlparse(url).path for url in assets if any(part in url for part in wanted)], flush=True)
-                  if all(checks.values()):
-                      print('DEPLOYED_PRICING_CONTROLS_VERIFIED', flush=True)
-                      break
-              except Exception as error:
-                  print('ATTEMPT', attempt, 'ERROR', type(error).__name__, str(error)[:200], flush=True)
-              if attempt < 6:
-                  time.sleep(20)
-          else:
-              raise SystemExit('Live pricing asset verification did not confirm the deployed change.')
+          import json, os, urllib.request, urllib.parse, urllib.error
+          token = os.environ.get('VERCEL_TOKEN', '').strip()
+          if not token:
+              raise SystemExit('VERCEL_ACCESS_NOT_CONFIGURED: No Vercel deployment credential is available to this repository workflow. Production code is pushed, but direct hosting deployment cannot be triggered here.')
+          query = {'withGitRepoInfo': 'true'}
+          team = os.environ.get('VERCEL_ORG_ID', '').strip()
+          if team:
+              query['teamId'] = team
+          url = 'https://api.vercel.com/v13/deployments/studio.meravinteriors.com?' + urllib.parse.urlencode(query)
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'})
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  deployment = json.load(response)
+          except urllib.error.HTTPError as error:
+              raise SystemExit('VERCEL_DEPLOYMENT_READ_FAILED: HTTP ' + str(error.code))
+          source = deployment.get('gitSource') or {}
+          meta = deployment.get('meta') or {}
+          print(json.dumps({
+              'deployment_id': deployment.get('id') or deployment.get('uid'),
+              'project_id': deployment.get('projectId'),
+              'project_name': deployment.get('name'),
+              'state': deployment.get('readyState'),
+              'target': deployment.get('target'),
+              'git_type': source.get('type'),
+              'git_repo_id': source.get('repoId'),
+              'git_sha': source.get('sha') or meta.get('githubCommitSha'),
+              'git_repo': meta.get('githubCommitRepo'),
+              'git_owner': meta.get('githubCommitOrg'),
+          }))
           PY
