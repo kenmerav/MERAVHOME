@@ -322,6 +322,8 @@ export interface Product {
   sku: string | null;
   notes: string | null;
   dimensions: string | null;
+  /** Separate from quantity_unit; null/absent means the price basis has not been reviewed. */
+  price_unit?: import("@/lib/productPriceUnit").ProductPriceUnit | null;
   retail_price: string | null;
   price: string | null;
   unit_cost: string | null;
