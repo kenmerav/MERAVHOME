@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
+import { formatPriceWithUnit, productPriceUnit, productPriceUnitLabel, type ProductPriceUnit } from "@/lib/productPriceUnit";
 import { toast } from "sonner";
 import {
   canDownloadSpecBookPdf,
@@ -67,6 +68,7 @@ type SpecSpreadsheetRow = {
   dimensions: string;
   sku: string;
   clientPrice: string;
+  priceUnit: ProductPriceUnit | null;
   orderedBy: string;
   ordered: string;
   productUrl: string;
@@ -1260,12 +1262,19 @@ function spreadsheetCellForColumn({
       );
     case "clientPrice":
       return (
-        <EditableSpecTextCell
-          value={row.clientPrice}
-          disabled={!canEditProducts}
-          inputMode="decimal"
-          onSave={(value) => onSavePrice(row, value)}
-        />
+        <div>
+          <EditableSpecTextCell
+            value={row.clientPrice}
+            disabled={!canEditProducts}
+            inputMode="decimal"
+            onSave={(value) => onSavePrice(row, value)}
+          />
+          {row.clientPrice && (
+            <span className="block text-[10px] text-muted-foreground">
+              {productPriceUnitLabel(row.priceUnit)}
+            </span>
+          )}
+        </div>
       );
     case "orderedBy":
       return canEditOrdering ? (
@@ -1832,7 +1841,7 @@ function SpecCard({
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-2 print:gap-x-4 print:gap-y-1 print:text-[10px] print:leading-snug">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
-          {showPricing && <Detail label="Price" value={priceLabel(p?.price)} />}
+          {showPricing && <Detail label="Price" value={formatPriceWithUnit(priceLabel(p?.price), p?.price_unit)} />}
           {!hideInternalProductDetails && <Detail label="SKU" value={p?.sku} />}
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />
@@ -2099,8 +2108,11 @@ function SpecProductEditDialog({
 }
 
 function priceLabel(value: string | number | null | undefined) {
-  const amount = moneyValue(value);
-  return amount > 0 ? formatMoney(amount) : null;
+  if (value == null || String(value).trim() === "") return null;
+  const cleaned = typeof value === "number" ? String(value) : value.trim().replace(/[$,\s]/g, "");
+  if (!/^\d+(\.\d+)?$/.test(cleaned) && !/^\.\d+$/.test(cleaned)) return null;
+  const amount = moneyValue(cleaned);
+  return Number.isFinite(amount) && amount >= 0 ? formatMoney(amount) : null;
 }
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
@@ -2156,6 +2168,7 @@ function buildSpecSpreadsheetRows(
         dimensions: product?.dimensions ?? "",
         sku: product?.sku ?? "",
         clientPrice: priceLabel(product?.price) ?? "",
+        priceUnit: productPriceUnit(product?.price_unit),
         orderedBy: item.ordered_by ?? "",
         ordered: item.ordered ? "Yes" : "No",
         productUrl: item.product_url || product?.product_url || "",
@@ -2338,7 +2351,7 @@ function spreadsheetCellValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey
     case "sku":
       return row.sku;
     case "clientPrice":
-      return row.clientPrice;
+      return formatPriceWithUnit(row.clientPrice, row.priceUnit) ?? "";
     case "orderedBy":
       return row.orderedBy;
     case "ordered":
