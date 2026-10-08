@@ -1,3 +1,4 @@
+-- Applied with production migration version 20261008224559.
 -- Reviewed access change: no files or history are removed. Staff keep history.
 -- External logins get one latest uploaded Construction Doc per assigned project,
 -- only while the project's construction-doc access setting permits that role.
