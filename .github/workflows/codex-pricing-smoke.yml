@@ -1,0 +1,74 @@
+name: Verify Live Materials Pricing
+on:
+  push:
+    branches: [codex/pricing-live-verification-20261008]
+permissions:
+  contents: read
+  deployments: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check public production assets and deployment records
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request, urllib.parse
+          host = 'https://studio.meravinteriors.com'
+          route = host + '/projects/34b12627-92b1-4cc4-8696-149b1979e8d9/materials'
+          def get(url, headers=None):
+              request = urllib.request.Request(url, headers={'User-Agent':'MeravStudioReleaseVerification/1.0', **(headers or {})})
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return response.status, response.read(8_000_000).decode('utf-8', 'replace')
+          try:
+              _, raw = get('https://api.github.com/repos/kenmerav/MERAVHOME/deployments?sha=e5e97b88e4f72259e0cb0a509aa292cfd5d554cd&per_page=5', {'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              deployments = json.loads(raw)
+              print('Deployment records for release:', len(deployments))
+              for d in deployments:
+                  print('Deployment:', d.get('id'), d.get('environment'), d.get('created_at'))
+                  _, status_raw = get(d['statuses_url'], {'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+                  statuses = json.loads(status_raw)
+                  if statuses:
+                      print('Deployment status:', statuses[0].get('state'), statuses[0].get('environment_url'))
+          except Exception as error:
+              print('Deployment status lookup:', type(error).__name__, str(error))
+          status, html = get(route)
+          print('Production Materials route HTTP:', status)
+          queue, seen, found = [], set(), set()
+          markers = ('Price is per', 'Per square foot (sq ft)', 'Display price', 'Our cost is never used automatically')
+          def discover(text, base, first=False):
+              refs = re.findall(r'''["']([^"'<>\s]+\.js(?:\?[^"'<>\s]*)?)["']''', text)
+              refs += re.findall(r'''(?:src|href)=["']([^"']+\.js[^"']*)''', text)
+              for ref in refs:
+                  if ref.startswith('assets/'):
+                      ref = '/' + ref
+                  url = urllib.parse.urljoin(base, ref)
+                  if urllib.parse.urlparse(url).netloc != urllib.parse.urlparse(host).netloc:
+                      continue
+                  if url in seen or url in queue:
+                      continue
+                  name = url.rsplit('/',1)[-1].lower()
+                  if first or any(part in name for part in ('material','specbook','client','index-','router','productprice')):
+                      queue.append(url)
+          discover(html, route, True)
+          while queue and len(seen) < 40:
+              url = queue.pop(0)
+              if url in seen: continue
+              seen.add(url)
+              try:
+                  _, text = get(url)
+              except Exception:
+                  continue
+              for marker in markers:
+                  if marker in text: found.add(marker)
+              discover(text, url)
+              if len(found) == len(markers): break
+          print('Public JavaScript assets checked:', len(seen))
+          print('Release markers found:', sorted(found))
+          if 'Price is per' in found and 'Our cost is never used automatically' in found:
+              print('LIVE_PRICING_RELEASE_CONFIRMED')
+          else:
+              print('LIVE_PRICING_RELEASE_NOT_CONFIRMED')
+          PY
