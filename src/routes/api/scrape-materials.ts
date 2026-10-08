@@ -2,6 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
+import {
+  exactProductPrice,
+  firstProductPrice as firstPrice,
+  formatProductPrice as formatPriceNumber,
+  selectedSkuPriceFromHtml,
+} from "@/lib/productPricing";
 import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
@@ -85,142 +91,6 @@ function canonicalScrapeUrl(value: string | null | undefined) {
   } catch {
     return value.trim();
   }
-}
-
-function firstPrice(...vals: unknown[]) {
-  for (const val of vals) {
-    const text =
-      typeof val === "number"
-        ? val.toString()
-        : typeof val === "string"
-          ? val.replace(/\s+/g, " ").trim()
-          : "";
-    if (!text || /^(null|undefined|n\/a)$/i.test(text)) continue;
-
-    const match = text.match(
-      /\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)?|\$?\s*\d+(?:\.\d{2})?/,
-    );
-    if (!match) continue;
-
-    const cleaned = match[0].replace(/\s+/g, "").replace(/–|to/i, "-");
-    if (!/\d/.test(cleaned)) continue;
-    return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
-  }
-  return "";
-}
-
-function formatPriceNumber(value: unknown) {
-  const number = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, ""));
-  if (!Number.isFinite(number) || number < 0) return "";
-  return `$${number.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function structuredPriceFromHtml(html?: string) {
-  if (!html) return "";
-
-  const metaPatterns = [
-    /<meta[^>]+(?:property|name|itemprop)=["'](?:product:price:amount|og:price:amount|price)["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name|itemprop)=["'](?:product:price:amount|og:price:amount|price)["'][^>]*>/i,
-  ];
-  for (const pattern of metaPatterns) {
-    const match = html.match(pattern);
-    const price = firstPrice(match?.[1]);
-    if (price) return price;
-  }
-
-  const jsonLdScripts = html.matchAll(
-    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
-  );
-  const candidates: Array<{ low: number; high: number }> = [];
-  const visit = (value: unknown) => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    const record = value as Record<string, unknown>;
-    const type = Array.isArray(record["@type"])
-      ? record["@type"].join(" ")
-      : String(record["@type"] ?? "");
-    if (/Offer/i.test(type)) {
-      const low = Number(record.lowPrice ?? record.price);
-      const high = Number(record.highPrice ?? record.price);
-      if (Number.isFinite(low) && Number.isFinite(high) && low >= 0 && high >= 0) {
-        candidates.push({ low, high });
-      }
-    }
-    Object.values(record).forEach(visit);
-  };
-  for (const match of jsonLdScripts) {
-    try {
-      visit(JSON.parse(match[1]));
-    } catch {
-      // Some sites emit malformed JSON-LD; visible-price parsing remains available below.
-    }
-  }
-  if (!candidates.length) return "";
-  const low = Math.min(...candidates.map((candidate) => candidate.low));
-  const high = Math.max(...candidates.map((candidate) => candidate.high));
-  const lowPrice = formatPriceNumber(low);
-  const highPrice = formatPriceNumber(high);
-  return low === high ? lowPrice : `${lowPrice}-${highPrice}`;
-}
-
-function selectedSkuPriceFromHtml(html: string, sourceUrl: string) {
-  let selectedSku = "";
-  try {
-    selectedSku = new URL(sourceUrl).searchParams.get("sku")?.trim() ?? "";
-  } catch {
-    return "";
-  }
-  if (!selectedSku || !/^\d{4,20}$/.test(selectedSku)) return "";
-
-  const escapedSku = selectedSku.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const skuObject = new RegExp(`"${escapedSku}"\\s*:\\s*\\{\\s*"id"\\s*:\\s*"${escapedSku}"`).exec(
-    html,
-  );
-  if (!skuObject) return "";
-  const selectedProductData = html.slice(skuObject.index, skuObject.index + 12000);
-  const priceBlock = selectedProductData.match(/"price"\s*:\s*\{([^}]{0,1200})\}/i)?.[1] ?? "";
-  const priceField = (field: string) => {
-    const match = new RegExp(`"${field}"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`, "i").exec(priceBlock);
-    return match ? Number(match[1]) : Number.NaN;
-  };
-  const sellingPrice = priceField("sellingPrice");
-  const regularPrice = priceField("regularPrice");
-  const retailPrice = priceField("retailPrice");
-  const currentPrice = [sellingPrice, regularPrice, retailPrice].find(
-    (price) => Number.isFinite(price) && price >= 0,
-  );
-  return currentPrice == null ? "" : formatPriceNumber(currentPrice);
-}
-
-function priceFromPageText(
-  markdown: string | undefined,
-  html: string | undefined,
-  sourceUrl: string,
-) {
-  const htmlText = html ?? "";
-  const markdownText = markdown ?? "";
-
-  const automationPrice = htmlText.match(/data-automation=["']price["'][^>]*>\s*([^<]+)/i);
-  const labeledPrice = `${markdownText}\n${htmlText}`.match(
-    /(?:your total|current price|sale price|regular price|price)\s*:?\s*(\$?\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)/i,
-  );
-  const standaloneMarkdownPrice = markdownText.match(
-    /(?:^|\n)\s*(?:[-*]\s*)?(\$\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)\s*(?:\n|$)/,
-  );
-
-  return firstPrice(
-    selectedSkuPriceFromHtml(htmlText, sourceUrl),
-    structuredPriceFromHtml(htmlText),
-    automationPrice?.[1],
-    labeledPrice?.[1],
-    standaloneMarkdownPrice?.[1],
-  );
 }
 
 function compactPayload<T extends Record<string, unknown>>(payload: T) {
@@ -556,7 +426,6 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
   const product = normalizeFirecrawlProduct(data, sourceUrl);
   const ex = data.json ?? data.extract ?? {};
   const meta = data.metadata ?? {};
-  const pagePrice = priceFromPageText(data.markdown, data.html, sourceUrl);
   const parsedCoverage = resolveCartonCoverage({
     pageText: [data.markdown, data.html],
   });
@@ -584,15 +453,7 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
     color: product.color,
     finish: product.finish,
     dimensions: product.dimensions,
-    price: firstPrice(
-      ex.price,
-      ex.current_price,
-      ex.sale_price,
-      ex.regular_price,
-      ex.list_price,
-      ex.price_per_item,
-      pagePrice,
-    ),
+    price: product.price,
     unit_cost: firstPrice(ex.unit_cost),
     shipping: firstPrice(ex.shipping),
     image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
@@ -639,12 +500,13 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
     if (timeout) clearTimeout(timeout);
     timeout = null;
     if (!res.ok) {
-      return { error: `Scrape failed (${res.status})` };
+      return directProduct?.price ? directProduct : { error: `Scrape failed (${res.status})` };
     }
     const body = (await res.json()) as FirecrawlEnvelope;
     const data = batchEnvelope(body.data ?? body) as FirecrawlPage;
-    return mergeScraped(scrapedFromFirecrawlData(data, url), directProduct);
+    return mergeScraped(directProduct, scrapedFromFirecrawlData(data, url));
   } catch (e: any) {
+    if (directProduct?.price) return directProduct;
     if (e?.name === "AbortError")
       return { error: "Scrape timed out. Try again or enter details manually." };
     return { error: e?.message || "Scrape failed" };
@@ -781,7 +643,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             const tileItem = /tile|stone/i.test(String(item.category ?? ""));
             return (
               !excludedIds.has(item.id) &&
-              (!hasValue(item.product?.price) ||
+              (!exactProductPrice(item.product?.price) ||
                 missingProductSpecifications({
                   finish: item.product?.finish,
                   color: item.color,
@@ -821,7 +683,10 @@ export const Route = createFileRoute("/api/scrape-materials")({
           );
           const prefetchedRows = directRows
             .filter(
-              (row) => row.scraped?.price && !row.needs_carton_coverage && !missingProductSpecifications(row.scraped).length,
+              (row) =>
+                row.scraped?.price &&
+                !row.needs_carton_coverage &&
+                !missingProductSpecifications(row.scraped).length,
             )
             .map((row) => ({ ...row, scraped: row.scraped as Scraped }));
           const prefetchedIds = new Set(prefetchedRows.map((row) => row.material_item_id));
@@ -894,18 +759,23 @@ export const Route = createFileRoute("/api/scrape-materials")({
           };
           if (!Array.isArray(rows)) return json({ error: "rows required" }, 400);
 
+          let pricedCount = 0;
+          let priceMissingCount = 0;
+
           for (const row of rows) {
+            if (row.scraped.error) continue;
             const materialItemId = cleanUuid(row.material_item_id);
             if (!materialItemId) continue;
 
             // Look up material item early so we have its category + room
             const { data: matItem } = await supabaseAdmin
               .from("material_items")
-              .select("id, room_id, category, color, item_label, client_product_name")
+              .select("id, room_id, category, color, item_label, client_product_name, notes")
               .eq("id", materialItemId)
               .maybeSingle();
 
             let productId = cleanUuid(row.existing_product_id);
+            let savedPrice = exactProductPrice(row.scraped.price);
 
             if (!productId) {
               const { data: dup } = await supabaseAdmin
@@ -925,7 +795,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               finish: row.scraped.finish || null,
               sku: row.scraped.sku || null,
               dimensions: row.scraped.dimensions || null,
-              price: normalizeMoneyInput(row.scraped.price),
+              price: savedPrice || null,
               unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
               shipping: normalizeMoneyInput(row.scraped.shipping),
               carton_coverage_sq_ft: row.scraped.carton_coverage_sq_ft ?? null,
@@ -944,6 +814,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 .eq("id", productId)
                 .maybeSingle();
               const patch = fillBlankProductFields(existingProduct as any, payload);
+              if (savedPrice && !exactProductPrice(existingProduct?.price))
+                patch.price = savedPrice;
+              savedPrice = exactProductPrice(existingProduct?.price) || savedPrice;
               if (
                 shouldReplaceCatalogProductName({
                   existingName: existingProduct?.name,
@@ -989,14 +862,27 @@ export const Route = createFileRoute("/api/scrape-materials")({
             }
 
             if (productId) {
-              const scrapedPrice = normalizeMoneyInput(row.scraped.price);
+              const range = firstPrice(row.scraped.price);
+              const priceReview =
+                range && !exactProductPrice(range)
+                  ? `Retailer price range ${range}. Select the exact size/finish before assigning a price.`
+                  : "No reliable price found. Use the Studio extension to fill or verify this price.";
               const materialUpdate: Record<string, unknown> = {
                 product_id: productId,
-                scrape_status: scrapedPrice ? "scraped" : "price_missing",
-                scrape_error: scrapedPrice
-                  ? null
-                  : "No reliable price found. Use the Studio extension to fill or verify this price.",
+                scrape_status: savedPrice ? "scraped" : "price_missing",
+                scrape_error: savedPrice ? null : priceReview,
               };
+              if (savedPrice) pricedCount += 1;
+              else {
+                priceMissingCount += 1;
+                if (
+                  range &&
+                  !exactProductPrice(range) &&
+                  !String(matItem?.notes ?? "").includes(priceReview)
+                ) {
+                  materialUpdate.notes = [matItem?.notes, priceReview].filter(Boolean).join("\n");
+                }
+              }
               const scrapedColor = firstString(row.scraped.color);
               if (scrapedColor && !hasValue(matItem?.color)) {
                 materialUpdate.color = scrapedColor;
@@ -1029,7 +915,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
             }
           }
 
-          return json({ ok: true });
+          return json({
+            ok: true,
+            priced_count: pricedCount,
+            price_missing_count: priceMissingCount,
+          });
         } catch (e: any) {
           return json({ error: e?.message || "Commit failed" }, 500);
         }

@@ -1,4 +1,9 @@
 import { inferVendorFromUrl } from "@/lib/vendorInference";
+import {
+  firstProductPrice,
+  productPriceFromPage,
+  selectedSkuPriceFromHtml,
+} from "@/lib/productPricing";
 
 export const FIRECRAWL_PRODUCT_SCHEMA = {
   type: "object",
@@ -16,7 +21,8 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
     },
     finish: {
       type: "string",
-      description: "Selected surface finish or treatment (for example polished, matte, brushed brass). Keep separate from color.",
+      description:
+        "Selected surface finish or treatment (for example polished, matte, brushed brass). Keep separate from color.",
     },
     selected_finish: { type: "string", description: "Exact selected finish option" },
     selected_variant: {
@@ -25,7 +31,8 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
     },
     dimensions: {
       type: "string",
-      description: "Full product dimensions for the exact selected size, including units and width, depth, height, length or diameter as published. Exclude packaging and shipping dimensions.",
+      description:
+        "Full product dimensions for the exact selected size, including units and width, depth, height, length or diameter as published. Exclude packaging and shipping dimensions.",
     },
     price: {
       type: "string",
@@ -75,44 +82,7 @@ export function missingProductSpecifications(value: {
   color?: unknown;
   dimensions?: unknown;
 }) {
-  return (["finish", "color", "dimensions"] as const).filter(
-    (field) => !firstString(value[field]),
-  );
-}
-
-function firstPrice(...values: unknown[]) {
-  for (const value of values) {
-    const text =
-      typeof value === "number"
-        ? value.toString()
-        : typeof value === "string"
-          ? value.replace(/\s+/g, " ").trim()
-          : "";
-    if (!text || /^(null|undefined|n\/a)$/i.test(text)) continue;
-
-    const match = text.match(
-      /\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)?|\$?\s*\d+(?:\.\d{2})?/,
-    );
-    if (!match) continue;
-
-    const cleaned = match[0].replace(/\s+/g, "").replace(/–|to/i, "-");
-    if (!/\d/.test(cleaned)) continue;
-    return cleaned.startsWith("$") ? cleaned : `$${cleaned}`;
-  }
-  return "";
-}
-
-function priceFromPageText(markdown?: string, html?: string) {
-  const htmlText = html ?? "";
-  const markdownText = markdown ?? "";
-  const automationPrice = htmlText.match(/data-automation=["']price["'][^>]*>\s*([^<]+)/i);
-  const labeledPrice = `${markdownText}\n${htmlText}`.match(
-    /(?:your total|current price|sale price|regular price|price)\s*:?\s*(\$?\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)/i,
-  );
-  const standaloneMarkdownPrice = markdownText.match(
-    /(?:^|\n)\s*(?:[-*]\s*)?(\$\s*\d[\d,]*(?:\.\d{2})?(?:\s*(?:-|–|to)\s*\$?\s*\d[\d,]*(?:\.\d{2})?)?)\s*(?:\n|$)/,
-  );
-  return firstPrice(automationPrice?.[1], labeledPrice?.[1], standaloneMarkdownPrice?.[1]);
+  return (["finish", "color", "dimensions"] as const).filter((field) => !firstString(value[field]));
 }
 
 export function normalizeFirecrawlProduct(
@@ -122,9 +92,10 @@ export function normalizeFirecrawlProduct(
   const data = record(value);
   const extracted = record(data.json ?? data.extract);
   const metadata = record(data.metadata);
-  const pagePrice = priceFromPageText(
+  const pagePrice = productPriceFromPage(
     typeof data.markdown === "string" ? data.markdown : undefined,
     typeof data.html === "string" ? data.html : undefined,
+    sourceUrl,
   );
 
   return {
@@ -137,16 +108,13 @@ export function normalizeFirecrawlProduct(
     ),
     sku: firstString(extracted.sku, extracted.model, extracted.model_number),
     color: firstString(extracted.selected_color, extracted.color, extracted.colorway),
-    finish: firstString(
-      extracted.selected_finish,
-      extracted.finish,
-      extracted.material_finish,
-    ),
+    finish: firstString(extracted.selected_finish, extracted.finish, extracted.material_finish),
     dimensions: firstString(extracted.dimensions, extracted.dimension, extracted.size),
-    price: firstPrice(
-      extracted.price,
+    price: firstProductPrice(
+      selectedSkuPriceFromHtml(typeof data.html === "string" ? data.html : "", sourceUrl),
       extracted.current_price,
       extracted.sale_price,
+      extracted.price,
       extracted.regular_price,
       extracted.list_price,
       extracted.price_per_item,

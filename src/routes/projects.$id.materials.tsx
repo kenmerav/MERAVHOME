@@ -431,6 +431,7 @@ function MaterialsPage() {
   const saveScrapedRows = async (rows: ScrapedRow[], announce = true) => {
     const successfulRows = rows.filter((row) => !row.scraped.error);
     const failedCount = rows.length - successfulRows.length;
+    let priceMissingCount = 0;
 
     if (successfulRows.length > 0) {
       setScrapeStatus(
@@ -448,8 +449,9 @@ function MaterialsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rows: safeRows }),
       });
-      const body = await readApiJson<{ error?: string }>(res);
+      const body = await readApiJson<{ error?: string; price_missing_count?: number }>(res);
       if (!res.ok) throw new Error(body?.error || "Could not save scraped products");
+      priceMissingCount = body?.price_missing_count ?? 0;
       if (announce) {
         toast.success(
           `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
@@ -465,6 +467,7 @@ function MaterialsPage() {
         `${failedCount} item${failedCount === 1 ? " was" : "s were"} left unchanged because product details could not be scraped.`,
       );
     }
+    return priceMissingCount;
   };
 
   const runScrape = async () => {
@@ -478,6 +481,7 @@ function MaterialsPage() {
       let alreadyScrapedCount = 0;
       let remainingCount = 0;
       let batchCount = 0;
+      let priceMissingCount = 0;
 
       while (true) {
         setScrapeStatus(
@@ -585,7 +589,7 @@ function MaterialsPage() {
         });
 
         if (rows.length > 0) {
-          await saveScrapedRows(rows, false);
+          priceMissingCount += await saveScrapedRows(rows, false);
         }
 
         batchCount += 1;
@@ -615,7 +619,12 @@ function MaterialsPage() {
         const savedCount = rows.length - failedCount;
         if (savedCount > 0) {
           toast.success(
-            `Scrape complete. Saved ${savedCount} product${savedCount === 1 ? "" : "s"} to catalog.`,
+            `Saved ${savedCount} product${savedCount === 1 ? "" : "s"}. ${savedCount - priceMissingCount} with prices.`,
+          );
+        }
+        if (priceMissingCount > 0) {
+          toast.warning(
+            `${priceMissingCount} item${priceMissingCount === 1 ? " still needs" : "s still need"} an exact price. Review the flagged rows for variant ranges or missing prices.`,
           );
         }
         if (failedCount > 0) {

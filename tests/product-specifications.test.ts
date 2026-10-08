@@ -105,6 +105,84 @@ describe("source-grounded product specifications", () => {
 });
 
 describe("material metadata enrichment", () => {
+  it("keeps a direct selected-variant price when the follow-up scraper fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) =>
+        String(input).includes(".js")
+          ? new Response(
+              JSON.stringify({ title: "Mirror", variants: [{ id: 123, price: 38900 }] }),
+              { headers: { "Content-Type": "application/json" } },
+            )
+          : new Response("rate limited", { status: 429 }),
+      ),
+    );
+    const response = await handlers.POST({
+      request: request("POST", {
+        action: "fallback",
+        project_id: project,
+        candidates: [{ material_item_id: item, url, existing_product_id: product }],
+      }),
+    });
+    const body = await response.json();
+    expect(body.rows[0].scraped.price).toBe("$389.00");
+    expect(body.rows[0].scraped.error).toBeUndefined();
+  });
+  it("flags a variant range without saving it as an exact price and preserves notes", async () => {
+    mock.query.mockImplementation((q) =>
+      q.op === "update"
+        ? { error: null }
+        : q.table === "material_items"
+          ? { data: { id: item, room_id: null, notes: "Designer note" } }
+          : { data: { id: product, price: null } },
+    );
+    const response = await handlers.PUT({
+      request: request("PUT", {
+        rows: [
+          {
+            material_item_id: item,
+            existing_product_id: product,
+            url,
+            scraped: { name: "Planter", price: "$149–$249" },
+          },
+        ],
+      }),
+    });
+    expect(await response.json()).toMatchObject({ priced_count: 0, price_missing_count: 1 });
+    const writes = mock.query.mock.calls.map(([q]) => q).filter((q) => q.op === "update");
+    expect(writes.find((q) => q.table === "products").write).not.toHaveProperty("price");
+    expect(writes.find((q) => q.table === "material_items").write).toMatchObject({
+      scrape_status: "price_missing",
+      notes: expect.stringContaining("Designer note\nRetailer price range $149.00–$249.00"),
+    });
+  });
+  it("counts an existing manual price as priced even when enrichment has no price", async () => {
+    mock.query.mockImplementation((q) =>
+      q.op === "update"
+        ? { error: null }
+        : q.table === "material_items"
+          ? { data: { id: item, room_id: null } }
+          : { data: { id: product, price: "$1,675.00" } },
+    );
+    const response = await handlers.PUT({
+      request: request("PUT", {
+        rows: [
+          {
+            material_item_id: item,
+            existing_product_id: product,
+            url,
+            scraped: { finish: "Matte" },
+          },
+        ],
+      }),
+    });
+    expect(await response.json()).toMatchObject({ priced_count: 1, price_missing_count: 0 });
+    const writes = mock.query.mock.calls.map(([q]) => q).filter((q) => q.op === "update");
+    expect(writes.find((q) => q.table === "material_items").write).toMatchObject({
+      scrape_status: "scraped",
+      scrape_error: null,
+    });
+  });
   it("scrapes priced items with missing specs and does not stop at a direct Shopify price", async () => {
     mock.query.mockResolvedValue({
       data: [
