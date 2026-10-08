@@ -93,6 +93,7 @@ export const Route = createFileRoute("/api/users")({
           });
 
           return json({
+            can_view_as_user: !!owner.user.email_confirmed_at && OVERALL_ADMIN_EMAILS.has(owner.user.email?.toLowerCase() || ""),
             users: (data ?? []).map((user: any) => ({
               ...user,
               assigned_project_ids: assignmentsByUser.get(user.id) ?? [],

@@ -25,6 +25,8 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { UserProfile } from "@/lib/db";
+import { isUserViewTab } from "@/lib/userView";
+import { returnFromUserView } from "@/lib/userViewExit";
 import {
   canLogHours,
   canManageStudio,
@@ -369,6 +371,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [desktopCollapsed]);
 
   const signOut = async () => {
+    if (isUserViewTab()) { await returnFromUserView(); return; }
     await supabase.auth.signOut();
     navigate({ to: "/login" });
   };
@@ -385,7 +388,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen flex bg-background">
       <aside
         className={cn(
-          "hidden lg:flex flex-col border-r border-border bg-sidebar sticky top-0 h-screen print:hidden transition-[width] duration-200",
+          "studio-sidebar hidden lg:flex flex-col border-r border-border bg-sidebar sticky top-0 h-screen print:hidden transition-[width] duration-200",
           desktopCollapsed ? "w-[76px]" : "w-64",
         )}
       >
@@ -478,7 +481,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <header className="lg:hidden fixed top-0 inset-x-0 z-40 bg-background/90 backdrop-blur border-b border-border px-5 h-14 flex items-center justify-between print:hidden">
+      <header className="studio-mobile-header lg:hidden fixed top-0 inset-x-0 z-40 bg-background/90 backdrop-blur border-b border-border px-5 h-14 flex items-center justify-between print:hidden">
         <Link to="/" className="font-display text-xl">
           MERAV Studio
         </Link>
@@ -494,7 +497,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-x-0 top-14 z-40 max-h-[calc(100vh-3.5rem)] overflow-y-auto border-b border-border bg-background/98 px-5 py-5 shadow-sm print:hidden">
+        <div className="studio-mobile-menu lg:hidden fixed inset-x-0 top-14 z-40 max-h-[calc(100vh-3.5rem)] overflow-y-auto border-b border-border bg-background/98 px-5 py-5 shadow-sm print:hidden">
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
@@ -582,6 +585,7 @@ function ConstructionDocumentLoginNoticeDialog({
 
   const acknowledge = async () => {
     if (saving || !notices.length) return;
+    if (isUserViewTab()) { onAcknowledged(); return; }
     setSaving(true);
     setError(null);
     try {
@@ -669,6 +673,7 @@ function CalendarLoginNoticeDialog({
 
   const acknowledge = async () => {
     if (saving || !notices.length) return;
+    if (isUserViewTab()) { onAcknowledged(); return; }
     setSaving(true);
     setError(null);
     try {

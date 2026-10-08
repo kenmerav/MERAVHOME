@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ViewUserRouteImport } from './routes/view-user'
+import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ProjectManagementRouteImport } from './routes/project-management'
 import { Route as ProcurementRouteImport } from './routes/procurement'
@@ -111,6 +113,16 @@ import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/exten
 import { Route as ApiExtensionBoardPagesRouteImport } from './routes/api/extension/board-pages'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
+const ViewUserRoute = ViewUserRouteImport.update({
+  id: '/view-user',
+  path: '/view-user',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiViewUserRoute = ApiViewUserRouteImport.update({
+  id: '/api/view-user',
+  path: '/api/view-user',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -639,6 +651,8 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/view-user': typeof ViewUserRoute
+  '/api/view-user': typeof ApiViewUserRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
   '/ea-desk': typeof EaDeskRoute
@@ -742,6 +756,8 @@ export interface FileRoutesByFullPath {
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
 export interface FileRoutesByTo {
+  '/view-user': typeof ViewUserRoute
+  '/api/view-user': typeof ApiViewUserRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
   '/ea-desk': typeof EaDeskRoute
@@ -845,6 +861,8 @@ export interface FileRoutesByTo {
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
 export interface FileRoutesById {
+  '/view-user': typeof ViewUserRoute
+  '/api/view-user': typeof ApiViewUserRoute
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
@@ -951,6 +969,8 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/view-user'
+    | '/api/view-user'
     | '/'
     | '/catalog'
     | '/ea-desk'
@@ -1054,6 +1074,8 @@ export interface FileRouteTypes {
     | '/projects/$id/rooms/$roomId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/view-user'
+    | '/api/view-user'
     | '/'
     | '/catalog'
     | '/ea-desk'
@@ -1156,6 +1178,8 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/projects/$id/rooms/$roomId'
   id:
+    | '/view-user'
+    | '/api/view-user'
     | '__root__'
     | '/'
     | '/catalog'
@@ -1261,6 +1285,8 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  ViewUserRoute: typeof ViewUserRoute
+  ApiViewUserRoute: typeof ApiViewUserRoute
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
   EaDeskRoute: typeof EaDeskRoute
@@ -1365,6 +1391,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/view-user': {
+      id: '/view-user'
+      path: '/view-user'
+      fullPath: '/view-user'
+      preLoaderRoute: typeof ViewUserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/view-user': {
+      id: '/api/view-user'
+      path: '/api/view-user'
+      fullPath: '/api/view-user'
+      preLoaderRoute: typeof ApiViewUserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -2088,6 +2128,8 @@ const ApiMarvinCronRouteWithChildren = ApiMarvinCronRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
+  ViewUserRoute: ViewUserRoute,
+  ApiViewUserRoute: ApiViewUserRoute,
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
   EaDeskRoute: EaDeskRoute,

@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { ViewAsUserButton } from "@/components/ViewAsUserButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,7 @@ function UsersPage() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [projects, setProjects] = useState<UserProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canViewAsUser, setCanViewAsUser] = useState(false);
   const [error, setError] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -76,6 +78,7 @@ function UsersPage() {
       return;
     }
     setUsers(body.users ?? []);
+    setCanViewAsUser(body.can_view_as_user === true);
     setProjects(body.projects ?? []);
   };
 
@@ -284,6 +287,7 @@ function UsersPage() {
                   user={user}
                   projects={projects}
                   busy={busy}
+                  canViewAsUser={canViewAsUser}
                   onSave={updateUser}
                 />
               ))
@@ -299,11 +303,13 @@ function UserRow({
   user,
   projects,
   busy,
+  canViewAsUser,
   onSave,
 }: {
   user: ManagedUser;
   projects: UserProject[];
   busy: boolean;
+  canViewAsUser: boolean;
   onSave: (
     user: ManagedUser,
     patch: Partial<UserProfile> & {
@@ -368,6 +374,7 @@ function UserRow({
           <div className="text-xs text-muted-foreground mt-1">
             {user.is_active ? "Active" : "Inactive"}
           </div>
+          {canViewAsUser && <ViewAsUserButton user={user} />}
         </div>
       </div>
 
