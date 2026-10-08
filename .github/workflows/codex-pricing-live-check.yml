@@ -1,0 +1,76 @@
+name: Verify Live Materials Pricing
+on:
+  push:
+    branches: [codex/pricing-live-check-20261008]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check live Studio route and its imported JavaScript
+        run: |
+          python3 -u - <<'PY'
+          import re, time, urllib.request, urllib.parse
+          from collections import deque
+          host = 'https://studio.meravinteriors.com'
+          route = '/projects/34b12627-92b1-4cc4-8696-149b1979e8d9/materials'
+          wanted = ('projects._id.materials-', 'specbooks._id-', 'productPricingEdit-', 'MaterialDetailsEditor-', 'productPriceUnit-')
+          quoted_js = re.compile(r'''["'`]((?:/assets/|assets/|\./)[^"'`\s<>]+\.js(?:\?[^"'`\s<>]*)?)["'`]''')
+          def fetch(url):
+              request = urllib.request.Request(url, headers={'User-Agent': 'MERAV-deployment-verification', 'Cache-Control': 'no-cache'})
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  if urllib.parse.urlparse(response.url).hostname != 'studio.meravinteriors.com':
+                      raise RuntimeError('Unexpected redirect; not verifying an external site')
+                  data = response.read(3_000_001)
+                  if len(data) > 3_000_000:
+                      raise RuntimeError('Asset exceeds verification size limit')
+                  return data.decode('utf-8', 'replace'), response.status, response.url
+          for attempt in range(1, 7):
+              try:
+                  html, status, final_url = fetch(host + route + '?release_check=e5e97b8&attempt=' + str(attempt))
+                  roots = list(dict.fromkeys(urllib.parse.urljoin(final_url, value) for value in quoted_js.findall(html)))
+                  queue = deque(roots[:20])
+                  seen, assets = set(), {}
+                  while queue and len(seen) < 24:
+                      url = queue.popleft()
+                      parsed = urllib.parse.urlparse(url)
+                      if url in seen or parsed.hostname != 'studio.meravinteriors.com' or not parsed.path.startswith('/assets/'):
+                          continue
+                      seen.add(url)
+                      try:
+                          text, asset_status, _ = fetch(url)
+                      except Exception as error:
+                          print('ASSET_UNAVAILABLE', parsed.path, type(error).__name__, flush=True)
+                          continue
+                      assets[url] = text
+                      for value in quoted_js.findall(text):
+                          child = urllib.parse.urljoin(url, value)
+                          # Vite's preload manifest uses root-relative assets/ strings.
+                          if value.startswith('assets/'):
+                              child = host + '/' + value
+                          name = urllib.parse.urlparse(child).path.rsplit('/', 1)[-1]
+                          if any(part in name for part in wanted) and child not in seen:
+                              queue.append(child)
+                  materials = '\n'.join(text for url, text in assets.items() if 'projects._id.materials-' in url or 'MaterialDetailsEditor-' in url)
+                  specs = '\n'.join(text for url, text in assets.items() if 'specbooks._id-' in url)
+                  all_text = '\n'.join(assets.values())
+                  checks = {
+                      'materials_price_basis_selector': 'Price is per' in materials,
+                      'materials_square_foot_option': 'Per square foot (sq ft)' in materials,
+                      'saved_product_refresh': 'Details were saved, but could not be refreshed' in materials,
+                      'spec_book_price_unit': 'price_unit' in specs and 'price basis not set' in all_text,
+                  }
+                  print('ATTEMPT', attempt, 'HTTP', status, 'ASSET_COUNT', len(assets), 'CHECKS', checks, flush=True)
+                  print('RELEVANT_LIVE_ASSETS', [urllib.parse.urlparse(url).path for url in assets if any(part in url for part in wanted)], flush=True)
+                  if all(checks.values()):
+                      print('DEPLOYED_PRICING_CONTROLS_VERIFIED', flush=True)
+                      break
+              except Exception as error:
+                  print('ATTEMPT', attempt, 'ERROR', type(error).__name__, str(error)[:200], flush=True)
+              if attempt < 6:
+                  time.sleep(20)
+          else:
+              raise SystemExit('Live pricing asset verification did not confirm the deployed change.')
+          PY
