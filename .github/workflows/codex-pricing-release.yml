@@ -24,8 +24,23 @@ jobs:
           cache: npm
       - name: Apply reviewed exact-anchor source patch
         run: python3 .codex-pricing-release/apply.py
+      - name: Repair missing lockfile entry without upgrading existing packages
+        run: |
+          cp package-lock.json /tmp/pricing-original-lock.json
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          python3 - <<'PY'
+          import json
+          before = json.load(open('/tmp/pricing-original-lock.json'))['packages']
+          after = json.load(open('package-lock.json'))['packages']
+          for name, package in before.items():
+              assert name in after, f'Unexpected removal: {name}'
+              for key in ('version', 'resolved', 'integrity'):
+                  assert package.get(key) == after[name].get(key), f'Unexpected package change: {name}/{key}'
+          print('Added lock entries:', sorted(set(after) - set(before)))
+          PY
+          git diff --stat -- package-lock.json
       - name: Install locked dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
       - name: Run complete regression suite
         run: npm test
       - name: Build production application
@@ -39,7 +54,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/codex-pricing-release.yml .codex-pricing-release/apply.py .codex-pricing-release/patches.json
-          git add src/components/MaterialDetailsEditor.tsx src/lib/db.ts 'src/routes/projects.$id.materials.tsx' 'src/routes/specbooks.$id.tsx' src/integrations/supabase/types.ts
+          git add src/components/MaterialDetailsEditor.tsx src/lib/db.ts 'src/routes/projects.$id.materials.tsx' 'src/routes/specbooks.$id.tsx' src/integrations/supabase/types.ts package-lock.json
           git diff --cached --check
           git commit -m 'Validate Materials pricing display and independent price units'
           git push origin "HEAD:refs/heads/$RELEASE_BRANCH"
