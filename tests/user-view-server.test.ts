@@ -39,7 +39,7 @@ const target = {
   is_active: true,
 };
 function request(userId = targetId, overrides: Record<string, string> = {}) {
-  return new Request("https://studio.test/api/users/view-user", {
+  return new Request("https://studio.test/api/view-user", {
     method: "POST",
     headers: {
       Authorization: "Bearer TEST_ONLY_ADMIN_TOKEN",
@@ -60,7 +60,9 @@ beforeEach(() => {
     error: null,
   });
   state.getUserById.mockResolvedValue({
-    data: { user: { id: targetId, email: target.email } },
+    data: {
+      user: { id: targetId, email: target.email, email_confirmed_at: "2026-01-01T00:00:00Z" },
+    },
     error: null,
   });
   state.generateLink.mockResolvedValue({
@@ -77,6 +79,14 @@ beforeEach(() => {
   vi.spyOn(console, "info").mockImplementation(() => {});
 });
 describe("Admin-only account views", () => {
+  it("does not confirm an unfinished account by previewing it", async () => {
+    state.getUserById.mockResolvedValue({
+      data: { user: { id: targetId, email: target.email, email_confirmed_at: null } },
+      error: null,
+    });
+    expect((await startUserView(request())).status).toBe(400);
+    expect(state.generateLink).not.toHaveBeenCalled();
+  });
   it("rejects a forged admin profile when the verified login belongs to someone else", async () => {
     state.getUser.mockResolvedValue({
       data: {

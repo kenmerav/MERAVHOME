@@ -48,6 +48,8 @@ export async function startUserView(request: Request) {
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (authError || authData.user?.email?.toLowerCase() !== target.email.toLowerCase())
     return json({ error: "This account's login details need to be checked first." }, 400);
+  if (!authData.user.email_confirmed_at)
+    return json({ error: "This account has not completed its login setup yet." }, 400);
   const { data: link, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
     type: "magiclink",
     email: authData.user.email!,
