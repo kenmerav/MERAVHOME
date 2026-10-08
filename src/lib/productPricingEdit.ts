@@ -1,5 +1,6 @@
 import type { Product } from "@/lib/db";
 import { clientPriceFromMarkup, normalizeMoneyInput, type MarkupBasis } from "@/lib/money";
+import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 
 export type ProductPricingDraft = {
   price: string;
@@ -8,6 +9,8 @@ export type ProductPricingDraft = {
   markup_percent: string;
   markup_basis: MarkupBasis;
   shipping: string;
+  // Optional so existing catalog/procurement callers preserve an already-set basis.
+  price_unit?: ProductPriceUnit | "";
 };
 
 export function productPricingPatch(
@@ -40,15 +43,31 @@ export function productPricingPatch(
     throw new Error(
       "Enter the price that the markup is based on, or clear the markup to enter a price directly.",
     );
+
+  // Retail-only entry is a published price, not an internal cost. Fill a NEW
+  // blank display price from it, without replacing an existing manual price,
+  // changing a markup, or undoing an intentional clear of the display price.
+  const manuallyCleared = Boolean(initial?.price.trim()) && !values.price.trim();
+  const useRetail = calculated == null && manualPrice == null && retail != null && !manuallyCleared;
   const patch: Partial<Product> = {
     retail_price: retail,
     unit_cost: cost,
-    price: calculated == null ? manualPrice : normalizeMoneyInput(calculated.toFixed(2)),
+    price: calculated == null
+      ? (manualPrice ?? (useRetail ? retail : null))
+      : normalizeMoneyInput(calculated.toFixed(2)),
     shipping,
     markup_percent: markup,
     markup_basis: values.markup_basis,
   };
+
+  if (values.price_unit !== undefined) {
+    const unit = productPriceUnit(values.price_unit);
+    if (values.price_unit !== "" && unit == null)
+      throw new Error("Choose per unit or per square foot.");
+    patch.price_unit = unit;
+  }
   if (!initial) return patch;
+
   const changed: Partial<Product> = {};
   for (const key of [
     "retail_price",
@@ -59,11 +78,19 @@ export function productPricingPatch(
   ] as const) {
     if (values[key] !== initial[key]) (changed as Record<string, unknown>)[key] = patch[key];
   }
+  if (values.price_unit !== undefined && values.price_unit !== initial.price_unit)
+    changed.price_unit = patch.price_unit;
+
   const formulaChanged = ["retail_price", "unit_cost", "markup_percent", "markup_basis"].some(
     (key) => values[key as keyof ProductPricingDraft] !== initial[key as keyof ProductPricingDraft],
   );
+  const fillNewDisplayPrice = useRetail && !initial.price.trim() && (
+    values.retail_price !== initial.retail_price ||
+    (values.price_unit !== undefined && values.price_unit !== initial.price_unit)
+  );
   if (
     values.price !== initial.price ||
+    fillNewDisplayPrice ||
     (formulaChanged && patch.price !== money(initial.price, "price"))
   )
     changed.price = patch.price;
