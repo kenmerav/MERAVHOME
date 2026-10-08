@@ -498,6 +498,7 @@ export type Database = {
           markup_basis: string | null
           markup_percent: number | null
           price: string | null
+          price_unit: string | null
           product_url: string | null
           retail_price: string | null
           shipping: string | null
@@ -521,6 +522,7 @@ export type Database = {
           markup_basis?: string | null
           markup_percent?: number | null
           price?: string | null
+          price_unit?: string | null
           product_url?: string | null
           retail_price?: string | null
           shipping?: string | null
@@ -544,6 +546,7 @@ export type Database = {
           markup_basis?: string | null
           markup_percent?: number | null
           price?: string | null
+          price_unit?: string | null
           product_url?: string | null
           retail_price?: string | null
           shipping?: string | null

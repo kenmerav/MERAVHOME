@@ -89,8 +89,27 @@ describe("product scraper client", () => {
     expect(scrapedProductStatus({ name: "Known product", vendor: "Vendor" })).toBe("partial");
   });
 
+  it("marks a fully described product partial when an exact price is missing", () => {
+    const details = {
+      name: "Mirror",
+      image_url: "https://example.com/mirror.jpg",
+      color: "Black",
+      finish: "Matte",
+      dimensions: "40 x 36 in",
+    };
+    expect(scrapedProductStatus(details)).toBe("partial");
+    expect(scrapedProductStatus({ ...details, price: "$149–$249" })).toBe("partial");
+    expect(scrapedProductStatus({ ...details, price: "$389" })).toBe("complete");
+  });
+
   it("marks products with missing specifications as partial", () => {
-    expect(scrapedProductStatus({ name: "Mirror", image_url: "https://example.com/image.jpg", color: "Black" })).toBe("partial");
+    expect(
+      scrapedProductStatus({
+        name: "Mirror",
+        image_url: "https://example.com/image.jpg",
+        color: "Black",
+      }),
+    ).toBe("partial");
   });
 
   it("flags collection pages and retailer redirects for review", () => {

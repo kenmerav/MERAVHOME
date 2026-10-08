@@ -1,4 +1,5 @@
 import { missingProductSpecifications } from "@/lib/firecrawlProduct";
+import { exactProductPrice } from "@/lib/productPricing";
 
 export type ScrapedProductData = {
   name?: string;
@@ -231,7 +232,10 @@ export async function scrapeProductUrl(
 }
 
 export function scrapedProductStatus(result: ScrapedProductData): "complete" | "partial" {
-  return result.name && result.image_url && !missingProductSpecifications(result).length
+  return result.name &&
+    result.image_url &&
+    exactProductPrice(result.price) &&
+    !missingProductSpecifications(result).length
     ? "complete"
     : "partial";
 }
