@@ -27,6 +27,7 @@ import {
   canUseProcurementCartBuilder,
   canUpdateSpecOrderingForRole,
   canViewProjectSurface,
+  isStudioTeamRole,
   specBookVisibilityForRole,
 } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -555,9 +556,11 @@ export function SpecBookDocument({
         {/* COVER */}
         <section className="border border-border bg-white p-16 lg:p-24 mb-10 print:border-0 print:break-after-page min-h-[85vh] flex flex-col justify-between print:min-h-[95vh] print:px-16 print:py-18">
           <div className="eyebrow">MERAV Studio · Specification Book</div>
-          <div className="mt-3 text-xs uppercase tracking-[0.18em] text-muted-foreground print:text-[10px]">
-            Last updated {formatLastUpdated(lastUpdatedAt)}
-          </div>
+          {!publicView && profile?.is_active && isStudioTeamRole(profile.role) && (
+            <div className="mt-3 text-xs uppercase tracking-[0.18em] text-muted-foreground print:text-[10px]">
+              Last updated {formatLastUpdated(lastUpdatedAt)}
+            </div>
+          )}
           <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end print:grid-cols-[minmax(0,1fr)_180px] print:gap-10">
             <div>
               <h1 className="font-display text-5xl lg:text-7xl leading-[1.05] print:text-6xl">
