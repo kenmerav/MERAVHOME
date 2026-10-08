@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ViewUserRouteImport } from './routes/view-user'
 import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
+import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ProjectManagementRouteImport } from './routes/project-management'
 import { Route as ProcurementRouteImport } from './routes/procurement'
@@ -121,6 +122,11 @@ const ViewUserRoute = ViewUserRouteImport.update({
 const ApiViewUserRoute = ApiViewUserRouteImport.update({
   id: '/api/view-user',
   path: '/api/view-user',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
+  id: '/api/spec-ordering',
+  path: '/api/spec-ordering',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -653,6 +659,7 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
+  '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
   '/ea-desk': typeof EaDeskRoute
@@ -758,6 +765,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
+  '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
   '/ea-desk': typeof EaDeskRoute
@@ -863,6 +871,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
+  '/api/spec-ordering': typeof ApiSpecOrderingRoute
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
@@ -971,6 +980,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/view-user'
     | '/api/view-user'
+    | '/api/spec-ordering'
     | '/'
     | '/catalog'
     | '/ea-desk'
@@ -1076,6 +1086,7 @@ export interface FileRouteTypes {
   to:
     | '/view-user'
     | '/api/view-user'
+    | '/api/spec-ordering'
     | '/'
     | '/catalog'
     | '/ea-desk'
@@ -1180,6 +1191,7 @@ export interface FileRouteTypes {
   id:
     | '/view-user'
     | '/api/view-user'
+    | '/api/spec-ordering'
     | '__root__'
     | '/'
     | '/catalog'
@@ -1287,6 +1299,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ViewUserRoute: typeof ViewUserRoute
   ApiViewUserRoute: typeof ApiViewUserRoute
+  ApiSpecOrderingRoute: typeof ApiSpecOrderingRoute
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
   EaDeskRoute: typeof EaDeskRoute
@@ -1403,6 +1416,13 @@ declare module '@tanstack/react-router' {
       path: '/api/view-user'
       fullPath: '/api/view-user'
       preLoaderRoute: typeof ApiViewUserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-ordering': {
+      id: '/api/spec-ordering'
+      path: '/api/spec-ordering'
+      fullPath: '/api/spec-ordering'
+      preLoaderRoute: typeof ApiSpecOrderingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -2130,6 +2150,7 @@ const ApiMarvinCronRouteWithChildren = ApiMarvinCronRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ViewUserRoute: ViewUserRoute,
   ApiViewUserRoute: ApiViewUserRoute,
+  ApiSpecOrderingRoute: ApiSpecOrderingRoute,
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
   EaDeskRoute: EaDeskRoute,

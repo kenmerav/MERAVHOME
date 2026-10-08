@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { canViewProjectSurface, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { validateSpecQuantityPatch, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/productCategories";
@@ -562,11 +563,13 @@ async function getCurrentProjectAccess() {
     return { profile: null, assignedProjectIds: [] as string[] };
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("user_profiles")
     .select("*")
     .eq("id", userId)
     .maybeSingle();
+
+  if (profileError) throw new Error("Could not check your project access. Please try again.");
 
   const typedProfile = (profile as UserProfile | null) ?? null;
   if (!typedProfile || !typedProfile.is_active) {
@@ -574,17 +577,17 @@ async function getCurrentProjectAccess() {
   }
 
   if (
-    typedProfile.role !== "Client" &&
-    typedProfile.role !== "Contractor" &&
+    !isSharedProjectRole(typedProfile.role) &&
     (typedProfile.role !== "Employee" || typedProfile.can_view_all_projects !== false)
   ) {
     return { profile: typedProfile, assignedProjectIds: [] as string[] };
   }
 
-  const { data: assignments } = await supabase
-    .from("user_project_assignments")
+  const { data: assignments, error: assignmentError } = await supabase
+    .from("user_project_assignments" as any)
     .select("project_id")
     .eq("user_id", userId);
+  if (assignmentError) throw new Error("Could not check your assigned projects. Please try again.");
 
   return {
     profile: typedProfile,
@@ -606,6 +609,7 @@ export const db = {
   /* PROJECTS */
   listProjects: async () => {
     const { profile, assignedProjectIds } = await getCurrentProjectAccess();
+    if (!profile?.is_active || (!isStudioTeamRole(profile.role) && !isSharedProjectRole(profile.role))) return [] as Project[];
     const baseQuery = () => supabase.from("projects").select("*");
     let query = baseQuery()
       .order("is_pinned", { ascending: false })
@@ -614,8 +618,7 @@ export const db = {
 
     if (
       profile &&
-      (profile.role === "Client" ||
-        profile.role === "Contractor" ||
+      (isSharedProjectRole(profile.role) ||
         (profile.role === "Employee" && profile.can_view_all_projects === false))
     ) {
       if (!assignedProjectIds.length) return [] as Project[];
@@ -631,8 +634,7 @@ export const db = {
     let fallback = baseQuery().order("updated_at", { ascending: false });
     if (
       profile &&
-      (profile.role === "Client" ||
-        profile.role === "Contractor" ||
+      (isSharedProjectRole(profile.role) ||
         (profile.role === "Employee" && profile.can_view_all_projects === false))
     ) {
       if (!assignedProjectIds.length) return [] as Project[];
@@ -642,12 +644,14 @@ export const db = {
     const fallbackResult = await fallback;
     return addDesignWorkflowVersion((fallbackResult.data ?? []) as Project[]);
   },
-  getProject: async (id: string) => {
-    const { profile, assignedProjectIds } = await getCurrentProjectAccess();
+  getProject: async (id: string, options?: { publicView?: boolean }) => {
+    const { profile, assignedProjectIds } = options?.publicView
+      ? { profile: null, assignedProjectIds: [] as string[] }
+      : await getCurrentProjectAccess();
+    if (!options?.publicView && (!profile?.is_active || (!isStudioTeamRole(profile.role) && !isSharedProjectRole(profile.role)))) return null;
     if (
       profile &&
-      (profile.role === "Client" ||
-        profile.role === "Contractor" ||
+      (isSharedProjectRole(profile.role) ||
         (profile.role === "Employee" && profile.can_view_all_projects === false)) &&
       !assignedProjectIds.includes(id)
     ) {
@@ -778,14 +782,19 @@ export const db = {
   },
 
   /* PROJECT DOCUMENTS */
-  listProjectDocuments: async (projectId: string) =>
-    (
-      await supabase
-        .from("project_documents" as any)
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false })
-    ).data as ProjectDocument[] | null,
+  listProjectDocuments: async (projectId: string) => {
+    const { profile, assignedProjectIds } = await getCurrentProjectAccess();
+    if (!profile?.is_active) return [] as ProjectDocument[];
+    if ((isSharedProjectRole(profile.role) || (profile.role === "Employee" && profile.can_view_all_projects === false)) && !assignedProjectIds.includes(projectId)) return [] as ProjectDocument[];
+    const project = await db.getProject(projectId);
+    if (!canViewProjectSurface(profile, project, "constructionDocs")) return [] as ProjectDocument[];
+    let query = supabase.from("project_documents" as any).select("*").eq("project_id", projectId)
+      .order("created_at", { ascending: false }).order("id", { ascending: false });
+    if (isSharedProjectRole(profile.role)) query = query.eq("document_type", "Construction Doc").limit(1);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []) as unknown as ProjectDocument[];
+  },
   createProjectDocument: async (
     document: Omit<ProjectDocument, "id" | "created_at" | "updated_at">,
   ) =>
@@ -1191,6 +1200,18 @@ export const db = {
       .from("material_items")
       .update(patch as any)
       .eq("product_id", productId),
+  updateSpecOrdering: async (itemId: string, patch: Pick<Partial<MaterialItem>, "ordered" | "ordered_by">) => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw new Error("Sign in to update ordering.");
+    const response = await fetch("/api/spec-ordering", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, ...patch }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "Could not update ordering.");
+    return body;
+  },
   updateMaterialQuantity: async (id: string, patch: SpecQuantityPatch) => {
     const values = validateSpecQuantityPatch(patch);
     const { data, error } = await supabase

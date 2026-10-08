@@ -39,6 +39,7 @@ function ProjectsListPage() {
   } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await db.listProjects()) ?? [],
+    enabled: profile?.is_active === true,
   });
   const activeProjects = projects.filter((p) => p.status !== "Complete");
   const archivedProjects = projects.filter((p) => p.status === "Complete");
@@ -46,6 +47,10 @@ function ProjectsListPage() {
   const isSharedUser = isSharedProjectRole(profile?.role);
   const canPinProjects = !profileLoading && !isSharedUser;
   const canDuplicateProjects = !profileLoading && canManageStudio(profile);
+
+  if (profileLoading || !profile?.is_active) {
+    return <AppShell><div className="page-pad text-sm text-muted-foreground">Loading your projects…</div></AppShell>;
+  }
 
   const togglePinned = async (projectId: string, pinned: boolean) => {
     try {

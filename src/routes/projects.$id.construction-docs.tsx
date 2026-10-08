@@ -41,7 +41,7 @@ function ConstructionDocsPage() {
   const canViewDocs = canViewProjectSurface(profile, project, "constructionDocs");
   const canDownloadDocs = canDownloadConstructionDocs(profile, project);
   const { data: docs = [], isLoading: loadingDocs } = useQuery({
-    queryKey: ["projectDocuments", id],
+    queryKey: ["projectDocuments", id, profile?.id, canManageDocs ? "history" : "latest"],
     queryFn: async () => (await db.listProjectDocuments(id)) ?? [],
     enabled: canViewDocs,
   });
@@ -149,7 +149,7 @@ function ConstructionDocsPage() {
             <div className="eyebrow mb-3">Builder Resources</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">Construction Docs</h1>
             <p className="mt-4 max-w-2xl text-muted-foreground">
-              Upload PDF construction documents for the client and GC/builder portal.
+              {canManageDocs ? "Upload PDF construction documents for the client and GC/builder portal." : "The latest construction document shared for your project."}
             </p>
           </div>
         </div>

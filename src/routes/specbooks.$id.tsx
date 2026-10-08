@@ -29,6 +29,7 @@ import {
   canUpdateSpecOrderingForRole,
   canViewProjectSurface,
   isStudioTeamRole,
+  isSharedProjectRole,
   specBookVisibilityForRole,
 } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -285,10 +286,10 @@ export function SpecBookDocument({
   const [includeOverviewInPdf, setIncludeOverviewInPdf] = useState(true);
   const [jumpTarget, setJumpTarget] = useState("");
   const { data: project } = useQuery({
-    queryKey: ["project", id],
-    queryFn: () => db.getProject(id),
+    queryKey: publicView ? ["publicSpecProject", id] : ["project", id],
+    queryFn: () => db.getProject(id, { publicView }),
   });
-  const { data: profile } = useQuery({
+  const { data: profile, isPending: profilePending } = useQuery({
     queryKey: ["currentUserProfile"],
     queryFn: () => db.getCurrentUserProfile(),
     enabled: !publicView,
@@ -376,9 +377,9 @@ export function SpecBookDocument({
       <button className="mt-4 underline" onClick={() => void retryItems()}>Retry</button>
     </div>
   );
-  if (!project || itemsPending) return <div className="p-16 text-muted-foreground">Loading…</div>;
+  if (!project || itemsPending || (!publicView && profilePending)) return <div className="p-16 text-muted-foreground">Loading…</div>;
 
-  if (!publicView && profile && !canViewProjectSurface(profile, project, "specBook")) {
+  if (!publicView && !canViewProjectSurface(profile, project, "specBook")) {
     return (
       <div className="p-16">
         <div className="eyebrow">Spec Book</div>
@@ -402,7 +403,7 @@ export function SpecBookDocument({
     !publicView &&
     (canEditSpecBook(profile) || canUpdateSpecOrderingForRole(profile, project));
   const isSharedSpecView =
-    (publicView || profile?.role === "Client" || profile?.role === "Contractor") && !canEditProducts;
+    (publicView || isSharedProjectRole(profile?.role)) && !canEditProducts;
   const visibility = publicView
     ? { showPricing: true, showLinks: true, showOrdering: true }
     : specBookVisibilityForRole(profile, project);
@@ -445,11 +446,11 @@ export function SpecBookDocument({
             <div className="eyebrow">MERAV Studio · Public Spec Book</div>
           ) : (
             <Link
-              to="/projects/$id/materials"
+              to={isSharedProjectRole(profile?.role) ? "/projects/$id" : "/projects/$id/materials"}
               params={{ id }}
               className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-ink"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Materials
+              <ArrowLeft className="w-3.5 h-3.5" /> {isSharedProjectRole(profile?.role) ? "Back to project" : "Materials"}
             </Link>
           )}
           <div className="flex flex-wrap items-center justify-end gap-3">
@@ -872,7 +873,7 @@ function SpecSpreadsheetView({
   };
 
   const saveOrderedBy = async (row: SpecSpreadsheetRow, value: string) => {
-    await db.updateMaterialItem(row.id, {
+    await db.updateSpecOrdering(row.id, {
       ordered_by: value === "none" ? null : (value as MaterialItem["ordered_by"]),
     });
     await refreshSpec(row.productId);
@@ -880,7 +881,7 @@ function SpecSpreadsheetView({
   };
 
   const saveOrdered = async (row: SpecSpreadsheetRow, value: boolean) => {
-    await db.updateMaterialItem(row.id, { ordered: value });
+    await db.updateSpecOrdering(row.id, { ordered: value });
     await refreshSpec(row.productId);
     toast.success("Spec updated");
   };
@@ -1277,7 +1278,7 @@ function spreadsheetCellForColumn({
         </div>
       );
     case "orderedBy":
-      return canEditOrdering ? (
+      return canEditProducts ? (
         <>
           <select
             value={row.orderedBy || "none"}
@@ -1850,7 +1851,7 @@ function SpecCard({
         </dl>
 
         {showOrdering && canEditOrdering && (
-          <SpecOrderingControls item={item} projectId={projectId} />
+          <SpecOrderingControls item={item} projectId={projectId} canEditOrderedBy={canEditProducts} />
         )}
 
         {showLinks && p?.product_url && (
@@ -1904,14 +1905,14 @@ function SpecCard({
 
 const SPEC_ORDERED_BY_OPTIONS = ["Contractor", "Merav", "Client"] as const;
 
-function SpecOrderingControls({ item, projectId }: { item: MaterialItem; projectId: string }) {
+function SpecOrderingControls({ item, projectId, canEditOrderedBy }: { item: MaterialItem; projectId: string; canEditOrderedBy: boolean }) {
   const qc = useQueryClient();
   const [saving, setSaving] = useState(false);
 
   const save = async (patch: Partial<MaterialItem>) => {
     setSaving(true);
     try {
-      await db.updateMaterialItem(item.id, patch);
+      await db.updateSpecOrdering(item.id, patch);
       await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       toast.success("Ordering updated");
     } catch (error) {
@@ -1926,7 +1927,7 @@ function SpecOrderingControls({ item, projectId }: { item: MaterialItem; project
       className="mt-5 grid gap-3 border border-border bg-bone/25 p-4 print:hidden sm:grid-cols-[minmax(0,220px)_auto]"
       onClick={(event) => event.stopPropagation()}
     >
-      <div>
+      {canEditOrderedBy && <div>
         <Label className="eyebrow">Who Is Ordering</Label>
         <Select
           value={item.ordered_by ?? "none"}
@@ -1947,7 +1948,7 @@ function SpecOrderingControls({ item, projectId }: { item: MaterialItem; project
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </div>}
       <label className="flex items-end gap-3 pb-3 text-sm">
         <input
           type="checkbox"

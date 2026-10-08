@@ -1,4 +1,6 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { resetAccountQueries } from "@/lib/accountQueries";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -101,6 +103,7 @@ type SharedTodoNoticeSource = {
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -136,7 +139,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         // Registering both operations in the same tick can deadlock older
         // Supabase auth clients while they refresh an expiring session.
         const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-          if (active && !session) navigate({ to: "/login" });
+          if (!active || session?.user.id === data.session?.user.id) return;
+          setLoadingAuth(true);
+          setProfile(null);
+          // Leave the auth callback before making any further SDK calls.
+          window.setTimeout(() => {
+            void resetAccountQueries(queryClient).then(() => {
+              window.location.replace(session ? "/" : "/login");
+            });
+          }, 0);
         });
         unsubscribeAuth = () => authListener.subscription.unsubscribe();
 
@@ -145,6 +156,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           12000,
         );
         if (!active) return;
+        if (!userProfile?.is_active) {
+          setProfile(null);
+          navigate({ to: "/login" });
+          return;
+        }
         setProfile((userProfile as UserProfile | null) ?? null);
         setLoadingAuth(false);
       } catch (error) {
@@ -162,7 +178,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       active = false;
       unsubscribeAuth?.();
     };
-  }, [navigate]);
+  }, [navigate, queryClient]);
 
   useEffect(() => {
     const isClientFinancials = loc.pathname.startsWith("/client/financials");
@@ -373,7 +389,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const signOut = async () => {
     if (isUserViewTab()) { await returnFromUserView(); return; }
     await supabase.auth.signOut();
-    navigate({ to: "/login" });
+    await resetAccountQueries(queryClient);
+    window.location.replace("/login");
   };
 
   if (loadingAuth) {

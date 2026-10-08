@@ -1,4 +1,6 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { resetAccountQueries } from "@/lib/accountQueries";
 import type React from "react";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,7 +14,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -34,7 +36,8 @@ function LoginPage() {
         setError(signInError.message);
         return;
       }
-      navigate({ to: "/" });
+      await resetAccountQueries(queryClient);
+      window.location.replace("/");
     } catch (signInError) {
       console.warn("[Login] Sign-in did not finish.", signInError);
       setError("Sign-in took too long. Please refresh the page and try again.");

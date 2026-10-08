@@ -14,7 +14,7 @@ import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canManageStudio, canViewFinancials, isStudioTeamRole } from "@/lib/permissions";
+import { canManageStudio, canViewFinancials, isClientRole, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
@@ -126,23 +126,19 @@ export const Route = createFileRoute("/")({
 
 function DashboardPage() {
   const qc = useQueryClient();
+  const { data: profile, isPending: profilePending } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
+  });
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await db.listProjects()) ?? [],
-  });
-  const { data: profile } = useQuery({
-    queryKey: ["currentProfile"],
-    queryFn: async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user.id;
-      if (!userId) return null;
-      return (await supabase.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data;
-    },
+    enabled: profile?.is_active === true,
   });
   const canCreateInvoices = canViewFinancials(profile);
   const activeProjects = projects.filter((p) => p.status !== "Complete");
-  const isClientUser = profile?.role === "Client";
-  const isSharedUser = profile?.role === "Client" || profile?.role === "Contractor";
+  const isClientUser = isClientRole(profile?.role);
+  const isSharedUser = isSharedProjectRole(profile?.role);
   const { data: sharedDashboard, isLoading: sharedDashboardLoading } = useQuery({
     queryKey: ["clientDashboard", profile?.id],
     enabled: isSharedUser,
@@ -197,6 +193,10 @@ function DashboardPage() {
     },
   });
   const approvalsReady = clientApprovalSummaries.filter((summary) => summary.needReviewCount > 0);
+
+  if (profilePending || !profile?.is_active) {
+    return <AppShell><div className="page-pad text-sm text-muted-foreground">Loading your projects…</div></AppShell>;
+  }
 
   return (
     <AppShell>

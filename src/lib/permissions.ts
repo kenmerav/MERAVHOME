@@ -2,6 +2,7 @@ import type { Project, UserProfile } from "@/lib/db";
 
 const FINANCIAL_EMAILS = new Set(["ken@meravinteriors.com", "katie@meravinteriors.com"]);
 const SPEC_BOOK_EDITOR_EMAILS = new Set(["homebycastellani@gmail.com"]);
+const SPEC_ORDERING_STATUS_EMAILS = new Set(["kipshearer@gmail.com"]);
 const MARVIN_EMAILS = new Set([
   "ken@meravinteriors.com",
   "katie@meravinteriors.com",
@@ -221,10 +222,13 @@ export function specBookVisibilityForRole(
 }
 
 export function canUpdateSpecOrderingForRole(
-  profile: Pick<UserProfile, "is_active" | "role"> | null | undefined,
-  project: Pick<Project, "contractor_spec_can_update_ordering"> | null | undefined,
+  profile: Pick<UserProfile, "is_active" | "role"> & { email?: string } | null | undefined,
+  project: Pick<Project, "contractor_spec_can_update_ordering"> & { client_can_view_spec_book?: boolean } | null | undefined,
 ) {
   if (!profile?.is_active || !project) return false;
   if (isStudioTeamRole(profile.role)) return true;
+  if (isClientRole(profile.role) && SPEC_ORDERING_STATUS_EMAILS.has(String(profile.email).trim().toLowerCase())) {
+    return project.client_can_view_spec_book === true;
+  }
   return isContractorRole(profile.role) && project.contractor_spec_can_update_ordering === true;
 }
