@@ -23,7 +23,7 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: any) => ({ options }),
-  Link: ({ children }: any) => React.createElement("a", null, children),
+  Link: ({ children, className }: any) => React.createElement("a", { className }, children),
   useNavigate: () => () => {},
 }));
 vi.mock("@/components/AppShell", () => ({
@@ -50,4 +50,20 @@ it("never falls back to the staff dashboard for an inactive login", () => {
   expect(html).toContain("Loading your projects");
   expect(html).not.toContain("Other account private project");
   expect(html).not.toContain("Active Projects");
+});
+
+it.each(["Client", "Contractor", "GC", "Builder"])("keeps the existing picture cards for %s", role => {
+  state.pending = false;
+  state.profile = { id: "external-user", is_active: true, role, email: "external@example.test" };
+  const html = renderToStaticMarkup(React.createElement((Route as any).options.component));
+  expect(html).toContain("aspect-[4/5]");
+  expect(html).not.toContain("min-h-[172px]");
+});
+
+it.each(["Admin", "Employee"])("uses compact cards only for internal %s accounts", role => {
+  state.pending = false;
+  state.profile = { id: "staff-user", is_active: true, role, email: "staff@example.test" };
+  const html = renderToStaticMarkup(React.createElement((Route as any).options.component));
+  expect(html).toContain("min-h-[172px]");
+  expect(html).not.toContain("aspect-[4/5]");
 });

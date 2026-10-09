@@ -255,10 +255,12 @@ function DashboardPage() {
         ) : activeProjects.length === 0 ? (
           <EmptyState isClientUser={isSharedUser} />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-14">
+          <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 ${isSharedUser ? "gap-x-8 gap-y-14" : "gap-4 lg:gap-6"}`}>
             {activeProjects.map((p) => {
               const approvalSummary = clientApprovalSummaries.find((summary) => summary.project.id === p.id);
-              return <ProjectCard key={p.id} p={p} isClientUser={isClientUser} approvalSummary={approvalSummary} />;
+              return isSharedUser
+                ? <ProjectCard key={p.id} p={p} isClientUser={isClientUser} approvalSummary={approvalSummary} />
+                : <StudioProjectCard key={p.id} p={p} />;
             })}
           </div>
         )}
@@ -1159,6 +1161,46 @@ function formatDashboardDate(value: string) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function StudioProjectCard({ p }: { p: Project }) {
+  const [failedCover, setFailedCover] = useState<string | null>(null);
+  const showCover = Boolean(p.cover_image_url && failedCover !== p.cover_image_url);
+
+  return (
+    <Link
+      to="/projects/$id"
+      params={{ id: p.id }}
+      className="group flex h-full min-h-[172px] flex-col border border-border bg-background p-5 lg:p-6 transition-colors hover:border-ink/40 hover:bg-bone/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
+    >
+      <div className="flex flex-1 items-start gap-5">
+        <div className="min-w-0 flex-1">
+          <div className="eyebrow mb-2">{p.project_label || p.project_type}</div>
+          <h3 className="font-display text-2xl leading-tight break-words">{p.name}</h3>
+          <p className="mt-2 text-sm text-muted-foreground break-words">{p.client_name}</p>
+        </div>
+        {showCover && (
+          <div className="h-24 w-20 shrink-0 overflow-hidden bg-bone">
+            <img
+              src={resolveImage(p.cover_image_url!)}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={() => setFailedCover(p.cover_image_url)}
+              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+            />
+          </div>
+        )}
+      </div>
+      <div className="mt-5 flex items-center justify-between gap-4 border-t border-border/70 pt-3">
+        <StatusBadge status={p.status} />
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground transition-colors group-hover:text-ink">
+          Open project
+          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+        </span>
+      </div>
+    </Link>
+  );
 }
 
 function ProjectCard({
