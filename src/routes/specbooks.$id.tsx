@@ -1759,6 +1759,7 @@ function SpecCard({
   hideInternalProductDetails: boolean;
 }) {
   const p = item.product;
+  const productUrl = item.product_url || p?.product_url || "";
   const qc = useQueryClient();
   const saveQuantity = async (patch: SpecQuantityPatch) => {
     await db.updateMaterialQuantity(item.id, patch);
@@ -1854,22 +1855,22 @@ function SpecCard({
           <SpecOrderingControls item={item} projectId={projectId} canEditOrderedBy={canEditProducts} />
         )}
 
-        {showLinks && p?.product_url && (
+        {showLinks && productUrl && (
           <div className="mt-5 print:mt-2">
             <dt className="eyebrow mb-1">Product URL</dt>
-            {externalHref(p.product_url) ? (
+            {externalHref(productUrl) ? (
               <a
-                href={externalHref(p.product_url) ?? undefined}
+                href={externalHref(productUrl) ?? undefined}
                 target="_blank"
                 rel="noreferrer"
                 onClick={(event) => event.stopPropagation()}
                 className="text-xs break-all underline inline-flex items-start gap-1 print:text-[10px] print:leading-tight"
               >
-                {p.product_url} <ExternalLink className="w-3 h-3 mt-0.5 shrink-0" />
+                {productUrl} <ExternalLink className="w-3 h-3 mt-0.5 shrink-0" />
               </a>
             ) : (
               <div className="text-xs break-all print:text-[10px] print:leading-tight">
-                {p.product_url}
+                {productUrl}
               </div>
             )}
           </div>
