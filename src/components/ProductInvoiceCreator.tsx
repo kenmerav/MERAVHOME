@@ -1,7 +1,8 @@
 import { FileText, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
+import { saveAndPrintInvoice } from "@/lib/saveAndPrintInvoice";
 import { normalizeSupabaseImageUrl, supabaseImageTransformUrl } from "@/lib/local-assets";
 import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityUnit } from "@/lib/specQuantity";
@@ -116,6 +117,7 @@ export function ProductInvoiceCreator({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const saveInProgress = useRef(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [approvalFilter, setApprovalFilter] = useState<ProductInvoiceApprovalFilter>("all");
   const [roomFilter, setRoomFilter] = useState("__all");
@@ -204,15 +206,17 @@ export function ProductInvoiceCreator({
     }
   };
 
-  const saveInvoice = async () => {
+  const saveInvoice = async (download = false) => {
+    if (saveInProgress.current || generatingLink) return;
     if (!projectId)
       return toast.error("Choose a single project before creating a product invoice.");
     if (!canCreate) return toast.error("Select products with a client price before saving.");
+    saveInProgress.current = true;
     setSaving(true);
     try {
       const finalHtml = buildProductInvoiceHtml(draft, totals);
       const fileName = `${draft.invoiceName || "Product Invoice"} - ${draft.projectName}`;
-      await db.createFinancialInvoice(
+      const persist = () => db.createFinancialInvoice(
         {
           project_id: projectId,
           file_name: fileName,
@@ -246,21 +250,27 @@ export function ProductInvoiceCreator({
           },
         ],
       );
-      toast.success("Product invoice saved");
-      onSaved?.();
-      setOpen(false);
+      const finishSave = () => {
+        toast.success("Product invoice saved");
+        setOpen(false);
+        onSaved?.();
+      };
+      if (download) {
+        await saveAndPrintInvoice({ html: finalHtml, fileName, save: persist, onSaved: finishSave });
+      } else {
+        if (!await persist()) throw new Error("Could not save the invoice. Please try again.");
+        finishSave();
+      }
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Could not save product invoice."));
     } finally {
+      saveInProgress.current = false;
       setSaving(false);
     }
   };
 
-  const triggerDownload = () =>
-    printHtmlAsPdf(html, `${draft.invoiceName || "Product Invoice"} - ${draft.projectName}`);
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => { if (!saveInProgress.current) setOpen(next); }}>
       <DialogTrigger asChild>
         <button
           type="button"
@@ -283,7 +293,7 @@ export function ProductInvoiceCreator({
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+        <fieldset disabled={saving} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
           <div className="space-y-6">
             {draft.lines.some((line) => line.quantity === "TBD") && (
               <p className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Items with TBD quantities start unchecked. Confirm their quantity before including them in an invoice.</p>
@@ -345,7 +355,7 @@ export function ProductInvoiceCreator({
                   <button
                     type="button"
                     onClick={generateStripeLink}
-                    disabled={generatingLink || !canCreate}
+                    disabled={saving || generatingLink || !canCreate}
                     className="shrink-0 px-4 py-2 border border-border text-sm hover:border-ink disabled:opacity-40"
                   >
                     {generatingLink ? "Creating..." : "Generate"}
@@ -545,22 +555,22 @@ export function ProductInvoiceCreator({
             <SummaryStat label="Balance" value={totals.balance} strong />
             <button
               type="button"
-              onClick={triggerDownload}
-              disabled={!canCreate}
+              onClick={() => saveInvoice(true)}
+              disabled={saving || generatingLink || !canCreate}
               className="inline-flex w-full items-center justify-center gap-2 px-4 py-3 border border-border text-sm hover:border-ink disabled:opacity-40"
             >
-              <FileText className="w-4 h-4" /> Download / Print PDF
+              <FileText className="w-4 h-4" /> {saving ? "Saving..." : "Save & Download / Print PDF"}
             </button>
             <button
               type="button"
-              onClick={saveInvoice}
-              disabled={saving || !canCreate}
+              onClick={() => saveInvoice()}
+              disabled={saving || generatingLink || !canCreate}
               className="inline-flex w-full items-center justify-center gap-2 px-4 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-40"
             >
               {saving ? "Saving..." : "Save Invoice"}
             </button>
           </aside>
-        </div>
+        </fieldset>
 
         <section>
           <div className="eyebrow mb-3">Live Preview</div>
@@ -867,23 +877,6 @@ function formatDateForInvoice(value: string) {
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;
   return `${Number(month)}/${Number(day)}/${year}`;
-}
-
-function printHtmlAsPdf(html: string, fileName?: string | null) {
-  const target = window.open("", "_blank");
-  if (!target) {
-    toast.error("Allow popups to download the invoice PDF.");
-    return;
-  }
-  target.opener = null;
-  target.document.open();
-  target.document.write(html);
-  target.document.close();
-  target.document.title = `${fileName || "Product Invoice"}.pdf`;
-  target.setTimeout(() => {
-    target.focus();
-    target.print();
-  }, 350);
 }
 
 function escapeHtml(value: string) {
