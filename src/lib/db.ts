@@ -200,6 +200,7 @@ export interface ProjectDocument {
   project_id: string;
   title: string;
   document_type: ProjectDocumentType;
+  superseded_by_document_id?: string | null;
   file_url: string;
   file_name: string | null;
   file_size: number | null;

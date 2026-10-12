@@ -82,6 +82,7 @@ import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/des
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
+import { Route as ApiCheckMaterialPlansRouteImport } from './routes/api/check-material-plans'
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
 import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
@@ -491,6 +492,12 @@ const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
   path: '/api/client-dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCheckMaterialPlansRoute =
+  ApiCheckMaterialPlansRouteImport.update({
+    id: '/api/check-material-plans',
+    path: '/api/check-material-plans',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCheckMaterialFinishesRoute =
   ApiCheckMaterialFinishesRouteImport.update({
     id: '/api/check-material-finishes',
@@ -678,6 +685,7 @@ export interface FileRoutesByFullPath {
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
+  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
@@ -785,6 +793,7 @@ export interface FileRoutesByTo {
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
+  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
@@ -893,6 +902,7 @@ export interface FileRoutesById {
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
+  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
@@ -1002,6 +1012,7 @@ export interface FileRouteTypes {
     | '/project-management'
     | '/terms'
     | '/api/calendar-notifications'
+    | '/api/check-material-plans'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/construction-document-notifications'
@@ -1109,6 +1120,7 @@ export interface FileRouteTypes {
     | '/project-management'
     | '/terms'
     | '/api/calendar-notifications'
+    | '/api/check-material-plans'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/construction-document-notifications'
@@ -1216,6 +1228,7 @@ export interface FileRouteTypes {
     | '/project-management'
     | '/terms'
     | '/api/calendar-notifications'
+    | '/api/check-material-plans'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
     | '/api/construction-document-notifications'
@@ -1324,6 +1337,7 @@ export interface RootRouteChildren {
   ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
   ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
+  ApiCheckMaterialPlansRoute: typeof ApiCheckMaterialPlansRoute
   ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiConstructionDocumentNotificationsRoute: typeof ApiConstructionDocumentNotificationsRoute
@@ -1928,6 +1942,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiClientDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/check-material-plans': {
+      id: '/api/check-material-plans'
+      path: '/api/check-material-plans'
+      fullPath: '/api/check-material-plans'
+      preLoaderRoute: typeof ApiCheckMaterialPlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/check-material-finishes': {
       id: '/api/check-material-finishes'
       path: '/api/check-material-finishes'
@@ -2183,6 +2204,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
   ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
+  ApiCheckMaterialPlansRoute: ApiCheckMaterialPlansRoute,
   ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiConstructionDocumentNotificationsRoute:

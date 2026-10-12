@@ -249,8 +249,6 @@ export function inferMaterialCategory(
 }
 
 const KITCHEN: ItemTemplate[] = [
-  { label: "Pendant", category: "Lighting" },
-  { label: "Sconce", category: "Lighting" },
   { label: "Lighting", category: "Lighting" },
   { label: "Faucet", category: "Plumbing" },
   { label: "Pot Filler", category: "Plumbing" },
@@ -265,7 +263,6 @@ const KITCHEN: ItemTemplate[] = [
 
 const BEDROOM_OFFICE: ItemTemplate[] = [
   { label: "Lighting", category: "Lighting" },
-  { label: "Sconce", category: "Lighting" },
   { label: "Flooring", category: "Flooring" },
   { label: "Paint", category: "Paint" },
 ];
@@ -292,9 +289,6 @@ const BATHROOM: ItemTemplate[] = [
   { label: "Toilet", category: "Plumbing" },
   { label: "Shower System", category: "Plumbing" },
   { label: "Shower Drain", category: "Plumbing" },
-  { label: "Sink Drain", category: "Plumbing" },
-  { label: "Pendant", category: "Lighting" },
-  { label: "Sconce", category: "Lighting" },
   { label: "Lighting", category: "Lighting" },
   { label: "Accent Mirrors", category: "Accessories" },
   { label: "Cabinetry Finish", category: "Cabinetry" },
@@ -309,14 +303,14 @@ const POWDER_BATHROOM: ItemTemplate[] = BATHROOM.filter(
   (item) => !["Shower Tile", "Shower System", "Shower Drain"].includes(item.label),
 );
 
-export function templateForRoomName(name: string): ItemTemplate[] {
+export function templateForRoomName(name: string, showerShown = false): ItemTemplate[] {
   const n = name.trim().toLowerCase();
   if (n === "kitchen") return KITCHEN;
   if (n === "living room") return LIVING_ROOM;
   if (n === "dining room") return DINING_ROOM;
   if (n === "office") return BEDROOM_OFFICE;
-  if (n.includes("powder")) return POWDER_BATHROOM;
-  if (n.includes("bathroom") || n.includes("bath")) return BATHROOM;
+  if (n.includes("powder") && !showerShown) return POWDER_BATHROOM;
+  if (n.includes("bathroom") || n.includes("bath") || n.includes("powder")) return BATHROOM;
   if (n.includes("bedroom")) return BEDROOM_OFFICE;
   return []; // "Other" / custom rooms start empty
 }

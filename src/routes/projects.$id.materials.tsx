@@ -50,6 +50,8 @@ import { toast } from "sonner";
 import { cleanUuid, isUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialHasUserSelection } from "@/lib/materialSelection";
+import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel, suggestedTemplatesForRoom, confirmedNoShower, type BathroomPlanEvidence } from "@/lib/materialSuggestions";
+import { fetchMaterialPlanCheck } from "@/lib/materialPlanCheck";
 import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -224,112 +226,8 @@ function latestTimestamp(values: Array<string | null | undefined>) {
   return latestValue;
 }
 
-function normalizeMaterialSuggestionLabel(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function isUntouchedTemplatePlaceholder(item: MaterialItem) {
   return item.is_required && !item.not_needed && !materialHasUserSelection(item);
-}
-
-function materialSuggestionSearchText(item: MaterialItem) {
-  return normalizeMaterialSuggestionLabel(
-    [
-      item.item_label,
-      item.client_product_name,
-      item.category,
-      item.cad_label,
-      item.notes,
-      item.product?.name,
-      item.product?.subcategory,
-      item.product?.category,
-      item.product?.notes,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-}
-
-function materialCoversTemplateSuggestion(
-  item: MaterialItem,
-  suggestion: { label: string; category: string },
-) {
-  const suggestionKey = normalizeMaterialSuggestionLabel(suggestion.label);
-  const itemLabelKey = normalizeMaterialSuggestionLabel(item.item_label);
-  const text = materialSuggestionSearchText(item);
-  const category =
-    normalizeItemCategory(item.category) ??
-    inferMaterialCategory(`${item.item_label} ${item.product?.name ?? ""}`, item.product_url);
-  const has = (pattern: RegExp) => pattern.test(text);
-
-  if (itemLabelKey === suggestionKey) return true;
-
-  switch (suggestionKey) {
-    case "tile":
-      return category === "Tile & Stone";
-    case "shower tile":
-      return category === "Tile & Stone" && has(/\b(shower|showerwall|wet wall|tub surround)\b/);
-    case "countertop":
-    case "countertops":
-      return category === "Countertops" || has(/\b(countertop|countertops|counter top|slab)\b/);
-    case "sink":
-      return (
-        category === "Plumbing" &&
-        has(/\b(sink|basin|lavatory)\b/) &&
-        !has(/\b(sink|basin|lavatory)\s+drain\b/)
-      );
-    case "faucet":
-      return has(/\b(faucet|lavatory faucet|basin tap)\b/);
-    case "shower system":
-      return has(
-        /\b(shower system|shower trim|shower valve|shower head|rain head|hand shower)\b/,
-      );
-    case "shower drain":
-      return has(/\b(shower drain|linear drain)\b/);
-    case "sink drain":
-      return has(/\b(sink drain|basin drain|lavatory drain|pop up drain)\b/);
-    case "pendant":
-      return has(/\b(pendant|hanging light)\b/);
-    case "sconce":
-      return has(/\b(sconce|wall light)\b/);
-    case "lighting":
-      return category === "Lighting";
-    case "accent mirrors":
-      return category === "Accent Mirrors" || has(/\b(mirror|mirrors|medicine cabinet)\b/);
-    case "cabinet finish":
-    case "cabinetry finish":
-      return (
-        has(/\b(cabinet|cabinetry)\b/) &&
-        has(/\b(finish|paint|stain|color|colour)\b/)
-      );
-    case "cabinet hardware":
-      return (
-        has(/\b(cabinet hardware|cabinet knob|cabinet knobs|cabinet pull|cabinet pulls|knob|knobs|pull|pulls|latch|latches)\b/) &&
-        (!has(/\b(shower|shower door)\b/) || has(/\bcabinet\b/))
-      );
-    case "flooring":
-      return (
-        category === "Flooring" ||
-        (has(/\b(floor|flooring|floor tile|wood floor|carpet|rug)\b/) &&
-          !has(/\bshower floor\b/))
-      );
-    case "paint":
-      return category === "Paint" || has(/\b(paint|limewash|lime wash|wall finish)\b/);
-    case "towel hook":
-      return has(/\b(towel hook|robe hook|bath hook)\b/);
-    case "toilet paper holder":
-      return has(/\b(toilet paper holder|paper holder|tp holder)\b/);
-    default: {
-      const singularSuggestion = suggestionKey.replace(/ies$/, "y").replace(/s$/, "");
-      const singularItemLabel = itemLabelKey.replace(/ies$/, "y").replace(/s$/, "");
-      return singularItemLabel === singularSuggestion;
-    }
-  }
 }
 
 type MaterialSuggestion = {
@@ -377,6 +275,32 @@ function MaterialsPage() {
 
   const canManageMaterials =
     profile?.is_active === true && (profile.role === "Admin" || profile.role === "Employee");
+  const [reviewPlans, setReviewPlans] = useState(false);
+  const documentsQuery = useQuery({
+    queryKey: ["projectDocuments", projectId, profile?.id, "history"],
+    queryFn: async () => (await db.listProjectDocuments(projectId!)) ?? [],
+    enabled: !!projectId && canManageMaterials,
+  });
+  const latestPlan = documentsQuery.data?.find(document => document.document_type === "Construction Doc" && !document.superseded_by_document_id);
+  const planQuery = useQuery({
+    queryKey: ["materialPlanCheck", projectId, latestPlan?.id, latestPlan?.updated_at,
+      rooms.filter(room => /bath|powder/i.test(room.name)).map(room => `${room.id}:${room.name}`).sort().join("|")],
+    queryFn: async () => {
+      try { return await fetchMaterialPlanCheck(projectId!, latestPlan!.id); }
+      catch (error) {
+        if ((error as Error & { status?: number }).status === 409)
+          await qc.invalidateQueries({ queryKey: ["projectDocuments", projectId] });
+        throw error;
+      }
+    },
+    enabled: reviewPlans && !!latestPlan && canManageMaterials && rooms.length > 0,
+    staleTime: 24 * 60 * 60 * 1000, retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const planStatus = !reviewPlans ? "idle" : documentsQuery.isError ? "error" :
+    documentsQuery.isPending ? "checking" : !latestPlan ? "no_document" :
+    planQuery.isError || planQuery.data?.status === "unavailable" ? "error" :
+    planQuery.isPending ? "checking" : "checked";
 
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -882,6 +806,12 @@ function MaterialsPage() {
               items={byRoom.get(room.id) ?? []}
               products={products}
               projectId={projectId}
+              planEvidence={planQuery.data?.document?.id === latestPlan?.id
+                ? planQuery.data?.rooms.find(evidence => evidence.room_id === room.id) : undefined}
+              planTitle={planQuery.data?.document?.title ?? ""}
+              planStatus={planStatus}
+              planMessage={planQuery.data?.message}
+              onReviewPlans={() => { if (/bath|powder/i.test(room.name)) setReviewPlans(true); }}
             />
           ))}
         </div>
@@ -915,11 +845,21 @@ function RoomMaterialsSection({
   items,
   products,
   projectId,
+  planEvidence,
+  planTitle,
+  planStatus,
+  planMessage,
+  onReviewPlans,
 }: {
   room: Room;
   items: MaterialItem[];
   products: Product[];
   projectId: string;
+  planEvidence?: BathroomPlanEvidence;
+  planTitle: string;
+  planStatus: "idle" | "checking" | "checked" | "error" | "no_document";
+  planMessage?: string;
+  onReviewPlans: () => void;
 }) {
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -934,14 +874,14 @@ function RoomMaterialsSection({
     const chosenItems = items.filter(
       (item) => !item.not_needed && !isUntouchedTemplatePlaceholder(item),
     );
-    return templateForRoomName(room.name).flatMap((templateItem) => {
+    return suggestedTemplatesForRoom(templateForRoomName(room.name, planEvidence?.shower === "present"), planEvidence).flatMap((templateItem) => {
       const key = normalizeMaterialSuggestionLabel(templateItem.label);
       if (activatedSuggestionKeySet.has(key)) return [];
       const matchingItems = items.filter(
         (item) => normalizeMaterialSuggestionLabel(item.item_label) === key,
       );
       if (matchingItems.some((item) => item.not_needed)) return [];
-      if (chosenItems.some((item) => materialCoversTemplateSuggestion(item, templateItem))) {
+      if (chosenItems.some((item) => materialCoversTemplateSuggestion(item, templateItem, room.name))) {
         return [];
       }
       return [
@@ -954,7 +894,7 @@ function RoomMaterialsSection({
         },
       ];
     });
-  }, [activatedSuggestionKeySet, items, room.name]);
+  }, [activatedSuggestionKeySet, items, room.name, planEvidence]);
   const activeItems = useMemo(
     () =>
       items.filter(
@@ -1262,6 +1202,12 @@ function RoomMaterialsSection({
           {templateSuggestions.length > 0 && (
             <MaterialSuggestionReview
               roomName={room.name}
+              projectId={projectId}
+              planEvidence={planEvidence}
+              planTitle={planTitle}
+              planStatus={planStatus}
+              planMessage={planMessage}
+              onReviewPlans={onReviewPlans}
               suggestions={templateSuggestions}
               onAdd={activateSuggestion}
               onDismiss={dismissSuggestion}
@@ -2052,16 +1998,28 @@ function NotesPopover({ value, onSave }: { value: string; onSave: (v: string) =>
   );
 }
 
-function MaterialSuggestionReview({
+export function MaterialSuggestionReview({
   roomName,
   suggestions,
   onAdd,
   onDismiss,
+  projectId,
+  planEvidence,
+  planTitle,
+  planStatus,
+  planMessage,
+  onReviewPlans,
 }: {
   roomName: string;
   suggestions: MaterialSuggestion[];
   onAdd: (suggestion: MaterialSuggestion, productUrl: string | null) => Promise<void>;
   onDismiss: (suggestion: MaterialSuggestion) => Promise<void>;
+  projectId: string;
+  planEvidence?: BathroomPlanEvidence;
+  planTitle: string;
+  planStatus: "idle" | "checking" | "checked" | "error" | "no_document";
+  planMessage?: string;
+  onReviewPlans: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -2108,7 +2066,11 @@ function MaterialSuggestionReview({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !savingKey && setOpen(nextOpen)}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (savingKey) return;
+      setOpen(nextOpen);
+      if (nextOpen) onReviewPlans();
+    }}>
       <DialogTrigger asChild>
         <button
           type="button"
@@ -2125,6 +2087,24 @@ function MaterialSuggestionReview({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          {/bath|powder/i.test(roomName) && (
+            <div role="status" className="border border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed">
+              {planStatus === "checking" ? "Checking the latest construction document…" :
+                planStatus === "no_document" ? "No construction document is available yet. Review these suggestions for this room." :
+                planStatus === "error" ? planMessage || "Could not check the latest plans. Shower suggestions remain available for review." :
+                confirmedNoShower(planEvidence) ? "Latest plans show no shower in this bathroom. Shower items are omitted from these suggestions." :
+                planEvidence?.shower === "present" ? "A shower is shown in this bathroom’s latest plans." :
+                "The shower layout is not confirmed. Review shower suggestions against the plans."}
+              {planStatus === "checked" && planEvidence?.page && (
+                <div className="mt-2 text-muted-foreground">
+                  <Link to="/projects/$id/construction-docs" params={{ id: projectId }} className="underline">
+                    {planTitle || "Construction document"}
+                  </Link> · page {planEvidence.page}{planEvidence.sheet ? ` · ${planEvidence.sheet}` : ""}
+                  <p className="mt-1">{planEvidence.evidence}</p>
+                </div>
+              )}
+            </div>
+          )}
           <p className="text-sm leading-relaxed text-muted-foreground">
             Paste a product link to add it now, or leave the link blank to add a placeholder you can
             finish later. Anything untouched will still be here the next time you open this list.
