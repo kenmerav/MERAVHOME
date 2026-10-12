@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ViewUserRouteImport } from './routes/view-user'
 import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
 import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
+import { Route as ApiSpecBookMaterialRouteImport } from './routes/api/spec-book-material'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ProjectManagementRouteImport } from './routes/project-management'
 import { Route as ProcurementRouteImport } from './routes/procurement'
@@ -127,6 +128,11 @@ const ApiViewUserRoute = ApiViewUserRouteImport.update({
 const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
   id: '/api/spec-ordering',
   path: '/api/spec-ordering',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecBookMaterialRoute = ApiSpecBookMaterialRouteImport.update({
+  id: '/api/spec-book-material',
+  path: '/api/spec-book-material',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -660,6 +666,7 @@ export interface FileRoutesByFullPath {
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
+  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
   '/ea-desk': typeof EaDeskRoute
@@ -766,6 +773,7 @@ export interface FileRoutesByTo {
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
+  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
   '/ea-desk': typeof EaDeskRoute
@@ -872,6 +880,7 @@ export interface FileRoutesById {
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
+  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
@@ -981,6 +990,7 @@ export interface FileRouteTypes {
     | '/view-user'
     | '/api/view-user'
     | '/api/spec-ordering'
+    | '/api/spec-book-material'
     | '/'
     | '/catalog'
     | '/ea-desk'
@@ -1087,6 +1097,7 @@ export interface FileRouteTypes {
     | '/view-user'
     | '/api/view-user'
     | '/api/spec-ordering'
+    | '/api/spec-book-material'
     | '/'
     | '/catalog'
     | '/ea-desk'
@@ -1192,6 +1203,7 @@ export interface FileRouteTypes {
     | '/view-user'
     | '/api/view-user'
     | '/api/spec-ordering'
+    | '/api/spec-book-material'
     | '__root__'
     | '/'
     | '/catalog'
@@ -1300,6 +1312,7 @@ export interface RootRouteChildren {
   ViewUserRoute: typeof ViewUserRoute
   ApiViewUserRoute: typeof ApiViewUserRoute
   ApiSpecOrderingRoute: typeof ApiSpecOrderingRoute
+  ApiSpecBookMaterialRoute: typeof ApiSpecBookMaterialRoute
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
   EaDeskRoute: typeof EaDeskRoute
@@ -1423,6 +1436,13 @@ declare module '@tanstack/react-router' {
       path: '/api/spec-ordering'
       fullPath: '/api/spec-ordering'
       preLoaderRoute: typeof ApiSpecOrderingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-book-material': {
+      id: '/api/spec-book-material'
+      path: '/api/spec-book-material'
+      fullPath: '/api/spec-book-material'
+      preLoaderRoute: typeof ApiSpecBookMaterialRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -2151,6 +2171,7 @@ const rootRouteChildren: RootRouteChildren = {
   ViewUserRoute: ViewUserRoute,
   ApiViewUserRoute: ApiViewUserRoute,
   ApiSpecOrderingRoute: ApiSpecOrderingRoute,
+  ApiSpecBookMaterialRoute: ApiSpecBookMaterialRoute,
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
   EaDeskRoute: EaDeskRoute,

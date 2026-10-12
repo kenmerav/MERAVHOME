@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { AlertTriangle, ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp, Download, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   db,
@@ -34,6 +34,7 @@ import {
 } from "@/lib/permissions";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
+import { setProjectMaterialRemoved } from "@/lib/specBookMaterialRemoval";
 import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
 import { SpecSpreadsheetTextValue, SpecSpreadsheetWrapContext } from "@/components/SpecSpreadsheetTextValue";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
@@ -1964,7 +1965,7 @@ function SpecOrderingControls({ item, projectId, canEditOrderedBy }: { item: Mat
   );
 }
 
-function SpecProductEditDialog({
+export function SpecProductEditDialog({
   open,
   onOpenChange,
   item,
@@ -1978,6 +1979,13 @@ function SpecProductEditDialog({
   projectId: string;
 }) {
   const qc = useQueryClient();
+  const { data: profile } = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: () => db.getCurrentUserProfile(),
+  });
+  const canRemove = profile?.is_active === true && isStudioTeamRole(profile.role);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [materialCategory, setMaterialCategory] = useState(normalizeItemCategory(item.category) || "Other");
   const [materialNotes, setMaterialNotes] = useState(item.notes ?? "");
   const [form, setForm] = useState<ProductForm>({
@@ -2000,6 +2008,40 @@ function SpecProductEditDialog({
 
   const update = (patch: Partial<ProductForm>) => {
     setForm((current) => ({ ...current, ...patch }));
+  };
+
+  const refreshProjectItems = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
+      qc.invalidateQueries({ queryKey: ["procurement"] }),
+    ]);
+  };
+  const undoRemoval = async () => {
+    try {
+      await setProjectMaterialRemoved(projectId, item.id, false);
+      await refreshProjectItems();
+      toast.success("Project item restored");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not restore this item.");
+    }
+  };
+  const removeFromProject = async () => {
+    if (!canRemove || removing || saving) return;
+    setRemoving(true);
+    try {
+      await setProjectMaterialRemoved(projectId, item.id, true);
+      await refreshProjectItems();
+      setConfirmingRemoval(false);
+      onOpenChange(false);
+      toast.success("Removed from project", {
+        duration: 10_000,
+        action: { label: "Undo", onClick: undoRemoval },
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not remove this item.");
+    } finally {
+      setRemoving(false);
+    }
   };
 
   const save = async () => {
@@ -2041,11 +2083,38 @@ function SpecProductEditDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!next) setConfirmingRemoval(false);
+      onOpenChange(next);
+    }}>
       <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto print:hidden">
         <DialogHeader>
-          <DialogTitle className="font-display text-3xl font-normal">Edit Product Info</DialogTitle>
+          <DialogTitle className="font-display text-3xl font-normal">
+            {confirmingRemoval ? "Remove from project?" : "Edit Product Info"}
+          </DialogTitle>
         </DialogHeader>
+        {confirmingRemoval ? (
+          <div className="space-y-5">
+            <p className="text-sm leading-relaxed">
+              Remove <strong>{item.client_product_name || item.item_label}</strong> from Materials,
+              Procurement and the Spec Book? The product stays in the Product Catalog.
+            </p>
+            {(item.source_board_id || item.source_board_page_id) && (
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                If this item is still on the design board, sending the board again can add it back.
+                Remove it from the board too if it is no longer selected.
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-3 pt-4">
+              <button type="button" disabled={removing} onClick={() => setConfirmingRemoval(false)}
+                className="border border-border px-5 py-3 text-sm disabled:opacity-60">Keep Item</button>
+              <button type="button" disabled={removing} onClick={removeFromProject}
+                className="inline-flex items-center gap-2 bg-red-700 text-white px-5 py-3 text-sm disabled:opacity-60">
+                <Trash2 className="h-4 w-4" />{removing ? "Removing..." : "Remove from Project"}
+              </button>
+            </div>
+          </div>
+        ) : <>
         <div className="grid md:grid-cols-2 gap-4">
           <Field label="Product Name" value={form.name} onChange={(value) => update({ name: value })} />
           <Field label="Vendor" value={form.vendor ?? ""} onChange={(value) => update({ vendor: value })} />
@@ -2095,15 +2164,22 @@ function SpecProductEditDialog({
           <LongField label="Spec Notes" value={materialNotes} onChange={setMaterialNotes} />
           <LongField label="Description" value={form.description ?? ""} onChange={(value) => update({ description: value })} />
         </div>
-        <div className="flex justify-end pt-4">
+        <div className="flex flex-wrap justify-between gap-3 pt-4">
+          {canRemove ? (
+            <button type="button" disabled={saving || removing} onClick={() => setConfirmingRemoval(true)}
+              className="inline-flex items-center gap-2 border border-red-200 px-5 py-3 text-red-700 text-sm disabled:opacity-60">
+              <Trash2 className="h-4 w-4" />Remove from Project
+            </button>
+          ) : <span />}
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || removing}
             className="inline-flex items-center gap-2 px-6 py-3 bg-ink text-primary-foreground text-sm disabled:opacity-60"
           >
             {saving ? "Saving..." : "Save Product"}
           </button>
         </div>
+        </>}
       </DialogContent>
     </Dialog>
   );
