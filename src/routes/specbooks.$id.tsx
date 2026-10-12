@@ -38,6 +38,7 @@ import { setProjectMaterialRemoved } from "@/lib/specBookMaterialRemoval";
 import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
 import { SpecSpreadsheetTextValue, SpecSpreadsheetWrapContext } from "@/components/SpecSpreadsheetTextValue";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
+import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { formatSpecQuantity, specQuantityInput, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
 
 export const Route = createFileRoute("/specbooks/$id")({
@@ -522,6 +523,9 @@ export function SpecBookDocument({
               >
                 View Presentation
               </Link>
+            )}
+            {!publicView && profile?.is_active && isStudioTeamRole(profile.role) && (
+              <SpecCompletionReview projectId={id} items={items} rooms={rooms} />
             )}
             {canDownloadPdf && (
               <button

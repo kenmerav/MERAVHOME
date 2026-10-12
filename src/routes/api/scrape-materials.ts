@@ -16,6 +16,7 @@ import {
   FIRECRAWL_PRODUCT_SCHEMA,
   missingProductSpecifications,
   normalizeFirecrawlProduct,
+  shopifySizeDetails,
 } from "@/lib/firecrawlProduct";
 
 import {
@@ -124,6 +125,8 @@ type Scraped = {
   finish?: string;
   sku?: string;
   dimensions?: string;
+  size_options?: string[];
+  selected_size?: string;
   price?: string;
   unit_cost?: string;
   shipping?: string;
@@ -259,6 +262,7 @@ async function scrapeShopifyProduct(url: string): Promise<Scraped | null> {
       sku: firstString(representative?.sku),
       color: option(/colou?r|colorway/i),
       finish: option(/finish|surface|treatment/i),
+      ...shopifySizeDetails(product, selectedVariantId),
       price: shopifyPrice(variants, selectedVariantId),
       image_url: image.startsWith("//") ? `https:${image}` : image,
     };
@@ -320,6 +324,8 @@ function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | n
     finish: firstString(primary?.finish, fallback?.finish),
     sku: firstString(primary?.sku, fallback?.sku),
     dimensions: firstString(primary?.dimensions, fallback?.dimensions),
+    selected_size: firstString(primary?.selected_size, fallback?.selected_size),
+    size_options: primary?.size_options?.length ? primary.size_options : fallback?.size_options,
     price: firstString(primary?.price, fallback?.price),
     unit_cost: firstString(primary?.unit_cost, fallback?.unit_cost),
     shipping: firstString(primary?.shipping, fallback?.shipping),
@@ -453,6 +459,8 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
     color: product.color,
     finish: product.finish,
     dimensions: product.dimensions,
+    selected_size: product.selected_size,
+    size_options: product.size_options,
     price: product.price,
     unit_cost: firstPrice(ex.unit_cost),
     shipping: firstPrice(ex.shipping),
@@ -795,6 +803,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
               finish: row.scraped.finish || null,
               sku: row.scraped.sku || null,
               dimensions: row.scraped.dimensions || null,
+              selected_size: row.scraped.selected_size || null,
+              size_options: row.scraped.size_options?.length ? row.scraped.size_options : null,
               price: savedPrice || null,
               unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
               shipping: normalizeMoneyInput(row.scraped.shipping),

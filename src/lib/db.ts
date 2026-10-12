@@ -324,6 +324,9 @@ export interface Product {
   sku: string | null;
   notes: string | null;
   dimensions: string | null;
+  /** Published size choices and the option selected for this exact product link. */
+  size_options?: string[] | null;
+  selected_size?: string | null;
   /** Separate from quantity_unit; null/absent means the price basis has not been reviewed. */
   price_unit?: import("@/lib/productPriceUnit").ProductPriceUnit | null;
   retail_price: string | null;

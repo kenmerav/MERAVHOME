@@ -8,6 +8,8 @@ export type ScrapedProductData = {
   color?: string;
   finish?: string;
   dimensions?: string;
+  size_options?: string[];
+  selected_size?: string;
   price?: string;
   image_url?: string;
 };

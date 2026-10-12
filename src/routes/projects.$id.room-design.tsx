@@ -1215,6 +1215,8 @@ function RoomDesignWorkflow({
             sku: catalogProduct.sku || undefined,
             finish: catalogProduct.finish || undefined,
             dimensions: catalogProduct.dimensions || undefined,
+            size_options: catalogProduct.size_options || undefined,
+            selected_size: catalogProduct.selected_size || undefined,
             price: catalogProduct.price || undefined,
             image_url: catalogProduct.image_url || undefined,
           }
@@ -1277,6 +1279,8 @@ function RoomDesignWorkflow({
           finish: scraped.finish || null,
           sku: scraped.sku || null,
           dimensions: scraped.dimensions || null,
+          size_options: scraped.size_options?.length ? scraped.size_options : null,
+          selected_size: scraped.selected_size || null,
           price: scraped.price || null,
           notes: `Created by the Room Design V2 pilot for ${project.name}.`,
         });
@@ -1331,6 +1335,8 @@ function RoomDesignWorkflow({
           sku: catalogProduct.sku || undefined,
           finish: catalogProduct.finish || undefined,
           dimensions: catalogProduct.dimensions || undefined,
+          size_options: catalogProduct.size_options || undefined,
+          selected_size: catalogProduct.selected_size || undefined,
           price: catalogProduct.price || undefined,
           image_url: catalogProduct.image_url || undefined,
         }
@@ -1351,6 +1357,8 @@ function RoomDesignWorkflow({
         finish: scraped.finish || null,
         sku: scraped.sku || null,
         dimensions: scraped.dimensions || null,
+        size_options: scraped.size_options?.length ? scraped.size_options : null,
+        selected_size: scraped.selected_size || null,
         price: scraped.price || null,
         notes: `Created by the Room Design V2 pilot for ${project.name}.`,
       });

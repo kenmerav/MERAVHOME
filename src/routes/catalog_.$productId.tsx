@@ -70,6 +70,8 @@ type ProductForm = Pick<
   | "finish"
   | "sku"
   | "dimensions"
+  | "size_options"
+  | "selected_size"
   | "price"
   | "unit_cost"
   | "shipping"
@@ -113,6 +115,8 @@ function ProductPage() {
         finish: product.finish,
         sku: product.sku,
         dimensions: product.dimensions,
+        size_options: product.size_options,
+        selected_size: product.selected_size,
         price: product.price,
         unit_cost: product.unit_cost,
         shipping: product.shipping,
@@ -169,6 +173,8 @@ function ProductPage() {
               finish: scraped.finish || current.finish,
               sku: scraped.sku || current.sku,
               dimensions: scraped.dimensions || current.dimensions,
+              size_options: scraped.size_options?.length ? scraped.size_options : current.size_options,
+              selected_size: scraped.selected_size || current.selected_size,
               price: scraped.price || current.price,
               notes: current.notes === CATALOG_NAME_PENDING_NOTE ? null : current.notes,
             }
@@ -327,6 +333,10 @@ function ProductPage() {
                 value={form.dimensions ?? ""}
                 onChange={(value) => update({ dimensions: value })}
               />
+              {form.size_options && form.size_options.length > 1 && <div>
+                <Field label="Selected size" value={form.selected_size ?? ""} onChange={(value) => update({ selected_size: value })} />
+                <p className="mt-2 text-xs text-muted-foreground">Published choices: {form.size_options.join(" · ")}</p>
+              </div>}
               <Field
                 label="Finish"
                 value={form.finish ?? ""}

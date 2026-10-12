@@ -82,6 +82,10 @@ import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/des
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
 import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
+import { Route as ApiSpecCompletionReviewRouteImport } from './routes/api/spec-completion-review'
+import { Route as ApiCheckSpecCompletionRouteImport } from './routes/api/check-spec-completion'
+import { Route as ApiSuggestBoardColorRouteImport } from './routes/api/suggest-board-color'
+import { Route as ApiSuggestPlanDimensionsRouteImport } from './routes/api/suggest-plan-dimensions'
 import { Route as ApiCheckMaterialPlansRouteImport } from './routes/api/check-material-plans'
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
@@ -492,6 +496,27 @@ const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
   path: '/api/client-dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpecCompletionReviewRoute = ApiSpecCompletionReviewRouteImport.update({
+  id: '/api/spec-completion-review',
+  path: '/api/spec-completion-review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCheckSpecCompletionRoute = ApiCheckSpecCompletionRouteImport.update({
+  id: '/api/check-spec-completion',
+  path: '/api/check-spec-completion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSuggestBoardColorRoute = ApiSuggestBoardColorRouteImport.update({
+  id: '/api/suggest-board-color',
+  path: '/api/suggest-board-color',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSuggestPlanDimensionsRoute =
+  ApiSuggestPlanDimensionsRouteImport.update({
+    id: '/api/suggest-plan-dimensions',
+    path: '/api/suggest-plan-dimensions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCheckMaterialPlansRoute =
   ApiCheckMaterialPlansRouteImport.update({
     id: '/api/check-material-plans',
@@ -685,6 +710,10 @@ export interface FileRoutesByFullPath {
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
+  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
+  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
+  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
   '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
@@ -793,6 +822,10 @@ export interface FileRoutesByTo {
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
+  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
+  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
+  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
   '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
@@ -902,6 +935,10 @@ export interface FileRoutesById {
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
+  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
+  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
+  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
   '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
@@ -1012,6 +1049,10 @@ export interface FileRouteTypes {
     | '/project-management'
     | '/terms'
     | '/api/calendar-notifications'
+    | '/api/spec-completion-review'
+    | '/api/check-spec-completion'
+    | '/api/suggest-board-color'
+    | '/api/suggest-plan-dimensions'
     | '/api/check-material-plans'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
@@ -1120,6 +1161,10 @@ export interface FileRouteTypes {
     | '/project-management'
     | '/terms'
     | '/api/calendar-notifications'
+    | '/api/spec-completion-review'
+    | '/api/check-spec-completion'
+    | '/api/suggest-board-color'
+    | '/api/suggest-plan-dimensions'
     | '/api/check-material-plans'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
@@ -1228,6 +1273,10 @@ export interface FileRouteTypes {
     | '/project-management'
     | '/terms'
     | '/api/calendar-notifications'
+    | '/api/spec-completion-review'
+    | '/api/check-spec-completion'
+    | '/api/suggest-board-color'
+    | '/api/suggest-plan-dimensions'
     | '/api/check-material-plans'
     | '/api/check-material-finishes'
     | '/api/client-dashboard'
@@ -1337,6 +1386,10 @@ export interface RootRouteChildren {
   ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
   ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
+  ApiSpecCompletionReviewRoute: typeof ApiSpecCompletionReviewRoute
+  ApiCheckSpecCompletionRoute: typeof ApiCheckSpecCompletionRoute
+  ApiSuggestBoardColorRoute: typeof ApiSuggestBoardColorRoute
+  ApiSuggestPlanDimensionsRoute: typeof ApiSuggestPlanDimensionsRoute
   ApiCheckMaterialPlansRoute: typeof ApiCheckMaterialPlansRoute
   ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
@@ -1942,6 +1995,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiClientDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/spec-completion-review': {
+      id: '/api/spec-completion-review'
+      path: '/api/spec-completion-review'
+      fullPath: '/api/spec-completion-review'
+      preLoaderRoute: typeof ApiSpecCompletionReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/check-spec-completion': {
+      id: '/api/check-spec-completion'
+      path: '/api/check-spec-completion'
+      fullPath: '/api/check-spec-completion'
+      preLoaderRoute: typeof ApiCheckSpecCompletionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/suggest-board-color': {
+      id: '/api/suggest-board-color'
+      path: '/api/suggest-board-color'
+      fullPath: '/api/suggest-board-color'
+      preLoaderRoute: typeof ApiSuggestBoardColorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/suggest-plan-dimensions': {
+      id: '/api/suggest-plan-dimensions'
+      path: '/api/suggest-plan-dimensions'
+      fullPath: '/api/suggest-plan-dimensions'
+      preLoaderRoute: typeof ApiSuggestPlanDimensionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/check-material-plans': {
       id: '/api/check-material-plans'
       path: '/api/check-material-plans'
@@ -2204,6 +2285,10 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
   ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
+  ApiSpecCompletionReviewRoute: ApiSpecCompletionReviewRoute,
+  ApiCheckSpecCompletionRoute: ApiCheckSpecCompletionRoute,
+  ApiSuggestBoardColorRoute: ApiSuggestBoardColorRoute,
+  ApiSuggestPlanDimensionsRoute: ApiSuggestPlanDimensionsRoute,
   ApiCheckMaterialPlansRoute: ApiCheckMaterialPlansRoute,
   ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,

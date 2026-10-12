@@ -489,6 +489,8 @@ export type Database = {
           created_at: string
           description: string | null
           dimensions: string | null
+          size_options: string[] | null
+          selected_size: string | null
           finish: string | null
           has_sample: boolean
           id: string
@@ -513,6 +515,8 @@ export type Database = {
           created_at?: string
           description?: string | null
           dimensions?: string | null
+          size_options?: string[] | null
+          selected_size?: string | null
           finish?: string | null
           has_sample?: boolean
           id?: string
@@ -537,6 +541,8 @@ export type Database = {
           created_at?: string
           description?: string | null
           dimensions?: string | null
+          size_options?: string[] | null
+          selected_size?: string | null
           finish?: string | null
           has_sample?: boolean
           id?: string

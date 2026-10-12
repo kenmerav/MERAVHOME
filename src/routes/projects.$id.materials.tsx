@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { MaterialPhotoUpload } from "@/components/MaterialPhotoUpload";
+import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
 import { formatPriceWithUnit } from "@/lib/productPriceUnit";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
@@ -748,6 +749,7 @@ function MaterialsPage() {
                 onJump={jumpToRoom}
                 className="min-w-[220px]"
               />
+              {canManageMaterials && <SpecCompletionReview projectId={projectId} items={items} rooms={rooms} />}
               <ImportSelectionSheetDialog
                 projectId={projectId}
                 rooms={rooms}
