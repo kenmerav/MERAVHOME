@@ -3,7 +3,9 @@ import {
   firstProductPrice,
   productPriceFromPage,
   selectedSkuPriceFromHtml,
+  squareFootPriceFromPage,
 } from "@/lib/productPricing";
+import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 
 export const FIRECRAWL_PRODUCT_SCHEMA = {
   type: "object",
@@ -51,6 +53,10 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
     regular_price: { type: "string" },
     list_price: { type: "string" },
     price_per_item: { type: "string" },
+    price_per_square_foot: {
+      type: "string", description: "Published price per square foot for this exact product. Exclude sample prices, box prices, and recommendations.",
+    },
+    price_unit: { type: "string", enum: ["unit", "sq_ft"], description: "Denominator for the extracted price: one item, sheet, set, box or case is unit; square-foot pricing is sq_ft." },
     image_url: {
       type: "string",
       description: "Absolute URL of the primary product image",
@@ -59,7 +65,7 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
 };
 
 export const FIRECRAWL_PRODUCT_PROMPT =
-  "Extract product details from this page, including finish, color, and dimensions whenever published. Read specifications, product details, dimensions, and selected options, not just the title and price. Keep surface finish/treatment separate from color/colorway. Capture the exact selected color, finish, and size for this URL; never pick an arbitrary option from a list of variants. List published size_options separately and identify selected_size only when supported by the exact URL/SKU/selection. If multiple size options exist and the chosen size is not established, leave dimensions and selected_size empty. Include all published product measurements with labels and units, excluding packaging/shipping dimensions. Do not infer measurements from an image or substitute another size. Capture the exact customer-visible price for that selected variant. If no exact variant price is visible, capture the product price range. Leave unavailable or ambiguous specifications empty; do not invent a color, finish, dimension, or price.";
+  "Extract product details from this page, including finish, color, and dimensions whenever published. Read specifications, product details, dimensions, and selected options, not just the title and price. Keep surface finish/treatment separate from color/colorway. Capture the exact selected color, finish, and size for this URL; never pick an arbitrary option from a list of variants. List published size_options separately and identify selected_size only when supported by the exact URL/SKU/selection. If multiple size options exist and the chosen size is not established, leave dimensions and selected_size empty. Include all published product measurements with labels and units, excluding packaging/shipping dimensions. Do not infer measurements from an image or substitute another size. Capture the exact customer-visible price for that selected variant. For tile and flooring, prefer the published price per square foot and identify price_unit as sq_ft; also capture price_per_square_foot. Otherwise identify the published selling unit as unit. Do not treat a box price as a square-foot price, and do not treat a public selling price as an internal cost. If no exact variant price is visible, capture the product price range. Leave unavailable or ambiguous specifications empty; do not invent a color, finish, dimension, or price.";
 
 export type NormalizedFirecrawlProduct = {
   name: string;
@@ -71,6 +77,7 @@ export type NormalizedFirecrawlProduct = {
   size_options: string[];
   selected_size: string;
   price: string;
+  price_unit: ProductPriceUnit | null;
   image_url: string;
 };
 
@@ -124,9 +131,12 @@ export function normalizeFirecrawlProduct(
   const selectedSize = /^(?:[-—–]|tbd|unknown|n\/a|not (?:specified|selected)|pending)$/i.test(candidateSize) ? "" : candidateSize;
   const pagePrice = productPriceFromPage(
     typeof data.markdown === "string" ? data.markdown : undefined,
-    typeof data.html === "string" ? data.html : undefined,
+    typeof data.rawHtml === "string" ? data.rawHtml : typeof data.html === "string" ? data.html : undefined,
     sourceUrl,
   );
+  const areaPrice = sizeOptions.length > 1 && !selectedSize ? "" :
+    firstProductPrice(extracted.price_per_square_foot) ||
+    squareFootPriceFromPage(typeof data.markdown === "string" ? data.markdown : "");
 
   return {
     name: firstString(extracted.name, metadata.title, metadata.ogTitle),
@@ -144,7 +154,8 @@ export function normalizeFirecrawlProduct(
     size_options: sizeOptions,
     selected_size: selectedSize,
     price: firstProductPrice(
-      selectedSkuPriceFromHtml(typeof data.html === "string" ? data.html : "", sourceUrl),
+      areaPrice,
+      selectedSkuPriceFromHtml(typeof data.rawHtml === "string" ? data.rawHtml : typeof data.html === "string" ? data.html : "", sourceUrl),
       extracted.current_price,
       extracted.sale_price,
       extracted.price,
@@ -153,6 +164,7 @@ export function normalizeFirecrawlProduct(
       extracted.price_per_item,
       pagePrice,
     ),
+    price_unit: areaPrice ? "sq_ft" : productPriceUnit(extracted.price_unit),
     image_url: firstString(
       extracted.image_url,
       extracted.image,

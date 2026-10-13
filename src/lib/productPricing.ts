@@ -1,7 +1,7 @@
 // Shared by single-product and materials scraping. Keep ranges out of numeric totals.
 const AMOUNT = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`;
 const PRICE = new RegExp(
-  String.raw`^\s*\$?\s*(${AMOUNT})(?:\s*(?:-|–|—|to)\s*\$?\s*(${AMOUNT}))?\s*(?:\/\s*(?:sq\.?\s*ft\.?|sf|each|item|box)|per\s+(?:sq\.?\s*ft\.?|square\s+foot|item|box)|each|USD)?\s*$`,
+  String.raw`^\s*(?:USD\s*)?\$?\s*(${AMOUNT})(?:\s*(?:-|–|—|to)\s*\$?\s*(${AMOUNT}))?\s*(?:(?:\/|per)\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet)|sf|each|item|box|carton|case|sheet|piece)|each|USD)?\s*$`,
   "i",
 );
 
@@ -44,7 +44,7 @@ export function selectedSkuPriceFromHtml(html: string, sourceUrl: string) {
     return "";
   }
   if (!/^\d{4,20}$/.test(sku)) return "";
-  const start = new RegExp(`"${sku}"\\s*:\\s*\\{\\s*"id"\\s*:\\s*"${sku}"`).exec(html);
+  const start = new RegExp(`"${sku}"\\s*:\\s*\\{`).exec(html);
   if (!start) return "";
   const offset = html.indexOf("{", start.index);
   let depth = 0;
@@ -64,6 +64,7 @@ export function selectedSkuPriceFromHtml(html: string, sourceUrl: string) {
     else if (char === "}" && --depth === 0) {
       try {
         const data = object(JSON.parse(html.slice(offset, index + 1)));
+        if (data.id != null && String(data.id) !== sku) return "";
         const price = object(data.price);
         return firstProductPrice(price.sellingPrice, price.regularPrice, price.retailPrice);
       } catch {
@@ -72,6 +73,20 @@ export function selectedSkuPriceFromHtml(html: string, sourceUrl: string) {
     }
   }
   return "";
+}
+
+/** Read an explicitly published area rate near the product's first price block. */
+export function squareFootPriceFromPage(markdown: string) {
+  const plain = markdown.replace(/[*_~]/g, "");
+  const first = new RegExp(String.raw`(?:^|\n)[ \t]*\$\s*${AMOUNT}(?=[ \t]*(?:\n|$|/))`).exec(plain);
+  if (!first) return "";
+  // Keep recommendations, samples, navigation and unrelated price tables out.
+  const pricing = plain.slice(first.index, first.index + 350)
+    .split(/\n\s*(?:#{1,6}\s*)?(?:You May Also|Related Products|Recommended|Complete Your)/i)[0];
+  const area = new RegExp(
+    String.raw`(?:^|\n)[ \t]*(\$\s*${AMOUNT})\s*(?:/|per)\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet)|sf)\b`, "i",
+  ).exec(pricing);
+  return exactProductPrice(area?.[1]);
 }
 
 function structuredProductPrice(html: string, sourceUrl: string) {

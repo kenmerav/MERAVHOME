@@ -11,6 +11,7 @@ import {
 import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
+import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 import {
   FIRECRAWL_PRODUCT_PROMPT,
   FIRECRAWL_PRODUCT_SCHEMA,
@@ -24,7 +25,7 @@ import {
   shouldReplaceCatalogProductName,
 } from "@/lib/catalogProductName";
 
-const MATERIAL_SCRAPE_PROMPT = `${FIRECRAWL_PRODUCT_PROMPT} For tile, capture total square feet per unopened box/carton/case only when it clearly matches the exact selected size or SKU. Ignore pieces per box, price per square foot, pallet coverage, installation services, financing thresholds, shipping offers, and related or recommended product prices. Never invent carton coverage.`;
+const MATERIAL_SCRAPE_PROMPT = `${FIRECRAWL_PRODUCT_PROMPT} For tile, capture total square feet per unopened box/carton/case only when it clearly matches the exact selected size or SKU. Pieces per box and price per square foot are not carton coverage. Ignore pallet coverage, installation services, financing thresholds, shipping offers, and related or recommended product prices. Never invent carton coverage.`;
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_BATCH_API = "https://api.firecrawl.dev/v2/batch/scrape";
@@ -128,6 +129,7 @@ type Scraped = {
   size_options?: string[];
   selected_size?: string;
   price?: string;
+  price_unit?: ProductPriceUnit | null;
   unit_cost?: string;
   shipping?: string;
   carton_coverage_sq_ft?: number;
@@ -162,6 +164,7 @@ type FirecrawlPage = {
   metadata?: Record<string, unknown>;
   markdown?: string;
   html?: string;
+  rawHtml?: string;
   url?: string;
 };
 
@@ -197,6 +200,7 @@ function shopifyPrice(variants: ShopifyVariant[], selectedVariantId: string | nu
   const selected = selectedVariantId
     ? variants.find((variant) => String(variant.id) === selectedVariantId)
     : null;
+  if (selectedVariantId && !selected) return "";
   const purchasable = variants.filter(
     (variant) =>
       variant.available !== false &&
@@ -316,6 +320,9 @@ async function scrapeDirectProduct(url: string) {
 }
 
 function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | null | undefined) {
+  const primaryPrice = exactProductPrice(primary?.price);
+  const fallbackPrice = exactProductPrice(fallback?.price);
+  const usePrimaryPrice = primaryPrice && !(fallbackPrice && fallback?.price_unit === "sq_ft" && primary?.price_unit !== "sq_ft");
   return compactPayload({
     name: firstString(primary?.name, fallback?.name),
     vendor: firstString(primary?.vendor, fallback?.vendor),
@@ -326,7 +333,10 @@ function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | n
     dimensions: firstString(primary?.dimensions, fallback?.dimensions),
     selected_size: firstString(primary?.selected_size, fallback?.selected_size),
     size_options: primary?.size_options?.length ? primary.size_options : fallback?.size_options,
-    price: firstString(primary?.price, fallback?.price),
+    price: usePrimaryPrice ? primaryPrice : fallbackPrice || firstString(primary?.price, fallback?.price),
+    price_unit: usePrimaryPrice
+      ? primary?.price_unit
+      : fallback?.price_unit ?? primary?.price_unit,
     unit_cost: firstString(primary?.unit_cost, fallback?.unit_cost),
     shipping: firstString(primary?.shipping, fallback?.shipping),
     carton_coverage_sq_ft:
@@ -462,7 +472,7 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
     selected_size: product.selected_size,
     size_options: product.size_options,
     price: product.price,
-    unit_cost: firstPrice(ex.unit_cost),
+    price_unit: product.price_unit,
     shipping: firstPrice(ex.shipping),
     image_url: firstString(ex.image_url, ex.image, meta.ogImage, meta["og:image"]),
     carton_coverage_sq_ft:
@@ -473,7 +483,10 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
   };
 }
 
-async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
+async function scrapeOne(url: string, fcKey: string, options: {
+  fresh?: boolean;
+  selection?: { sku?: string; finish?: string; dimensions?: string; color?: string };
+} = {}): Promise<Scraped> {
   const directProduct = await scrapeDirectProduct(url);
   // The direct retailer response may have pricing but omit the specifications.
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -492,15 +505,19 @@ async function scrapeOne(url: string, fcKey: string): Promise<Scraped> {
         formats: [
           "markdown",
           "html",
+          "rawHtml",
           {
             type: "json",
             schema: scrapeSchema,
-            prompt: MATERIAL_SCRAPE_PROMPT,
+            prompt: MATERIAL_SCRAPE_PROMPT + (options.selection
+              ? ` Saved selection context: ${JSON.stringify(options.selection)}. Use this only to match a published variant price; never estimate from these details. URL-selected options take priority.`
+              : ""),
           },
         ],
         onlyMainContent: false,
-        waitFor: 2000,
-        maxAge: FIRECRAWL_MAX_AGE_MS,
+        timeout: 30000,
+        waitFor: options.fresh ? 6000 : 2000,
+        maxAge: options.fresh ? 0 : FIRECRAWL_MAX_AGE_MS,
         location: { country: "US", languages: ["en-US"] },
         proxy: "auto",
       }),
@@ -539,6 +556,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               url?: string;
               existing_product_id?: string | null;
               needs_carton_coverage?: boolean;
+              selection?: { sku?: string; finish?: string; dimensions?: string; color?: string };
             }>;
           };
           const projectId = cleanUuid(body.project_id);
@@ -559,7 +577,9 @@ export const Route = createFileRoute("/api/scrape-materials")({
             );
             const scrapedByUrl = new Map(
               await Promise.all(
-                uniqueUrls.map(async (url) => [url, await scrapeOne(url, fcKey)] as const),
+                uniqueUrls.map(async (url) => [url, await scrapeOne(url, fcKey, {
+                  fresh: true, selection: candidates.find((candidate) => candidate.url?.trim() === url)?.selection,
+                })] as const),
               ),
             );
             return json({
@@ -623,9 +643,26 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 };
               }),
             );
+            // A successful page scrape can still omit a dynamically loaded price.
+            // Retry those pages once, bypassing cached incomplete HTML. Share one
+            // retry across duplicate product URLs within the batch.
+            const retries = new Map<string, Promise<Scraped>>();
+            const recoveredRows = await Promise.all(rows.map(async (row, index) => {
+              if (exactProductPrice(row.scraped.price)) return row;
+              const selection = body.candidates![index].selection;
+              const key = JSON.stringify([row.url, selection]);
+              if (!retries.has(key)) retries.set(key, scrapeOne(row.url, fcKey, { fresh: true, selection }));
+              const retried = await retries.get(key)!;
+              if (retried.error) return row;
+              const scraped = exactProductPrice(retried.price)
+                ? mergeScraped(retried, row.scraped)
+                : mergeScraped(row.scraped, retried);
+              if (row.scraped.error && !retried.error) delete scraped.error;
+              return { ...row, scraped };
+            }));
             return json({
               status: batch.status === "failed" ? "failed" : "completed",
-              rows,
+              rows: recoveredRows,
               completed_count: batch.completed,
               total_count: batch.total,
             });
@@ -639,7 +676,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
             .select(
-              "id, category, color, product_url, product_id, scrape_status, product:products(id, price, finish, dimensions, carton_coverage_sq_ft)",
+              "id, category, color, product_url, product_id, scrape_status, product:products(id, price, sku, finish, dimensions, carton_coverage_sq_ft)",
             )
             .eq("project_id", projectId)
             .not("product_url", "is", null);
@@ -667,6 +704,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
             material_item_id: item.id,
             url: item.product_url.trim(),
             existing_product_id: item.product?.id ?? item.product_id ?? null,
+            selection: compactPayload({ sku: item.product?.sku, finish: item.product?.finish,
+              dimensions: item.product?.dimensions, color: item.color }),
             needs_carton_coverage:
               /tile|stone/i.test(String(item.category ?? "")) &&
               !hasValue(item.product?.carton_coverage_sq_ft),
@@ -720,6 +759,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               formats: [
                 "markdown",
                 "html",
+                "rawHtml",
                 {
                   type: "json",
                   schema: scrapeSchema,
@@ -784,6 +824,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
 
             let productId = cleanUuid(row.existing_product_id);
             let savedPrice = exactProductPrice(row.scraped.price);
+            const incomingUnit = productPriceUnit(row.scraped.price_unit) ??
+              (savedPrice && !/tile|stone|flooring|countertop|paint/i.test(String(matItem?.category)) ? "unit" : null);
 
             if (!productId) {
               const { data: dup } = await supabaseAdmin
@@ -806,7 +848,8 @@ export const Route = createFileRoute("/api/scrape-materials")({
               selected_size: row.scraped.selected_size || null,
               size_options: row.scraped.size_options?.length ? row.scraped.size_options : null,
               price: savedPrice || null,
-              unit_cost: normalizeMoneyInput(row.scraped.unit_cost),
+              retail_price: savedPrice || null,
+              price_unit: incomingUnit,
               shipping: normalizeMoneyInput(row.scraped.shipping),
               carton_coverage_sq_ft: row.scraped.carton_coverage_sq_ft ?? null,
               carton_coverage_source_url: row.scraped.carton_coverage_source_url || null,
@@ -824,8 +867,16 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 .eq("id", productId)
                 .maybeSingle();
               const patch = fillBlankProductFields(existingProduct as any, payload);
+              // Unit labels must describe the price actually retained. Never
+              // relabel a manual box price with a newly scraped square-foot rate.
+              delete patch.price_unit;
+              delete patch.retail_price;
               if (savedPrice && !exactProductPrice(existingProduct?.price))
                 patch.price = savedPrice;
+              if (savedPrice && (!exactProductPrice(existingProduct?.price) || exactProductPrice(existingProduct?.price) === savedPrice)) {
+                if (incomingUnit && !productPriceUnit(existingProduct?.price_unit)) patch.price_unit = incomingUnit;
+                if (!hasValue(existingProduct?.retail_price)) patch.retail_price = savedPrice;
+              }
               savedPrice = exactProductPrice(existingProduct?.price) || savedPrice;
               if (
                 shouldReplaceCatalogProductName({
@@ -883,16 +934,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
                 scrape_error: savedPrice ? null : priceReview,
               };
               if (savedPrice) pricedCount += 1;
-              else {
-                priceMissingCount += 1;
-                if (
-                  range &&
-                  !exactProductPrice(range) &&
-                  !String(matItem?.notes ?? "").includes(priceReview)
-                ) {
-                  materialUpdate.notes = [matItem?.notes, priceReview].filter(Boolean).join("\n");
-                }
-              }
+              else priceMissingCount += 1;
               const scrapedColor = firstString(row.scraped.color);
               if (scrapedColor && !hasValue(matItem?.color)) {
                 materialUpdate.color = scrapedColor;

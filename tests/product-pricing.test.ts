@@ -7,7 +7,7 @@ import {
 import { normalizeFirecrawlProduct } from "../src/lib/firecrawlProduct";
 
 describe("retailer price extraction", () => {
-  it.each([1250, "1250.00", "$1,250.00", "$1250.00", "$7.99 / sq ft", "7.99 per square foot"])(
+  it.each([1250, "1250.00", "$1,250.00", "$1250.00", "USD 1250.00", "$7.99 / sq ft", "7.99 per square foot", "$7.99 / sheet", "$7.99 per square feet"])(
     "reads the full amount from %s",
     (value) => {
       expect(firstProductPrice(value)).toBe(String(value).includes("7.99") ? "$7.99" : "$1,250.00");
@@ -103,5 +103,16 @@ describe("retailer price extraction", () => {
         "Free shipping on orders over $50\n4 payments of $25\nRecommended item $99",
       ),
     ).toBe("");
+  });
+  it("reads an embedded selected SKU from raw HTML even when attributes precede a numeric id", () => {
+    const rawHtml = '<script>{"7510060":{"title":"Fletcher","id":7510060,"price":{"sellingPrice":205}}}</script>';
+    expect(normalizeFirecrawlProduct({ html: "<h1>Fletcher</h1>", rawHtml }, "https://www.rejuvenation.com/products/fletcher/?sku=7510060").price).toBe("$205.00");
+  });
+  it("uses published square-foot pricing instead of the nearby box or sample price", () => {
+    const page = { markdown: 'Get 5 samples for $5\n# ZenTech Chalk\n$148.16\n/ Box\n(17.43 sq ft)\n\n$8.50/ sq. ft.\n', json: { price: "$148.16", current_price: "$148.16" } };
+    expect(normalizeFirecrawlProduct(page, "https://www.tilebar.com/product/zentech.html")).toMatchObject({ price: "$8.50", price_unit: "sq_ft" });
+  });
+  it("does not borrow area prices from recommendations", () => {
+    expect(normalizeFirecrawlProduct({ markdown: '$205\n## Related Products\n$8.50 / sq ft' }, "https://example.com/hook").price_unit).not.toBe("sq_ft");
   });
 });

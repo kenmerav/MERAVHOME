@@ -153,8 +153,9 @@ describe("material metadata enrichment", () => {
     expect(writes.find((q) => q.table === "products").write).not.toHaveProperty("price");
     expect(writes.find((q) => q.table === "material_items").write).toMatchObject({
       scrape_status: "price_missing",
-      notes: expect.stringContaining("Designer note\nRetailer price range $149.00–$249.00"),
+      scrape_error: expect.stringContaining("Retailer price range $149.00–$249.00"),
     });
+    expect(writes.find((q) => q.table === "material_items").write).not.toHaveProperty("notes");
   });
   it("counts an existing manual price as priced even when enrichment has no price", async () => {
     mock.query.mockImplementation((q) =>
@@ -223,7 +224,7 @@ describe("material metadata enrichment", () => {
       "https://api.firecrawl.dev/v2/batch/scrape",
       expect.objectContaining({ method: "POST" }),
     );
-    const extraction = JSON.parse(fetcher.mock.calls[1][1].body).formats[2];
+    const extraction = JSON.parse(fetcher.mock.calls[1][1].body).formats.find((format: any) => format?.type === "json");
     expect(extraction.prompt).toContain("dimensions");
     expect(extraction.schema.properties.dimensions.description).toContain("units");
   });
@@ -330,6 +331,52 @@ describe("material metadata enrichment", () => {
     for (const write of writes.filter((q) => q.table === "products")) {
       expect(write.write).not.toHaveProperty("finish");
       expect(write.write).not.toHaveProperty("dimensions");
+    }
+  });
+  it("retries successful pages that omitted a price with fresh, slower rendering", async () => {
+    const fetcher = vi.fn(async (input: string|URL, init?: RequestInit) => {
+      if (String(input).includes('/batch/scrape/')) return new Response(JSON.stringify({status:'completed',completed:1,total:1,data:[{metadata:{sourceURL:'https://retailer.test/faucet'},json:{name:'Faucet',finish:'Brass'}}]}));
+      const payload = JSON.parse(String(init?.body));
+      expect(payload.maxAge).toBe(0);
+      expect(payload.waitFor).toBe(6000);
+      expect(payload.formats).toContain('rawHtml');
+      return new Response(JSON.stringify({data:{json:{name:'Faucet',current_price:'$940.80',price_unit:'unit'}}}));
+    });
+    vi.stubGlobal('fetch',fetcher);
+    const response=await handlers.POST({request:request('POST',{action:'poll',project_id:project,batch_id:'retry-test',candidates:[{material_item_id:item,url:'https://retailer.test/faucet',existing_product_id:product}]})});
+    expect((await response.json()).rows[0].scraped).toMatchObject({price:'$940.80',price_unit:'unit',finish:'Brass'});
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("shares the missing-price retry for duplicate product URLs", async () => {
+    const source='https://retailer.test/faucet';
+    const fetcher=vi.fn(async(input:string|URL)=>new Response(JSON.stringify(String(input).includes('/batch/scrape/')?{status:'completed',data:[{metadata:{sourceURL:source},json:{name:'Faucet'}}]}:{data:{json:{price:'$50'}}})));
+    vi.stubGlobal('fetch',fetcher);
+    const response=await handlers.POST({request:request('POST',{action:'poll',project_id:project,batch_id:'duplicates',candidates:[{material_item_id:item,url:source},{material_item_id:product,url:source}]})});
+    expect((await response.json()).rows.map((row:any)=>row.scraped.price)).toEqual(['$50.00','$50.00']);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("uses an exact rendered variant price instead of a direct product range", async () => {
+    vi.stubGlobal('fetch',vi.fn(async(input:string|URL)=>String(input).includes('.js')?new Response(JSON.stringify({variants:[{id:1,price:10000},{id:2,price:20000}]}),{headers:{'Content-Type':'application/json'}}):new Response(JSON.stringify({data:{json:{price:'$150'}}}))));
+    const response=await handlers.POST({request:request('POST',{action:'fallback',project_id:project,candidates:[{material_item_id:item,url:'https://retailer.test/products/mirror'}]})});
+    expect((await response.json()).rows[0].scraped.price).toBe('$150.00');
+  });
+  it("retains useful first-pass details if the price retry fails", async () => {
+    vi.stubGlobal('fetch',vi.fn(async(input:string|URL)=>String(input).includes('/batch/scrape/')?new Response(JSON.stringify({status:'completed',data:[{metadata:{sourceURL:'https://retailer.test/light'},json:{name:'Light',dimensions:'12 in'}}]})):new Response('Unavailable',{status:503})));
+    const response=await handlers.POST({request:request('POST',{action:'poll',project_id:project,batch_id:'failed-retry',candidates:[{material_item_id:item,url:'https://retailer.test/light'}]})});
+    expect((await response.json()).rows[0].scraped).toMatchObject({name:'Light',dimensions:'12 in'});
+  });
+  it("saves the square-foot rate and basis together, without inventing an internal cost", async () => {
+    mock.query.mockImplementation(q=>q.op==='update'?{error:null}:q.table==='material_items'?{data:{id:item,category:'Tile & Stone',room_id:null}}:{data:{id:product,price:null,unit_cost:null}});
+    await handlers.PUT({request:request('PUT',{rows:[{material_item_id:item,existing_product_id:product,url,scraped:{price:'$8.50',price_unit:'sq_ft',unit_cost:'$148.16'}}]})});
+    const write=mock.query.mock.calls.map(([q])=>q).find(q=>q.op==='update'&&q.table==='products').write;
+    expect(write).toMatchObject({price:'$8.50',retail_price:'$8.50',price_unit:'sq_ft'});
+    expect(write).not.toHaveProperty('unit_cost');
+  });
+  it("does not relabel an existing manual box price with a scraped square-foot basis", async () => {
+    mock.query.mockImplementation(q=>q.op==='update'?{error:null}:q.table==='material_items'?{data:{id:item,category:'Tile & Stone',room_id:null}}:{data:{id:product,price:'$148.16',price_unit:'unit'}});
+    await handlers.PUT({request:request('PUT',{rows:[{material_item_id:item,existing_product_id:product,url,scraped:{price:'$8.50',price_unit:'sq_ft'}}]})});
+    for(const [q] of mock.query.mock.calls.filter(([q])=>q.op==='update'&&q.table==='products')) {
+      expect(q.write).not.toHaveProperty('price'); expect(q.write).not.toHaveProperty('price_unit'); expect(q.write).not.toHaveProperty('retail_price');
     }
   });
 });
