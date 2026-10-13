@@ -8,6 +8,10 @@ export function completionDetailValue(field: string, draft: CompletionDetailDraf
     if (!hasCompletionValue(value) || value.length > 200) throw new Error("Enter a confirmed color / finish.");
     return { color: value };
   }
+  if (field === "dimensions") {
+    if (!hasCompletionValue(value) || value.length > 200) throw new Error("Enter confirmed dimensions or the selected product size.");
+    return { dimensions: value };
+  }
   if (field !== "price" && field !== "price_unit") throw new Error("This detail cannot be edited here.");
   const number = value.replace(/[$,\s]/g, "");
   if (!/^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(number) || !Number.isFinite(Number(number)))

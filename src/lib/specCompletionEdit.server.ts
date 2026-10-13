@@ -15,7 +15,7 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
   if (reviewError) throw reviewError;
   const issue = saved?.issues?.[body.issue_key];
   if (!issue || issue.status !== "open" || issue.status_updated_at !== body.expected_updated_at ||
-    !issue.finding.item_id || !["color", "finish", "price", "price_unit"].includes(issue.finding.field))
+    !issue.finding.item_id || !["color", "finish", "price", "price_unit", "dimensions"].includes(issue.finding.field))
     throw new CompletionReviewConflict("This issue changed or cannot be edited here. Reopen the saved review.");
   if (saved.report?.plan_status === "checking") throw new CompletionReviewConflict("Wait for the plan check to finish before changing selections.");
   let patch: ReturnType<typeof completionDetailValue>;
@@ -32,7 +32,7 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
   const { data: room, error: roomError } = await admin.from("rooms").select("id").eq("id", item.room_id).eq("project_id", projectId).maybeSingle();
   if (roomError) throw roomError;
   if (!room) throw new CompletionReviewConflict("This room is no longer in the project.");
-  if (!("color" in patch) && item.product?.markup_percent != null)
+  if ("price" in patch && item.product?.markup_percent != null)
     throw new CompletionDetailInputError("This price uses markup. Edit its pricing settings in Materials to preserve the calculation.");
   let written = false;
   try {

@@ -231,7 +231,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                       </>}
                     </div>}
                   </div>
-                  {onSaveDetail && item && issue.status === "open" && ["color", "finish", "price", "price_unit"].includes(row.field) &&
+                  {onSaveDetail && item && issue.status === "open" && ["color", "finish", "price", "price_unit", "dimensions"].includes(row.field) &&
                     item.room_id === row.room_id && (!issue.item_preview?.product_id || issue.item_preview.product_id === item.product_id) && (
                     <CompletionDetailEditor key={issue.key} item={item} issue={issue} disabled={!!savingIssue}
                       onSave={draft => onSaveDetail(issue, item, draft)} />
@@ -266,13 +266,17 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
   item: MaterialItem; issue: SavedCompletionIssue; disabled: boolean; onSave: (draft: CompletionDetailDraft) => Promise<void>;
 }) {
   const price = issue.finding.field === "price" || issue.finding.field === "price_unit";
-  const initial = price ? item.product?.price : item.color;
+  const dimensions = issue.finding.field === "dimensions";
+  const initial = price ? item.product?.price : dimensions ? item.product?.dimensions || item.product?.selected_size : item.color;
   const [value, setValue] = useState(hasCompletionValue(initial) ? initial! : "");
   const [priceUnit, setPriceUnit] = useState<CompletionDetailDraft["priceUnit"]>(productPriceUnit(item.product?.price_unit) || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
-  const suggestion = issue.suggestion?.kind === "color" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.color : null;
+  const suggestion = dimensions
+    ? issue.suggestion?.kind === "dimensions" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.dimensions
+      : issue.finding.source === "plans" && hasCompletionValue(issue.finding.suggested) ? issue.finding.suggested : null
+    : issue.suggestion?.kind === "color" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.color : null;
   if (price && item.product?.markup_percent != null) return <p className="mt-3 text-xs text-muted-foreground">This price uses markup. Use Review in Materials to edit its pricing settings.</p>;
   const save = async () => {
     if (lock.current || disabled) return;
@@ -284,10 +288,10 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
   return <form className="mt-3 border bg-white p-3" onSubmit={event => { event.preventDefault(); void save(); }}>
     <fieldset disabled={disabled || saving} className="flex flex-wrap items-end gap-3 min-w-0">
       <label className="min-w-40 flex-1">
-        <span className="block text-xs font-medium mb-1">{price ? "Price" : "Confirmed color / finish"}</span>
-        <input aria-label={`${price ? "Price" : "Color / finish"} for ${issue.finding.item_label}`} value={value}
+        <span className="block text-xs font-medium mb-1">{price ? "Price" : dimensions ? "Confirmed product dimensions / size" : "Confirmed color / finish"}</span>
+        <input aria-label={`${price ? "Price" : dimensions ? "Dimensions" : "Color / finish"} for ${issue.finding.item_label}`} value={value}
           onChange={event => setValue(event.target.value)} inputMode={price ? "decimal" : undefined}
-          placeholder={price ? "0.00" : "e.g. Brushed brass"} maxLength={price ? 40 : 200}
+          placeholder={price ? "0.00" : dimensions ? 'e.g. 30" W × 36" H' : "e.g. Brushed brass"} maxLength={price ? 40 : 200}
           className="h-10 w-full border border-input bg-background px-3 text-sm" />
       </label>
       {price && <label>
@@ -298,9 +302,10 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
         </select>
       </label>}
       <button type="submit" className="h-10 bg-ink px-4 text-sm text-white disabled:opacity-50">{saving ? "Saving…" : "Save & complete"}</button>
-      {!price && suggestion && <button type="button" className="text-xs underline" onClick={() => setValue(suggestion)}>Use suggested color</button>}
+      {!price && suggestion && <button type="button" className="text-xs underline" onClick={() => setValue(suggestion)}>{dimensions ? "Use suggested dimensions" : "Use suggested color"}</button>}
     </fieldset>
     <p className="mt-2 text-xs text-muted-foreground">Saves to Materials and the Spec Book, then completes this issue.</p>
+    {dimensions && <p className="mt-1 text-xs text-muted-foreground">Include units. Confirm the selected product matches the planned size before saving.</p>}
     {error && <p role="alert" className="mt-2 text-xs text-red-800">{error}</p>}
   </form>;
 }

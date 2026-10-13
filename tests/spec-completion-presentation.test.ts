@@ -59,3 +59,15 @@ it('offers separate inline price and color saves only for open, current selectio
   const unavailable = renderToStaticMarkup(createElement(SpecCompletionResults, { ...props, items: [] }));
   expect(unavailable).not.toContain('Save &amp; complete');
 });
+it('offers inline dimensions with an optional plan suggestion that still requires confirmation', () => {
+  const finding = { id: 'size', item_id: 'mirror', room_id: 'bath', item_label: 'Mirror', source: 'plans', field: 'dimensions',
+    current: '', suggested: '30" W × 36" H', dimension_scope: 'proposed_layout', page: 2, evidence: 'Mirror elevation labels the size.' } as CompletionFinding;
+  const issue = { key: 'size', finding, status: 'open' as const, room_name: 'Bath', document: null,
+    first_seen_at: 'now', last_seen_at: 'now', status_updated_at: null, status_updated_by: null };
+  const html = renderToStaticMarkup(createElement(SpecCompletionResults, { projectId: 'project', rooms: [{ id: 'bath', name: 'Bath' }],
+    items: [{ id: 'mirror', room_id: 'bath', product_id: 'product', product: { id: 'product', dimensions: null } } as MaterialItem],
+    findings: [finding], issues: [issue], checkedAt: 'now', itemCount: 1, document: null, message: 'Review ready', onSaveDetail: vi.fn() }));
+  expect(html).toContain('Dimensions for Mirror'); expect(html).toContain('Save &amp; complete');
+  expect(html).toContain('Use suggested dimensions'); expect(html).toContain('Confirm the selected product');
+  expect(html).not.toContain('Price is per');
+});

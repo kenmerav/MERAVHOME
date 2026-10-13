@@ -48,6 +48,15 @@ it('updates only price and basis with a product version guard', async () => {
   expect(state.filters).toContainEqual(['products', 'updated_at', stamp]);
   expect(state.status).toHaveBeenCalledOnce();
 });
+it('saves dimensions without changing pricing or markup, then completes only that issue', async () => {
+  issue.finding.field = 'dimensions'; body.value = '30" W × 36" H';
+  state.responses.material_items[0] = { data: { ...item, product: { ...item.product, markup_percent: 20 } }, error: null };
+  state.responses.material_items.splice(1, 1);
+  expect((await request()).status).toBe(200);
+  expect(state.writes).toEqual([['products', 'update', { dimensions: '30" W × 36" H' }]]);
+  expect(state.filters).toContainEqual(['products', 'updated_at', stamp]);
+  expect(state.status).toHaveBeenCalledWith(projectId, 'staff', key, 'completed', null);
+});
 it('rejects a nonstaff caller before any data read or write', async () => {
   state.auth.mockResolvedValue(Response.json({ error: 'Staff only' }, { status: 403 }));
   expect((await request()).status).toBe(403); expect(state.filters).toEqual([]); expect(state.writes).toEqual([]); expect(state.status).not.toHaveBeenCalled();
