@@ -111,6 +111,15 @@ describe("source-grounded product specifications", () => {
 });
 
 describe("material metadata enrichment", () => {
+  it("keeps verified direct pricing when the rendered retailer page is an error page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => String(input).includes(".js")
+      ? new Response(JSON.stringify({ title: "Mirror", variants: [{ id: 123, price: 38900 }] }), { headers: { "Content-Type": "application/json" } })
+      : new Response(JSON.stringify({ data: { metadata: { title: "Retailer | Error", statusCode: 403 } } }))));
+    const response = await handlers.POST({ request: request("POST", { action: "fallback", project_id: project, candidates: [{ material_item_id: item, url, existing_product_id: product }] }) });
+    const body = await response.json();
+    expect(body.rows[0].scraped).toMatchObject({ name: "Mirror", price: "$389.00" });
+    expect(body.rows[0].scraped.error).toBeUndefined();
+  });
   it("keeps a direct selected-variant price when the follow-up scraper fails", async () => {
     vi.stubGlobal(
       "fetch",

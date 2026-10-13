@@ -321,6 +321,8 @@ async function scrapeDirectProduct(url: string) {
 }
 
 function mergeScraped(primary: Scraped | null | undefined, fallback: Scraped | null | undefined) {
+  if (primary && !primary.error && fallback?.error) return primary;
+  if (fallback && !fallback.error && primary?.error) return fallback;
   const primaryPrice = exactProductPrice(primary?.price);
   const fallbackPrice = exactProductPrice(fallback?.price);
   const usePrimaryPrice = primaryPrice && !(fallbackPrice && fallback?.price_unit === "sq_ft" && primary?.price_unit !== "sq_ft");
