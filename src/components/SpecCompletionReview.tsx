@@ -43,7 +43,11 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       await savedQuery.refetch({ throwOnError: true }); setViewSaved(true);
     }
     catch (error) { setError(error instanceof Error ? error.message : "Could not check completion."); }
-    finally { lock.current = false; setChecking(false); }
+    finally {
+      lock.current = false; setChecking(false);
+      // The pre-check may have added PDFs; refresh any open project document lists.
+      void qc.invalidateQueries({ queryKey: ["projectDocuments", projectId] });
+    }
   };
   const openSaved = async () => {
     setOpen(true); setViewSaved(true); setError(""); setReviewedSignature(signature);
@@ -74,7 +78,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-6 sm:p-8">
         <DialogHeader>
           <DialogTitle className="font-display text-3xl">Spec Book completion review</DialogTitle>
-          <DialogDescription>Findings are saved with the project. Mark each issue Completed or Change not needed, and return to the saved review whenever you need. Opening saved results does not run another AI check.</DialogDescription>
+          <DialogDescription>New checks first look for Jessica’s newer construction PDFs for this project, then review the latest attached plans. Findings are saved with the project. Opening saved results does not refresh email or run another AI check.</DialogDescription>
           <p className="text-xs text-muted-foreground">Missing-size checks apply to unresolved products with multiple published size choices. Blank dimensions alone do not create an issue.</p>
           <p className="text-xs text-muted-foreground">GPT-6.1 Sol · High reasoning · $3 target per AI check. Requests estimated above $5 are stopped. Color and dimension suggestions are separate checks.</p>
         </DialogHeader>
@@ -84,7 +88,8 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
           itemCount={activeReport?.item_count ?? completionItems(items).length} checking={checking || (viewSaved && savedQuery.isFetching && !saved)}
           planStatus={activeReport?.plan_status} document={activeReport?.document ?? null}
           checkedAt={activeReport?.checked_at}
-          message={error || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Checking current selections and the latest construction document…")}
+          message={error || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Checking for newer construction PDFs, then reviewing current selections and plans…")}
+          documentRefresh={activeReport?.document_refresh}
           stale={!!saved?.stale || reviewedSignature !== signature} />
         <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4">
           <p className="text-xs text-muted-foreground">{saved ? "Issue decisions are saved for the team. Edit Materials to change product information." : "No quantities or selections have been changed."}</p>
@@ -96,9 +101,10 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   </>;
 }
 
-export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, stale = false }: {
+export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, stale = false }: {
   projectId: string; rooms: CompletionRoom[]; findings: CompletionFinding[]; itemCount: number;
   items?: MaterialItem[];
+  documentRefresh?: SpecCompletionReport["document_refresh"];
   issues?: SavedCompletionIssue[]; onStatusChange?: (issue: SavedCompletionIssue, status: CompletionIssueStatus) => Promise<void>;
   savingIssue?: string; checkedAt?: string;
   onSuggestionSaved?: () => void;
@@ -121,6 +127,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
     </div>
     <div className={`shrink-0 border px-4 py-3 text-sm leading-6 ${planStatus === "unavailable" || stale ? "bg-amber-50 border-amber-200" : "bg-bone/30"}`} role="status" aria-live="polite">
       {checking && <Loader2 className="inline mr-2 h-4 w-4 animate-spin" />}{message}
+      {documentRefresh && <p className={`mt-1 text-xs ${documentRefresh.status !== "checked" ? "font-medium text-amber-800" : ""}`}>{documentRefresh.message} Checked {new Date(documentRefresh.checked_at).toLocaleString()}.</p>}
       {document && <a className="block text-xs underline underline-offset-4 mt-1" href={`/projects/${projectId}/construction-docs`}>Source: {document.title}</a>}
       {issues && checkedAt && <p className="text-xs mt-1">Saved check: {new Date(checkedAt).toLocaleString()}</p>}
       {stale && <p className="font-medium mt-1">This saved check may no longer reflect the current selections or plans. You can finish these issues or run a new check for current suggestions.</p>}

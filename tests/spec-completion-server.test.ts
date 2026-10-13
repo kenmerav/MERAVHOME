@@ -4,7 +4,8 @@ const roomId = "0033186c-a2e6-417f-a50f-37f5390f5cf5";
 const userId = "4204f2d1-e10c-4d98-a01b-350cf7d8cafe";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true, project: true,
   documents: [] as any[], rooms: [] as any[], items: [] as any[], board: null as any,
-  reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), dataError: false, storageError: null as any, saved: null as any }));
+  reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any }));
+vi.mock("@/lib/constructionUploads.server", () => ({ refreshConstructionUploads: state.refresh }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
   auth: { getUser: async () => ({ data: { user: state.authenticated ? { id: userId } : null }, error: null }) },
@@ -38,6 +39,7 @@ const request = (body: any = { project_id: projectId }, token = true) => new Req
 beforeEach(() => {
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true; state.project = true; state.dataError = false;
   state.storageError = null; state.saved = null; state.rpc.mockResolvedValue({ data: null, error: null });
+  state.refresh.mockResolvedValue({ uploaded: 0, failed: 0, deferred: 0, needsReview: 0, needsReconnect: false, error: null });
   state.profile = { role: "Admin", is_active: true, can_view_all_projects: true };
   state.rooms = [{ id: roomId, name: "Bathroom 2" }]; state.board = null; state.reads = [];
   state.documents = [{ id: "latest", title: "Latest Plans", updated_at: "v1", file_size: 20,
@@ -67,6 +69,38 @@ it("reads current project data and latest PDF, saving the review without editing
   expect(body.input[0].content[1]).toMatchObject({ type: "input_file", detail: "high" });
   expect(state.rpc).toHaveBeenCalledWith("save_spec_completion_review", expect.objectContaining({ p_project_id: projectId, p_report: expect.objectContaining({ plan_status: "checked" }) }));
 });
+it("refreshes only the authorized project before selecting the PDF and persists freshness evidence", async () => {
+  state.refresh.mockImplementation(async () => {
+    expect(state.reads.some(row => row.table === "project_documents")).toBe(false);
+    state.documents = [{ ...state.documents[0], id: "newest-email-pdf", title: "Newer Plans" }];
+    return { uploaded: 1, failed: 0, deferred: 0, needsReview: 0, needsReconnect: false, error: null };
+  });
+  const report = await (await checkSpecCompletion(request())).json();
+  expect(state.refresh).toHaveBeenCalledWith(userId, { projectId, budgetMs: 45000, maxMessages: 12 });
+  expect(report.document.id).toBe("newest-email-pdf");
+  expect(report.document_refresh).toMatchObject({ status: "checked", uploaded: 1 });
+  expect(state.rpc.mock.calls[0][1].p_report.document_refresh).toEqual(report.document_refresh);
+});
+it.each([{ needsReconnect: true }, { failed: 1 }, { deferred: 1 }, { error: "Gmail unavailable" }])("does not charge for a plan comparison after an incomplete refresh: %j", async failure => {
+  state.refresh.mockResolvedValue({ uploaded: 0, failed: 0, deferred: 0, needsReconnect: false, error: null, ...failure });
+  const report = await (await checkSpecCompletion(request())).json();
+  expect(report.plan_status).toBe("unavailable");
+  expect(report.document_refresh.status).toBe("incomplete");
+  expect(state.fetch).not.toHaveBeenCalled(); expect(state.download).not.toHaveBeenCalled();
+  expect(report.findings.every((row: any) => row.source === "details")).toBe(true);
+});
+it("reports a failed refresh without starting paid AI work", async () => {
+  state.refresh.mockRejectedValue(new Error("failed"));
+  const report = await (await checkSpecCompletion(request())).json();
+  expect(report.document_refresh.status).toBe("unavailable");
+  expect(state.fetch).not.toHaveBeenCalled();
+});
+it("warns about uncertain matches without claiming the latest version is guaranteed", async () => {
+  state.refresh.mockResolvedValue({ uploaded: 0, failed: 0, deferred: 0, needsReview: 2, needsReconnect: false, error: null });
+  const report = await (await checkSpecCompletion(request())).json();
+  expect(report.document_refresh.message).toContain("latest version cannot be guaranteed");
+  expect(report.plan_status).toBe("checked");
+});
 it("loads saved results without starting AI and preserves old findings for removed rooms", async () => {
   state.saved = { report: { checked_at: "earlier", document: null }, source_signature: "old", issues: {
     old: { key: "old", status: "completed", room_name: "Former room", finding: { room_id: "removed", field: "quantity" } },
@@ -74,6 +108,7 @@ it("loads saved results without starting AI and preserves old findings for remov
   const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
   expect(result.issues[0].status).toBe("completed"); expect(result.stale).toBe(true);
   expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
+  expect(state.refresh).not.toHaveBeenCalled();
 });
 it("retires old blanket dimension flags from open results while retaining team decisions", async () => {
   const gap = { item_id: 'sink', room_id: roomId, field: 'dimensions', source: 'details' };
@@ -127,6 +162,7 @@ it("reports storage setup failures without starting an AI call", async () => {
 it("refuses paid checks when persistent storage is not installed", async () => {
   state.storageError = { code: "42P01" };
   await expect(checkSpecCompletion(request())).rejects.toThrow("database update");
+  expect(state.refresh).not.toHaveBeenCalled();
   expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
 });
 it("does not overwrite a newer saved review when an older check finishes late", async () => {
@@ -135,6 +171,7 @@ it("does not overwrite a newer saved review when an older check finishes late", 
 });
 it.each(["Client", "Contractor", "Builder", "GC"])("denies %s before reading project data or PDFs", async role => {
   state.profile.role = role; expect((await checkSpecCompletion(request())).status).toBe(403);
+  expect(state.refresh).not.toHaveBeenCalled();
   expect(state.download).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled();
   expect(state.reads.some(row => row.table === "material_items")).toBe(false);
 });

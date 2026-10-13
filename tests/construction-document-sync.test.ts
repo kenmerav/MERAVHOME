@@ -214,6 +214,30 @@ beforeEach(() => {
 });
 
 describe("independent Jessica PDF filing", () => {
+  it("a project-scoped spec refresh uploads only that project's PDF from a mixed email", async () => {
+    db.tables.projects.push({ id: "cortez", name: "Cortez", client_name: "Cortez" });
+    db.messages = [message("mixed", ["CORTEZ_MI_261006.pdf", "RINEHART_MI_261006.pdf"])];
+    expect(await syncConstructionDocuments({ projectId: "rinehart" })).toMatchObject({ uploaded: 1, failed: 0 });
+    expect(db.tables.project_documents).toHaveLength(1);
+    expect(db.tables.project_documents[0].project_id).toBe("rinehart");
+    expect(db.tables.marvin_sources.every(row => row.title.startsWith("RINEHART"))).toBe(true);
+    expect(db.calls.some(url => url.includes("mixed-attachment-0"))).toBe(false);
+  });
+  it("keeps ambiguous names ambiguous during a project-scoped refresh", async () => {
+    db.tables.projects = [{ id: "moore1", name: "Moore Project" }, { id: "moore2", name: "Moore Project" }];
+    db.messages = [message("ambiguous", ["MOORE_MI_261006.pdf"])];
+    expect(await syncConstructionDocuments({ projectId: "moore1" })).toMatchObject({ uploaded: 0, needsReview: 1 });
+    expect(db.tables.project_documents).toBeUndefined();
+    expect(db.uploads).toEqual([]);
+  });
+  it("does not file saved PDFs belonging to another project during a spec refresh", async () => {
+    db.tables.projects.push({ id: "cortez", name: "Cortez" });
+    db.tables.marvin_sources = [{ id: "other", external_provider: "gmail_attachment", title: "CORTEZ_MI_261006.pdf",
+      author_email: "jessica@blue-skycreative.com", review_status: "linked", storage_path: "saved.pdf",
+      marvin_source_projects: [{ project_id: "cortez" }], metadata: { account_email: "marvinbotai@gmail.com", blue_sky_construction_candidate: true } }];
+    expect(await syncConstructionDocuments({ projectId: "rinehart" })).toMatchObject({ uploaded: 0 });
+    expect(db.uploads).toEqual([]);
+  });
   it("advances past legacy attachments when Gmail rotates their download IDs", async () => {
     db.messages = [message("old"), message("new")];
     db.tables.project_documents = [

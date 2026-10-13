@@ -889,6 +889,7 @@ async function ingestBlueSkyConstructionAttachments(input: {
   match: any;
   matchingContext: Awaited<ReturnType<typeof projectMatchingContext>>;
   deadline?: number;
+  onlyProjectId?: string;
 }) {
   const result = { uploaded: 0, duplicates: 0, needsReview: 0, failed: 0, deferred: 0 };
   const senderEmail = extractEmails(input.headers.get("from") || "")[0] || "";
@@ -962,6 +963,26 @@ async function ingestBlueSkyConstructionAttachments(input: {
           (legacy ?? []).find((row: any) => row.metadata?.project_document_id) ||
           legacy?.[0];
       }
+      // Resolve human assignments before the project-scoped guard. Never narrow the
+      // matching context to one project: that could turn an ambiguous name into a match.
+      if (existing?.review_status === "linked") {
+        const { data: links, error } = await admin
+          .from("marvin_source_projects")
+          .select("project_id")
+          .eq("source_id", existing.id);
+        if (error) throw error;
+        if (links?.length === 1) {
+          attachmentMatch.projectIds = [links[0].project_id];
+          attachmentMatch.generalBusiness = false;
+        } else if (input.onlyProjectId) {
+          result.needsReview += 1;
+          continue;
+        }
+      }
+      if (input.onlyProjectId && attachmentMatch.projectIds[0] !== input.onlyProjectId) {
+        if (!attachmentMatch.projectIds.length && existing?.review_status !== "dismissed") result.needsReview += 1;
+        continue;
+      }
       if (existing) {
         const metadata = {
           ...(existing.metadata ?? {}),
@@ -988,18 +1009,6 @@ async function ingestBlueSkyConstructionAttachments(input: {
           continue;
         }
       }
-      if (existing?.review_status === "linked") {
-        const { data: links, error } = await admin
-          .from("marvin_source_projects")
-          .select("project_id")
-          .eq("source_id", existing.id);
-        if (error) throw error;
-        if (links?.length === 1) {
-          attachmentMatch.projectIds = [links[0].project_id];
-          attachmentMatch.generalBusiness = false;
-        }
-      }
-
       let file: File;
       let storagePath = existing?.storage_path || "";
       if (storagePath) {
@@ -1864,7 +1873,7 @@ async function fileConstructionSource(source: any, projectId: string, file: File
  * when Google needs reconnecting. Cursor/retries live on this pass's job, not on
  * the inbox integration metadata that concurrent inbox/Drive jobs modify. */
 export async function syncConstructionDocuments(
-  options: { maxMessages?: number; budgetMs?: number } = {},
+  options: { maxMessages?: number; budgetMs?: number; projectId?: string } = {},
 ) {
   const deadline = Date.now() + (options.budgetMs ?? 180_000);
   const result = {
@@ -1895,12 +1904,17 @@ export async function syncConstructionDocuments(
     .limit(200);
   if (savedError) throw savedError;
   for (const source of saved ?? []) {
+    if (options.projectId && source.review_status === "linked" && source.marvin_source_projects?.length !== 1) {
+      result.needsReview += 1;
+      continue;
+    }
     const confirmed =
       source.review_status === "linked" && source.marvin_source_projects?.length === 1
         ? source.marvin_source_projects[0].project_id
         : null;
     const projectId =
       confirmed || matchConstructionDocumentProject(source.title, context.projects)?.projectId;
+    if (options.projectId && projectId && projectId !== options.projectId) continue;
     if (!projectId) {
       result.needsReview += 1;
       continue;
@@ -1962,14 +1976,16 @@ export async function syncConstructionDocuments(
       if (!response.ok) throw new Error(payload?.error?.message || "Construction PDF scan failed.");
       return payload;
     };
-    const { data: previous } = await admin
+    let previousQuery = admin
       .from("marvin_sync_jobs")
       .select("progress")
-      .in("job_type", ["scheduled_construction_docs", "manual_construction_docs"])
+      .in("job_type", options.projectId ? ["spec_construction_docs"] : ["scheduled_construction_docs", "manual_construction_docs"])
       .not("finished_at", "is", null)
       .order("finished_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (options.projectId) previousQuery = previousQuery.contains("progress", { projectId: options.projectId });
+    const { data: previous, error: previousError } = await previousQuery.maybeSingle();
+    if (previousError) throw previousError;
     const listUrl = new URL(`${GOOGLE_BASE}/messages`);
     listUrl.searchParams.set(
       "q",
@@ -1985,7 +2001,7 @@ export async function syncConstructionDocuments(
     result.nextPageToken = older ? older.nextPageToken || null : latest.nextPageToken || null;
     const { data: known, error: knownError } = await admin
       .from("marvin_sources")
-      .select("external_id,title,review_status,storage_path,metadata")
+      .select("external_id,title,review_status,storage_path,metadata,marvin_source_projects(project_id)")
       .eq("external_provider", "gmail_attachment")
       .contains("metadata", {
         account_email: MARVIN_SHARED_GMAIL,
@@ -2049,6 +2065,12 @@ export async function syncConstructionDocuments(
           `${GOOGLE_BASE}/messages/${encodeURIComponent(messageId)}?format=full`,
         );
         const attachments = gmailPdfAttachments(message.payload);
+        if (options.projectId && attachments.length && attachments.every(attachment => {
+          const match = matchConstructionDocumentProject(attachment.fileName, context.projects);
+          return match && match.projectId !== options.projectId && !(known ?? []).some((source: any) =>
+            source.metadata?.gmail_message_id === messageId && source.title === attachment.fileName &&
+            source.marvin_source_projects?.some((link: any) => link.project_id === options.projectId));
+        })) continue;
         const fullySaved =
           attachments.length > 0 &&
           attachments.every((attachment) => {
@@ -2086,6 +2108,7 @@ export async function syncConstructionDocuments(
             generalBusiness: false,
           },
           deadline,
+          onlyProjectId: options.projectId,
         });
         for (const key of [
           "uploaded",

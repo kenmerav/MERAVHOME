@@ -216,4 +216,31 @@ describe("EA retirement and independent document controls", () => {
     expect(query.update).toHaveBeenCalledWith(expect.objectContaining({ status: "complete" }));
     expect(mocks.from.mock.calls.every((call) => call[0] === "marvin_sync_jobs")).toBe(true);
   });
+  it("records project spec-refresh progress separately from global upload cursors", async () => {
+    const query: any = {
+      insert: vi.fn(() => query),
+      update: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      then: (resolve: any) => resolve({ error: null }),
+    };
+    mocks.from.mockReturnValue(query);
+    mocks.upload.mockResolvedValue({
+      uploaded: 0,
+      failed: 0,
+      deferred: 1,
+      needsReconnect: false,
+      error: null,
+    });
+    await refreshConstructionUploads("ken", { projectId: "project", budgetMs: 45000 });
+    expect(mocks.upload).toHaveBeenCalledWith({ projectId: "project", budgetMs: 45000 });
+    expect(query.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ job_type: "spec_construction_docs" }),
+    );
+    expect(query.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "partial",
+        progress: expect.objectContaining({ projectId: "project" }),
+      }),
+    );
+  });
 });

@@ -18,6 +18,7 @@ export type SpecCompletionReport = {
   plan_status: "checked" | "no_document" | "unavailable";
   document: { id: string; title: string; updated_at: string } | null;
   plan_message: string;
+  document_refresh?: { status: "checked" | "incomplete" | "unavailable"; checked_at: string; uploaded: number; message: string };
 };
 
 export function hasCompletionValue(value: unknown) {

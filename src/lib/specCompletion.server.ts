@@ -8,6 +8,7 @@ import type { MaterialItem } from "@/lib/db";
 import { PDFDocument } from "pdf-lib";
 import { fetchSpecReview, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
 import { assertCompletionStorage, saveCompletionReview, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
+import { refreshConstructionUploads } from "@/lib/constructionUploads.server";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -110,6 +111,23 @@ export async function checkSpecCompletion(request: Request) {
   const { projectId, userId } = access;
   // Confirm saving is available before starting any paid AI work.
   await assertCompletionStorage(projectId);
+  // Refresh only this authorized project's PDFs before choosing the document.
+  // Filing uses no AI. Leave time for the existing paid plan review.
+  let refresh: NonNullable<SpecCompletionReport["document_refresh"]>;
+  try {
+    const result = await refreshConstructionUploads(userId, { projectId, budgetMs: 45_000, maxMessages: 12 });
+    const incomplete = !!(result.failed || result.deferred || result.needsReconnect || result.error);
+    refresh = {
+      status: incomplete ? "incomplete" : "checked", checked_at: new Date().toISOString(), uploaded: result.uploaded,
+      message: result.needsReconnect ? "New construction documents could not be verified. Ken needs to reconnect Marvin. Plan comparison was not run." :
+        incomplete ? "Construction-document refresh could not finish. Plan comparison was not run; retry the check after refreshing documents." :
+        result.needsReview ? `Email checked; ${result.uploaded} PDFs added for this project. Unmatched PDFs need review, so the latest version cannot be guaranteed.` :
+        `Construction email checked; ${result.uploaded} new PDFs added for this project.`,
+    };
+  } catch {
+    refresh = { status: "unavailable", checked_at: new Date().toISOString(), uploaded: 0,
+      message: "Construction-document refresh is unavailable. Plan comparison was not run; only missing selection details were checked." };
+  }
   const [rawItems, rooms, boardResult, documentResult] = await Promise.all([
     readProjectRows("material_items", "*,product:products(*)", projectId),
     readProjectRows("rooms", "id,name", projectId),
@@ -125,11 +143,15 @@ export async function checkSpecCompletion(request: Request) {
   const items = rawItems.filter(item => !staleIds.has(item.id) && roomIds.has(item.room_id));
   const document: PlanDocument | undefined = documentResult.data?.[0];
   const report: SpecCompletionReport = { checked_at: new Date().toISOString(),
+    document_refresh: refresh,
     item_count: completionItems(items).length, findings: checkSpecDetails(items, rooms),
     plan_status: "no_document", document: document ? { id: document.id, title: document.title, updated_at: document.updated_at } : null,
     plan_message: "No current construction document is attached. Missing-detail checks are complete; plan quantities and items have not been checked.",
   };
-  if (document) {
+  if (refresh.status !== "checked") {
+    report.plan_status = "unavailable";
+    report.plan_message = refresh.message;
+  } else if (document) {
     try {
       const planFindings = await analyzeSpecCompletion(document, projectId, items, rooms);
       // A long scan must not present corrections against selections or plans that changed meanwhile.

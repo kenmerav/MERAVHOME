@@ -74,10 +74,14 @@ export async function loadConstructionUploadStatus() {
   };
 }
 
-export async function refreshConstructionUploads(userId: string) {
-  const key = `manual_construction_docs:${crypto.randomUUID()}`;
+export async function refreshConstructionUploads(
+  userId: string,
+  options: { projectId?: string; budgetMs?: number; maxMessages?: number } = {},
+) {
+  const jobType = options.projectId ? "spec_construction_docs" : "manual_construction_docs";
+  const key = `${jobType}:${crypto.randomUUID()}`;
   const claim = await admin.from("marvin_sync_jobs").insert({
-    job_type: "manual_construction_docs",
+    job_type: jobType,
     idempotency_key: key,
     status: "running",
     started_at: new Date().toISOString(),
@@ -85,7 +89,9 @@ export async function refreshConstructionUploads(userId: string) {
   });
   if (claim.error) throw claim.error;
   try {
-    const result = await syncConstructionDocuments();
+    const result = options.projectId
+      ? await syncConstructionDocuments(options)
+      : await syncConstructionDocuments();
     const saved = await admin
       .from("marvin_sync_jobs")
       .update({
@@ -93,7 +99,7 @@ export async function refreshConstructionUploads(userId: string) {
           result.failed || result.deferred || result.needsReconnect || result.error
             ? "partial"
             : "complete",
-        progress: result,
+        progress: options.projectId ? { ...result, projectId: options.projectId } : result,
         error: result.error,
         finished_at: new Date().toISOString(),
       })
