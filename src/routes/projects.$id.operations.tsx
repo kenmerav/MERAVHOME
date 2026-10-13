@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -23,6 +23,9 @@ import { loadEaWorkspace, saveEaWorkspace } from "@/lib/eaWorkspaceClient";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/projects/$id/operations")({
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/projects/$id", params: { id: params.id } });
+  },
   head: () => ({ meta: [{ title: "Project Operations - MERAV Studio" }] }),
   component: ProjectOperationsPage,
 });

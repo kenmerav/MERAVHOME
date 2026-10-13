@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- server auth uses generated Supabase schema. */
 import { createFileRoute } from "@tanstack/react-router";
+import { EA_AGENT_ENABLED, eaRetiredResponse } from "@/lib/eaAvailability";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createAppleCalendarEvent, loadAppleCalendar } from "@/lib/appleCalendar.server";
 import { canUseEaWorkspace } from "@/lib/permissions";
@@ -86,12 +87,14 @@ export const Route = createFileRoute("/api/ea-calendar")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return eaRetiredResponse();
         const access = await authorize(request);
         if ("response" in access) return access.response;
         const force = new URL(request.url).searchParams.get("refresh") === "1";
         return json(await loadAppleCalendar(force));
       },
       POST: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return eaRetiredResponse();
         const access = await authorize(request);
         if ("response" in access) return access.response;
         const body = await request.json().catch(() => null);

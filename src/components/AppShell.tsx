@@ -18,7 +18,6 @@ import {
   PanelLeftOpen,
   ReceiptText,
   Bell,
-  BriefcaseBusiness,
   CalendarDays,
   FileText,
 } from "lucide-react";
@@ -44,7 +43,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const nav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/ea-desk", label: "EA Desk", icon: BriefcaseBusiness },
+  { to: "/construction-uploads", label: "Document Uploads", icon: FileText },
   { to: "/projects", label: "Projects", icon: FolderOpen },
   { to: "/catalog", label: "Product Catalog", icon: Library },
   { to: "/presentations", label: "Presentation Boards", icon: LayoutTemplate },
@@ -199,7 +198,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const isEaWorkspace =
-      loc.pathname.startsWith("/ea-desk") || loc.pathname.endsWith("/operations");
+      loc.pathname.startsWith("/construction-uploads") ||
+      loc.pathname.startsWith("/ea-desk") ||
+      loc.pathname.endsWith("/operations");
     if (!loadingAuth && isEaWorkspace && !canUseEaWorkspace(profile)) {
       navigate({ to: "/" });
     }
@@ -445,7 +446,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className={cn("flex-1 space-y-0.5", desktopCollapsed ? "px-2" : "px-3")}>
           {nav.map(({ to, label, icon: Icon, exact }) => {
             if (to === "/users" && !canManageStudio(profile)) return null;
-            if (to === "/ea-desk" && !canUseEaWorkspace(profile)) return null;
+            if (to === "/construction-uploads" && !canUseEaWorkspace(profile)) return null;
             if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
             if (to === "/procurement" && !canViewProcurement(profile)) return null;
             if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -518,7 +519,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="grid grid-cols-1 gap-1">
             {nav.map(({ to, label, icon: Icon, exact }) => {
               if (to === "/users" && !canManageStudio(profile)) return null;
-              if (to === "/ea-desk" && !canUseEaWorkspace(profile)) return null;
+              if (to === "/construction-uploads" && !canUseEaWorkspace(profile)) return null;
               if (to === "/catalog" && !canViewProductCatalog(profile)) return null;
               if (to === "/procurement" && !canViewProcurement(profile)) return null;
               if (to === "/financials" && !canViewFinancials(profile)) return null;
@@ -645,7 +646,8 @@ function ConstructionDocumentLoginNoticeDialog({
           </DialogTitle>
         </DialogHeader>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          The EA filed these PDFs into the matching Studio projects. Nothing was sent externally.
+          The automatic document uploader filed these PDFs into the matching Studio projects.
+          Nothing was sent externally.
         </p>
         <div className="max-h-[50vh] space-y-3 overflow-y-auto">
           {notices.map((notice) => (

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -62,6 +62,9 @@ import { toast } from "sonner";
 import { canReconnectMarvinInbox } from "@/lib/permissions";
 
 export const Route = createFileRoute("/ea-desk")({
+  beforeLoad: () => {
+    throw redirect({ to: "/construction-uploads" });
+  },
   head: () => ({ meta: [{ title: "EA Desk - MERAV Studio" }] }),
   component: EaDeskPage,
 });

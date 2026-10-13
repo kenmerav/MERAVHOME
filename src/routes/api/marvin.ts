@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Marvin schema is server-only. */
 import { createFileRoute } from "@tanstack/react-router";
+import { EA_AGENT_ENABLED, eaRetiredResponse } from "@/lib/eaAvailability";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { canReconnectMarvinInbox } from "@/lib/permissions";
+import { canReconnectMarvinInbox, canUseEaWorkspace } from "@/lib/permissions";
 import {
   addManualSource,
   approveSuggestion,
@@ -31,6 +32,7 @@ export const Route = createFileRoute("/api/marvin")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return eaRetiredResponse();
         try {
           const access = await requireMarvinUser(request);
           if ("error" in access) return access.error;
@@ -50,6 +52,12 @@ export const Route = createFileRoute("/api/marvin")({
           const access = await requireMarvinUser(request);
           if ("error" in access) return access.error;
           const body = await request.json();
+          if (
+            !EA_AGENT_ENABLED &&
+            (body.action !== "gmail_connect" || body.account_email !== MARVIN_SHARED_GMAIL)
+          ) {
+            return eaRetiredResponse();
+          }
           switch (body.action) {
             case "chat":
               return json(await marvinChat(access, body));
@@ -75,7 +83,8 @@ export const Route = createFileRoute("/api/marvin")({
             case "gmail_connect":
               if (
                 body.account_email === MARVIN_SHARED_GMAIL &&
-                !canReconnectMarvinInbox(access.profile.email)
+                (!canReconnectMarvinInbox(access.profile.email) ||
+                  !canUseEaWorkspace(access.profile))
               ) {
                 return json({ error: "Only Ken can reconnect the Marvin inbox." }, 403);
               }

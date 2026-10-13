@@ -22,7 +22,6 @@ import {
   Truck,
   Palette,
   ShieldCheck,
-  BriefcaseBusiness,
   type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -70,7 +69,6 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
   canManageStudio,
-  canUseEaWorkspace,
   canUseMarvin,
   canViewFinancials,
   canViewProcurement,
@@ -263,15 +261,6 @@ function ProjectDetailPage() {
               />
               {canUseMarvin(profile) && (
                 <ProjectCaptureDialog projectId={id} projectName={project.name} />
-              )}
-              {canUseEaWorkspace(profile) && (
-                <Link
-                  to="/projects/$id/operations"
-                  params={{ id }}
-                  className="inline-flex flex-1 items-center justify-center gap-2 border border-ink px-4 py-2.5 text-sm text-ink transition-colors hover:bg-ink hover:text-primary-foreground sm:flex-none"
-                >
-                  <BriefcaseBusiness className="h-4 w-4" /> Operations
-                </Link>
               )}
               {project.design_workflow_version === "room_design_v2" &&
                 canManageStudio(profile) &&

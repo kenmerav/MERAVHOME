@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Fathom payloads are external data. */
 import { createFileRoute } from "@tanstack/react-router";
+import { EA_AGENT_ENABLED } from "@/lib/eaAvailability";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   decryptCredentials,
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/api/marvin-fathom-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return json({ ok: true, ignored: true, reason: "EA retired" });
         const rawBody = await request.text();
         try {
           const { data: integration } = await admin

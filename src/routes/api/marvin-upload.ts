@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { EA_AGENT_ENABLED, eaRetiredResponse } from "@/lib/eaAvailability";
 import { addUploadedSource, json, requireMarvinUser } from "@/lib/marvin.server";
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/api/marvin-upload")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return eaRetiredResponse();
         try {
           const access = await requireMarvinUser(request);
           if ("error" in access) return access.error;

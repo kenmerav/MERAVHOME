@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- scheduled jobs use server-only Supabase rows. */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { EA_AGENT_ENABLED } from "@/lib/eaAvailability";
 import { runEaOperatingReview } from "@/lib/eaOperator.server";
 import { MARVIN_SCHEDULED_GMAIL_BATCH_SIZE } from "@/lib/marvinCron";
 import {
@@ -99,6 +100,10 @@ async function executeStage(stage: MarvinCronStage) {
 }
 
 export async function runMarvinCronStage(stage: MarvinCronStage) {
+  // Also guard direct callers and stale schedules from older deployments.
+  if (!EA_AGENT_ENABLED && stage !== "construction-docs") {
+    return { stage, skipped: true, reason: "EA retired" };
+  }
   const now = new Date();
   const jobType = `scheduled_${stage.replaceAll("-", "_")}`;
   const idempotencyKey = `${jobType}:${phoenixSlot(now)}`;

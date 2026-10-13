@@ -21,6 +21,8 @@ import { Route as PeopleVendorsRouteImport } from './routes/people-vendors'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FinancialsRouteImport } from './routes/financials'
 import { Route as EaDeskRouteImport } from './routes/ea-desk'
+import { Route as ConstructionUploadsRouteImport } from './routes/construction-uploads'
+import { Route as ApiConstructionUploadsRouteImport } from './routes/api/construction-uploads'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
@@ -178,6 +180,16 @@ const FinancialsRoute = FinancialsRouteImport.update({
 const EaDeskRoute = EaDeskRouteImport.update({
   id: '/ea-desk',
   path: '/ea-desk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConstructionUploadsRoute = ConstructionUploadsRouteImport.update({
+  id: '/construction-uploads',
+  path: '/construction-uploads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConstructionUploadsRoute = ApiConstructionUploadsRouteImport.update({
+  id: '/api/construction-uploads',
+  path: '/api/construction-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogRoute = CatalogRouteImport.update({
@@ -695,6 +707,8 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/construction-uploads': typeof ConstructionUploadsRoute
+  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
@@ -807,6 +821,8 @@ export interface FileRoutesByFullPath {
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
 export interface FileRoutesByTo {
+  '/construction-uploads': typeof ConstructionUploadsRoute
+  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
@@ -919,6 +935,8 @@ export interface FileRoutesByTo {
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
 export interface FileRoutesById {
+  '/construction-uploads': typeof ConstructionUploadsRoute
+  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/view-user': typeof ViewUserRoute
   '/api/view-user': typeof ApiViewUserRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
@@ -1034,6 +1052,8 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/construction-uploads'
+    | '/api/construction-uploads'
     | '/view-user'
     | '/api/view-user'
     | '/api/spec-ordering'
@@ -1146,6 +1166,8 @@ export interface FileRouteTypes {
     | '/projects/$id/rooms/$roomId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/construction-uploads'
+    | '/api/construction-uploads'
     | '/view-user'
     | '/api/view-user'
     | '/api/spec-ordering'
@@ -1257,6 +1279,8 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/projects/$id/rooms/$roomId'
   id:
+    | '/construction-uploads'
+    | '/api/construction-uploads'
     | '/view-user'
     | '/api/view-user'
     | '/api/spec-ordering'
@@ -1378,6 +1402,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
   EaDeskRoute: typeof EaDeskRoute
+  ConstructionUploadsRoute: typeof ConstructionUploadsRoute
+  ApiConstructionUploadsRoute: typeof ApiConstructionUploadsRoute
   FinancialsRoute: typeof FinancialsRoute
   LoginRoute: typeof LoginRoute
   PeopleVendorsRoute: typeof PeopleVendorsRoute
@@ -1566,6 +1592,20 @@ declare module '@tanstack/react-router' {
       path: '/ea-desk'
       fullPath: '/ea-desk'
       preLoaderRoute: typeof EaDeskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/construction-uploads': {
+      id: '/construction-uploads'
+      path: '/construction-uploads'
+      fullPath: '/construction-uploads'
+      preLoaderRoute: typeof ConstructionUploadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/construction-uploads': {
+      id: '/api/construction-uploads'
+      path: '/api/construction-uploads'
+      fullPath: '/api/construction-uploads'
+      preLoaderRoute: typeof ApiConstructionUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog': {
@@ -2277,6 +2317,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
   EaDeskRoute: EaDeskRoute,
+  ConstructionUploadsRoute: ConstructionUploadsRoute,
+  ApiConstructionUploadsRoute: ApiConstructionUploadsRoute,
   FinancialsRoute: FinancialsRoute,
   LoginRoute: LoginRoute,
   PeopleVendorsRoute: PeopleVendorsRoute,

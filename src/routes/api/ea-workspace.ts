@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- EA schema remains server-only until types regenerate. */
 import { createHash } from "node:crypto";
+import { EA_AGENT_ENABLED, eaRetiredResponse } from "@/lib/eaAvailability";
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { canManageStudio, canUseEaWorkspace } from "@/lib/permissions";
@@ -1152,6 +1153,7 @@ export const Route = createFileRoute("/api/ea-workspace")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return eaRetiredResponse();
         const access = await requireEaAccess(request);
         if ("error" in access) return access.error;
         try {
@@ -1163,6 +1165,7 @@ export const Route = createFileRoute("/api/ea-workspace")({
         }
       },
       POST: async ({ request }) => {
+        if (!EA_AGENT_ENABLED) return eaRetiredResponse();
         const access = await requireEaAccess(request);
         if ("error" in access) return access.error;
         try {

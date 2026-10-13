@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { EA_AGENT_ENABLED, eaRetiredResponse } from "@/lib/eaAvailability";
 import { json } from "@/lib/marvin.server";
 import { isMarvinCronStage, runMarvinCronStage } from "@/lib/marvinCron.server";
 
@@ -11,6 +12,7 @@ export const Route = createFileRoute("/api/marvin-cron/$stage")({
           return json({ error: "Unauthorized." }, 401);
         }
         const stage = String(params.stage || "");
+        if (!EA_AGENT_ENABLED && stage !== "construction-docs") return eaRetiredResponse();
         if (!isMarvinCronStage(stage) || stage === "inbox") {
           return json({ error: "Unknown scheduled stage." }, 404);
         }

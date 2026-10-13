@@ -46,44 +46,13 @@ describe("scheduled Marvin work", () => {
     expect(takeScheduledGmailBatch(messages).deferred).toHaveLength(5);
   });
 
-  it("schedules inbox, processing, and draft stages separately", () => {
+  it("schedules only construction uploads at 7 AM and noon Phoenix time", () => {
     const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8")) as {
       crons: Array<{ path: string; schedule: string }>;
     };
-    const paths = new Set(config.crons.map((job) => job.path));
-    for (const path of [
-      "/api/marvin-cron",
-      "/api/marvin-cron/construction-docs",
-      "/api/marvin-cron/fathom",
-      "/api/marvin-cron/drive",
-      "/api/marvin-cron/matching",
-      "/api/marvin-cron/actions",
-      "/api/marvin-cron/drafts",
-      "/api/marvin-cron/review",
-    ]) {
-      expect(paths.has(path)).toBe(true);
-    }
-    const schedulesFor = (path: string) =>
-      config.crons.filter((job) => job.path === path).map((job) => job.schedule);
-    for (const path of [
-      "/api/marvin-cron",
-      "/api/marvin-cron/construction-docs",
-      "/api/marvin-cron/fathom",
-      "/api/marvin-cron/review",
-    ]) {
-      expect(schedulesFor(path)).toEqual(["0 14 * * *", "0 19 * * *"]);
-    }
-    for (const path of [
-      "/api/marvin-cron/drive",
-      "/api/marvin-cron/matching",
-      "/api/marvin-cron/actions",
-    ]) {
-      expect(schedulesFor(path)).toEqual(["0 15 * * *", "0 20 * * *"]);
-    }
-    expect(schedulesFor("/api/marvin-cron/drafts")).toEqual(["0 16 * * *", "0 21 * * *"]);
-    for (const owner of ["ken", "katie", "brynn"]) {
-      expect(schedulesFor(`/api/marvin-cron/briefing-${owner}`)).toEqual(["0 16 * * *"]);
-    }
-    expect(config.crons).toHaveLength(19);
+    expect(config.crons).toEqual([
+      { path: "/api/marvin-cron/construction-docs", schedule: "0 14 * * *" },
+      { path: "/api/marvin-cron/construction-docs", schedule: "0 19 * * *" },
+    ]);
   });
 });
