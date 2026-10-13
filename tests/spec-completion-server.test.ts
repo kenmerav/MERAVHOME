@@ -167,6 +167,19 @@ it("loads saved results without starting AI and preserves old findings for remov
   expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
   expect(state.refresh).not.toHaveBeenCalled();
 });
+it("hides optional missing-price warnings from saved reviews without another plan check or lost decisions", async () => {
+  state.items.push({ ...state.items[0], id: 'counter', item_label: 'Countertop', category: 'Countertops' });
+  const gap = (id: string) => ({ item_id: id, room_id: roomId, field: 'price', source: 'details' });
+  state.saved = { report: { checked_at: 'earlier', document: null }, source_signature: 'old', issues: {
+    counter: { key: 'counter', status: 'open', finding: gap('counter') },
+    sink: { key: 'sink', status: 'open', finding: gap('sink') },
+    completed: { key: 'completed', status: 'completed', finding: gap('counter') },
+  } };
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
+  expect(result.issues.map((issue: any) => issue.key)).toEqual(['sink', 'completed']);
+  expect(state.saved.issues.counter.status).toBe('open');
+  expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled(); expect(state.refresh).not.toHaveBeenCalled();
+});
 it("retires old blanket dimension flags from open results while retaining team decisions", async () => {
   const gap = { item_id: 'sink', room_id: roomId, field: 'dimensions', source: 'details' };
   state.saved = { report: { checked_at: 'earlier', document: null }, source_signature: 'old', issues: {

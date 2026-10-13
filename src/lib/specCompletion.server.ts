@@ -3,7 +3,7 @@ import { cleanUuid } from "@/lib/ids";
 import { isStudioTeamRole } from "@/lib/permissions";
 import { projectDocumentStoragePath } from "@/lib/materialPlanCheck.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
-import { checkSpecDetails, cleanCompletionPlanFindings, completionItems, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
+import { checkSpecDetails, cleanCompletionPlanFindings, completionItems, allowsMissingMaterialPrice, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
 import type { MaterialItem } from "@/lib/db";
 import { PDFDocument } from "pdf-lib";
 import { fetchSpecReview, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
@@ -49,7 +49,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
         "Count discrete items only when the complete relevant layout or explicit schedule supports it. Sink faucets are not shower faucets. Assembly/trim/rough-in parts are separate selections; quantities of assemblies do not establish component quantities.",
         "For square_feet only accept explicit scheduled area for that exact material/room. Do not estimate scale, wall/floor area, waste, cartons, or installation allowances. Do not convert square footage to item counts or price units.",
         "Check missing items only when clearly shown in the proposed drawings and no supplied selection covers them. Recognize aliases (hooks/robe hooks, vanity light/sconce, tissue/TP holder, showerhead/shower system). Respect excluded_items: do not suggest deliberately not-needed items. Do not recommend every generic room-template item. Do not add default sink drains.",
-        "Color, finish and pricing findings require an explicit specification for the selected product/variant. Never infer these from pictures or generic sizes; do not browse vendors. Prices must be explicit USD unit prices with their basis, not totals, budgets or allowances. Missing pricing is a data gap when the drawings do not specify it.",
+        "Color, finish and pricing findings require an explicit specification for the selected product/variant. Never infer these from pictures or generic sizes; do not browse vendors. Prices must be explicit USD unit prices with their basis, not totals, budgets or allowances. Missing prices are acceptable for countertops, paint and cabinetry (pricing_optional:true); never flag their blank pricing. Other missing prices are handled by the Materials detail check.",
         "For dimensions, find explicit dimension callouts or specifications for this exact item in its identified room. A mirror's width/height must refer to that mirror, not its vanity, adjacent wall, cabinet, gap, mounting height or ceiling. Do not measure image pixels, estimate from scale, infer from standard sizes, or subtract surrounding dimensions. If only width is stated, return only width and say height is unspecified. If multiple same-room objects cannot be matched or dimensions conflict, omit the finding.",
         "During a full review, a blank dimension is not automatically a problem. Suggest missing dimensions only for products with multiple published size_options and no confirmed selected_size. You may also flag a clear discrepancy against dimensions already recorded. Targeted dimension reviews may search for an explicitly requested item's planned size even without size-option metadata.",
         "Dimension scope must be product_specification for explicit actual product dimensions or proposed_layout for the planned object size in the construction layout. A planned mirror size is a design requirement, not proof of the purchased mirror's actual dimensions. Require explicit_specification:true, exact_material_match:true and conflicting_dimensions:false. Include numeric dimensions with units and labelled axes (Width, Height, Depth, Diameter) where stated.",
@@ -66,7 +66,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
             quantity: item.quantity, quantity_tbd: item.quantity_tbd, quantity_unit: item.quantity_unit || "count",
             color: item.color, finish: item.product?.finish, dimensions: item.product?.dimensions,
             size_options: item.product?.size_options, selected_size: item.product?.selected_size,
-            price: item.product?.price, price_unit: item.product?.price_unit })),
+            price: item.product?.price, price_unit: item.product?.price_unit, pricing_optional: allowsMissingMaterialPrice(item) })),
           excluded_items: items.filter(item => item.not_needed).map(item => ({ room_id: item.room_id, label: item.item_label, product: item.product?.name })),
         }) },
         { type: "input_file", filename: "construction-document.pdf", file_data: `data:application/pdf;base64,${Buffer.from(bytes).toString("base64")}`, detail: "high" },

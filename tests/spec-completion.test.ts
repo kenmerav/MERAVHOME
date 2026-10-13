@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { checkSpecDetails, cleanCompletionPlanFindings, hasCompletionValue, needsCompletionDimensions } from "@/lib/specCompletion";
+import { checkSpecDetails, cleanCompletionPlanFindings, hasCompletionValue, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit } from "@/lib/specCompletion";
 import type { MaterialItem } from "@/lib/db";
 
 const rooms = [{ id: "bath", name: "Guest Bathroom" }];
@@ -37,6 +37,35 @@ it.each(["TBD", "Not specified", "n/a", "—", "unknown", "pending", ""])("recog
 it("flags invalid quantities, ambiguous price ranges and invalid links", () => {
   const bad = item({ quantity: 1.5, product_url: "javascript:alert(1)" }); bad.product!.price = "$100 - $200";
   expect(checkSpecDetails([bad], rooms).map(row => row.field)).toEqual(["quantity", "price", "link"]);
+});
+it.each([
+  ["Countertops", "Quartz countertop"], ["Paint", "Wall paint"], ["Cabinetry", "Cabinetry finish"],
+  ["Hardware", "Kitchen cabinet"], ["Tile & Stone", "Honed granite backsplash + counter"],
+  ["Doors Base & Case", "Whole house paint and trim"], ["Treatment", "Roman clay"],
+])("accepts missing pricing for %s / %s", (category, label) => {
+  const material = item({ category, item_label: label });
+  material.product = { ...material.product, name: label, category: "Decor", price: null, price_unit: null } as MaterialItem["product"];
+  for (const price of [null, "", "TBD", "Contact for quote"]) {
+    material.product!.price = price;
+    expect(needsCompletionPrice(material)).toBe(false);
+    expect(needsCompletionPriceUnit(material)).toBe(false);
+    expect(checkSpecDetails([material], rooms).some(row => ["price", "price_unit"].includes(row.field))).toBe(false);
+  }
+});
+it("still requires prices for cabinet hardware and ordinary purchased items and reviews an entered price range", () => {
+  for (const [category, label] of [["Cabinetry", "Cabinet knob"], ["Plumbing", "Faucet"], ["Lighting", "Painted metal lamp"]]) {
+    const material = item({ category, item_label: label });
+    material.product = { ...material.product, name: label, price: null } as MaterialItem["product"];
+    expect(needsCompletionPrice(material)).toBe(true);
+  }
+  const quote = item({ category: "Countertops", item_label: "Countertop" });
+  quote.product!.price = "$100–$200";
+  expect(needsCompletionPrice(quote)).toBe(true);
+});
+it("recognizes a countertop slab used as a shower surround from its linked product type", () => {
+  const surround = item({ item_label: "Lower Surround of Shower", category: "Plumbing", product_url: "https://www.msisurfaces.com/quartz-countertops/calacatta-aravine-quartz/" });
+  surround.product = { ...surround.product, name: "Calacatta Aravine", price: null } as MaterialItem["product"];
+  expect(needsCompletionPrice(surround)).toBe(false);
 });
 it.each([{ ...quantity, room_id: "other" }, { ...quantity, item_id: "other" }, { ...quantity, page: 15 },
   { ...quantity, page: 0 }, { ...quantity, evidence: "" }, { ...quantity, confidence: "medium" },

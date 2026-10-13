@@ -47,6 +47,34 @@ export function needsCompletionDimensions(item: MaterialItem) {
   return options.size > 1;
 }
 
+export function allowsMissingMaterialPrice(item: MaterialItem) {
+  const label = `${item.item_label || ""} ${item.product?.name || ""}`;
+  // Cabinet hardware remains a priced product even when grouped with cabinetry.
+  if (/\b(?:knobs?|pulls?|handles?|hinges?|hardware)\b/i.test(label)) return false;
+  if (/^(?:Countertops|Paint|Cabinetry|Cabinetry & Hardware)$/i.test(item.category || "")) return true;
+  if (/^(?:Countertops|Paint)$/i.test(item.product?.category || "")) return true;
+  if (/\b(?:faucets?|sinks?|toilets?|mirrors?|lamps?|sconces?|pendants?|chandeliers?|stools?|chairs?|tables?|dispensers?)\b/i.test(label)) return false;
+  try {
+    const path = new URL(item.product_url || item.product?.product_url || "").pathname;
+    if (/(?:^|\/)(?:[a-z]+-)?countertops?(?:\/|$)/i.test(path)) return true;
+  } catch { /* Labels and categories can still identify the material. */ }
+  return /\b(?:countertops?|cabinetry|cabinets?|paint|roman clay|limewash)\b/i.test(label) ||
+    /\bcounter\s*$/i.test(item.item_label || "");
+}
+
+const exactCompletionPrice = (item: MaterialItem) =>
+  /^\$?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?$/.test(item.product?.price?.trim() || "");
+
+export function needsCompletionPrice(item: MaterialItem) {
+  const price = item.product?.price?.trim() || "";
+  const missing = !hasCompletionValue(price) || /^(?:call|contact|request|ask).*(?:price|pricing|quote)|^quote(?: required| pending| upon request)?$/i.test(price);
+  return !(missing && allowsMissingMaterialPrice(item)) && !exactCompletionPrice(item);
+}
+
+export function needsCompletionPriceUnit(item: MaterialItem) {
+  return exactCompletionPrice(item) && !materialPriceUnit(item);
+}
+
 // Color and finish share a field on Materials; a useful value in either satisfies this check.
 export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[]): CompletionFinding[] {
   const roomIds = new Set(rooms.map(room => room.id));
@@ -65,8 +93,8 @@ export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[])
     if (needsCompletionDimensions(item)) add("dimensions", "This product has multiple sizes. Confirm the selected size.");
     const price = item.product?.price?.trim() || "";
     // Zero is a reviewed price; placeholders, invalid values and ranges still need confirmation.
-    if (!/^\$?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?$/.test(price)) add("price", "Price needs confirmation.", price);
-    else if (!materialPriceUnit(item)) add("price_unit", "Confirm whether the price is per unit or per square foot.");
+    if (needsCompletionPrice(item)) add("price", "Price needs confirmation.", price);
+    else if (needsCompletionPriceUnit(item)) add("price_unit", "Confirm whether the price is per unit or per square foot.");
     const link = item.product_url?.trim() || item.product?.product_url?.trim() || "";
     try { if (!["https:", "http:"].includes(new URL(link).protocol)) throw new Error(); }
     catch { add("link", "Product link is missing or incomplete.", link); }

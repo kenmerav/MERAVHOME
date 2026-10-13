@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
-import { cleanCompletionPlanFindings, needsCompletionDimensions, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
+import { cleanCompletionPlanFindings, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
 import { retrieveSpecReview } from "@/lib/specReviewAI.server";
 import { completionOutput } from "@/lib/specCompletionOutput";
 import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { linkedBoardImage } from "@/lib/boardColorSuggestion";
 import type { MaterialItem } from "@/lib/db";
-import { materialPriceUnit } from "@/lib/productPriceUnit";
 import type { SavedCompletionIssue, SavedSpecCompletionReview, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
 
 const admin = supabaseAdmin as any;
@@ -182,7 +181,8 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
     // requiring another paid plan scan.
     if (issue.status !== "open" || issue.finding.source !== "details") return true;
     const item = byItem.get(issue.finding.item_id ?? "");
-    if (issue.finding.field === "price_unit") return !!item && !materialPriceUnit(item);
+    if (issue.finding.field === "price") return !!item && needsCompletionPrice(item);
+    if (issue.finding.field === "price_unit") return !!item && needsCompletionPriceUnit(item);
     if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);
     return true;
   });
