@@ -17,6 +17,7 @@ import { AppShell } from "@/components/AppShell";
 import { MaterialPhotoUpload } from "@/components/MaterialPhotoUpload";
 import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
+import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggestions";
 import { formatPriceWithUnit, materialPriceUnit, inferProductPriceUnit } from "@/lib/productPriceUnit";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
@@ -1251,6 +1252,7 @@ function RoomMaterialsSection({
           {templateSuggestions.length > 0 && (
             <MaterialSuggestionReview
               roomName={room.name}
+              roomId={room.id}
               projectId={projectId}
               planEvidence={planEvidence}
               planTitle={planTitle}
@@ -1260,6 +1262,7 @@ function RoomMaterialsSection({
               suggestions={templateSuggestions}
               onAdd={activateSuggestion}
               onDismiss={dismissSuggestion}
+              onCatalogAdded={invalidate}
             />
           )}
           <AddCustomItemButton
@@ -2052,6 +2055,7 @@ function NotesPopover({ value, onSave }: { value: string; onSave: (v: string) =>
 
 export function MaterialSuggestionReview({
   roomName,
+  roomId,
   suggestions,
   onAdd,
   onDismiss,
@@ -2061,8 +2065,10 @@ export function MaterialSuggestionReview({
   planStatus,
   planMessage,
   onReviewPlans,
+  onCatalogAdded,
 }: {
   roomName: string;
+  roomId?: string;
   suggestions: MaterialSuggestion[];
   onAdd: (suggestion: MaterialSuggestion, productUrl: string | null) => Promise<void>;
   onDismiss: (suggestion: MaterialSuggestion) => Promise<void>;
@@ -2072,6 +2078,7 @@ export function MaterialSuggestionReview({
   planStatus: "idle" | "checking" | "checked" | "error" | "no_document";
   planMessage?: string;
   onReviewPlans: () => void;
+  onCatalogAdded?: () => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -2132,7 +2139,7 @@ export function MaterialSuggestionReview({
           Review {suggestions.length} possible {suggestions.length === 1 ? "item" : "items"}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl font-normal">
             Possible items for {roomName}
@@ -2158,8 +2165,8 @@ export function MaterialSuggestionReview({
             </div>
           )}
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Paste a product link to add it now, or leave the link blank to add a placeholder you can
-            finish later. Anything untouched will still be here the next time you open this list.
+            Choose a suggestion from your catalog, paste a product link, or add a placeholder for
+            later. Anything untouched will still be here the next time you open this list.
           </p>
           <div className="max-h-[60vh] divide-y divide-border overflow-y-auto border border-border">
             {suggestions.map((suggestion) => {
@@ -2168,7 +2175,7 @@ export function MaterialSuggestionReview({
               return (
                 <div
                   key={suggestion.key}
-                  className="grid gap-3 p-4 sm:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_auto] sm:items-center"
+                  className="grid gap-3 p-4 md:grid-cols-[minmax(130px,0.7fr)_minmax(180px,1fr)_minmax(200px,1fr)] md:items-center"
                 >
                   <div className="min-w-0">
                     <div className="font-medium text-ink">{suggestion.label}</div>
@@ -2191,6 +2198,9 @@ export function MaterialSuggestionReview({
                     className="h-9"
                   />
                   <div className="flex shrink-0 flex-wrap gap-2">
+                    {roomId && <MaterialCatalogSuggestions projectId={projectId} roomId={roomId} roomName={roomName}
+                      label={suggestion.label} existingItem={suggestion.existingItem} disabled={savingKey !== null}
+                      onAdded={async () => { await onCatalogAdded?.(); }} />}
                     <button
                       type="button"
                       disabled={savingKey !== null}

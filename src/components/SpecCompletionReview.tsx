@@ -107,10 +107,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-6 sm:p-8">
         <DialogHeader>
           <DialogTitle className="font-display text-3xl">Spec Book completion review</DialogTitle>
-          <DialogDescription>New checks first look for Jessica’s newer construction PDFs for this project, then review the latest attached plans. Findings are saved with the project. Opening saved results does not refresh email or run another AI check.</DialogDescription>
-          <p className="text-xs text-muted-foreground">Missing-size checks apply to unresolved products with multiple published size choices. Blank dimensions alone do not create an issue.</p>
-          <p className="text-xs text-muted-foreground">Prices are optional for countertops, paint, and cabinetry.</p>
-          <p className="text-xs text-muted-foreground">GPT-6.1 Sol · High reasoning · $3 target per AI check. Requests estimated above $5 are stopped. Color and dimension suggestions are separate checks.</p>
+          <DialogDescription className="sr-only">Review and resolve the project’s Spec Book findings.</DialogDescription>
         </DialogHeader>
         <SpecCompletionResults key={reviewedSignature + (activeReport?.checked_at ?? "pending")} projectId={projectId} rooms={rooms} items={items} findings={details}
           issues={saved?.issues} onStatusChange={saved ? changeStatus : undefined} savingIssue={savingIssue}
