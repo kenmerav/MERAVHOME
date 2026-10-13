@@ -44,16 +44,17 @@ export function productPricingPatch(
       "Enter the price that the markup is based on, or clear the markup to enter a price directly.",
     );
 
-  // Retail-only entry is a published price, not an internal cost. Fill a NEW
-  // blank display price from it, without replacing an existing manual price,
-  // changing a markup, or undoing an intentional clear of the display price.
+  // A single entered price also supplies the Spec Book display price. When
+  // both base prices exist, retain the retail-price default. Preserve manual
+  // display prices, configured markup, and intentional clears.
   const manuallyCleared = Boolean(initial?.price.trim()) && !values.price.trim();
-  const useRetail = calculated == null && manualPrice == null && retail != null && !manuallyCleared;
+  const fallbackPrice = retail ?? cost;
+  const useFallback = calculated == null && manualPrice == null && fallbackPrice != null && !manuallyCleared;
   const patch: Partial<Product> = {
     retail_price: retail,
     unit_cost: cost,
     price: calculated == null
-      ? (manualPrice ?? (useRetail ? retail : null))
+      ? (manualPrice ?? (useFallback ? fallbackPrice : null))
       : normalizeMoneyInput(calculated.toFixed(2)),
     shipping,
     markup_percent: markup,
@@ -84,8 +85,9 @@ export function productPricingPatch(
   const formulaChanged = ["retail_price", "unit_cost", "markup_percent", "markup_basis"].some(
     (key) => values[key as keyof ProductPricingDraft] !== initial[key as keyof ProductPricingDraft],
   );
-  const fillNewDisplayPrice = useRetail && !initial.price.trim() && (
+  const fillNewDisplayPrice = useFallback && !initial.price.trim() && (
     values.retail_price !== initial.retail_price ||
+    values.unit_cost !== initial.unit_cost ||
     (values.price_unit !== undefined && values.price_unit !== initial.price_unit)
   );
   if (

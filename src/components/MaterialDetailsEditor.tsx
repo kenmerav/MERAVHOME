@@ -55,6 +55,9 @@ export function MaterialDetailsEditor({
     markupPercent: draft.markup_percent,
     markupBasis: draft.markup_basis,
   });
+  const automaticPrice = !draft.price.trim() && !initial.price.trim()
+    ? draft.retail_price.trim() || draft.unit_cost.trim()
+    : "";
   const set = (key: keyof typeof draft, value: string) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const save = async () => {
@@ -179,29 +182,47 @@ export function MaterialDetailsEditor({
         </div>
         <div className="mt-2 border-t border-border pt-4">
           <div className="eyebrow mb-3">Pricing</div>
-          <label className="mb-4 block">
-            <span className="eyebrow mb-1.5 block">Price is per</span>
-            <select
-              aria-label="Price basis"
-              className="h-10 w-full border border-input bg-background px-3 text-sm"
-              value={draft.price_unit}
-              onChange={(event) => set("price_unit", event.target.value)}
-            >
-              <option value="">Not set — choose a price basis</option>
-              <option value="unit">Per unit (each, sheet, set, or box)</option>
-              <option value="sq_ft">Per square foot (sq ft)</option>
-            </select>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Applies to display price, retail price, and cost. Does not change quantities or shipping.
-              For per-unit pricing, confirm whether one unit means one item, sheet, set, or box.
-            </span>
-            {draft.price_unit === "sq_ft" && item.quantity_unit !== "square_feet" && (
-              <span className="mt-1 block text-xs text-amber-800">
-                The quantity is not in square feet. Confirm the quantity and any coverage conversion before budgeting or ordering.
-              </span>
-            )}
-          </label>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                <label>
+                  <span className="eyebrow mb-1.5 block">Display price — Materials &amp; Spec Book</span>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    readOnly={calculated != null}
+                    value={calculated == null ? draft.price || automaticPrice : formatMoney(calculated)}
+                    onChange={(event) => set("price", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span className="eyebrow mb-1.5 block">Price is per</span>
+                  <select
+                    aria-label="Price basis"
+                    className="h-10 w-full border border-input bg-background px-3 text-sm"
+                    value={draft.price_unit}
+                    onChange={(event) => set("price_unit", event.target.value)}
+                  >
+                    <option value="">Choose unit</option>
+                    <option value="unit">Unit / item</option>
+                    <option value="sq_ft">Square foot</option>
+                  </select>
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {calculated == null
+                  ? "Enter just one price below and it will also appear in the Spec Book. You can enter a different display price here."
+                  : "Calculated from the base price and markup. Clear markup to enter a price directly."}
+              </p>
+              {draft.price_unit === "unit" && (
+                <p className="mt-1 text-xs text-muted-foreground">One unit can be an item, sheet, set, or box.</p>
+              )}
+              {draft.price_unit === "sq_ft" && item.quantity_unit !== "square_feet" && (
+                <p className="mt-1 text-xs text-amber-800">
+                  The quantity is not in square feet. Confirm the quantity and any coverage conversion before budgeting or ordering.
+                </p>
+              )}
+            </div>
             {(
               [
                 ["retail_price", "Retail price"],
@@ -237,21 +258,6 @@ export function MaterialDetailsEditor({
                 value={draft.markup_percent}
                 onChange={(event) => set("markup_percent", event.target.value)}
               />
-            </label>
-            <label>
-              <span className="eyebrow mb-1.5 block">Display price — Materials &amp; Spec Book</span>
-              <Input
-                inputMode="decimal"
-                placeholder="0.00"
-                readOnly={calculated != null}
-                value={calculated == null ? draft.price : formatMoney(calculated)}
-                onChange={(event) => set("price", event.target.value)}
-              />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {calculated == null
-                  ? "For a new blank display price, Retail price is used automatically. Existing display prices are kept. Our cost is never used automatically."
-                  : "Calculated from the base price and markup. Clear markup to enter a price directly."}
-              </span>
             </label>
           </div>
         </div>

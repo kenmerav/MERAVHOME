@@ -19,10 +19,31 @@ describe("Materials price save and price basis", () => {
     const initial = { ...blank(), price: "$100", retail_price: "$120" };
     expect(productPricingPatch({ ...initial, retail_price: "130" }, initial)).not.toHaveProperty("price");
   });
-  it("does not undo an intentional clear or expose internal cost", () => {
+  it("does not undo an intentional clear", () => {
     const initial = { ...blank(), price: "$100", retail_price: "$120" };
     expect(productPricingPatch({ ...initial, price: "" }, initial).price).toBeNull();
-    expect(productPricingPatch({ ...blank(), unit_cost: "80" }, blank())).not.toHaveProperty("price");
+    const costOnly = { ...blank(), price: "$80", unit_cost: "$80" };
+    expect(productPricingPatch({ ...costOnly, price: "" }, costOnly).price).toBeNull();
+  });
+  it("publishes the single cost entered in Materials to the Spec Book", () => {
+    const initial = blank();
+    expect(productPricingPatch({ ...initial, unit_cost: "940.80", price_unit: "unit" }, initial))
+      .toEqual({ unit_cost: "$940.80", price: "$940.80", price_unit: "unit" });
+  });
+  it("uses retail when both prices are supplied and preserves a manual display price", () => {
+    expect(productPricingPatch({ ...blank(), retail_price: "120", unit_cost: "80" }, blank()).price)
+      .toBe("$120.00");
+    const initial = { ...blank(), price: "$100", unit_cost: "$80" };
+    expect(productPricingPatch({ ...initial, unit_cost: "90" }, initial)).not.toHaveProperty("price");
+  });
+  it("can fill an existing blank display price when its single price basis is chosen", () => {
+    const initial = { ...blank(), unit_cost: "$80" };
+    expect(productPricingPatch({ ...initial, price_unit: "unit" }, initial))
+      .toEqual({ price: "$80.00", price_unit: "unit" });
+  });
+  it("does not treat shipping as the product price", () => {
+    expect(productPricingPatch({ ...blank(), shipping: "10" }, blank()))
+      .toEqual({ shipping: "$10.00" });
   });
   it("preserves explicitly configured markup", () => {
     expect(productPricingPatch({ ...blank(), unit_cost: "80", markup_basis: "our_price", markup_percent: "25" }).price)
@@ -45,6 +66,7 @@ describe("Materials price save and price basis", () => {
   });
   it("keeps zero prices distinct from missing prices", () => {
     expect(productPricingPatch({ ...blank(), retail_price: "0" }, blank()).price).toBe("$0.00");
+    expect(productPricingPatch({ ...blank(), unit_cost: "0" }, blank()).price).toBe("$0.00");
     expect(formatPriceWithUnit("$0.00", "unit")).toBe("$0.00 / unit");
     expect(formatPriceWithUnit("", "unit")).toBeNull();
   });
