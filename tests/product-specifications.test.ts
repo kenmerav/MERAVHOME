@@ -365,6 +365,15 @@ describe("material metadata enrichment", () => {
     const response=await handlers.POST({request:request('POST',{action:'poll',project_id:project,batch_id:'failed-retry',candidates:[{material_item_id:item,url:'https://retailer.test/light'}]})});
     expect((await response.json()).rows[0].scraped).toMatchObject({name:'Light',dimensions:'12 in'});
   });
+  it("isolates a rejected batch and returns individually recovered prices instead of stopping the run", async () => {
+    mock.query.mockResolvedValue({data:[{id:item,category:'Lighting',product_url:'https://retailer.test/light',product:{id:product,price:null}}],error:null});
+    const fetcher=vi.fn(async(input:string|URL)=>String(input).endsWith('/batch/scrape')?new Response('Batch rejected',{status:400}):new Response(JSON.stringify({data:{json:{price:'$99',price_unit:'unit'}}})));
+    vi.stubGlobal('fetch',fetcher);
+    const response=await handlers.POST({request:request('POST',{action:'start',project_id:project})});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({status:'completed',rows:[{material_item_id:item,scraped:{price:'$99.00'}}]});
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("saves the square-foot rate and basis together, without inventing an internal cost", async () => {
     mock.query.mockImplementation(q=>q.op==='update'?{error:null}:q.table==='material_items'?{data:{id:item,category:'Tile & Stone',room_id:null}}:{data:{id:product,price:null,unit_cost:null}});
     await handlers.PUT({request:request('PUT',{rows:[{material_item_id:item,existing_product_id:product,url,scraped:{price:'$8.50',price_unit:'sq_ft',unit_cost:'$148.16'}}]})});

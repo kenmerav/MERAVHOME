@@ -479,7 +479,7 @@ function MaterialsPage() {
             await new Promise((resolve) => window.setTimeout(resolve, 1200));
             setScrapeStatus(`Scraping batch ${batchCount + 1}...`);
             pollCount += 1;
-            if (pollCount >= 45) {
+            if (pollCount >= 100) {
               setScrapeStatus(`Finishing batch ${batchCount + 1} one product at a time...`);
               const fallbackRes = await fetch("/api/scrape-materials", {
                 method: "POST",

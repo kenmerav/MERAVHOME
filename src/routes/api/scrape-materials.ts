@@ -774,8 +774,20 @@ export const Route = createFileRoute("/api/scrape-materials")({
               proxy: "auto",
             }),
           });
-          if (!response.ok)
-            return json({ error: `Could not start scrape batch (${response.status}).` }, 502);
+          if (!response.ok) {
+            console.warn("Materials batch rejected; retrying individual products", { status: response.status, count: firecrawlCandidates.length });
+            // A rejected batch must not stop the rest of a project's selections.
+            // Individual requests isolate a blocked/invalid retailer URL and let
+            // the client save useful rows and continue with the next batch.
+            const recoveredRows = await Promise.all(firecrawlCandidates.map(async (candidate) => ({
+              material_item_id: cleanUuid(candidate.material_item_id),
+              url: candidate.url,
+              existing_product_id: cleanUuid(candidate.existing_product_id),
+              scraped: await scrapeOne(candidate.url, fcKey, { fresh: true, selection: candidate.selection }),
+            })));
+            return json({ status: "completed", rows: [...prefetchedRows, ...recoveredRows],
+              invalid_link_count, already_scraped_count, remaining_count });
+          }
           const batchBody = (await response.json()) as FirecrawlEnvelope;
           const batch = batchEnvelope(batchBody);
           const batchId = firstString(batch?.id, batchBody?.id);
