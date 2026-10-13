@@ -4,7 +4,7 @@ const roomId = "0033186c-a2e6-417f-a50f-37f5390f5cf5";
 const userId = "4204f2d1-e10c-4d98-a01b-350cf7d8cafe";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true, project: true,
   documents: [] as any[], rooms: [] as any[], items: [] as any[], board: null as any,
-  reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any }));
+  reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any, writes: [] as any[], writeMisses: 0 }));
 vi.mock("@/lib/constructionUploads.server", () => ({ refreshConstructionUploads: state.refresh }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
@@ -12,19 +12,28 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
   storage: { from: () => ({ download: state.download }) },
   rpc: state.rpc,
   from: (table: string) => {
-    const filters: any = {}; const orders: any[] = []; let slice: number[] | null = null;
+    const filters: any = {}; const orders: any[] = []; let slice: number[] | null = null; let patch: any = null;
     const get = () => { state.reads.push({ table, filters, orders });
       if (table === "user_profiles") return { data: state.profile, error: null };
       if (table === "user_project_assignments") return { data: state.assigned ? { project_id: projectId } : null, error: null };
       if (table === "projects") return { data: state.project ? { id: projectId } : null, error: null };
       if (table === "design_boards") return { data: { board_state: state.board }, error: null };
-      if (table === "spec_completion_reviews") return { data: state.saved, error: state.storageError };
+      if (table === "spec_completion_reviews") {
+        if (patch) {
+          state.writes.push({ filters, patch });
+          if (state.writeMisses > 0) { state.writeMisses--; const key = Object.keys(state.saved.issues)[0];
+            state.saved.issues[key].status = 'completed'; state.saved.updated_at = 'concurrent-status'; return { data: null, error: null }; }
+          if (state.saved?.updated_at !== filters.updated_at) return { data: null, error: null };
+          state.saved = { ...state.saved, ...structuredClone(patch) };
+        }
+        return { data: state.saved && structuredClone(state.saved), error: state.storageError };
+      }
       let data = table === "rooms" ? state.rooms : table === "material_items" ? state.items : state.documents;
       if (filters.project_id !== projectId) data = [];
       if (slice) data = data.slice(slice[0], slice[1] + 1);
       return { data, error: state.dataError ? new Error("read failed") : null };
     };
-    const query: any = { select: () => query, eq: (key: string, value: any) => { filters[key] = value; return query; },
+    const query: any = { select: () => query, update: (value: any) => { patch = value; return query; }, eq: (key: string, value: any) => { filters[key] = value; return query; },
       is: (key: string, value: any) => { filters[key] = value; return query; }, order: (key: string, options: any) => { orders.push([key, options]); return query; },
       range: (start: number, end: number) => { slice = [start, end]; return query; }, limit: () => query,
       maybeSingle: async () => get(), then: (resolve: any) => Promise.resolve(get()).then(resolve) };
@@ -38,7 +47,12 @@ const request = (body: any = { project_id: projectId }, token = true) => new Req
   method: "POST", headers: { ...(token ? { Authorization: "Bearer TEST_ONLY_TOKEN" } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) });
 beforeEach(() => {
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true; state.project = true; state.dataError = false;
-  state.storageError = null; state.saved = null; state.rpc.mockResolvedValue({ data: null, error: null });
+  state.storageError = null; state.saved = null; state.writes = []; state.writeMisses = 0;
+  state.rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'save_spec_completion_review') state.saved = { report: structuredClone(args.p_report),
+      issues: { ...state.saved?.issues, ...structuredClone(args.p_issues) }, source_signature: args.p_source_signature, updated_at: 'initial-version' };
+    return { data: null, error: null };
+  });
   state.refresh.mockResolvedValue({ uploaded: 0, failed: 0, deferred: 0, needsReview: 0, needsReconnect: false, error: null });
   state.profile = { role: "Admin", is_active: true, can_view_all_projects: true };
   state.rooms = [{ id: roomId, name: "Bathroom 2" }]; state.board = null; state.reads = [];
@@ -67,7 +81,50 @@ it("reads current project data and latest PDF, saving the review without editing
   expect(body).toMatchObject({ model: "gpt-6.1-sol", reasoning: { effort: "high" }, service_tier: "default", max_output_tokens: 32000 });
   expect(body.instructions).toContain("Do not estimate scale");
   expect(body.input[0].content[1]).toMatchObject({ type: "input_file", detail: "high" });
-  expect(state.rpc).toHaveBeenCalledWith("save_spec_completion_review", expect.objectContaining({ p_project_id: projectId, p_report: expect.objectContaining({ plan_status: "checked" }) }));
+  expect(state.rpc).toHaveBeenCalledWith("save_spec_completion_review", expect.objectContaining({ p_project_id: projectId }));
+  expect(state.saved.report.plan_status).toBe('checked');
+});
+it('returns a queued check promptly, resumes past five minutes, and saves results without another generation', async () => {
+  state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === 'POST' ?
+    Response.json({ id: 'resp_cortez_test', status: 'queued' }) : Response.json({ status: 'in_progress' }));
+  const started = await (await checkSpecCompletion(request())).json();
+  expect(started.plan_status).toBe('checking'); expect(state.saved.report.findings).toHaveLength(5);
+  expect(JSON.parse(state.fetch.mock.calls[0][1].body).background).toBe(true);
+  const refreshCount = state.refresh.mock.calls.length;
+  await checkSpecCompletion(request());
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(1);
+  expect(state.refresh).toHaveBeenCalledTimes(refreshCount);
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(started.checked_at) + 360000);
+  state.fetch.mockResolvedValue(Response.json({ status: 'completed', output_text: JSON.stringify({ findings: [{
+    item_id: 'sink', room_id: roomId, field: 'quantity', confidence: 'high', page: 2, sheet: 'ID1', evidence: 'Two selected sinks.',
+    quantity: 2, quantity_unit: 'count', count_scope: 'exact_material', exact_material_match: true,
+  }] }) }));
+  const finished = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
+  expect(finished.report.plan_status).toBe('checked'); expect(finished.issues.some((issue: any) => issue.finding.suggested === '2 count')).toBe(true);
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(1);
+  vi.restoreAllMocks();
+});
+it('preserves staff decisions when a status save races the background result', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  await checkSpecCompletion(request()); state.writeMisses = 1;
+  state.fetch.mockResolvedValue(Response.json({ status: 'completed', output_text: '{"findings":[]}' }));
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
+  expect(result.report.plan_status).toBe('checked'); expect(result.issues[0].status).toBe('completed');
+  expect(state.writes.length).toBeGreaterThan(2);
+});
+it('rejects background suggestions when the selections changed, without starting another paid request', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' })); await checkSpecCompletion(request());
+  state.items[0].quantity = 4;
+  const calls = state.fetch.mock.calls.length;
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
+  expect(result.report.plan_status).toBe('unavailable'); expect(result.report.plan_message).toContain('changed');
+  expect(state.fetch).toHaveBeenCalledTimes(calls);
+});
+it('keeps saved details when a temporary background response expires', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' })); await checkSpecCompletion(request());
+  state.fetch.mockResolvedValue(Response.json({ error: 'expired' }, { status: 404 }));
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
+  expect(result.report.plan_status).toBe('unavailable'); expect(result.issues).toHaveLength(5);
 });
 it("refreshes only the authorized project before selecting the PDF and persists freshness evidence", async () => {
   state.refresh.mockImplementation(async () => {

@@ -57,3 +57,8 @@ it("never retries a failed or timed-out generation", async () => {
   await expect(fetchSpecReview(request, "completion")).rejects.toThrow("Connection lost");
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+it('uses the same cost guard, exact model and privacy setting for a background request', async () => {
+  await fetchSpecReview(request, 'completion', true);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ background: true, store: false,
+    model: 'gpt-6.1-sol', reasoning: { effort: 'high' }, max_output_tokens: 32000 });
+});

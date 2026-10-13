@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
-import { needsCompletionDimensions, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
+import { cleanCompletionPlanFindings, needsCompletionDimensions, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
+import { retrieveSpecReview } from "@/lib/specReviewAI.server";
+import { completionOutput } from "@/lib/specCompletionOutput";
 import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { linkedBoardImage } from "@/lib/boardColorSuggestion";
 import type { MaterialItem } from "@/lib/db";
@@ -81,6 +83,69 @@ export async function saveCompletionReview(projectId: string, userId: string, re
   if (error) completionStorageError(error);
 }
 
+export function mergeCompletionRecords(prior: Record<string, SavedCompletionIssue>, incoming: Record<string, SavedCompletionIssue>, document: SpecCompletionReport["document"]) {
+  const merged = { ...prior };
+  for (const [key, issue] of Object.entries(incoming)) {
+    const old = prior[key];
+    merged[key] = old ? { ...issue, status: old.status, first_seen_at: old.first_seen_at,
+      status_updated_at: old.status_updated_at, status_updated_by: old.status_updated_by,
+      suggestion: old.suggestion?.kind === "dimensions" && (old.suggestion.value.document?.id !== document?.id || old.suggestion.document_updated_at !== document?.updated_at) ? undefined : old.suggestion } : issue;
+  }
+  return merged;
+}
+
+// Conditional row replacement preserves status edits made while the AI runs.
+// The job identity and row version prevent a late job replacing a newer check.
+export async function updateActiveCompletionReview(projectId: string, report: SpecCompletionReport, items: MaterialItem[], rooms: CompletionRoom[], boardState?: unknown) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: current, error } = await admin.from("spec_completion_reviews").select("report,issues,source_signature,updated_at")
+      .eq("project_id", projectId).maybeSingle();
+    if (error) completionStorageError(error);
+    if (!current || current.report?.plan_job?.request_id !== report.plan_job?.request_id)
+      throw new CompletionReviewConflict("A newer completion check replaced this job. Open the saved review.");
+    if (current.report.plan_status !== "checking") return current;
+    const issues = mergeCompletionRecords(current.issues ?? {}, completionIssueRecords(report, items, rooms, boardState), report.document);
+    const { data, error: writeError } = await admin.from("spec_completion_reviews").update({ report, issues, updated_at: new Date().toISOString() })
+      .eq("project_id", projectId).eq("updated_at", current.updated_at).select("report,issues,source_signature,updated_at").maybeSingle();
+    if (writeError) completionStorageError(writeError);
+    if (data) return data;
+  }
+  throw new CompletionReviewConflict("The saved review changed. Open it again for the latest results.");
+}
+
+async function finishPendingReview(projectId: string, saved: any, items: MaterialItem[], rooms: CompletionRoom[], document: SpecCompletionReport["document"], boardState?: unknown) {
+  const job = saved.report.plan_job;
+  if (saved.report.plan_status !== "checking" || !job) return saved;
+  const report: SpecCompletionReport = { ...saved.report, findings: [...saved.report.findings] };
+  const stale = saved.source_signature !== completionSourceSignature(items, rooms, document, boardState);
+  if (stale) {
+    report.plan_status = "unavailable";
+    report.plan_message = "Selections or construction documents changed while the plans were reviewed. Plan suggestions were not applied. The saved detail findings remain available.";
+  } else if (!job.response_id) {
+    if (Date.now() - Date.parse(job.started_at) < 180000) return saved;
+    report.plan_status = "unavailable";
+    report.plan_message = "The plan check could not be started or confirmed. Selection details are saved. No automatic retry was made.";
+  } else {
+    let response: Response;
+    try { response = await retrieveSpecReview(job.response_id); }
+    catch { return saved; }
+    if (!response.ok && response.status !== 404) return saved;
+    const value = await response.json().catch(() => null);
+    if (response.ok && ["queued", "in_progress"].includes(value?.status)) return saved;
+    try {
+      if (!response.ok || !Number.isInteger(job.pages) || job.pages <= 0) throw new Error("Expired review");
+      report.findings.push(...cleanCompletionPlanFindings(completionOutput(value), items, rooms, job.pages));
+      report.plan_status = "checked";
+      report.plan_message = "Plans reviewed and saved. Only clearly supported findings are listed. Unclear counts and unspecified details still need your review.";
+    } catch {
+      report.plan_status = "unavailable";
+      report.plan_message = "The plan check did not finish or its temporary result expired. Selection details are saved. No automatic retry or new AI charge was made.";
+    }
+  }
+  try { return await updateActiveCompletionReview(projectId, report, items, rooms, boardState); }
+  catch (error) { if (error instanceof CompletionReviewConflict) return saved; throw error; }
+}
+
 async function projectRows(table: string, select: string, projectId: string) {
   const all: any[] = [];
   for (let offset = 0; ; offset += 1000) {
@@ -91,9 +156,10 @@ async function projectRows(table: string, select: string, projectId: string) {
 }
 
 export async function readSavedCompletionReview(projectId: string): Promise<SavedSpecCompletionReview | null> {
-  const { data: saved, error } = await admin.from("spec_completion_reviews").select("report,issues,source_signature")
+  const { data: stored, error } = await admin.from("spec_completion_reviews").select("report,issues,source_signature,updated_at")
     .eq("project_id", projectId).maybeSingle();
   if (error) completionStorageError(error);
+  let saved = stored;
   if (!saved?.report) return null;
   const [rawItems, rooms, board, document] = await Promise.all([
     projectRows("material_items", "*,product:products(*)", projectId), projectRows("rooms", "id,name", projectId),
@@ -108,6 +174,7 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
   const items = rawItems.filter(item => !stale.has(item.id) && roomIds.has(item.room_id));
   const latest = document.data?.[0];
   const currentDocument = latest ? { id: latest.id, title: latest.title, updated_at: latest.updated_at } : null;
+  saved = await finishPendingReview(projectId, saved, items, rooms, currentDocument, board.data?.board_state);
   const byItem = new Map(items.map(item => [item.id, item]));
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
     // Preserve decisions/history, but retire old blanket missing-dimension flags

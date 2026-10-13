@@ -26,7 +26,11 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   const [error, setError] = useState("");
   const qc = useQueryClient();
   const reviewKey = ["spec-completion-review", projectId];
-  const savedQuery = useQuery({ queryKey: reviewKey, queryFn: () => fetchSavedSpecCompletion(projectId), staleTime: 30000, retry: false });
+  const savedQuery = useQuery({ queryKey: reviewKey, queryFn: () => fetchSavedSpecCompletion(projectId), staleTime: 30000, retry: false,
+    refetchInterval: query => query.state.data?.report.plan_status === "checking" ? 5000 : false,
+    refetchIntervalInBackground: true });
+  const pending = savedQuery.data?.report.plan_status === "checking";
+  const busy = checking || pending;
   const [viewSaved, setViewSaved] = useState(false);
   const [savingIssue, setSavingIssue] = useState("");
   const statusLock = useRef(false);
@@ -34,7 +38,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   const [reviewedSignature, setReviewedSignature] = useState("");
   const signature = JSON.stringify([projectId, rooms, items.map(item => [item.id, item.updated_at, item.product?.updated_at, item.quantity, item.quantity_tbd, item.quantity_unit, item.color, item.not_needed])]);
   const run = async () => {
-    if (lock.current) return;
+    if (lock.current || pending) return;
     lock.current = true;
     setOpen(true); setChecking(true); setError(""); setReport(null); setViewSaved(false);
     setReviewedSignature(signature);
@@ -68,10 +72,10 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   return <>
     {savedQuery.data && <button type="button" onClick={() => void openSaved()} disabled={checking || !!savingIssue}
       className="inline-flex items-center gap-2 border px-5 py-2.5 text-sm print:hidden disabled:opacity-60">Saved completion review · {count} open</button>}
-    <button type="button" onClick={() => void run()} disabled={checking}
+    <button type="button" onClick={() => void run()} disabled={busy}
       className="inline-flex items-center gap-2 border border-ink px-5 py-2.5 text-sm text-ink disabled:opacity-60 print:hidden">
-      {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-      {checking ? "Checking Spec Book…" : "Check Spec Book for Completion"}
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
+      {busy ? "Checking Spec Book…" : "Check Spec Book for Completion"}
     </button>
     {savedQuery.error && <p className="text-xs text-muted-foreground print:hidden">{savedQuery.error.message}</p>}
     <Dialog open={open} onOpenChange={setOpen}>
@@ -85,7 +89,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
         <SpecCompletionResults key={reviewedSignature + (activeReport?.checked_at ?? "pending")} projectId={projectId} rooms={rooms} items={items} findings={details}
           issues={saved?.issues} onStatusChange={saved ? changeStatus : undefined} savingIssue={savingIssue}
           onSuggestionSaved={saved ? () => { void qc.invalidateQueries({ queryKey: reviewKey }); } : undefined}
-          itemCount={activeReport?.item_count ?? completionItems(items).length} checking={checking || (viewSaved && savedQuery.isFetching && !saved)}
+          itemCount={activeReport?.item_count ?? completionItems(items).length} checking={busy || (viewSaved && savedQuery.isFetching && !saved)}
           planStatus={activeReport?.plan_status} document={activeReport?.document ?? null}
           checkedAt={activeReport?.checked_at}
           message={error || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Checking for newer construction PDFs, then reviewing current selections and plans…")}
@@ -94,7 +98,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
         <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4">
           <p className="text-xs text-muted-foreground">{saved ? "Issue decisions are saved for the team. Edit Materials to change product information." : "No quantities or selections have been changed."}</p>
           <button type="button" className="shrink-0 bg-ink px-5 py-2.5 text-sm text-white disabled:opacity-50"
-            disabled={checking || !!savingIssue} onClick={() => void run()}>{checking ? "Checking…" : "Run a new check"}</button>
+            disabled={busy || !!savingIssue} onClick={() => void run()}>{busy ? "Checking plans…" : "Run a new check"}</button>
         </div>
       </DialogContent>
     </Dialog>

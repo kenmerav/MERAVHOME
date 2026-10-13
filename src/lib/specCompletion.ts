@@ -15,10 +15,11 @@ export type CompletionFinding = {
 };
 export type SpecCompletionReport = {
   checked_at: string; item_count: number; findings: CompletionFinding[];
-  plan_status: "checked" | "no_document" | "unavailable";
+  plan_status: "checked" | "no_document" | "unavailable" | "checking";
   document: { id: string; title: string; updated_at: string } | null;
   plan_message: string;
   document_refresh?: { status: "checked" | "incomplete" | "unavailable"; checked_at: string; uploaded: number; message: string };
+  plan_job?: { request_id: string; response_id: string | null; pages: number | null; started_at: string };
 };
 
 export function hasCompletionValue(value: unknown) {

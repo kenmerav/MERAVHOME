@@ -34,7 +34,7 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind) {
   return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimits[kind] };
 }
 
-export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind): Promise<Response> {
+export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) throw new Error("AI configuration unavailable");
   const headers = { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" };
   const countedRequest = { ...request, model: SPEC_REVIEW_MODEL, reasoning: { effort: "high" } };
@@ -55,8 +55,15 @@ export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind):
   // One generation per button press, no automatic retries or hosted tools.
   // This guards estimated model-token cost, not an account-wide billing limit.
   return fetch("https://api.openai.com/v1/responses", {
-    method: "POST", signal: AbortSignal.timeout(reviewTimeouts[kind]), headers,
+    method: "POST", signal: AbortSignal.timeout(background ? 60000 : reviewTimeouts[kind]), headers,
     body: JSON.stringify({ ...countedRequest, service_tier: "default", store: false,
-      max_output_tokens: budget.maxOutputTokens }),
+      max_output_tokens: budget.maxOutputTokens, ...(background ? { background: true } : {}) }),
+  });
+}
+
+export async function retrieveSpecReview(responseId: string) {
+  if (!/^resp_[a-zA-Z0-9_-]{1,200}$/.test(responseId) || !process.env.OPENAI_API_KEY) throw new Error("Invalid saved plan job");
+  return fetch(`https://api.openai.com/v1/responses/${encodeURIComponent(responseId)}`, {
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, signal: AbortSignal.timeout(15000),
   });
 }

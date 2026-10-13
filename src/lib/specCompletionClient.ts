@@ -3,6 +3,7 @@ import type { SpecCompletionReport } from "@/lib/specCompletion";
 import type { BoardColorSuggestion } from "@/lib/boardColorSuggestion";
 import type { PlanDimensionSuggestion } from "@/lib/planDimensionSuggestion";
 import type { SavedSpecCompletionReview, SavedCompletionIssue, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
+import { completionResponse } from "@/lib/specCompletionResponse";
 
 async function savedReviewRequest(body: unknown): Promise<SavedSpecCompletionReview | null> {
   const { data, error } = await supabase.auth.getSession();
@@ -11,9 +12,7 @@ async function savedReviewRequest(body: unknown): Promise<SavedSpecCompletionRev
     method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Could not load the saved review.");
-  return result;
+  return completionResponse(response, "Could not load the saved review.");
 }
 export function fetchSavedSpecCompletion(projectId: string) {
   return savedReviewRequest({ project_id: projectId, action: "load" });
@@ -30,9 +29,7 @@ export async function fetchSpecCompletion(projectId: string): Promise<SpecComple
     method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId }),
   });
-  const report = await response.json();
-  if (!response.ok) throw new Error(report.error || "Could not check completion.");
-  return report;
+  return completionResponse(response, "Could not check completion.");
 }
 
 export async function fetchBoardColorSuggestion(projectId: string, itemId: string): Promise<BoardColorSuggestion> {
@@ -42,9 +39,7 @@ export async function fetchBoardColorSuggestion(projectId: string, itemId: strin
     method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId, item_id: itemId }),
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Could not suggest a color.");
-  return result;
+  return completionResponse(response, "Could not suggest a color.");
 }
 
 export async function fetchPlanDimensionSuggestion(projectId: string, itemId: string): Promise<PlanDimensionSuggestion> {
@@ -54,7 +49,5 @@ export async function fetchPlanDimensionSuggestion(projectId: string, itemId: st
     method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId, item_id: itemId }),
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Could not suggest dimensions.");
-  return result;
+  return completionResponse(response, "Could not suggest dimensions.");
 }

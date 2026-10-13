@@ -7,7 +7,9 @@ import { checkSpecDetails, cleanCompletionPlanFindings, completionItems, type Co
 import type { MaterialItem } from "@/lib/db";
 import { PDFDocument } from "pdf-lib";
 import { fetchSpecReview, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
-import { assertCompletionStorage, saveCompletionReview, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
+import { assertCompletionStorage, saveCompletionReview, readSavedCompletionReview, updateActiveCompletionReview, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
+import { completionOutput } from "@/lib/specCompletionOutput";
+import { randomUUID } from "node:crypto";
 import { refreshConstructionUploads } from "@/lib/constructionUploads.server";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
@@ -25,7 +27,10 @@ async function readProjectRows(table: string, select: string, projectId: string)
   }
 }
 
-export async function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string) {
+type DeferredPlanReview = { response_id: string; pages: number };
+export function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string): Promise<ReturnType<typeof cleanCompletionPlanFindings>>;
+export function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId: undefined, background: true): Promise<ReturnType<typeof cleanCompletionPlanFindings> | DeferredPlanReview>;
+export async function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string, background = false) {
   if (!process.env.OPENAI_API_KEY) throw new Error("AI configuration unavailable");
   const selected = completionItems(items);
   if (items.length > 800) throw new Error("Project too large for one plan review");
@@ -66,19 +71,16 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
         }) },
         { type: "input_file", filename: "construction-document.pdf", file_data: `data:application/pdf;base64,${Buffer.from(bytes).toString("base64")}`, detail: "high" },
       ] }],
-  }, dimensionItemId ? "dimensions" : "completion");
+  }, dimensionItemId ? "dimensions" : "completion", background);
   if (!response.ok) {
     const failure = await response.json().catch(() => ({}));
     if (["credit_balance_exhausted", "insufficient_quota"].includes(failure.error?.code)) throw new CreditsUnavailable();
     throw new Error("Plan review failed");
   }
   const result = await response.json();
-  if (result.status !== "completed") throw new Error("Incomplete review");
-  const output = result.output_text ?? result.output?.flatMap((item: any) => item.content ?? [])
-    .filter((part: any) => part.type === "output_text").map((part: any) => part.text).join("");
-  const parsed = JSON.parse(String(output || "").replace(/^```json\s*|\s*```$/g, "").trim());
-  if (!Array.isArray(parsed.findings)) throw new Error("Invalid review");
-  return cleanCompletionPlanFindings(parsed.findings, items, rooms, pages, !!dimensionItemId);
+  if (background && ["queued", "in_progress"].includes(result.status) && /^resp_[a-zA-Z0-9_-]{1,200}$/.test(result.id))
+    return { response_id: result.id, pages };
+  return cleanCompletionPlanFindings(completionOutput(result), items, rooms, pages, !!dimensionItemId);
 }
 
 export async function authorizeCompletionProject(request: Request, allowedKeys = ["project_id"]) {
@@ -111,6 +113,8 @@ export async function checkSpecCompletion(request: Request) {
   const { projectId, userId } = access;
   // Confirm saving is available before starting any paid AI work.
   await assertCompletionStorage(projectId);
+  const existing = await readSavedCompletionReview(projectId);
+  if (existing?.report.plan_status === "checking") return json(existing.report);
   // Refresh only this authorized project's PDFs before choosing the document.
   // Filing uses no AI. Leave time for the existing paid plan review.
   let refresh: NonNullable<SpecCompletionReport["document_refresh"]>;
@@ -152,8 +156,16 @@ export async function checkSpecCompletion(request: Request) {
     report.plan_status = "unavailable";
     report.plan_message = refresh.message;
   } else if (document) {
+    report.plan_status = "checking";
+    report.plan_message = "Selection details are saved. Plans are being reviewed. You can close this panel; keep Materials or the Spec Book open until the plan results are saved.";
+    report.plan_job = { request_id: randomUUID(), response_id: null, pages: null, started_at: report.checked_at };
+    try { await saveCompletionReview(projectId, userId, report, items, rooms, boardResult.data?.board_state); }
+    catch (error) { if (error instanceof CompletionReviewConflict) return json({ error: error.message }, 409); throw error; }
+    let conflict = false;
     try {
-      const planFindings = await analyzeSpecCompletion(document, projectId, items, rooms);
+      const active = await readSavedCompletionReview(projectId);
+      if (active?.report.plan_job?.request_id !== report.plan_job.request_id) return json(active?.report ?? report);
+      const planFindings = await analyzeSpecCompletion(document, projectId, items, rooms, undefined, true);
       // A long scan must not present corrections against selections or plans that changed meanwhile.
       const [freshItems, freshRooms, freshBoard, freshDocument] = await Promise.all([
         readProjectRows("material_items", "*,product:products(*)", projectId),
@@ -167,17 +179,27 @@ export async function checkSpecCompletion(request: Request) {
       if (freshDocument.data?.[0]?.id !== document.id || freshDocument.data?.[0]?.updated_at !== document.updated_at ||
         JSON.stringify(rawItems) !== JSON.stringify(freshItems) || JSON.stringify(rooms) !== JSON.stringify(freshRooms) ||
         JSON.stringify([...staleIds].sort()) !== JSON.stringify(staleSpecBookMaterialIds(projectId, freshItems, freshBoard.data?.board_state).sort()))
-        return json({ error: "Selections or construction documents changed during the check. Check again for current results." }, 409);
+        throw new CompletionReviewConflict("Selections or construction documents changed during the check. Check again for current results.");
+      if (!Array.isArray(planFindings)) {
+        report.plan_job.response_id = planFindings.response_id;
+        report.plan_job.pages = planFindings.pages;
+        await updateActiveCompletionReview(projectId, report, items, rooms, boardResult.data?.board_state);
+        return json(report);
+      }
       report.findings.push(...planFindings);
       report.plan_status = "checked";
       report.plan_message = "Plans reviewed. Only clearly supported findings are listed. Unclear counts, unspecified details and ordering allowances still need your review.";
     } catch (error) {
+      conflict = error instanceof CompletionReviewConflict;
       report.plan_status = "unavailable";
-      report.plan_message = error instanceof CreditsUnavailable ?
+      report.plan_message = conflict ? (error as Error).message : error instanceof CreditsUnavailable ?
         "Missing-detail checks are complete. Plan comparison needs AI credits; quantities and missing items have not been verified against the drawings." :
         error instanceof SpecReviewCostError ? `Missing-detail checks are complete. ${error.message} Plan quantities and missing items have not been verified.` :
         "Missing-detail checks are complete. Plan comparison is unavailable; quantities and missing items have not been verified against the drawings.";
     }
+    await updateActiveCompletionReview(projectId, report, items, rooms, boardResult.data?.board_state);
+    if (conflict) return json({ error: report.plan_message }, 409);
+    return json(report);
   }
   try { await saveCompletionReview(projectId, userId, report, items, rooms, boardResult.data?.board_state); }
   catch (error) {
