@@ -93,9 +93,12 @@ export async function materialCatalogRequest(request: Request) {
       allRows<Product>("products", "*"),
       allRows<CatalogHistory>(
         "material_items",
-        "id,product_id,project_id,not_needed,room:rooms(name)",
+        "id,product_id,project_id,not_needed,room:rooms!material_items_room_id_fkey(name)",
       ),
-      allRows<RoomCatalogHistory>("room_products", "id,product_id,room:rooms(name,project_id)"),
+      allRows<RoomCatalogHistory>(
+        "room_products",
+        "id,product_id,room:rooms!room_products_room_id_fkey(name,project_id)",
+      ),
     ]);
     const uses: CatalogUse[] = history
       .filter((row) => row.product_id && !row.not_needed)

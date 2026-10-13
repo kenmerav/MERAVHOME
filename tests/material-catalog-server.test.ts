@@ -22,13 +22,24 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     from: (table: string) => {
       const filters: any = {};
       let patch: any = null;
+      let fields = "";
       const run = () => {
         state.reads.push({ table, filters });
+        // Rooms also references Materials for presentation selections, so an
+        // unqualified embed is ambiguous in the production schema.
+        if (["material_items", "room_products"].includes(table) && fields.includes("room:rooms("))
+          return {
+            data: null,
+            error: { code: "PGRST201", message: "Ambiguous room relationship" },
+          };
         if (patch) state.writes.push({ table, filters, ...patch });
         return state.queues[table]?.shift() ?? { data: [], error: null };
       };
       const q: any = {
-        select: () => q,
+        select: (value: string) => {
+          fields = value;
+          return q;
+        },
         order: () => q,
         range: () => q,
         limit: () => q,
