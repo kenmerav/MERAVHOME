@@ -183,5 +183,12 @@ export function firecrawlSourceUrl(value: unknown) {
 export function firecrawlItemError(value: unknown) {
   const item = record(value);
   const metadata = record(item.metadata);
-  return firstString(item.error, metadata.error);
+  const explicit = firstString(item.error, metadata.error);
+  if (explicit) return explicit;
+  const status = Number(metadata.statusCode);
+  if (status >= 400) return `Retailer page returned HTTP ${status}.`;
+  const title = firstString(metadata.title, metadata.ogTitle, record(item.json ?? item.extract).name);
+  if (/(?:^|[|:\u2013\u2014-]\s*)(?:error|access denied|page not found|robot check|just a moment)\s*$/i.test(title))
+    return "Retailer returned an error or access-check page instead of the product.";
+  return "";
 }

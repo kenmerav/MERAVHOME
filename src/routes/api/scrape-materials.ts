@@ -15,6 +15,7 @@ import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit"
 import {
   FIRECRAWL_PRODUCT_PROMPT,
   FIRECRAWL_PRODUCT_SCHEMA,
+  firecrawlItemError,
   missingProductSpecifications,
   normalizeFirecrawlProduct,
   shopifySizeDetails,
@@ -439,6 +440,8 @@ const scrapeSchema = {
 };
 
 function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scraped {
+  const error = firecrawlItemError(data);
+  if (error) return { error };
   const product = normalizeFirecrawlProduct(data, sourceUrl);
   const ex = data.json ?? data.extract ?? {};
   const meta = data.metadata ?? {};

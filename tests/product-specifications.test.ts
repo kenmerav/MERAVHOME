@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   missingProductSpecifications,
+  firecrawlItemError,
   normalizeFirecrawlProduct,
 } from "../src/lib/firecrawlProduct";
 
@@ -61,6 +62,11 @@ afterEach(() => {
 });
 
 describe("source-grounded product specifications", () => {
+  it("rejects retailer error pages even when the scrape request succeeds", () => {
+    expect(firecrawlItemError({ metadata: { title: "Rejuvenation | Error" } })).toContain("error or access-check");
+    expect(firecrawlItemError({ metadata: { title: "Mirror", statusCode: 403 } })).toContain("HTTP 403");
+    expect(firecrawlItemError({ metadata: { title: "Traditional Beveled Metal Frame Mirror", statusCode: 200 } })).toBe("");
+  });
   it("keeps finish and color separate and preserves labeled dimensions and units", () => {
     const result = normalizeFirecrawlProduct(
       {
