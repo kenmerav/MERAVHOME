@@ -57,6 +57,14 @@ it('saves dimensions without changing pricing or markup, then completes only tha
   expect(state.filters).toContainEqual(['products', 'updated_at', stamp]);
   expect(state.status).toHaveBeenCalledWith(projectId, 'staff', key, 'completed', null);
 });
+it('chooses an obvious price unit on the server when staff enter only a price', async () => {
+  issue.finding.field = 'price'; body.value = '$250';
+  state.responses.material_items[0].data = { ...item, item_label: 'Faucet', category: 'Plumbing' };
+  state.responses.material_items.splice(1, 1);
+  expect((await request()).status).toBe(200);
+  expect(state.writes).toEqual([['products', 'update', { price: '$250.00', price_unit: 'unit' }]]);
+  expect(state.filters).toContainEqual(['products', 'updated_at', stamp]);
+});
 it('rejects a nonstaff caller before any data read or write', async () => {
   state.auth.mockResolvedValue(Response.json({ error: 'Staff only' }, { status: 403 }));
   expect((await request()).status).toBe(403); expect(state.filters).toEqual([]); expect(state.writes).toEqual([]); expect(state.status).not.toHaveBeenCalled();

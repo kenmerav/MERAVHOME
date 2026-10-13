@@ -7,6 +7,7 @@ import { completionOutput } from "@/lib/specCompletionOutput";
 import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { linkedBoardImage } from "@/lib/boardColorSuggestion";
 import type { MaterialItem } from "@/lib/db";
+import { materialPriceUnit } from "@/lib/productPriceUnit";
 import type { SavedCompletionIssue, SavedSpecCompletionReview, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
 
 const admin = supabaseAdmin as any;
@@ -177,11 +178,13 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
   saved = await finishPendingReview(projectId, saved, items, rooms, currentDocument, board.data?.board_state);
   const byItem = new Map(items.map(item => [item.id, item]));
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
-    // Preserve decisions/history, but retire old blanket missing-dimension flags
-    // from the open list without requiring another paid scan.
-    if (issue.status !== "open" || issue.finding.field !== "dimensions" || issue.finding.source !== "details") return true;
+    // Preserve decisions/history while retiring resolved detail checks without
+    // requiring another paid plan scan.
+    if (issue.status !== "open" || issue.finding.source !== "details") return true;
     const item = byItem.get(issue.finding.item_id ?? "");
-    return !!item && needsCompletionDimensions(item);
+    if (issue.finding.field === "price_unit") return !!item && !materialPriceUnit(item);
+    if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);
+    return true;
   });
   return { report: saved.report, issues,
     stale: saved.source_signature !== completionSourceSignature(items, rooms, currentDocument, board.data?.board_state) };

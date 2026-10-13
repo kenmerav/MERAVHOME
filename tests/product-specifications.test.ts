@@ -62,6 +62,14 @@ afterEach(() => {
 });
 
 describe("source-grounded product specifications", () => {
+  it("identifies clear selling units when extraction omits the unit field", () => {
+    expect(normalizeFirecrawlProduct({ json: { name: "Kitchen Faucet", price: "$269.40" } }, "https://retailer.test/faucet"))
+      .toMatchObject({ price: "$269.40", price_unit: "unit" });
+    expect(normalizeFirecrawlProduct({ json: { name: "Marble Mosaic", price: "$18.74 / sheet" } }, "https://retailer.test/mosaic"))
+      .toMatchObject({ price: "$18.74", price_unit: "unit" });
+    expect(normalizeFirecrawlProduct({ json: { name: "Floor Tile", price: "$148.16" } }, "https://retailer.test/tile"))
+      .toMatchObject({ price: "$148.16", price_unit: null });
+  });
   it("rejects retailer error pages even when the scrape request succeeds", () => {
     expect(firecrawlItemError({ metadata: { title: "Rejuvenation | Error" } })).toContain("error or access-check");
     expect(firecrawlItemError({ metadata: { title: "Mirror", statusCode: 403 } })).toContain("HTTP 403");

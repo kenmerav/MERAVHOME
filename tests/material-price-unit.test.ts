@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { productPricingPatch, type ProductPricingDraft } from "@/lib/productPricingEdit";
-import { formatPriceWithUnit, productPriceUnit } from "@/lib/productPriceUnit";
+import { formatPriceWithUnit, productPriceUnit, inferProductPriceUnit, materialPriceUnit } from "@/lib/productPriceUnit";
 import { withSavedMaterialProduct } from "@/lib/materialPricingCache";
 import type { MaterialItem, Product } from "@/lib/db";
 
@@ -10,6 +10,33 @@ function blank(): ProductPricingDraft {
 }
 
 describe("Materials price save and price basis", () => {
+  it.each(["Kitchen sink faucet", "Ceiling light", "Bathroom mirror", "Cabinet knob", "Dishwasher", "Sofa", "Pilates reformer", "Rug", "Roman clay", "Interior Doors"])("sets the obvious item price basis for %s", name => {
+    expect(inferProductPriceUnit({ name, price: "$25", category: "Flooring" })).toBe("unit");
+  });
+  it("defaults ordinary tile and flooring to square feet and respects explicit sheet or box prices", () => {
+    expect(materialPriceUnit({ item_label: "Floor tile", category: "Tile & Stone", product: { price: "$7.99" } })).toBe("sq_ft");
+    expect(materialPriceUnit({ item_label: "Weight/Dumbbell Wall Backsplash", category: "Tile & Stone", product: { name: "Unlabeled Item", price: "$4.89" } })).toBe("sq_ft");
+    expect(inferProductPriceUnit({ name: "Light grey porcelain floor tile", price: "$4.89" })).toBe("sq_ft");
+    expect(inferProductPriceUnit({ name: "Engineered hardwood flooring", price: "$90 / box" })).toBe("unit");
+    expect(inferProductPriceUnit({ name: "Marble mosaic", price: "$18.74 / sheet (1.19 sq ft)" })).toBe("unit");
+    expect(inferProductPriceUnit({ name: "Marble mosaic", price: "$15.75 / sq. ft." })).toBe("sq_ft");
+  });
+  it("preserves saved choices, keeps unusual products unresolved, and never treats coverage as a price unit", () => {
+    expect(inferProductPriceUnit({ name: "Floor tile", price_unit: "unit" })).toBe("unit");
+    expect(inferProductPriceUnit({ name: "Marble mosaic", price: "$18.74", category: "Tile" })).toBeNull();
+    expect(inferProductPriceUnit({ name: "Countertop slab", price: "$100", category: "Countertops" })).toBeNull();
+    expect(inferProductPriceUnit({ name: "Flooring", price: "$8 / linear foot" })).toBeNull();
+    expect(inferProductPriceUnit({ name: "Custom item covers 20 sq ft", price: "$100" })).toBeNull();
+  });
+  it("does not infer a scraper's raw box price as a square-foot rate from the product category", () => {
+    expect(inferProductPriceUnit({ name: "Floor tile", price: "$148.16", category: "Tile" }, { allowAreaDefault: false })).toBeNull();
+    expect(inferProductPriceUnit({ name: "Floor tile", price: "$8.50 / sq ft", category: "Tile" }, { allowAreaDefault: false })).toBe("sq_ft");
+  });
+  it("saves an automatically chosen unit without changing an existing amount", () => {
+    const initial = { ...blank(), price: "$269.40" };
+    expect(productPricingPatch({ ...initial, price_unit: materialPriceUnit({ item_label: "Faucet" }) || "" }, initial))
+      .toEqual({ price_unit: "unit" });
+  });
   it("copies a newly entered retail price into the blank display price", () => {
     const initial = blank();
     expect(productPricingPatch({ ...initial, retail_price: "7.99", price_unit: "sq_ft" }, initial))

@@ -1,7 +1,7 @@
 import type { MaterialItem } from "@/lib/db";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { specQuantityUnit } from "@/lib/specQuantity";
-import { productPriceUnit } from "@/lib/productPriceUnit";
+import { materialPriceUnit } from "@/lib/productPriceUnit";
 import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { inferMaterialCategory } from "@/lib/roomTemplates";
 
@@ -66,7 +66,7 @@ export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[])
     const price = item.product?.price?.trim() || "";
     // Zero is a reviewed price; placeholders, invalid values and ranges still need confirmation.
     if (!/^\$?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?$/.test(price)) add("price", "Price needs confirmation.", price);
-    else if (!productPriceUnit(item.product?.price_unit)) add("price_unit", "Confirm whether the price is per unit or per square foot.");
+    else if (!materialPriceUnit(item)) add("price_unit", "Confirm whether the price is per unit or per square foot.");
     const link = item.product_url?.trim() || item.product?.product_url?.trim() || "";
     try { if (!["https:", "http:"].includes(new URL(link).protocol)) throw new Error(); }
     catch { add("link", "Product link is missing or incomplete.", link); }

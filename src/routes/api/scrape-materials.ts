@@ -11,7 +11,7 @@ import {
 import { cleanUuid } from "@/lib/ids";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
-import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
+import { productPriceUnit, inferProductPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 import {
   FIRECRAWL_PRODUCT_PROMPT,
   FIRECRAWL_PRODUCT_SCHEMA,
@@ -841,8 +841,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
 
             let productId = cleanUuid(row.existing_product_id);
             let savedPrice = exactProductPrice(row.scraped.price);
-            const incomingUnit = productPriceUnit(row.scraped.price_unit) ??
-              (savedPrice && !/tile|stone|flooring|countertop|paint/i.test(String(matItem?.category)) ? "unit" : null);
+            const incomingUnit = inferProductPriceUnit({
+              price_unit: row.scraped.price_unit, price: savedPrice,
+              name: `${matItem?.item_label || ""} ${row.scraped.name || ""}`,
+              category: matItem?.category, product_url: row.url,
+            }, { allowAreaDefault: false });
 
             if (!productId) {
               const { data: dup } = await supabaseAdmin

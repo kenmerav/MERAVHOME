@@ -22,10 +22,13 @@ it("handles selected placeholders hidden from the Spec Book but ignores untouche
     item({ id: "removed", not_needed: true }), item({ id: "selected", product: null, product_id: null, quantity_tbd: true })];
   expect(checkSpecDetails(items, rooms).every(row => row.item_id === "selected")).toBe(true);
 });
-it("accepts a useful finish without requiring duplicate color, accepts reviewed zero price, and flags unreviewed price basis", () => {
+it("accepts a useful finish and zero price and identifies obvious price units without a confirmation", () => {
   const finish = item(); finish.color = null; finish.product!.finish = "Matte Black"; finish.product!.price = "$0.00";
   expect(checkSpecDetails([finish], rooms)).toEqual([]);
   finish.product!.price_unit = null;
+  expect(checkSpecDetails([finish], rooms)).toEqual([]);
+  finish.item_label = "Floor tile"; finish.category = "Tile & Stone"; finish.product!.name = "Marble mosaic";
+  finish.product!.product_url = "https://retailer.test/marble-mosaic";
   expect(checkSpecDetails([finish], rooms).map(row => row.field)).toEqual(["price_unit"]);
 });
 it.each(["TBD", "Not specified", "n/a", "—", "unknown", "pending", ""])("recognizes unresolved value %s", value => {

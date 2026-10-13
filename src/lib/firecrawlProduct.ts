@@ -5,7 +5,7 @@ import {
   selectedSkuPriceFromHtml,
   squareFootPriceFromPage,
 } from "@/lib/productPricing";
-import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
+import { inferProductPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 
 export const FIRECRAWL_PRODUCT_SCHEMA = {
   type: "object",
@@ -137,9 +137,19 @@ export function normalizeFirecrawlProduct(
   const areaPrice = sizeOptions.length > 1 && !selectedSize ? "" :
     firstProductPrice(extracted.price_per_square_foot) ||
     squareFootPriceFromPage(typeof data.markdown === "string" ? data.markdown : "");
+  const name = firstString(extracted.name, metadata.title, metadata.ogTitle);
+  const price = firstProductPrice(
+    areaPrice,
+    selectedSkuPriceFromHtml(typeof data.rawHtml === "string" ? data.rawHtml : typeof data.html === "string" ? data.html : "", sourceUrl),
+    extracted.current_price, extracted.sale_price, extracted.price, extracted.regular_price,
+    extracted.list_price, extracted.price_per_item, pagePrice,
+  );
+  const labelledPrice = [extracted.current_price, extracted.sale_price, extracted.price,
+    extracted.regular_price, extracted.list_price, extracted.price_per_item]
+    .find(value => firstProductPrice(value) === price);
 
   return {
-    name: firstString(extracted.name, metadata.title, metadata.ogTitle),
+    name,
     vendor: firstString(
       inferVendorFromUrl(sourceUrl),
       extracted.vendor,
@@ -153,18 +163,9 @@ export function normalizeFirecrawlProduct(
       /\d\s*(?:["″'′]|\b(?:in|inch(?:es)?|ft|feet|mm|cm|m)\b)/i.test(selectedSize) ? selectedSize : ""),
     size_options: sizeOptions,
     selected_size: selectedSize,
-    price: firstProductPrice(
-      areaPrice,
-      selectedSkuPriceFromHtml(typeof data.rawHtml === "string" ? data.rawHtml : typeof data.html === "string" ? data.html : "", sourceUrl),
-      extracted.current_price,
-      extracted.sale_price,
-      extracted.price,
-      extracted.regular_price,
-      extracted.list_price,
-      extracted.price_per_item,
-      pagePrice,
-    ),
-    price_unit: areaPrice ? "sq_ft" : productPriceUnit(extracted.price_unit),
+    price,
+    price_unit: inferProductPriceUnit({ name, price: firstString(labelledPrice) || price, product_url: sourceUrl,
+      price_unit: areaPrice ? "sq_ft" : extracted.price_unit }, { allowAreaDefault: false }),
     image_url: firstString(
       extracted.image_url,
       extracted.image,

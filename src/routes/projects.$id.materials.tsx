@@ -17,7 +17,7 @@ import { AppShell } from "@/components/AppShell";
 import { MaterialPhotoUpload } from "@/components/MaterialPhotoUpload";
 import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
-import { formatPriceWithUnit } from "@/lib/productPriceUnit";
+import { formatPriceWithUnit, materialPriceUnit, inferProductPriceUnit } from "@/lib/productPriceUnit";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
@@ -1479,7 +1479,7 @@ function RoomMaterialsSection({
                               {it.product.name}
                             </div>
                             <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">
-                              {[it.product.vendor, formatPriceWithUnit(it.product.price, it.product.price_unit), it.product.dimensions]
+                              {[it.product.vendor, formatPriceWithUnit(it.product.price, materialPriceUnit(it)), it.product.dimensions]
                                 .filter(Boolean)
                                 .join(" · ")}
                             </div>
@@ -1922,7 +1922,7 @@ function CatalogProductPicker({
                   <span className="min-w-0">
                     <span className="block text-sm text-ink truncate">{product.name}</span>
                     <span className="block text-xs text-muted-foreground truncate">
-                      {[product.vendor, product.finish, formatPriceWithUnit(product.price, product.price_unit)].filter(Boolean).join(" · ")}
+                      {[product.vendor, product.finish, formatPriceWithUnit(product.price, inferProductPriceUnit(product))].filter(Boolean).join(" · ")}
                     </span>
                     {product.product_url && (
                       <span className="block text-[11px] text-muted-foreground truncate">

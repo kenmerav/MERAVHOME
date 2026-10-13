@@ -12,7 +12,7 @@ import { completionSolution, completionProductLink, completionMaterialsLink } fr
 import { saveCompletionDetail } from "@/lib/specCompletionClient";
 import type { CompletionDetailDraft } from "@/lib/specCompletionDetail";
 import { hasCompletionValue, needsCompletionColor } from "@/lib/specCompletion";
-import { productPriceUnit } from "@/lib/productPriceUnit";
+import { materialPriceUnit } from "@/lib/productPriceUnit";
 
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
@@ -269,7 +269,7 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
   const dimensions = issue.finding.field === "dimensions";
   const initial = price ? item.product?.price : dimensions ? item.product?.dimensions || item.product?.selected_size : item.color;
   const [value, setValue] = useState(hasCompletionValue(initial) ? initial! : "");
-  const [priceUnit, setPriceUnit] = useState<CompletionDetailDraft["priceUnit"]>(productPriceUnit(item.product?.price_unit) || "");
+  const [priceUnit, setPriceUnit] = useState<CompletionDetailDraft["priceUnit"]>(materialPriceUnit(item) || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);

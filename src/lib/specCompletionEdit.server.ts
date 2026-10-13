@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { completionDetailValue } from "@/lib/specCompletionDetail";
 import { normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
 import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
+import { materialPriceUnit } from "@/lib/productPriceUnit";
 import { readSavedCompletionReview, setCompletionIssueStatus, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
 
 const admin = supabaseAdmin as any;
@@ -18,9 +19,6 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
     !issue.finding.item_id || !["color", "finish", "price", "price_unit", "dimensions"].includes(issue.finding.field))
     throw new CompletionReviewConflict("This issue changed or cannot be edited here. Reopen the saved review.");
   if (saved.report?.plan_status === "checking") throw new CompletionReviewConflict("Wait for the plan check to finish before changing selections.");
-  let patch: ReturnType<typeof completionDetailValue>;
-  try { patch = completionDetailValue(issue.finding.field, { value: body.value, priceUnit: body.price_unit }); }
-  catch (error) { throw new CompletionDetailInputError((error as Error).message); }
   const { data: item, error: itemError } = await admin.from("material_items").select("*,product:products(*)")
     .eq("id", issue.finding.item_id).eq("project_id", projectId).maybeSingle();
   if (itemError) throw itemError;
@@ -32,6 +30,10 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
   const { data: room, error: roomError } = await admin.from("rooms").select("id").eq("id", item.room_id).eq("project_id", projectId).maybeSingle();
   if (roomError) throw roomError;
   if (!room) throw new CompletionReviewConflict("This room is no longer in the project.");
+  let patch: ReturnType<typeof completionDetailValue>;
+  try { patch = completionDetailValue(issue.finding.field, { value: body.value,
+    priceUnit: body.price_unit || materialPriceUnit({ ...item, product: { ...item.product, price: body.value } }) }); }
+  catch (error) { throw new CompletionDetailInputError((error as Error).message); }
   if ("price" in patch && item.product?.markup_percent != null)
     throw new CompletionDetailInputError("This price uses markup. Edit its pricing settings in Materials to preserve the calculation.");
   let written = false;

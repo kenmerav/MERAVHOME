@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
-import { formatPriceWithUnit, productPriceUnit } from "@/lib/productPriceUnit";
+import { formatPriceWithUnit, materialPriceUnit, productPriceUnit } from "@/lib/productPriceUnit";
 import { withSavedMaterialProduct } from "@/lib/materialPricingCache";
 
 function draftFor(item: MaterialItem) {
@@ -49,6 +49,11 @@ export function MaterialDetailsEditor({
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => draftFor(item));
   const [initial, setInitial] = useState(draft);
+  const resolvedUnit = productPriceUnit(draft.price_unit) || materialPriceUnit({
+    ...item, product: { ...item.product, name: draft.name, price: draft.price,
+      retail_price: draft.retail_price, unit_cost: draft.unit_cost, price_unit: null },
+  });
+  const pricedDraft = { ...draft, price_unit: resolvedUnit || ("" as const) };
   const calculated = clientPriceFromMarkup({
     retailPrice: draft.retail_price,
     ourPrice: draft.unit_cost,
@@ -84,14 +89,14 @@ export function MaterialDetailsEditor({
         "shipping",
         "price_unit",
       ] as const;
-      if (pricingKeys.some((key) => draft[key] !== initial[key])) {
+      if (pricingKeys.some((key) => pricedDraft[key] !== initial[key])) {
         const amountChanged = (["price", "retail_price", "unit_cost"] as const)
           .some((key) => draft[key] !== initial[key]);
         const hasAmount = [draft.price, draft.retail_price, draft.unit_cost]
           .some((value) => value.trim() !== "");
-        if (amountChanged && hasAmount && !productPriceUnit(draft.price_unit))
+        if (amountChanged && hasAmount && !resolvedUnit)
           throw new Error("Choose whether the price is per unit or per square foot.");
-        Object.assign(patch, productPricingPatch(draft, initial));
+        Object.assign(patch, productPricingPatch(pricedDraft, initial));
       }
       if (Object.keys(patch).length > 0) {
         const productId = await saveMaterialProductDetails(item.id, patch);
@@ -149,7 +154,7 @@ export function MaterialDetailsEditor({
           className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-4 hover:text-ink"
         >
           {trigger === "price" ? (
-            formatPriceWithUnit(item.product?.price, item.product?.price_unit) || "Add price"
+            formatPriceWithUnit(item.product?.price, materialPriceUnit(item)) || "Add price"
           ) : (
             <>
               <Pencil className="h-3 w-3" /> Edit details
@@ -200,7 +205,7 @@ export function MaterialDetailsEditor({
                   <select
                     aria-label="Price basis"
                     className="h-10 w-full border border-input bg-background px-3 text-sm"
-                    value={draft.price_unit}
+                    value={resolvedUnit || ""}
                     onChange={(event) => set("price_unit", event.target.value)}
                   >
                     <option value="">Choose unit</option>
@@ -214,10 +219,10 @@ export function MaterialDetailsEditor({
                   ? "Enter just one price below and it will also appear in the Spec Book. You can enter a different display price here."
                   : "Calculated from the base price and markup. Clear markup to enter a price directly."}
               </p>
-              {draft.price_unit === "unit" && (
+              {resolvedUnit === "unit" && (
                 <p className="mt-1 text-xs text-muted-foreground">One unit can be an item, sheet, set, or box.</p>
               )}
-              {draft.price_unit === "sq_ft" && item.quantity_unit !== "square_feet" && (
+              {resolvedUnit === "sq_ft" && item.quantity_unit !== "square_feet" && (
                 <p className="mt-1 text-xs text-amber-800">
                   The quantity is not in square feet. Confirm the quantity and any coverage conversion before budgeting or ordering.
                 </p>
