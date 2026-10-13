@@ -4,6 +4,8 @@ import type { BoardColorSuggestion } from "@/lib/boardColorSuggestion";
 import type { PlanDimensionSuggestion } from "@/lib/planDimensionSuggestion";
 import type { SavedSpecCompletionReview, SavedCompletionIssue, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
 import { completionResponse } from "@/lib/specCompletionResponse";
+import type { MaterialItem } from "@/lib/db";
+import type { CompletionDetailDraft } from "@/lib/specCompletionDetail";
 
 async function savedReviewRequest(body: unknown): Promise<SavedSpecCompletionReview | null> {
   const { data, error } = await supabase.auth.getSession();
@@ -20,6 +22,19 @@ export function fetchSavedSpecCompletion(projectId: string) {
 export function updateCompletionIssue(projectId: string, issue: SavedCompletionIssue, status: CompletionIssueStatus) {
   return savedReviewRequest({ project_id: projectId, action: "status", issue_key: issue.key, status,
     expected_updated_at: issue.status_updated_at });
+}
+
+export async function saveCompletionDetail(projectId: string, item: MaterialItem, issue: SavedCompletionIssue, draft: CompletionDetailDraft): Promise<{ item: MaterialItem; review: SavedSpecCompletionReview }> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session) throw new Error("Sign in to save this detail.");
+  const response = await fetch("/api/spec-completion-review", {
+    method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId, action: "detail", issue_key: issue.key,
+      expected_updated_at: issue.status_updated_at, expected_material_updated_at: item.updated_at,
+      expected_product_id: item.product_id, expected_product_updated_at: item.product?.updated_at ?? null,
+      value: draft.value, ...(draft.priceUnit !== undefined ? { price_unit: draft.priceUnit } : {}) }),
+  });
+  return completionResponse(response, "Could not save this detail.");
 }
 
 export async function fetchSpecCompletion(projectId: string): Promise<SpecCompletionReport> {

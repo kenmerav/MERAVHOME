@@ -32,3 +32,10 @@ export function completionProductLink(value: string | null | undefined) {
   try { const url = new URL(value || ""); return ["http:", "https:"].includes(url.protocol) ? url.href : null; }
   catch { return null; }
 }
+
+export function completionMaterialsLink(projectId: string, roomId: string, itemId?: string | null) {
+  const base = `/projects/${encodeURIComponent(projectId)}/materials`;
+  return itemId
+    ? `${base}?itemId=${encodeURIComponent(itemId)}#materials-item-${encodeURIComponent(itemId)}`
+    : `${base}?roomId=${encodeURIComponent(roomId)}#materials-room-${encodeURIComponent(roomId)}`;
+}

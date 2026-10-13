@@ -8,7 +8,11 @@ import type { PlanDimensionSuggestion } from "@/lib/planDimensionSuggestion";
 import { checkSpecDetails, completionItems, type CompletionRoom, type CompletionFinding, type SpecCompletionReport } from "@/lib/specCompletion";
 import type { MaterialItem } from "@/lib/db";
 import { completionIssueCounts, type SavedCompletionIssue, type CompletionIssueStatus } from "@/lib/savedSpecCompletion";
-import { completionSolution, completionProductLink } from "@/lib/specCompletionPresentation";
+import { completionSolution, completionProductLink, completionMaterialsLink } from "@/lib/specCompletionPresentation";
+import { saveCompletionDetail } from "@/lib/specCompletionClient";
+import type { CompletionDetailDraft } from "@/lib/specCompletionDetail";
+import { hasCompletionValue, needsCompletionColor } from "@/lib/specCompletion";
+import { productPriceUnit } from "@/lib/productPriceUnit";
 
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
@@ -65,6 +69,27 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
     catch (error) { setError(error instanceof Error ? error.message : "Could not save the issue status."); }
     finally { statusLock.current = false; setSavingIssue(""); }
   };
+  const saveDetail = async (issue: SavedCompletionIssue, item: MaterialItem, draft: CompletionDetailDraft) => {
+    if (statusLock.current) throw new Error("Another issue is saving. Please wait.");
+    statusLock.current = true; setSavingIssue(issue.key); setError("");
+    let detailSaved = false;
+    try {
+      const result = await saveCompletionDetail(projectId, item, issue, draft);
+      const updated = result.item;
+      detailSaved = true;
+      await qc.cancelQueries({ queryKey: ["materialItems", projectId] });
+      qc.setQueriesData<MaterialItem[]>({ queryKey: ["materialItems", projectId] }, current => current?.map(row => row.id === updated.id ? updated : row));
+      if (updated.product) qc.setQueryData(["product", updated.product.id], updated.product);
+      qc.setQueryData(reviewKey, result.review);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save this detail.";
+      throw new Error(detailSaved ? `The detail is saved. The issue could not be marked completed: ${message}` : message);
+    } finally {
+      statusLock.current = false; setSavingIssue("");
+      for (const queryKey of [["materialItems", projectId], ["procurement"], ["catalog"], ["products"], ["roomProducts", item.room_id], reviewKey])
+        void qc.invalidateQueries({ queryKey });
+    }
+  };
   const saved = viewSaved ? savedQuery.data : null;
   const activeReport = saved?.report ?? report;
   const details = activeReport?.findings ?? checkSpecDetails(items, rooms);
@@ -88,6 +113,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
         </DialogHeader>
         <SpecCompletionResults key={reviewedSignature + (activeReport?.checked_at ?? "pending")} projectId={projectId} rooms={rooms} items={items} findings={details}
           issues={saved?.issues} onStatusChange={saved ? changeStatus : undefined} savingIssue={savingIssue}
+          onSaveDetail={saved && !busy ? saveDetail : undefined}
           onSuggestionSaved={saved ? () => { void qc.invalidateQueries({ queryKey: reviewKey }); } : undefined}
           itemCount={activeReport?.item_count ?? completionItems(items).length} checking={busy || (viewSaved && savedQuery.isFetching && !saved)}
           planStatus={activeReport?.plan_status} document={activeReport?.document ?? null}
@@ -105,12 +131,13 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   </>;
 }
 
-export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, stale = false }: {
+export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSaveDetail, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, stale = false }: {
   projectId: string; rooms: CompletionRoom[]; findings: CompletionFinding[]; itemCount: number;
   items?: MaterialItem[];
   documentRefresh?: SpecCompletionReport["document_refresh"];
   issues?: SavedCompletionIssue[]; onStatusChange?: (issue: SavedCompletionIssue, status: CompletionIssueStatus) => Promise<void>;
   savingIssue?: string; checkedAt?: string;
+  onSaveDetail?: (issue: SavedCompletionIssue, item: MaterialItem, draft: CompletionDetailDraft) => Promise<void>;
   onSuggestionSaved?: () => void;
   checking?: boolean; planStatus?: SpecCompletionReport["plan_status"]; document: SpecCompletionReport["document"];
   message: string; stale?: boolean;
@@ -167,8 +194,10 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
               group.find(issue => issue.finding.field === field && issue.finding.source === "details");
             const color = detail("color");
             const dimensions = detail("dimensions");
-            const canSuggest = (issue: SavedCompletionIssue | undefined) => !!issues && !checking && !stale &&
-              issue?.status === "open" && issue.last_seen_at === checkedAt;
+            const canSuggest = (issue: SavedCompletionIssue | undefined) => !!issues && !checking &&
+              issue?.status === "open" && issue.last_seen_at === checkedAt && (!stale ||
+                (issue.finding.field === "color" && item && needsCompletionColor(item) &&
+                  item.room_id === issue.finding.room_id && (!issue.item_preview?.product_id || issue.item_preview.product_id === item.product_id)));
             return <div key={key} className="px-4 py-5 sm:px-5">
               <div className="flex items-start gap-4 bg-bone/40 p-3 sm:p-4">
                 {image && <CompletionProductImage key={image} src={image} name={group[0].finding.item_label} />}
@@ -176,7 +205,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                   <h4 className="text-xl sm:text-2xl font-semibold leading-tight break-words">{group[0].finding.item_label}</h4>
                   {productName && productName !== group[0].finding.item_label && <p className="text-sm text-muted-foreground mt-1 break-words">{productName}</p>}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
-                    <a className="inline-flex items-center gap-1 text-xs underline underline-offset-4" href={`/projects/${projectId}/materials#materials-room-${room.id}`}>Review in Materials <ArrowUpRight className="h-3 w-3" /></a>
+                    <a className="inline-flex items-center gap-1 text-xs underline underline-offset-4" href={completionMaterialsLink(projectId, room.id, group[0].finding.item_id)} target="_blank" rel="noopener noreferrer">Review in Materials <ArrowUpRight className="h-3 w-3" /></a>
                     {productLink && <a href={productLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs underline underline-offset-4">Product link <ArrowUpRight className="h-3 w-3" /></a>}
                   </div>
                 </div>
@@ -202,20 +231,25 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                       </>}
                     </div>}
                   </div>
+                  {onSaveDetail && item && issue.status === "open" && ["color", "finish", "price", "price_unit"].includes(row.field) &&
+                    item.room_id === row.room_id && (!issue.item_preview?.product_id || issue.item_preview.product_id === item.product_id) && (
+                    <CompletionDetailEditor key={issue.key} item={item} issue={issue} disabled={!!savingIssue}
+                      onSave={draft => onSaveDetail(issue, item, draft)} />
+                  )}
                   <div className="mt-3 border-l-2 border-ink/30 bg-bone/30 px-3 py-2.5">
                     <p className="text-xs font-semibold uppercase tracking-wide">Suggested next step</p>
                     <p className="mt-1 text-sm leading-6">{completionSolution(row, item, issue.suggestion)}</p>
                   </div>
+                  {issue.key === color?.key && (canSuggest(color) || color.suggestion?.kind === "color") && color.finding.item_id && (
+                    <BoardColorReview key={color.key} projectId={projectId} itemId={color.finding.item_id}
+                      initial={color.suggestion?.kind === "color" ? color.suggestion.value : undefined} allowCheck={canSuggest(color)} onSaved={onSuggestionSaved} />
+                  )}
                   {row.source === "plans" && <>
                     <p className="text-xs text-muted-foreground mt-2">{issue.document?.title ? `${issue.document.title} · ` : ""}Page {row.page}{row.sheet ? ` · ${row.sheet}` : ""} — {row.evidence}</p>
                     {row.dimension_scope === "proposed_layout" && <p className="text-xs text-muted-foreground mt-1">Confirm the selected product matches this planned size before saving.</p>}
                   </>}
                 </div>;
               })}
-              {color && (canSuggest(color) || color.suggestion?.kind === "color") && color.finding.item_id && (
-                <BoardColorReview key={color.key} projectId={projectId} itemId={color.finding.item_id}
-                  initial={color.suggestion?.kind === "color" ? color.suggestion.value : undefined} allowCheck={canSuggest(color)} onSaved={onSuggestionSaved} />
-              )}
               {dimensions && ((canSuggest(dimensions) && !related.some(issue => issue.finding.field === "dimensions" && issue.finding.source === "plans" && issue.last_seen_at === checkedAt)) || dimensions.suggestion?.kind === "dimensions") && dimensions.finding.item_id && (
                 <PlanDimensionReview key={dimensions.key} projectId={projectId} itemId={dimensions.finding.item_id}
                   initial={dimensions.suggestion?.kind === "dimensions" ? dimensions.suggestion.value : undefined} allowCheck={canSuggest(dimensions)} onSaved={onSuggestionSaved} />
@@ -226,6 +260,49 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
       })}
     </div>
   </>;
+}
+
+function CompletionDetailEditor({ item, issue, disabled, onSave }: {
+  item: MaterialItem; issue: SavedCompletionIssue; disabled: boolean; onSave: (draft: CompletionDetailDraft) => Promise<void>;
+}) {
+  const price = issue.finding.field === "price" || issue.finding.field === "price_unit";
+  const initial = price ? item.product?.price : item.color;
+  const [value, setValue] = useState(hasCompletionValue(initial) ? initial! : "");
+  const [priceUnit, setPriceUnit] = useState<CompletionDetailDraft["priceUnit"]>(productPriceUnit(item.product?.price_unit) || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const lock = useRef(false);
+  const suggestion = issue.suggestion?.kind === "color" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.color : null;
+  if (price && item.product?.markup_percent != null) return <p className="mt-3 text-xs text-muted-foreground">This price uses markup. Use Review in Materials to edit its pricing settings.</p>;
+  const save = async () => {
+    if (lock.current || disabled) return;
+    lock.current = true; setSaving(true); setError("");
+    try { await onSave({ value, ...(price ? { priceUnit } : {}) }); }
+    catch (error) { setError(error instanceof Error ? error.message : "Could not save this detail."); }
+    finally { lock.current = false; setSaving(false); }
+  };
+  return <form className="mt-3 border bg-white p-3" onSubmit={event => { event.preventDefault(); void save(); }}>
+    <fieldset disabled={disabled || saving} className="flex flex-wrap items-end gap-3 min-w-0">
+      <label className="min-w-40 flex-1">
+        <span className="block text-xs font-medium mb-1">{price ? "Price" : "Confirmed color / finish"}</span>
+        <input aria-label={`${price ? "Price" : "Color / finish"} for ${issue.finding.item_label}`} value={value}
+          onChange={event => setValue(event.target.value)} inputMode={price ? "decimal" : undefined}
+          placeholder={price ? "0.00" : "e.g. Brushed brass"} maxLength={price ? 40 : 200}
+          className="h-10 w-full border border-input bg-background px-3 text-sm" />
+      </label>
+      {price && <label>
+        <span className="block text-xs font-medium mb-1">Price is per</span>
+        <select aria-label={`Price basis for ${issue.finding.item_label}`} value={priceUnit}
+          onChange={event => setPriceUnit(event.target.value as CompletionDetailDraft["priceUnit"])} className="h-10 border border-input bg-background px-3 text-sm">
+          <option value="">Choose unit</option><option value="unit">Item / unit</option><option value="sq_ft">Square foot</option>
+        </select>
+      </label>}
+      <button type="submit" className="h-10 bg-ink px-4 text-sm text-white disabled:opacity-50">{saving ? "Saving…" : "Save & complete"}</button>
+      {!price && suggestion && <button type="button" className="text-xs underline" onClick={() => setValue(suggestion)}>Use suggested color</button>}
+    </fieldset>
+    <p className="mt-2 text-xs text-muted-foreground">Saves to Materials and the Spec Book, then completes this issue.</p>
+    {error && <p role="alert" className="mt-2 text-xs text-red-800">{error}</p>}
+  </form>;
 }
 
 function CompletionProductImage({ src, name }: { src: string; name: string }) {
@@ -250,8 +327,9 @@ function BoardColorReview({ projectId, itemId, initial, allowCheck = true, onSav
     {allowCheck && <button type="button" disabled={checking} onClick={() => void suggest()}
       className="inline-flex items-center gap-2 border px-3 py-2 text-xs disabled:opacity-50">
       {checking && <Loader2 className="h-3 w-3 animate-spin" />}
-      {checking ? "Looking at board image…" : result ? "Check color again" : "Suggest color from Design Board"}
+      {checking ? "Checking Design Board…" : result ? "Check Design Board again" : "Check Design Board"}
     </button>}
+    {allowCheck && <p className="mt-1 text-xs text-muted-foreground">Suggest a likely color from this item’s linked board image. Your selection stays unchanged.</p>}
     <div role="status" aria-live="polite">
       {error && <p className="mt-2 text-xs text-muted-foreground">{error}</p>}
       {result && <div className="mt-3 flex gap-3 border bg-bone/30 p-3">

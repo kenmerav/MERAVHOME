@@ -58,6 +58,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/projects/$id/materials")({
   head: () => ({ meta: [{ title: "Materials — MERAV Studio" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    itemId: cleanUuid(search.itemId) ?? undefined,
+    roomId: cleanUuid(search.roomId) ?? undefined,
+  }),
   component: MaterialsPage,
 });
 
@@ -67,6 +71,10 @@ const ORDERED_BY_OPTIONS = ["Contractor", "Merav", "Client"] as const;
 
 function roomSectionId(roomId: string) {
   return `materials-room-${roomId}`;
+}
+
+function materialRowId(itemId: string) {
+  return `materials-item-${itemId}`;
 }
 
 function isNeedsReselection(item: MaterialItem) {
@@ -240,6 +248,7 @@ type MaterialSuggestion = {
 
 function MaterialsPage() {
   const { id } = Route.useParams();
+  const { itemId: reviewItemId, roomId: reviewRoomId } = Route.useSearch();
   const projectId = cleanUuid(id);
   const qc = useQueryClient();
 
@@ -252,12 +261,12 @@ function MaterialsPage() {
     queryKey: ["currentUserProfile"],
     queryFn: () => db.getCurrentUserProfile(),
   });
-  const { data: rooms = [] } = useQuery({
+  const { data: rooms = [], isSuccess: roomsLoaded } = useQuery({
     queryKey: ["rooms", projectId],
     queryFn: async () => (await db.listRooms(projectId!)) ?? [],
     enabled: !!projectId,
   });
-  const { data: items = [] } = useQuery({
+  const { data: items = [], isSuccess: itemsLoaded } = useQuery({
     queryKey: ["materialItems", projectId],
     queryFn: async () => (await db.listMaterialItemsByProject(projectId!)) ?? [],
     enabled: !!projectId,
@@ -319,6 +328,25 @@ function MaterialsPage() {
     [rooms],
   );
   const [jumpRoomId, setJumpRoomId] = useState<string>("");
+  const focusedReviewRoom = useRef<string | null>(null);
+  const reviewItem = items.find(item => item.id === reviewItemId);
+  const reviewItemVisible = reviewItem && !reviewItem.not_needed && !isUntouchedTemplatePlaceholder(reviewItem) && rooms.some(room => room.id === reviewItem.room_id);
+
+  useEffect(() => {
+    if (reviewItemVisible) setJumpRoomId(reviewItem.room_id);
+  }, [reviewItemId, reviewItemVisible, reviewItem?.room_id]);
+
+  useEffect(() => {
+    if (reviewItemId || !reviewRoomId || focusedReviewRoom.current === reviewRoomId || !itemsLoaded || !roomsLoaded || !project || !canManageMaterials) return;
+    const section = document.getElementById(roomSectionId(reviewRoomId));
+    if (!section) return;
+    const frame = requestAnimationFrame(() => {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+      setJumpRoomId(reviewRoomId);
+      focusedReviewRoom.current = reviewRoomId;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [reviewItemId, reviewRoomId, itemsLoaded, roomsLoaded, project, canManageMaterials]);
 
   const scrollToTop = () => {
     setJumpRoomId("");
@@ -800,6 +828,7 @@ function MaterialsPage() {
           </div>
         </div>
 
+        {reviewItemId && itemsLoaded && roomsLoaded && !reviewItemVisible && <p role="status" className="mb-6 border border-amber-200 bg-amber-50 px-4 py-3 text-sm">This review item is no longer an active material in this project. Review the current selections below.</p>}
         <div className="space-y-12">
           {sortedRooms.map((room) => (
             <RoomMaterialsSection
@@ -808,6 +837,7 @@ function MaterialsPage() {
               items={byRoom.get(room.id) ?? []}
               products={products}
               projectId={projectId}
+              reviewItemId={reviewItemVisible && reviewItem.room_id === room.id ? reviewItemId : undefined}
               planEvidence={planQuery.data?.document?.id === latestPlan?.id
                 ? planQuery.data?.rooms.find(evidence => evidence.room_id === room.id) : undefined}
               planTitle={planQuery.data?.document?.title ?? ""}
@@ -852,6 +882,7 @@ function RoomMaterialsSection({
   planStatus,
   planMessage,
   onReviewPlans,
+  reviewItemId,
 }: {
   room: Room;
   items: MaterialItem[];
@@ -862,12 +893,17 @@ function RoomMaterialsSection({
   planStatus: "idle" | "checking" | "checked" | "error" | "no_document";
   planMessage?: string;
   onReviewPlans: () => void;
+  reviewItemId?: string;
 }) {
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activatedSuggestionKeys, setActivatedSuggestionKeys] = useState<string[]>([]);
   const [bulkOrderedBy, setBulkOrderedBy] = useState<MaterialItem["ordered_by"] | "none">("none");
   const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
+  const focusedReviewItem = useRef<string | null>(null);
+  useEffect(() => {
+    if (reviewItemId) setApprovalFilter("all");
+  }, [reviewItemId]);
   const activatedSuggestionKeySet = useMemo(
     () => new Set(activatedSuggestionKeys),
     [activatedSuggestionKeys],
@@ -921,6 +957,17 @@ function RoomMaterialsSection({
     [activeItems, approvalFilter],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  useEffect(() => {
+    if (!reviewItemId || focusedReviewItem.current === reviewItemId || !sortedItems.some(item => item.id === reviewItemId)) return;
+    const row = document.getElementById(materialRowId(reviewItemId));
+    if (!row) return;
+    const frame = requestAnimationFrame(() => {
+      row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      row.focus({ preventScroll: true });
+      focusedReviewItem.current = reviewItemId;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [reviewItemId, sortedItems]);
   const validSelectedIds = useMemo(
     () => selectedIds.filter((id) => sortedItems.some((item) => item.id === id)),
     [selectedIds, sortedItems],
@@ -1356,7 +1403,10 @@ function RoomMaterialsSection({
                 return (
                   <tr
                     key={it.id}
-                    className={`border-t border-border align-middle ${needsReselection ? "bg-red-50/35" : ""}`}
+                    id={materialRowId(it.id)}
+                    tabIndex={reviewItemId === it.id ? -1 : undefined}
+                    aria-label={reviewItemId === it.id ? `Review item: ${it.item_label}` : undefined}
+                    className={`border-t border-border align-middle scroll-mt-24 ${reviewItemId === it.id ? "bg-amber-50 outline outline-2 -outline-offset-2 outline-amber-400" : needsReselection ? "bg-red-50/35" : ""}`}
                   >
                     <td className="px-6 py-3">
                       <input
