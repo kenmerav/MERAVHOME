@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const MAX_CONSTRUCTION_PAGES = 100000;
+
 export const drawingBoundsSchema = z
   .object({
     left: z.number().min(0).max(1),
@@ -29,7 +31,7 @@ export const drawingCitationSchema = z.object({
   viewId: z.string().max(120),
   title: z.string().max(200),
   sheet: z.string().max(100),
-  page: z.number().int().positive().max(500),
+  page: z.number().int().positive().max(MAX_CONSTRUCTION_PAGES),
   bounds: drawingBoundsSchema,
 });
 export type DrawingCitation = z.infer<typeof drawingCitationSchema>;
@@ -85,6 +87,52 @@ export function cleanConstructionViews(
 }
 export function roomDrawingViews(views: ConstructionDrawingView[], roomId: string) {
   return views.filter((v) => v.roomId === roomId);
+}
+export function constructionPageEntries(
+  pages: number,
+  views: ConstructionDrawingView[],
+  rooms: { id: string; name: string }[] = [],
+) {
+  if (!Number.isSafeInteger(pages) || pages < 0 || pages > MAX_CONSTRUCTION_PAGES)
+    throw Error("This PDF has an unsupported page count.");
+  const byPage = new Map<number, ConstructionDrawingView[]>();
+  for (const view of views) byPage.set(view.page, [...(byPage.get(view.page) || []), view]);
+  return Array.from({ length: pages }, (_, index) => {
+    const page = index + 1,
+      pageViews = byPage.get(page) || [];
+    const sheets = [...new Set(pageViews.map((v) => v.sheet))];
+    const names = [
+      ...new Set(pageViews.map((v) => rooms.find((r) => r.id === v.roomId)?.name).filter(Boolean)),
+    ];
+    const label = [`Page ${page}`, ...sheets, ...pageViews.map((v) => v.title), ...names].join(
+      " · ",
+    );
+    return { page, sheets, label, views: pageViews };
+  });
+}
+export function filterConstructionPages<T extends { page: number; label: string }>(
+  pages: T[],
+  search: string,
+): T[] {
+  const query = search.trim().toLowerCase();
+  if (!query) return pages;
+  return pages.filter((p) =>
+    /^\d+$/.test(query) ? p.page === Number(query) : p.label.toLowerCase().includes(query),
+  );
+}
+export function constructionPreviewKey(
+  documentKey: string | undefined,
+  page: number,
+  bounds: DrawingBounds,
+) {
+  return JSON.stringify([
+    documentKey || "",
+    page,
+    bounds.left,
+    bounds.top,
+    bounds.right,
+    bounds.bottom,
+  ]);
 }
 export function drawingCropPixels(bounds: DrawingBounds, width: number, height: number) {
   const b = drawingBoundsSchema.parse(bounds);

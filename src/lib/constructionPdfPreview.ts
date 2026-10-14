@@ -10,6 +10,7 @@ export async function openConstructionPdf(url: string) {
 export async function previewConstructionPage(
   pdf: Awaited<ReturnType<typeof openConstructionPdf>>,
   number: number,
+  signal?: AbortSignal,
 ) {
   const page = await pdf.getPage(number),
     native = page.getViewport({ scale: 1 });
@@ -19,7 +20,15 @@ export async function previewConstructionPage(
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
   const context = canvas.getContext("2d")!;
-  await page.render({ canvas, canvasContext: context, viewport }).promise;
+  signal?.throwIfAborted();
+  const task = page.render({ canvas, canvasContext: context, viewport });
+  const cancel = () => task.cancel();
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    await task.promise;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
   return canvas;
 }
 export async function cropConstructionPage(canvas: HTMLCanvasElement, bounds: DrawingBounds) {

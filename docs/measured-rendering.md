@@ -21,6 +21,16 @@ Select **Work on this view**, or add up to three other crops as supporting views
 suggestions: review and adjust them to retain dimensions and exclude unrelated elevations.
 Manual PDF page/crop selection remains available without AI indexing.
 
+The construction picker always lists **All PDF pages** using the actual opened PDF's page count,
+not its subset of matched room views. It includes cover pages, shared details and unmatched pages.
+Page search uses physical page numbers and existing sheet/view/room labels; Previous/Next and a
+page dropdown span the entire document. Room suggestions remain optional shortcuts, with a
+separate **All indexed drawing views** list and per-page drawing choices. Cached index results
+are reused unchanged: opening/browsing pages never queues a paid scan. Only the selected page is
+rendered at full preview quality; superseded page renders are cancelled. Preview readiness is
+pinned to document revision, physical page and crop, so an old preview cannot be selected under
+a new page citation. Source images and citations continue through the same private save flow.
+
 Indices live privately under `<project-id>/measured/drawings/<source-key>.json` in the same bucket.
 Their key includes document identity, source path, revision metadata and current rooms; changed
 documents invalidate the index. Cropped source images are immutable room-scoped assets. Source

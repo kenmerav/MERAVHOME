@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { studioHeaders } from "@/lib/measuredRequest";
 import {
   drawingBoundsSchema,
+  constructionPageEntries,
+  filterConstructionPages,
+  constructionPreviewKey,
   type ConstructionDrawingView,
   type DrawingBounds,
   type DrawingCitation,
@@ -16,6 +19,8 @@ type DrawingData = {
   documents: { id: string; title: string; updatedAt: string }[];
   document?: { id: string; title: string; key: string; url: string };
   views?: ConstructionDrawingView[];
+  allViews?: ConstructionDrawingView[];
+  rooms?: { id: string; name: string }[];
   status?: string;
   error?: string;
   pages?: number;
@@ -24,7 +29,7 @@ const fullPage: DrawingBounds = { left: 0, top: 0, right: 1, bottom: 1 };
 export function ConstructionDrawingPicker({
   projectId,
   roomId,
-  disabled,
+  disabled: suppliedDisabled,
   onChoose,
 }: {
   projectId: string;
@@ -37,18 +42,34 @@ export function ConstructionDrawingPicker({
   const [viewId, setViewId] = useState(""),
     [page, setPage] = useState(1),
     [bounds, setBounds] = useState(fullPage);
-  const [pdf, setPdf] = useState<Awaited<ReturnType<typeof openConstructionPdf>> | null>(null);
-  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null),
-    [preview, setPreview] = useState("");
+  const [pdfState, setPdfState] = useState<{
+    key: string;
+    pdf: Awaited<ReturnType<typeof openConstructionPdf>>;
+  } | null>(null);
+  const [rendered, setRendered] = useState<{
+      key: string;
+      page: number;
+      canvas: HTMLCanvasElement;
+    } | null>(null),
+    [previewState, setPreviewState] = useState<{ key: string; url: string } | null>(null),
+    [pageSearch, setPageSearch] = useState(""),
+    [viewScope, setViewScope] = useState<"room" | "document">("room");
   const [error, setError] = useState(""),
-    [loading, setLoading] = useState(false),
+    [pdfLoading, setPdfLoading] = useState(false),
+    [pageLoading, setPageLoading] = useState(false),
+    [documentsLoading, setDocumentsLoading] = useState(true),
+    [choosing, setChoosing] = useState(false),
     [starting, setStarting] = useState(false);
   const epoch = useRef(0);
+  const choosingRef = useRef(false);
+  const selectionRef = useRef("");
+  const disabled = suppliedDisabled || choosing;
   async function request(action?: Record<string, unknown>, doc = documentId) {
     const url = `/api/measured-rendering?projectId=${projectId}&roomId=${roomId}&drawings=1${doc ? `&documentId=${doc}` : ""}`;
     const response = await fetch(url, {
       headers: await studioHeaders(),
       method: action ? "POST" : "GET",
+      signal: AbortSignal.timeout(action ? 60000 : 30000),
       ...(action ? { body: JSON.stringify(action) } : {}),
     });
     const body = await response.json();
@@ -65,7 +86,12 @@ export function ConstructionDrawingPicker({
     setViewId("");
     setBounds(fullPage);
     setPage(1);
+    setPageSearch("");
+    setDocumentsLoading(true);
+    let pending = false;
     const refresh = async () => {
+      if (pending) return;
+      pending = true;
       try {
         const result = await request();
         if (!active || version !== epoch.current) return;
@@ -73,6 +99,9 @@ export function ConstructionDrawingPicker({
         if (!documentId && result.documents?.length) setDocumentId(result.documents[0].id);
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Could not read drawings.");
+      } finally {
+        pending = false;
+        if (active && version === epoch.current) setDocumentsLoading(false);
       }
     };
     void refresh();
@@ -82,26 +111,66 @@ export function ConstructionDrawingPicker({
       clearInterval(timer);
     };
   }, [projectId, roomId, documentId]);
-  const documentKey = data.document?.key;
+  const documentKey = data.document?.id === documentId ? data.document.key : undefined;
+  const pdf = documentKey && pdfState?.key === documentKey ? pdfState.pdf : null;
+  const canvas =
+    documentKey && rendered?.key === documentKey && rendered.page === page ? rendered.canvas : null;
+  const previewKey = constructionPreviewKey(documentKey, page, bounds);
+  selectionRef.current = previewKey;
+  const preview = canvas && previewState?.key === previewKey ? previewState.url : "";
+  const loading = pdfLoading || pageLoading;
+  const allViews = useMemo(() => data.allViews || data.views || [], [data.allViews, data.views]);
+  const pageCount = pdf?.numPages || data.pages || 0;
+  const pages = useMemo(
+    () => constructionPageEntries(pageCount, allViews, data.rooms),
+    [pageCount, allViews, data.rooms],
+  );
+  const visiblePages = useMemo(
+    () => filterConstructionPages(pages, pageSearch),
+    [pages, pageSearch],
+  );
+  const availableViews = viewScope === "room" ? data.views || [] : allViews;
+  const selected = allViews.find((v) => v.id === viewId);
+  const currentPage = pages.find((p) => p.page === page);
+  const targetRoom = data.rooms?.find((r) => r.id === roomId)?.name || "the selected room";
+  function selectPage(number: number) {
+    if (!Number.isInteger(number) || number < 1 || number > pageCount) return;
+    setError("");
+    setViewId("");
+    setBounds(fullPage);
+    setPage(number);
+  }
+  function selectView(id: string) {
+    const view = allViews.find((v) => v.id === id);
+    setError("");
+    setViewId(id);
+    if (view) {
+      setPage(view.page);
+      setBounds(view.bounds);
+    } else setBounds(fullPage);
+  }
   useEffect(() => {
     let active = true;
     let loaded: Awaited<ReturnType<typeof openConstructionPdf>> | null = null;
-    setPdf(null);
-    setCanvas(null);
-    setPreview("");
-    if (data.document) {
-      setLoading(true);
+    setPdfState(null);
+    setRendered(null);
+    setPreviewState(null);
+    setPdfLoading(false);
+    if (data.document && documentKey) {
+      setPdfLoading(true);
       openConstructionPdf(data.document.url)
         .then((result) => {
           loaded = result;
-          if (active) setPdf(result);
-          else void result.destroy();
+          if (active) {
+            setPdfState({ key: documentKey, pdf: result });
+            setPage((old) => Math.min(Math.max(1, old), result.numPages));
+          } else void result.destroy();
         })
         .catch((e) => {
           if (active) setError(e.message);
         })
         .finally(() => {
-          if (active) setLoading(false);
+          if (active) setPdfLoading(false);
         });
     }
     return () => {
@@ -111,25 +180,28 @@ export function ConstructionDrawingPicker({
   }, [documentKey]);
   useEffect(() => {
     let active = true;
-    setCanvas(null);
-    setPreview("");
-    if (pdf) {
-      setLoading(true);
-      previewConstructionPage(pdf, page)
+    const controller = new AbortController();
+    setRendered(null);
+    setPreviewState(null);
+    setPageLoading(false);
+    if (pdf && documentKey) {
+      setPageLoading(true);
+      previewConstructionPage(pdf, page, controller.signal)
         .then((result) => {
-          if (active) setCanvas(result);
+          if (active) setRendered({ key: documentKey, page, canvas: result });
         })
         .catch((e) => {
           if (active) setError(e.message);
         })
         .finally(() => {
-          if (active) setLoading(false);
+          if (active) setPageLoading(false);
         });
     }
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [pdf, page]);
+  }, [pdf, page, documentKey]);
   useEffect(() => {
     let active = true,
       url = "";
@@ -137,7 +209,7 @@ export function ConstructionDrawingPicker({
       cropConstructionPage(canvas, bounds)
         .then((blob) => {
           url = URL.createObjectURL(blob);
-          if (active) setPreview(url);
+          if (active) setPreviewState({ key: previewKey, url });
           else URL.revokeObjectURL(url);
         })
         .catch((e) => {
@@ -148,7 +220,7 @@ export function ConstructionDrawingPicker({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [canvas, bounds]);
+  }, [canvas, bounds, previewKey]);
   async function scan() {
     if (starting) return;
     const version = epoch.current;
@@ -165,12 +237,24 @@ export function ConstructionDrawingPicker({
       setStarting(false);
     }
   }
-  const selected = data.views?.find((v) => v.id === viewId);
   async function choose(kind: "source" | "support") {
-    if (!canvas || !data.document) return;
+    if (
+      choosingRef.current ||
+      disabled ||
+      !canvas ||
+      !preview ||
+      !data.document ||
+      data.document.id !== documentId ||
+      loading
+    )
+      return;
+    const version = epoch.current;
+    choosingRef.current = true;
+    setChoosing(true);
     setError("");
     try {
       const blob = await cropConstructionPage(canvas, bounds);
+      if (version !== epoch.current || selectionRef.current !== previewKey) return;
       await onChoose(
         blob,
         {
@@ -179,7 +263,9 @@ export function ConstructionDrawingPicker({
           sourceKey: data.document.key,
           viewId: viewId || `manual-page-${page}`,
           title: selected?.title || `Manually selected PDF page ${page}`,
-          sheet: selected?.sheet || "Manual page selection",
+          sheet:
+            selected?.sheet ||
+            (currentPage?.sheets.length === 1 ? currentPage.sheets[0] : `PDF page ${page}`),
           page,
           bounds,
         },
@@ -187,6 +273,9 @@ export function ConstructionDrawingPicker({
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not use this view.");
+    } finally {
+      choosingRef.current = false;
+      setChoosing(false);
     }
   }
   const indexing = starting || ["queued", "processing"].includes(data.status || "");
@@ -203,7 +292,11 @@ export function ConstructionDrawingPicker({
           Project construction docs
         </a>
       </div>
-      {!data.documents.length ? (
+      {documentsLoading && !data.documents.length ? (
+        <p role="status" className="text-sm">
+          Loading project construction documents…
+        </p>
+      ) : !data.documents.length ? (
         <p className="text-sm">
           No construction PDF is available yet. Add one in Construction Docs, or upload an elevation
           below.
@@ -264,27 +357,134 @@ export function ConstructionDrawingPicker({
           {data.error && <p className="text-sm text-red-700 mt-3">{data.error}</p>}
           <div className="grid md:grid-cols-[minmax(220px,1fr)_2fr] gap-5 mt-5">
             <div>
+              <div className="border bg-white p-3 mb-4">
+                <h3 className="font-display text-xl">
+                  All PDF pages {pageCount ? `(${pageCount})` : ""}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Every page is available, including pages without a room match. Browsing does not
+                  use AI credits.
+                </p>
+                {pageCount ? (
+                  <>
+                    <label className="block text-xs mt-3" htmlFor="construction-page-search">
+                      Find a page, sheet or room
+                    </label>
+                    <input
+                      id="construction-page-search"
+                      className="border p-2 mt-1 w-full text-sm"
+                      value={pageSearch}
+                      onChange={(e) => setPageSearch(e.target.value)}
+                      placeholder="Page number, ID2.8, bathroom…"
+                      disabled={disabled}
+                    />
+                    <div
+                      role="group"
+                      aria-label="All construction PDF pages"
+                      className="max-h-64 overflow-y-auto mt-3 space-y-1"
+                    >
+                      {visiblePages.map((p) => (
+                        <button
+                          key={p.page}
+                          type="button"
+                          aria-label={p.label}
+                          aria-pressed={p.page === page}
+                          title={p.label}
+                          disabled={disabled || !pdf}
+                          onClick={() => selectPage(p.page)}
+                          className={`w-full text-left border px-3 py-2 text-sm disabled:opacity-40 ${p.page === page ? "border-ink bg-bone" : "border-transparent hover:bg-bone/60"}`}
+                        >
+                          <span>Page {p.page}</span>
+                          <span className="block text-xs text-muted-foreground truncate">
+                            {p.sheets.join(" · ") || "Full page available"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {!visiblePages.length && (
+                      <p className="text-xs mt-3">
+                        No pages match that search.{" "}
+                        <button className="underline" onClick={() => setPageSearch("")}>
+                          Show all pages
+                        </button>
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {visiblePages.length} of {pageCount} pages shown.
+                    </p>
+                    <div className="flex items-end gap-2 mt-3">
+                      <button
+                        type="button"
+                        className="border p-2 text-xs disabled:opacity-40"
+                        aria-label="Previous construction PDF page"
+                        disabled={disabled || !pdf || page <= 1}
+                        onClick={() => selectPage(page - 1)}
+                      >
+                        Previous
+                      </button>
+                      <label className="text-xs flex-1">
+                        PDF page
+                        <select
+                          aria-label="Construction PDF page"
+                          value={page}
+                          disabled={disabled || !pdf}
+                          onChange={(e) => selectPage(Number(e.target.value))}
+                          className="block border p-2 mt-1 w-full"
+                        >
+                          {pages.map((p) => (
+                            <option key={p.page} value={p.page}>
+                              Page {p.page}
+                              {p.sheets.length ? ` · ${p.sheets.join(" / ")}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="border p-2 text-xs disabled:opacity-40"
+                        aria-label="Next construction PDF page"
+                        disabled={disabled || !pdf || page >= pageCount}
+                        onClick={() => selectPage(page + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p role="status" className="text-sm mt-3">
+                    {pdfLoading
+                      ? "Opening PDF and loading its page list…"
+                      : "The page list will appear when this PDF opens."}
+                  </p>
+                )}
+              </div>
+              <label className="text-xs block mb-2">
+                Drawing shortcuts
+                <select
+                  aria-label="Construction view list"
+                  value={viewScope}
+                  onChange={(e) => setViewScope(e.target.value as "room" | "document")}
+                  className="block border p-2 mt-1 w-full"
+                  disabled={disabled}
+                >
+                  <option value="room">Suggested room views ({data.views?.length || 0})</option>
+                  <option value="document">All indexed drawing views ({allViews.length})</option>
+                </select>
+              </label>
               <label className="text-sm">
-                Views matching this room
+                {viewScope === "room" ? "Views matching this room" : "Views in this document"}
                 <select
                   aria-label="Construction view"
                   className="block border p-2 mt-1 w-full"
-                  disabled={disabled || !data.views?.length}
-                  value={viewId}
-                  onChange={(e) => {
-                    const view = data.views?.find((v) => v.id === e.target.value);
-                    setViewId(e.target.value);
-                    if (view) {
-                      setPage(view.page);
-                      setBounds(view.bounds);
-                    }
-                  }}
+                  disabled={disabled || !availableViews.length || !pdf}
+                  value={availableViews.some((v) => v.id === viewId) ? viewId : ""}
+                  onChange={(e) => selectView(e.target.value)}
                 >
                   <option value="">Choose a view</option>
-                  {data.views?.map((v, index) => (
+                  {availableViews.map((v, index) => (
                     <option key={v.id} value={v.id}>
                       {v.sheet} · {v.title}
-                      {data.views!.filter(
+                      {availableViews.filter(
                         (other) =>
                           other.sheet === v.sheet &&
                           other.title === v.title &&
@@ -293,6 +493,9 @@ export function ConstructionDrawingPicker({
                         ? ` · View ${index + 1}`
                         : ""}{" "}
                       · PDF {v.page}
+                      {viewScope === "document"
+                        ? ` · ${data.rooms?.find((r) => r.id === v.roomId)?.name || "Room unconfirmed"}`
+                        : ""}
                     </option>
                   ))}
                 </select>
@@ -307,30 +510,43 @@ export function ConstructionDrawingPicker({
                   {selected.kind} · {selected.evidence}
                 </p>
               )}
-              <details className="mt-4" open={!viewId}>
-                <summary className="text-sm cursor-pointer">
-                  Browse PDF / adjust drawing crop
-                </summary>
-                <label className="text-xs block mt-3">
-                  PDF page
-                  <input
-                    aria-label="Construction PDF page"
-                    className="border p-2 block w-24"
-                    type="number"
-                    min={1}
-                    max={pdf?.numPages || 1}
+              {currentPage?.views.length ? (
+                <label className="text-xs block mt-4">
+                  Drawings on page {page}
+                  <select
+                    aria-label="Drawing on selected PDF page"
+                    className="block border p-2 mt-1 w-full"
+                    value={viewId}
+                    onChange={(e) => selectView(e.target.value)}
                     disabled={disabled || !pdf}
-                    value={page}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (Number.isInteger(n) && n >= 1 && n <= (pdf?.numPages || 1)) {
-                        setPage(n);
-                        setViewId("");
-                        setBounds(fullPage);
-                      }
-                    }}
-                  />
+                  >
+                    <option value="">Use the whole page / choose a crop</option>
+                    {currentPage.views.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.sheet} · {v.title} ·{" "}
+                        {data.rooms?.find((r) => r.id === v.roomId)?.name || "Room unconfirmed"}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+              ) : null}
+              {selected?.roomId && selected.roomId !== roomId && (
+                <p className="text-xs mt-2">
+                  This drawing is labelled{" "}
+                  {data.rooms?.find((r) => r.id === selected.roomId)?.name || "another room"}. You
+                  are working in {targetRoom}.
+                </p>
+              )}
+              <details className="mt-4">
+                <summary className="text-sm cursor-pointer">Adjust drawing crop</summary>
+                <button
+                  type="button"
+                  className="underline text-xs mt-3"
+                  disabled={disabled || !pdf}
+                  onClick={() => selectPage(page)}
+                >
+                  Reset to whole page
+                </button>
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   {(["left", "top", "right", "bottom"] as const).map((axis) => (
                     <label key={axis} className="text-xs capitalize">
@@ -358,13 +574,19 @@ export function ConstructionDrawingPicker({
               </details>
             </div>
             <div>
-              {loading ? (
+              <p className="text-sm mb-3">
+                PDF page {page}
+                {pageCount ? ` of ${pageCount}` : ""}
+                {currentPage?.sheets.length ? ` · ${currentPage.sheets.join(" / ")}` : ""}
+                {selected ? ` · ${selected.title}` : " · Full page"}
+              </p>
+              {loading || (canvas && !preview && drawingBoundsSchema.safeParse(bounds).success) ? (
                 <p className="text-sm">Loading selected PDF page…</p>
               ) : preview ? (
                 <img
                   src={preview}
-                  alt="Selected construction drawing crop"
-                  className="w-full max-h-[430px] object-contain bg-white border"
+                  alt={`Selected construction drawing crop — PDF page ${page}`}
+                  className="w-full max-h-[620px] object-contain bg-white border"
                 />
               ) : (
                 <p className="text-sm">Choose a PDF page or matched room view.</p>

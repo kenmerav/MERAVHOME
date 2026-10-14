@@ -178,6 +178,7 @@ import {
 } from "../src/lib/measuredCloud.server";
 import { specSelectionSchema, type MeasuredElevation } from "../src/lib/measuredRendering";
 import { runMeasuredRenderingStep } from "../src/workflows/measuredRendering";
+import { constructionViewsKey } from "../src/lib/constructionDrawingViews.server";
 const item = specSelectionSchema.parse({
   id: selection,
   label: "Mirror",
@@ -484,6 +485,60 @@ describe("Save finished images and make requested adjustments", () => {
   });
 });
 describe("Shared measured rendering boundary and persistence", () => {
+  it("returns all saved document views alongside room suggestions without rescanning the PDF", async () => {
+    const docId = "88888888-8888-4888-8888-888888888888";
+    const doc = {
+      id: docId,
+      title: "Project drawings",
+      updated_at: "2026-10-14T12:00:00Z",
+      file_size: 1000,
+      file_url: `https://storage.test/storage/v1/object/public/project-files/${project}/construction-docs/source.pdf`,
+    };
+    const key = constructionViewsKey(project, doc, [{ id: room, name: "Primary Bathroom" }]);
+    const views = [
+      {
+        id: "primary",
+        roomId: room,
+        page: 16,
+        sheet: "ID2.8",
+        title: "Primary bath",
+        kind: "elevation",
+        bounds: { left: 0, top: 0, right: 1, bottom: 1 },
+        evidence: "Written room label",
+      },
+      {
+        id: "shared",
+        roomId: null,
+        page: 31,
+        sheet: "ID9.1",
+        title: "Shared construction detail",
+        kind: "detail",
+        bounds: { left: 0, top: 0, right: 1, bottom: 1 },
+        evidence: "Shared detail",
+      },
+    ];
+    await writeStored(`${project}/measured/drawings/${key}.json`, {
+      key,
+      documentId: docId,
+      status: "complete",
+      pages: 31,
+      rooms: [{ id: room, name: "Primary Bathroom" }],
+      views,
+    });
+    const get = new Request(request().url + `&drawings=1&documentId=${docId}`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
+    const response = await measuredApi(get),
+      body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.pages).toBe(31);
+    expect(body.views.map((v: any) => v.id)).toEqual(["primary"]);
+    expect(body.allViews.map((v: any) => v.id)).toEqual(["primary", "shared"]);
+    expect(body.rooms).toEqual([{ id: room, name: "Primary Bathroom" }]);
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.interpret).not.toHaveBeenCalled();
+  });
   it("returns the saved start time and status without launching another drawing read", async () => {
     const body = {
       action: "interpret",
