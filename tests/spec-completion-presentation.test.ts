@@ -1,12 +1,28 @@
 import { expect, it, vi } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { createElement } from 'react';
+import { renderToStaticMarkup as renderMarkup } from 'react-dom/server';
+import { createElement, type ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+const renderToStaticMarkup = (element: ReactElement) => renderMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, element));
 vi.mock('@/lib/specCompletionClient', () => ({ fetchSpecCompletion: vi.fn(), fetchBoardColorSuggestion: vi.fn(),
   fetchPlanDimensionSuggestion: vi.fn(), fetchSavedSpecCompletion: vi.fn(), updateCompletionIssue: vi.fn(), saveCompletionDetail: vi.fn() }));
 import { SpecCompletionResults } from '@/components/SpecCompletionReview';
 import type { MaterialItem } from '@/lib/db';
 import type { CompletionFinding } from '@/lib/specCompletion';
 import { completionMaterialsLink } from '@/lib/specCompletionPresentation';
+it('offers catalog selection and possible-room-items review inside a saved missing-item check', () => {
+  const finding = { id: 'missing', item_id: null, room_id: 'bath', item_label: 'Shower Drain', source: 'plans', field: 'missing_item' } as CompletionFinding;
+  const issue = { key: 'missing', finding, status: 'open' as const, room_name: 'Bath', document: null, first_seen_at: 'now', last_seen_at: 'now', status_updated_at: null, status_updated_by: null };
+  const html = renderToStaticMarkup(createElement(SpecCompletionResults, { projectId: 'project', rooms: [{ id: 'bath', name: 'Bath' }], findings: [finding], issues: [issue], checkedAt: 'now', itemCount: 0, document: null, message: 'Ready', onStatusChange: async () => {} }));
+  expect(html).toContain('Suggest from Catalog');
+  expect(html).toContain('Review possible items');
+  expect(html).toContain('Choose a product to fill this missing item.');
+});
+it('does not offer replacement of a product changed since the saved finding', () => {
+  const finding = { id: 'price', item_id: 'sink', room_id: 'bath', item_label: 'Sink', source: 'details', field: 'price' } as CompletionFinding;
+  const issue = { key: 'price', finding, status: 'open' as const, room_name: 'Bath', document: null, first_seen_at: 'now', last_seen_at: 'now', status_updated_at: null, status_updated_by: null, item_preview: { product_id: 'old', name: 'Old sink', image_url: null, product_url: null } };
+  const html = renderToStaticMarkup(createElement(SpecCompletionResults, { projectId: 'project', rooms: [{ id: 'bath', name: 'Bath' }], items: [{ id: 'sink', room_id: 'bath', item_label: 'Sink', product_id: 'new', product: { name: 'New sink' } } as MaterialItem], findings: [finding], issues: [issue], checkedAt: 'now', itemCount: 1, document: null, message: 'Ready', onStatusChange: async () => {} }));
+  expect(html).not.toContain('Suggest from Catalog'); expect(html).toContain('New sink'); expect(html).toContain('selected product has changed');
+});
 it('shows the saved document refresh result and time without implying guaranteed freshness', () => {
   const html = renderToStaticMarkup(createElement(SpecCompletionResults, { projectId: 'project', rooms: [], findings: [], itemCount: 0,
     document: null, message: 'Plans reviewed.', documentRefresh: { status: 'checked', uploaded: 1, checked_at: '2026-10-13T19:00:00Z',

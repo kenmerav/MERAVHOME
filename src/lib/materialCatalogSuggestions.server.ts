@@ -16,6 +16,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Product, MaterialItem } from "@/lib/db";
 import { loadCatalogFitContext } from "@/lib/materialCatalogFit.server";
 import { assessCatalogFit, roomCoordinationSources } from "@/lib/materialCatalogFit";
+import { completionCatalogTemplate } from "@/lib/specCompletionCatalog";
+import type { SavedCompletionIssue } from "@/lib/savedSpecCompletion";
+import { setCompletionIssueStatus } from "@/lib/savedSpecCompletion.server";
+import { sharedCompletionCoversMissing } from "@/lib/specSharedMaterials";
 
 const admin: SupabaseClient = supabaseAdmin;
 type CatalogHistory = {
@@ -55,13 +59,16 @@ export async function materialCatalogRequest(request: Request) {
     "context_key",
     "refresh_plan",
     "expected_product_updated_at",
+    "completion_issue_key",
+    "expected_issue_updated_at",
+    "consider_shared",
   ]);
   if (access instanceof Response) return access;
-  const { projectId, body } = access;
+  const { projectId, userId, body } = access;
   const roomId = cleanUuid(body.room_id);
   if (
     !roomId ||
-    !["list", "add"].includes(body.action) ||
+    !["list", "add", "replace"].includes(body.action) ||
     typeof body.label !== "string" ||
     body.label.length > 180
   )
@@ -74,10 +81,39 @@ export async function materialCatalogRequest(request: Request) {
     .maybeSingle();
   if (roomError) throw roomError;
   if (!room) return json({ error: "This room is not in the project." }, 404);
-  const template = templateForRoomName(room.name, true).find((item) => item.label === body.label);
+  let template = templateForRoomName(room.name, true).find((item) => item.label === body.label);
+  let completionIssue: SavedCompletionIssue | undefined;
+  if (body.completion_issue_key !== undefined) {
+    if (!/^[a-f0-9]{64}$/.test(body.completion_issue_key)) return json({ error: "Choose a current review issue." }, 400);
+    const { data: saved, error } = await admin.from("spec_completion_reviews").select("report,issues")
+      .eq("project_id", projectId).maybeSingle();
+    if (error) throw error;
+    completionIssue = saved?.issues?.[body.completion_issue_key] as SavedCompletionIssue | undefined;
+    if (!completionIssue || completionIssue.status !== "open" || completionIssue.finding.room_id !== roomId ||
+      completionIssue.last_seen_at !== saved?.report?.checked_at || saved?.report?.plan_status === "checking" ||
+      (body.action !== "list" && completionIssue.status_updated_at !== body.expected_issue_updated_at))
+      return json({ error: "This review issue changed. Reopen the saved review before choosing a product." }, 409);
+    let label = completionIssue.finding.item_label;
+    let category: string | null = null;
+    if (completionIssue.finding.item_id) {
+      const { data: item, error: itemError } = await admin.from("material_items").select("*")
+        .eq("id", completionIssue.finding.item_id).eq("project_id", projectId).eq("room_id", roomId).maybeSingle();
+      if (itemError) throw itemError;
+      if (!item || item.not_needed || item.id !== body.existing_item_id ||
+        (completionIssue.item_preview?.product_id && completionIssue.item_preview.product_id !== item.product_id))
+        return json({ error: "This material selection changed. Run a new check before replacing it." }, 409);
+      label = item.item_label; category = item.category;
+    } else if (completionIssue.finding.field !== "missing_item") return json({ error: "Choose an item to review." }, 400);
+    if (body.label !== label && body.label !== completionIssue.finding.item_label) return json({ error: "This label does not match the review issue." }, 400);
+    template = completionCatalogTemplate(label, category);
+  }
+  if (body.action === "replace" && !completionIssue?.finding.item_id)
+    return json({ error: "Choose a current material from the Spec Book review to replace." }, 400);
   if (!template) return json({ error: "Choose an item from this room’s missing-items list." }, 400);
   if (body.refresh_plan !== undefined && typeof body.refresh_plan !== "boolean")
     return json({ error: "Choose a valid plan review action." }, 400);
+  if (body.consider_shared !== undefined && typeof body.consider_shared !== "boolean")
+    return json({ error: "Choose a valid shared-material review action." }, 400);
   if (body.action === "list") {
     const criteria = body.criteria ?? {};
     if (
@@ -204,12 +240,24 @@ export async function materialCatalogRequest(request: Request) {
       materialVisibleInProcurement(item) &&
       materialCoversTemplateSuggestion(item, template, room.name),
   );
-  if (selected)
+  const replacing = body.action === "replace";
+  if (!replacing && (body.consider_shared || completionIssue)) {
+    const [allItems, allRooms] = await Promise.all([
+      admin.from("material_items").select("*,product:products(*)").eq("project_id", projectId),
+      admin.from("rooms").select("id,name").eq("project_id", projectId),
+    ]);
+    if (allItems.error || allRooms.error) throw allItems.error || allRooms.error;
+    const projectItems = (allItems.data ?? []) as MaterialItem[];
+    const staleShared = new Set(staleSpecBookMaterialIds(projectId, projectItems, board?.board_state));
+    if (sharedCompletionCoversMissing(projectItems.filter(item => !staleShared.has(item.id)), allRooms.data ?? [], roomId, template.label))
+      return json({ error: "Materials Throughout already covers this item. Refresh the review before adding another selection." }, 409);
+  }
+  if (selected && !replacing)
     return json(
       { error: "This item already has a selection. Refresh Materials to review it." },
       409,
     );
-  if (currentItems.some((item) => item.not_needed && item.item_label === template.label))
+  if (!replacing && currentItems.some((item) => item.not_needed && item.item_label === template.label))
     return json({ error: "This item was marked not needed. Restore it in Materials first." }, 409);
   const existing = body.existing_item_id
     ? currentItems.find((item) => item.id === body.existing_item_id)
@@ -219,11 +267,17 @@ export async function materialCatalogRequest(request: Request) {
   if (
     body.existing_item_id &&
     (!existing ||
-      existing.item_label !== template.label ||
-      !untouchedCatalogPlaceholder(existing) ||
+      (!replacing && (existing.item_label !== template.label || !untouchedCatalogPlaceholder(existing))) ||
+      existing.not_needed ||
       existing.updated_at !== body.expected_updated_at)
   )
     return json({ error: "This item changed. Refresh Materials before adding a product." }, 409);
+  if (replacing && (!existing || existing.id !== completionIssue?.finding.item_id ||
+    existing.ordered || existing.received || existing.installed))
+    return json({ error: "This selection is already ordered, received or installed. Review its replacement in Materials." }, 409);
+  if (replacing && currentItems.some(item => item.id !== existing?.id && !stale.has(item.id) &&
+    materialVisibleInProcurement(item) && materialCoversTemplateSuggestion(item, template, room.name)))
+    return json({ error: "Another selection already covers this item. Review Materials before replacing it." }, 409);
   const patch = {
     product_id: product.id,
     product_url: product.product_url,
@@ -231,24 +285,22 @@ export async function materialCatalogRequest(request: Request) {
     color: product.finish,
     is_required: false,
     not_needed: false,
-    quantity: null,
-    quantity_tbd: true,
-    quantity_unit: "count",
+    ...(!replacing ? { quantity: null, quantity_tbd: true, quantity_unit: "count" as const } : {}),
     scrape_status: "scraped",
     scrape_error: null,
   };
   // Manual selection: retain the catalog product and leave quantity for staff to confirm.
-  const result = existing
-    ? await admin
+  let update = existing ? admin
         .from("material_items")
         .update(patch)
         .eq("id", existing.id)
         .eq("project_id", projectId)
         .eq("room_id", roomId)
         .eq("updated_at", existing.updated_at)
-        .is("product_id", null)
-        .select("id")
-        .maybeSingle()
+        : null;
+  if (update && existing) update = existing.product_id ? update.eq("product_id", existing.product_id) : update.is("product_id", null);
+  const result = update
+    ? await update.select("id").maybeSingle()
     : await admin
         .from("material_items")
         .insert({
@@ -295,6 +347,15 @@ export async function materialCatalogRequest(request: Request) {
         },
         409,
       );
+  }
+  // A catalog choice completes missing/assignment/link issues only. A fit or
+  // quantity correction still requires staff confirmation against the plans.
+  if (completionIssue && ["missing_item", "product", "link"].includes(completionIssue.finding.field)) {
+    try {
+      await setCompletionIssueStatus(projectId, userId, completionIssue.key, "completed", completionIssue.status_updated_at);
+    } catch {
+      return json({ item_id: result.data.id, warning: "The product is saved to Materials and the Spec Book. Reopen the review to confirm this issue’s status." });
+    }
   }
   return json({ item_id: result.data.id });
 }

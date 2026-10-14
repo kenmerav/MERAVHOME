@@ -15,6 +15,8 @@ import type { CatalogSuggestion, SinkMount } from "@/lib/materialCatalogSuggesti
 import type { PublicCatalogPlanFit, CoordinationSource } from "@/lib/materialCatalogFit";
 import { isNominalFitRequirement } from "@/lib/materialCatalogFit";
 import { toast } from "sonner";
+import type { SavedCompletionIssue } from "@/lib/savedSpecCompletion";
+import { completionCatalogTemplate } from "@/lib/specCompletionCatalog";
 
 async function catalogRequest(body: unknown) {
   const { data } = await supabase.auth.getSession();
@@ -42,6 +44,9 @@ export function MaterialCatalogSuggestions({
   existingItem,
   disabled,
   onAdded,
+  completionIssue,
+  replace = false,
+  considerShared = false,
 }: {
   projectId: string;
   roomId: string;
@@ -50,6 +55,9 @@ export function MaterialCatalogSuggestions({
   existingItem: { id: string; updated_at: string } | null;
   disabled: boolean;
   onAdded: () => Promise<void>;
+  completionIssue?: SavedCompletionIssue;
+  replace?: boolean;
+  considerShared?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -63,7 +71,8 @@ export function MaterialCatalogSuggestions({
   const [saving, setSaving] = useState<string | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const qc = useQueryClient();
-  const isSink = /\bsinks?\b/i.test(label);
+  const searchLabel = completionIssue ? completionCatalogTemplate(label).label : label;
+  const isSink = /\bsinks?\b/i.test(searchLabel);
   const invalidWidth =
     width.trim() !== "" &&
     (!Number.isFinite(Number(width)) || Number(width) <= 0 || Number(width) > 200);
@@ -80,7 +89,9 @@ export function MaterialCatalogSuggestions({
     );
     return () => clearTimeout(timeout);
   }, [search, width, mount, invalidWidth]);
-  const queryKey = ["materialCatalogSuggestions", projectId, roomId, label, filters];
+  const issueRequest = { consider_shared: considerShared, ...(completionIssue ? { completion_issue_key: completionIssue.key,
+    expected_issue_updated_at: completionIssue.status_updated_at, existing_item_id: existingItem?.id ?? null } : {}) };
+  const queryKey = ["materialCatalogSuggestions", projectId, roomId, label, completionIssue?.key, existingItem?.updated_at, filters];
   const query = useQuery<{
     suggestions: CatalogSuggestion[];
     context_key: string;
@@ -98,6 +109,7 @@ export function MaterialCatalogSuggestions({
         label,
         action: "list",
         criteria: filters,
+        ...issueRequest,
       }),
     enabled: open && !invalidWidth,
     staleTime: 30_000,
@@ -117,6 +129,7 @@ export function MaterialCatalogSuggestions({
         action: "list",
         criteria: filters,
         refresh_plan: true,
+        ...issueRequest,
       });
       qc.setQueryData(queryKey, result);
     } catch (error) {
@@ -128,18 +141,21 @@ export function MaterialCatalogSuggestions({
   const add = async (candidate: CatalogSuggestion) => {
     if (saving) return;
     setSaving(candidate.product.id);
+    let productSaved = false;
     try {
-      await catalogRequest({
+      const result = await catalogRequest({
         project_id: projectId,
         room_id: roomId,
         label,
-        action: "add",
+        action: replace ? "replace" : "add",
         product_id: candidate.product.id,
         expected_product_updated_at: candidate.product.updated_at,
         existing_item_id: existingItem?.id ?? null,
         expected_updated_at: existingItem?.updated_at ?? null,
         context_key: query.data?.context_key,
+        ...issueRequest,
       });
+      productSaved = true;
       await onAdded();
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
@@ -148,12 +164,14 @@ export function MaterialCatalogSuggestions({
         qc.invalidateQueries({ queryKey: ["spec-completion-review", projectId] }),
         qc.invalidateQueries({ queryKey: ["materialCatalogSuggestions"] }),
       ]);
-      toast.success(`${label} added to ${roomName}. Confirm its quantity in Materials.`);
+      if (result.warning) toast.warning(result.warning);
+      else toast.success(replace ? `${label} updated in Materials and the Spec Book.` : `${label} added to ${roomName}. Confirm its quantity in Materials.`);
       setOpen(false);
     } catch (error) {
       await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       await qc.invalidateQueries({ queryKey: ["materialCatalogSuggestions", projectId, roomId] });
-      toast.error((error as Error).message);
+      if (productSaved) { toast.warning("The product is saved to Materials and the Spec Book. Reopen the review to see the latest results."); setOpen(false); }
+      else toast.error((error as Error).message);
     } finally {
       setSaving(null);
     }
@@ -182,7 +200,7 @@ export function MaterialCatalogSuggestions({
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           Suggestions consider the latest plans, this room’s selections, and previous catalog use.
-          Adding one keeps its saved catalog details; quantity will be TBD.
+          {replace ? "Choosing one updates Materials and the Spec Book, keeps the quantity, and uses the catalog product’s saved details." : "Adding one keeps its saved catalog details; quantity will be TBD."}
         </p>
         {plan && context && (
           <div role="status" className="border border-border bg-muted/20 p-3 text-sm space-y-2">
@@ -195,11 +213,11 @@ export function MaterialCatalogSuggestions({
             {plan.requirements
               .filter(
                 (r, index, all) =>
-                  r.label === label &&
+                  r.label === searchLabel &&
                   (!isNominalFitRequirement(r) ||
                     all.findIndex(
                       (other) =>
-                        other.label === label &&
+                        other.label === searchLabel &&
                         other.value === r.value &&
                         isNominalFitRequirement(other),
                     ) === index),
@@ -395,7 +413,7 @@ export function MaterialCatalogSuggestions({
                       onClick={() => add(candidate)}
                       className="block mt-3 bg-ink px-4 py-2 text-xs text-primary-foreground disabled:opacity-50"
                     >
-                      {saving === p.id ? "Adding…" : "Add from Catalog"}
+                      {saving === p.id ? "Saving…" : replace ? "Use this product" : "Add from Catalog"}
                     </button>
                   </div>
                 </div>

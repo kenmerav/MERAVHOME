@@ -76,6 +76,16 @@ it("keeps quantity seven when a shared board quantity has not changed since the 
   const first = run(board([layer({ materialItemId: itemId })]), [material()]);
   expect(run(first.state, [material()]).updates.some(u => "quantity" in u.patch)).toBe(false);
 });
+it("preserves a catalog replacement when the previous board selection has not changed", () => {
+  const first = run(board([layer({ materialItemId: itemId })]), [material()]);
+  const replacement = material({ product_id: "replacement", product_url: "https://vendor.example/new-sink", color: "Black", notes: "Designer note", image_url: product.image_url, product: { ...product, id: "replacement", finish: "Black" } });
+  const result = run(first.state, [replacement]);
+  expect(result.updates).toEqual([]);
+  expect(result.summary.issues).toEqual([]);
+  const edited = structuredClone(first.state);
+  edited.pages[0].elements[0].link = "https://vendor.example/sink?uid=3";
+  expect(run(edited, [replacement]).updates[0].patch.product_url).toContain("uid=3");
+});
 it("includes a newly duplicated board fixture in its room count before scraping", () => {
   const first = run(board([layer({ materialItemId: itemId })]), [material({ quantity: 1 })]);
   first.state.pages[0].elements.push(layer({ id: "new-copy", materialItemId: itemId }));

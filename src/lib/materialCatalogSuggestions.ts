@@ -66,6 +66,10 @@ export function catalogProductMatches(
 ) {
   const key = normalizeMaterialSuggestionLabel(label);
   const text = [product.name, product.subcategory, product.product_url].filter(Boolean).join(" ");
+  if (key === "ceiling fan") return /\bceiling fans?\b/i.test(text) && !/\b(?:downrod|blade kit|remote control)\b/i.test(product.name);
+  if (key === "sconce") return /\bsconces?\b/i.test(text);
+  if (key === "pendant") return /\bpendants?\b/i.test(text);
+  if (key === "hand towel holder") return /\b(?:hand towel holder|towel ring|towel bar)\b/i.test(text);
   if (key === "toilet") {
     const identity = normalizeMaterialSuggestionLabel(
       product.name.replace(/\bseat (?:not included|sold separately)\b/gi, ""),

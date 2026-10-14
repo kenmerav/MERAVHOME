@@ -87,7 +87,7 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
         item = matches[0];
       }
       if (item?.not_needed) continue;
-      const variantChanged = !!(item && ((link && item.product_url && url(link) !== url(item.product_url)) ||
+      const variantChanged = !!(item && (!baseline || changed("productId") || changed("link") || changed("materialLinkCleared")) && ((link && item.product_url && url(link) !== url(item.product_url)) ||
         (product && item.product_id && product.id !== item.product_id &&
           (!link || !item.product_url || (product.finish && normalize(product.finish) !== normalize(item.product?.finish))))));
       if (item && variantChanged && (item.ordered || item.received || item.installed)) {

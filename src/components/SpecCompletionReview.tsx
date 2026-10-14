@@ -15,6 +15,10 @@ import { hasCompletionValue, needsCompletionColor } from "@/lib/specCompletion";
 import { materialPriceUnit } from "@/lib/productPriceUnit";
 import type { MaterialProductRefresh } from "@/lib/materialProductRefresh";
 import type { SpecBoardSyncSummary } from "@/lib/specBoardSync";
+import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggestions";
+import { SpecCompletionPossibleItems } from "@/components/SpecCompletionPossibleItems";
+import { untouchedCatalogPlaceholder } from "@/lib/materialCatalogSuggestions";
+import { completionCatalogTemplate } from "@/lib/specCompletionCatalog";
 
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
@@ -180,6 +184,12 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
 }) {
   const [filter, setFilter] = useState<"all" | "details" | "plans">("all");
   const [statusFilter, setStatusFilter] = useState<CompletionIssueStatus | "all">("open");
+  const qc = useQueryClient();
+  const catalogSaved = async () => {
+    await Promise.all([["materialItems", projectId], ["spec-completion-review", projectId], ["roomProducts"], ["procurement"]]
+      .map(queryKey => qc.invalidateQueries({ queryKey })));
+    onSuggestionSaved?.();
+  };
   const rows: SavedCompletionIssue[] = issues ?? findings.map(finding => ({ key: finding.id, finding, status: "open", room_name: "",
     document: finding.source === "plans" ? document : null, first_seen_at: checkedAt || "", last_seen_at: checkedAt || "", status_updated_at: null, status_updated_by: null }));
   const counts = completionIssueCounts(rows);
@@ -208,6 +218,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
       {([ ["all", "All findings"], ["details", "Missing details"], ["plans", "From construction plans"] ] as const).map(([value, label]) =>
         <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}
           className={`border px-3 py-2 text-xs ${filter === value ? "bg-ink text-white" : "text-muted-foreground"}`}>{label}</button>)}
+      {onStatusChange && <SpecCompletionPossibleItems projectId={projectId} rooms={rooms} items={items} document={document} disabled={checking || !!savingIssue} onAdded={catalogSaved} />}
     </div>
     <div className="min-h-0 overflow-y-auto space-y-6 pr-1">
       {!visible.length && <p className="text-sm py-4 text-muted-foreground">{checking ? "Plan review is still running." : filter === "plans" && planStatus !== "checked" ? "Plan quantities and missing items have not been checked." : "No findings in this section. Details that are not specified in the plans still need your review."}</p>}
@@ -221,7 +232,9 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
           <h3 className="font-display text-2xl mb-3">{room.name}</h3>
           <div className="border divide-y">{Array.from(groups.entries()).map(([key, group]) => {
             const item = items.find(item => item.id === key);
-            const preview = group.find(issue => issue.last_seen_at === checkedAt)?.item_preview ?? group[0].item_preview;
+            const checkedPreview = group.find(issue => issue.last_seen_at === checkedAt)?.item_preview ?? group[0].item_preview;
+            const selectionChanged = !!item && !!checkedPreview && checkedPreview.product_id !== item.product_id;
+            const preview = selectionChanged ? undefined : checkedPreview;
             const image = preview?.image_url || item?.image_url || item?.product?.image_url;
             const productName = preview?.name || item?.product?.name;
             const productLink = completionProductLink(preview?.product_url || item?.product_url || item?.product?.product_url);
@@ -230,6 +243,11 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
               group.find(issue => issue.finding.field === field && issue.finding.source === "details");
             const color = detail("color");
             const dimensions = detail("dimensions");
+            const catalogIssue = group.find(issue => issue.status === "open" && issue.last_seen_at === checkedAt &&
+              (issue.finding.field === "missing_item" || (item && item.room_id === room.id && !selectionChanged)));
+            const catalogLabel = item?.item_label || catalogIssue?.finding.item_label || "";
+            const missingTemplate = completionCatalogTemplate(catalogLabel, item?.category);
+            const placeholder = !item ? items.find(row => row.room_id === room.id && row.item_label === missingTemplate.label && untouchedCatalogPlaceholder(row)) : null;
             const canSuggest = (issue: SavedCompletionIssue | undefined) => !!issues && !checking &&
               issue?.status === "open" && issue.last_seen_at === checkedAt && (!stale ||
                 (issue.finding.field === "color" && item && needsCompletionColor(item) &&
@@ -246,6 +264,13 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                   </div>
                 </div>
               </div>
+              {catalogIssue && onStatusChange && rooms.some(current => current.id === room.id) && !item?.not_needed && <div className="mt-3 flex flex-wrap items-center gap-3">
+                <MaterialCatalogSuggestions projectId={projectId} roomId={room.id} roomName={room.name} label={catalogLabel}
+                  existingItem={item || placeholder || null} completionIssue={catalogIssue} replace={!!item}
+                  disabled={checking || !!savingIssue || !!(item?.ordered || item?.received || item?.installed)} onAdded={catalogSaved} />
+                <p className="text-xs text-muted-foreground">{item ? "Choose a replacement if the selection needs correction. Quantity is kept." : "Choose a product to fill this missing item."}</p>
+              </div>}
+              {selectionChanged && <p className="mt-3 text-xs text-amber-900">The selected product has changed since this check. Run the check again to review its current details and fit.</p>}
               {group.map(issue => {
                 const row = issue.finding;
                 const earlier = !!issues && issue.last_seen_at !== checkedAt;

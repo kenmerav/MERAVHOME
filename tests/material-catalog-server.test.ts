@@ -9,7 +9,9 @@ const state = vi.hoisted(() => ({
   queues: {} as Record<string, any[]>,
   reads: [] as any[],
   writes: [] as any[],
+  status: vi.fn(),
 }));
+vi.mock("@/lib/savedSpecCompletion.server", () => ({ setCompletionIssueStatus: state.status }));
 vi.mock("@/lib/materialCatalogFit.server", () => ({ loadCatalogFitContext: state.context }));
 vi.mock("@/lib/specCompletion.server", () => ({
   authorizeCompletionProject: async (request: Request) =>
@@ -95,6 +97,7 @@ beforeEach(() => {
   state.denied = null;
   state.reads = [];
   state.writes = [];
+  state.status.mockReset().mockResolvedValue(undefined);
   state.queues = {
     rooms: [{ data: { id: roomId, name: "Powder Bath" } }],
     products: [
@@ -128,6 +131,77 @@ beforeEach(() => {
     design_boards: [{ data: { board_state: null } }],
     room_products: [{ data: [] }, { data: { id: "room-link" } }],
   };
+});
+const issueKey = "a".repeat(64);
+const checkedAt = "2026-10-14T20:00:00Z";
+function reviewIssue(field = "product", patch: any = {}) {
+  const issue = { key: issueKey, status: "open", status_updated_at: null, last_seen_at: checkedAt,
+    finding: { item_id: field === "missing_item" ? null : itemId, room_id: roomId, field, item_label: "Toilet" }, ...patch };
+  state.queues.spec_completion_reviews = [{ data: { report: { checked_at: checkedAt, plan_status: "checked" }, issues: { [issueKey]: issue } } }];
+  if (field === "missing_item") {
+    state.queues.material_items.splice(1, 0, { data: [] });
+    state.queues.rooms.push({ data: [{ id: roomId, name: "Powder Bath" }] });
+  }
+  if (field !== "missing_item") state.queues.material_items.unshift({ data: state.queues.material_items[0].data[0] });
+  return { completion_issue_key: issueKey, expected_issue_updated_at: null };
+}
+it("fills a missing review item and completes only that issue after saving the room connection", async () => {
+  expect((await materialCatalogRequest(request(reviewIssue("missing_item")))).status).toBe(200);
+  expect(state.status).toHaveBeenCalledWith(projectId, "staff", issueKey, "completed", null);
+  expect(state.writes).toHaveLength(2);
+});
+it("replaces a selected review product with a version guard, preserving quantities and source history", async () => {
+  const existing = state.queues.material_items[0].data[0];
+  Object.assign(existing, { product_id: "old-product", is_required: false, quantity: 7, quantity_tbd: false, source_board_id: projectId });
+  expect((await materialCatalogRequest(request({ ...reviewIssue(), action: "replace" }))).status).toBe(200);
+  expect(state.writes[0].filters.product_id).toBe("old-product");
+  expect(state.writes[0].value.product_id).toBe(productId);
+  for (const field of ["quantity", "quantity_tbd", "quantity_unit", "source_board_id", "ordered", "received", "installed"]) expect(state.writes[0].value).not.toHaveProperty(field);
+  expect(state.status).toHaveBeenCalledOnce();
+});
+it("keeps plan fit corrections open after a replacement until staff confirms them", async () => {
+  Object.assign(state.queues.material_items[0].data[0], { product_id: "old-product", is_required: false });
+  expect((await materialCatalogRequest(request({ ...reviewIssue("dimensions"), action: "replace" }))).status).toBe(200);
+  expect(state.status).not.toHaveBeenCalled();
+});
+it.each(["ordered", "received", "installed"])("refuses replacement of a %s material", async field => {
+  Object.assign(state.queues.material_items[0].data[0], { product_id: "old-product", [field]: true });
+  expect((await materialCatalogRequest(request({ ...reviewIssue(), action: "replace" }))).status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it.each([{ status: "completed" }, { last_seen_at: "previous" }, { finding: { room_id: "another-room", field: "missing_item", item_id: null, item_label: "Toilet" } }])("rejects changed or foreign review issues before catalog writes: %j", async patch => {
+  const body = reviewIssue("missing_item", patch);
+  expect((await materialCatalogRequest(request(body))).status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it("refuses a missing-item add now covered by Materials Throughout", async () => {
+  const body = reviewIssue("missing_item");
+  state.queues.rooms[1] = { data: [{ id: roomId, name: "Powder Bath" }, { id: "shared", name: "Materials Throughout" }] };
+  state.queues.material_items[1] = { data: [{ id: "shared-toilet", project_id: projectId, room_id: "shared", item_label: "Toilet", is_required: false, product_id: "shared-product" }] };
+  expect((await materialCatalogRequest(request(body))).status).toBe(409);
+  expect(state.writes).toEqual([]); expect(state.status).not.toHaveBeenCalled();
+});
+it("finds catalog sinks from a plan finding with a room-prefixed item label", async () => {
+  const body = reviewIssue("missing_item", { finding: { field: "missing_item", room_id: roomId, item_id: null, item_label: "Bathroom sink" } });
+  state.queues.products = [{ data: [{ id: productId, name: "White Bathroom Sink", category: "Plumbing" }] }];
+  state.queues.material_items = [{ data: [] }]; state.queues.room_products = [{ data: [] }];
+  const response = await materialCatalogRequest(request({ ...body, label: "Bathroom sink", existing_item_id: null, action: "list" }));
+  expect(response.status).toBe(200); expect((await response.json()).suggestions[0].product.id).toBe(productId);
+});
+it("rejects a replacement when the selection has changed since its saved issue", async () => {
+  const body = reviewIssue("product", { item_preview: { product_id: "old-product" } });
+  expect((await materialCatalogRequest(request({ ...body, action: "replace" }))).status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it("does not expose replacement actions without an authenticated saved review issue", async () => {
+  expect((await materialCatalogRequest(request({ action: "replace" }))).status).toBe(400);
+  expect(state.writes).toEqual([]);
+});
+it("reports a saved product accurately when only the issue-status update fails", async () => {
+  state.status.mockRejectedValue(new Error("Concurrent review"));
+  const response = await materialCatalogRequest(request(reviewIssue("missing_item")));
+  expect(response.status).toBe(200);
+  expect((await response.json()).warning).toContain("product is saved");
 });
 it("returns staff/project authorization failures before accessing catalog data", async () => {
   state.denied = Response.json({ error: "Only staff" }, { status: 403 });
