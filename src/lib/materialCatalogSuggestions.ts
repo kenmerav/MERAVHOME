@@ -80,14 +80,14 @@ export function catalogProductMatches(
   if (/\bsinks?\b/.test(key)) {
     if (
       !/\b(sinks?|basins?|lavatory)\b/i.test(text) ||
-      /\b(?:drains?|strainers?|faucets?|sink grids?|sink racks?|tiles?|wallpaper|cabinet)\b/i.test(
+      /\b(?:drains?|strainers?|faucets?|sink grids?|sink racks?|tiles?|backsplash|wallpaper|paint|cabinet|sconces?|pendants?|chandeliers?|lighting|lights?|flush[ -]?mount|mirrors?|towel|hooks?)\b/i.test(
         product.name,
       )
     )
       return false;
     if (
       /bath|powder/i.test(roomName) &&
-      /\b(kitchen|laundry|utility|farmhouse|apron)\b/i.test(text)
+      /\b(kitchen|bar|laundry|utility|farmhouse|apron)\b/i.test(text)
     )
       return false;
     if (
