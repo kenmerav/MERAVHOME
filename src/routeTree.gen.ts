@@ -10,9 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ViewUserRouteImport } from './routes/view-user'
-import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
-import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
-import { Route as ApiSpecBookMaterialRouteImport } from './routes/api/spec-book-material'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ProjectManagementRouteImport } from './routes/project-management'
 import { Route as ProcurementRouteImport } from './routes/procurement'
@@ -22,7 +19,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as FinancialsRouteImport } from './routes/financials'
 import { Route as EaDeskRouteImport } from './routes/ea-desk'
 import { Route as ConstructionUploadsRouteImport } from './routes/construction-uploads'
-import { Route as ApiConstructionUploadsRouteImport } from './routes/api/construction-uploads'
 import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
@@ -36,12 +32,18 @@ import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
 import { Route as ExtensionConnectRouteImport } from './routes/extension.connect'
 import { Route as ClientFinancialsRouteImport } from './routes/client.financials'
 import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
+import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
 import { Route as ApiUsersRouteImport } from './routes/api/users'
 import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
 import { Route as ApiUploadProjectDocumentRouteImport } from './routes/api/upload-project-document'
 import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
-import { Route as ApiSpecBookSourceStatusRouteImport } from './routes/api/spec-book-source-status'
+import { Route as ApiSuggestPlanDimensionsRouteImport } from './routes/api/suggest-plan-dimensions'
+import { Route as ApiSuggestBoardColorRouteImport } from './routes/api/suggest-board-color'
 import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
+import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
+import { Route as ApiSpecCompletionReviewRouteImport } from './routes/api/spec-completion-review'
+import { Route as ApiSpecBookSourceStatusRouteImport } from './routes/api/spec-book-source-status'
+import { Route as ApiSpecBookMaterialRouteImport } from './routes/api/spec-book-material'
 import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
 import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
 import { Route as ApiScrapeProductsRouteImport } from './routes/api/scrape-products'
@@ -63,6 +65,7 @@ import { Route as ApiProcurementEmailRouteImport } from './routes/api/procuremen
 import { Route as ApiPresentationBoardRouteImport } from './routes/api/presentation-board'
 import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
 import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
+import { Route as ApiMaterialCatalogSuggestionsRouteImport } from './routes/api/material-catalog-suggestions'
 import { Route as ApiMarvinUploadRouteImport } from './routes/api/marvin-upload'
 import { Route as ApiMarvinGmailCallbackRouteImport } from './routes/api/marvin-gmail-callback'
 import { Route as ApiMarvinFathomWebhookRouteImport } from './routes/api/marvin-fathom-webhook'
@@ -82,12 +85,10 @@ import { Route as ApiDrawingVerificationRouteImport } from './routes/api/drawing
 import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
 import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
+import { Route as ApiConstructionUploadsRouteImport } from './routes/api/construction-uploads'
 import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
 import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
-import { Route as ApiSpecCompletionReviewRouteImport } from './routes/api/spec-completion-review'
 import { Route as ApiCheckSpecCompletionRouteImport } from './routes/api/check-spec-completion'
-import { Route as ApiSuggestBoardColorRouteImport } from './routes/api/suggest-board-color'
-import { Route as ApiSuggestPlanDimensionsRouteImport } from './routes/api/suggest-plan-dimensions'
 import { Route as ApiCheckMaterialPlansRouteImport } from './routes/api/check-material-plans'
 import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
 import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
@@ -125,21 +126,6 @@ import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id
 const ViewUserRoute = ViewUserRouteImport.update({
   id: '/view-user',
   path: '/view-user',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiViewUserRoute = ApiViewUserRouteImport.update({
-  id: '/api/view-user',
-  path: '/api/view-user',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
-  id: '/api/spec-ordering',
-  path: '/api/spec-ordering',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSpecBookMaterialRoute = ApiSpecBookMaterialRouteImport.update({
-  id: '/api/spec-book-material',
-  path: '/api/spec-book-material',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -185,11 +171,6 @@ const EaDeskRoute = EaDeskRouteImport.update({
 const ConstructionUploadsRoute = ConstructionUploadsRouteImport.update({
   id: '/construction-uploads',
   path: '/construction-uploads',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiConstructionUploadsRoute = ApiConstructionUploadsRouteImport.update({
-  id: '/api/construction-uploads',
-  path: '/api/construction-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogRoute = CatalogRouteImport.update({
@@ -257,6 +238,11 @@ const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
   path: '/catalog/$productId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiViewUserRoute = ApiViewUserRouteImport.update({
+  id: '/api/view-user',
+  path: '/api/view-user',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUsersRoute = ApiUsersRouteImport.update({
   id: '/api/users',
   path: '/api/users',
@@ -279,14 +265,40 @@ const ApiUploadDesignBoardImageRoute =
     path: '/api/upload-design-board-image',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiSpecBookSourceStatusRoute = ApiSpecBookSourceStatusRouteImport.update({
-  id: '/api/spec-book-source-status',
-  path: '/api/spec-book-source-status',
+const ApiSuggestPlanDimensionsRoute =
+  ApiSuggestPlanDimensionsRouteImport.update({
+    id: '/api/suggest-plan-dimensions',
+    path: '/api/suggest-plan-dimensions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSuggestBoardColorRoute = ApiSuggestBoardColorRouteImport.update({
+  id: '/api/suggest-board-color',
+  path: '/api/suggest-board-color',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStudioRemindersRoute = ApiStudioRemindersRouteImport.update({
   id: '/api/studio-reminders',
   path: '/api/studio-reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
+  id: '/api/spec-ordering',
+  path: '/api/spec-ordering',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecCompletionReviewRoute = ApiSpecCompletionReviewRouteImport.update({
+  id: '/api/spec-completion-review',
+  path: '/api/spec-completion-review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecBookSourceStatusRoute = ApiSpecBookSourceStatusRouteImport.update({
+  id: '/api/spec-book-source-status',
+  path: '/api/spec-book-source-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecBookMaterialRoute = ApiSpecBookMaterialRouteImport.update({
+  id: '/api/spec-book-material',
+  path: '/api/spec-book-material',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSharedDesignBoardRoute = ApiSharedDesignBoardRouteImport.update({
@@ -398,6 +410,12 @@ const ApiMyTodosRoute = ApiMyTodosRouteImport.update({
   path: '/api/my-todos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMaterialCatalogSuggestionsRoute =
+  ApiMaterialCatalogSuggestionsRouteImport.update({
+    id: '/api/material-catalog-suggestions',
+    path: '/api/material-catalog-suggestions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiMarvinUploadRoute = ApiMarvinUploadRouteImport.update({
   id: '/api/marvin-upload',
   path: '/api/marvin-upload',
@@ -497,6 +515,11 @@ const ApiCreateStripePaymentLinkRoute =
     path: '/api/create-stripe-payment-link',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiConstructionUploadsRoute = ApiConstructionUploadsRouteImport.update({
+  id: '/api/construction-uploads',
+  path: '/api/construction-uploads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiConstructionDocumentNotificationsRoute =
   ApiConstructionDocumentNotificationsRouteImport.update({
     id: '/api/construction-document-notifications',
@@ -508,33 +531,16 @@ const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
   path: '/api/client-dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSpecCompletionReviewRoute = ApiSpecCompletionReviewRouteImport.update({
-  id: '/api/spec-completion-review',
-  path: '/api/spec-completion-review',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiCheckSpecCompletionRoute = ApiCheckSpecCompletionRouteImport.update({
   id: '/api/check-spec-completion',
   path: '/api/check-spec-completion',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSuggestBoardColorRoute = ApiSuggestBoardColorRouteImport.update({
-  id: '/api/suggest-board-color',
-  path: '/api/suggest-board-color',
+const ApiCheckMaterialPlansRoute = ApiCheckMaterialPlansRouteImport.update({
+  id: '/api/check-material-plans',
+  path: '/api/check-material-plans',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSuggestPlanDimensionsRoute =
-  ApiSuggestPlanDimensionsRouteImport.update({
-    id: '/api/suggest-plan-dimensions',
-    path: '/api/suggest-plan-dimensions',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiCheckMaterialPlansRoute =
-  ApiCheckMaterialPlansRouteImport.update({
-    id: '/api/check-material-plans',
-    path: '/api/check-material-plans',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiCheckMaterialFinishesRoute =
   ApiCheckMaterialFinishesRouteImport.update({
     id: '/api/check-material-finishes',
@@ -707,14 +713,9 @@ const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/construction-uploads': typeof ConstructionUploadsRoute
-  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
-  '/view-user': typeof ViewUserRoute
-  '/api/view-user': typeof ApiViewUserRoute
-  '/api/spec-ordering': typeof ApiSpecOrderingRoute
-  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/construction-uploads': typeof ConstructionUploadsRoute
   '/ea-desk': typeof EaDeskRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
@@ -723,15 +724,14 @@ export interface FileRoutesByFullPath {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/view-user': typeof ViewUserRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
-  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
-  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
-  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
-  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
-  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
+  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
+  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
+  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -751,6 +751,7 @@ export interface FileRoutesByFullPath {
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
+  '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
@@ -772,12 +773,18 @@ export interface FileRoutesByFullPath {
   '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
+  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
+  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
+  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
+  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
+  '/api/view-user': typeof ApiViewUserRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/client/financials': typeof ClientFinancialsRoute
   '/extension/connect': typeof ExtensionConnectRoute
@@ -821,14 +828,9 @@ export interface FileRoutesByFullPath {
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
 export interface FileRoutesByTo {
-  '/construction-uploads': typeof ConstructionUploadsRoute
-  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
-  '/view-user': typeof ViewUserRoute
-  '/api/view-user': typeof ApiViewUserRoute
-  '/api/spec-ordering': typeof ApiSpecOrderingRoute
-  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/construction-uploads': typeof ConstructionUploadsRoute
   '/ea-desk': typeof EaDeskRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
@@ -837,15 +839,14 @@ export interface FileRoutesByTo {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/view-user': typeof ViewUserRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
-  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
-  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
-  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
-  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
-  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
+  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
+  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
+  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -865,6 +866,7 @@ export interface FileRoutesByTo {
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
+  '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
@@ -886,12 +888,18 @@ export interface FileRoutesByTo {
   '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
+  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
+  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
+  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
+  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
+  '/api/view-user': typeof ApiViewUserRoute
   '/catalog/$productId': typeof CatalogProductIdRoute
   '/client/financials': typeof ClientFinancialsRoute
   '/extension/connect': typeof ExtensionConnectRoute
@@ -935,15 +943,10 @@ export interface FileRoutesByTo {
   '/projects/$id/rooms/$roomId': typeof ProjectsIdRoomsRoomIdRoute
 }
 export interface FileRoutesById {
-  '/construction-uploads': typeof ConstructionUploadsRoute
-  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
-  '/view-user': typeof ViewUserRoute
-  '/api/view-user': typeof ApiViewUserRoute
-  '/api/spec-ordering': typeof ApiSpecOrderingRoute
-  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/catalog': typeof CatalogRoute
+  '/construction-uploads': typeof ConstructionUploadsRoute
   '/ea-desk': typeof EaDeskRoute
   '/financials': typeof FinancialsRoute
   '/login': typeof LoginRoute
@@ -952,15 +955,14 @@ export interface FileRoutesById {
   '/procurement': typeof ProcurementRoute
   '/project-management': typeof ProjectManagementRoute
   '/terms': typeof TermsRoute
+  '/view-user': typeof ViewUserRoute
   '/api/calendar-notifications': typeof ApiCalendarNotificationsRoute
-  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
-  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
-  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
-  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
-  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
   '/api/check-material-finishes': typeof ApiCheckMaterialFinishesRoute
+  '/api/check-material-plans': typeof ApiCheckMaterialPlansRoute
+  '/api/check-spec-completion': typeof ApiCheckSpecCompletionRoute
   '/api/client-dashboard': typeof ApiClientDashboardRoute
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
+  '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
@@ -980,6 +982,7 @@ export interface FileRoutesById {
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
+  '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
@@ -1001,12 +1004,18 @@ export interface FileRoutesById {
   '/api/scrape-products': typeof ApiScrapeProductsRoute
   '/api/scrape-url': typeof ApiScrapeUrlRoute
   '/api/shared-design-board': typeof ApiSharedDesignBoardRoute
+  '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
+  '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
+  '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
+  '/api/suggest-plan-dimensions': typeof ApiSuggestPlanDimensionsRoute
   '/api/upload-design-board-image': typeof ApiUploadDesignBoardImageRoute
   '/api/upload-project-document': typeof ApiUploadProjectDocumentRoute
   '/api/upload-room-image': typeof ApiUploadRoomImageRoute
   '/api/users': typeof ApiUsersRoute
+  '/api/view-user': typeof ApiViewUserRoute
   '/catalog_/$productId': typeof CatalogProductIdRoute
   '/client/financials': typeof ClientFinancialsRoute
   '/extension/connect': typeof ExtensionConnectRoute
@@ -1052,14 +1061,9 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/construction-uploads'
-    | '/api/construction-uploads'
-    | '/view-user'
-    | '/api/view-user'
-    | '/api/spec-ordering'
-    | '/api/spec-book-material'
     | '/'
     | '/catalog'
+    | '/construction-uploads'
     | '/ea-desk'
     | '/financials'
     | '/login'
@@ -1068,15 +1072,14 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/view-user'
     | '/api/calendar-notifications'
-    | '/api/spec-completion-review'
-    | '/api/check-spec-completion'
-    | '/api/suggest-board-color'
-    | '/api/suggest-plan-dimensions'
-    | '/api/check-material-plans'
     | '/api/check-material-finishes'
+    | '/api/check-material-plans'
+    | '/api/check-spec-completion'
     | '/api/client-dashboard'
     | '/api/construction-document-notifications'
+    | '/api/construction-uploads'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
@@ -1096,6 +1099,7 @@ export interface FileRouteTypes {
     | '/api/marvin-fathom-webhook'
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
+    | '/api/material-catalog-suggestions'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
@@ -1117,12 +1121,18 @@ export interface FileRouteTypes {
     | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
+    | '/api/spec-book-material'
     | '/api/spec-book-source-status'
+    | '/api/spec-completion-review'
+    | '/api/spec-ordering'
     | '/api/studio-reminders'
+    | '/api/suggest-board-color'
+    | '/api/suggest-plan-dimensions'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
     | '/api/upload-room-image'
     | '/api/users'
+    | '/api/view-user'
     | '/catalog/$productId'
     | '/client/financials'
     | '/extension/connect'
@@ -1166,14 +1176,9 @@ export interface FileRouteTypes {
     | '/projects/$id/rooms/$roomId'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/construction-uploads'
-    | '/api/construction-uploads'
-    | '/view-user'
-    | '/api/view-user'
-    | '/api/spec-ordering'
-    | '/api/spec-book-material'
     | '/'
     | '/catalog'
+    | '/construction-uploads'
     | '/ea-desk'
     | '/financials'
     | '/login'
@@ -1182,15 +1187,14 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/view-user'
     | '/api/calendar-notifications'
-    | '/api/spec-completion-review'
-    | '/api/check-spec-completion'
-    | '/api/suggest-board-color'
-    | '/api/suggest-plan-dimensions'
-    | '/api/check-material-plans'
     | '/api/check-material-finishes'
+    | '/api/check-material-plans'
+    | '/api/check-spec-completion'
     | '/api/client-dashboard'
     | '/api/construction-document-notifications'
+    | '/api/construction-uploads'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
@@ -1210,6 +1214,7 @@ export interface FileRouteTypes {
     | '/api/marvin-fathom-webhook'
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
+    | '/api/material-catalog-suggestions'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
@@ -1231,12 +1236,18 @@ export interface FileRouteTypes {
     | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
+    | '/api/spec-book-material'
     | '/api/spec-book-source-status'
+    | '/api/spec-completion-review'
+    | '/api/spec-ordering'
     | '/api/studio-reminders'
+    | '/api/suggest-board-color'
+    | '/api/suggest-plan-dimensions'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
     | '/api/upload-room-image'
     | '/api/users'
+    | '/api/view-user'
     | '/catalog/$productId'
     | '/client/financials'
     | '/extension/connect'
@@ -1279,15 +1290,10 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/projects/$id/rooms/$roomId'
   id:
-    | '/construction-uploads'
-    | '/api/construction-uploads'
-    | '/view-user'
-    | '/api/view-user'
-    | '/api/spec-ordering'
-    | '/api/spec-book-material'
     | '__root__'
     | '/'
     | '/catalog'
+    | '/construction-uploads'
     | '/ea-desk'
     | '/financials'
     | '/login'
@@ -1296,15 +1302,14 @@ export interface FileRouteTypes {
     | '/procurement'
     | '/project-management'
     | '/terms'
+    | '/view-user'
     | '/api/calendar-notifications'
-    | '/api/spec-completion-review'
-    | '/api/check-spec-completion'
-    | '/api/suggest-board-color'
-    | '/api/suggest-plan-dimensions'
-    | '/api/check-material-plans'
     | '/api/check-material-finishes'
+    | '/api/check-material-plans'
+    | '/api/check-spec-completion'
     | '/api/client-dashboard'
     | '/api/construction-document-notifications'
+    | '/api/construction-uploads'
     | '/api/create-stripe-payment-link'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
@@ -1324,6 +1329,7 @@ export interface FileRouteTypes {
     | '/api/marvin-fathom-webhook'
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
+    | '/api/material-catalog-suggestions'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
@@ -1345,12 +1351,18 @@ export interface FileRouteTypes {
     | '/api/scrape-products'
     | '/api/scrape-url'
     | '/api/shared-design-board'
+    | '/api/spec-book-material'
     | '/api/spec-book-source-status'
+    | '/api/spec-completion-review'
+    | '/api/spec-ordering'
     | '/api/studio-reminders'
+    | '/api/suggest-board-color'
+    | '/api/suggest-plan-dimensions'
     | '/api/upload-design-board-image'
     | '/api/upload-project-document'
     | '/api/upload-room-image'
     | '/api/users'
+    | '/api/view-user'
     | '/catalog_/$productId'
     | '/client/financials'
     | '/extension/connect'
@@ -1395,15 +1407,10 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  ViewUserRoute: typeof ViewUserRoute
-  ApiViewUserRoute: typeof ApiViewUserRoute
-  ApiSpecOrderingRoute: typeof ApiSpecOrderingRoute
-  ApiSpecBookMaterialRoute: typeof ApiSpecBookMaterialRoute
   IndexRoute: typeof IndexRoute
   CatalogRoute: typeof CatalogRoute
-  EaDeskRoute: typeof EaDeskRoute
   ConstructionUploadsRoute: typeof ConstructionUploadsRoute
-  ApiConstructionUploadsRoute: typeof ApiConstructionUploadsRoute
+  EaDeskRoute: typeof EaDeskRoute
   FinancialsRoute: typeof FinancialsRoute
   LoginRoute: typeof LoginRoute
   PeopleVendorsRoute: typeof PeopleVendorsRoute
@@ -1411,15 +1418,14 @@ export interface RootRouteChildren {
   ProcurementRoute: typeof ProcurementRoute
   ProjectManagementRoute: typeof ProjectManagementRoute
   TermsRoute: typeof TermsRoute
+  ViewUserRoute: typeof ViewUserRoute
   ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
-  ApiSpecCompletionReviewRoute: typeof ApiSpecCompletionReviewRoute
-  ApiCheckSpecCompletionRoute: typeof ApiCheckSpecCompletionRoute
-  ApiSuggestBoardColorRoute: typeof ApiSuggestBoardColorRoute
-  ApiSuggestPlanDimensionsRoute: typeof ApiSuggestPlanDimensionsRoute
-  ApiCheckMaterialPlansRoute: typeof ApiCheckMaterialPlansRoute
   ApiCheckMaterialFinishesRoute: typeof ApiCheckMaterialFinishesRoute
+  ApiCheckMaterialPlansRoute: typeof ApiCheckMaterialPlansRoute
+  ApiCheckSpecCompletionRoute: typeof ApiCheckSpecCompletionRoute
   ApiClientDashboardRoute: typeof ApiClientDashboardRoute
   ApiConstructionDocumentNotificationsRoute: typeof ApiConstructionDocumentNotificationsRoute
+  ApiConstructionUploadsRoute: typeof ApiConstructionUploadsRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
   ApiDesignBoardCommentTodosRoute: typeof ApiDesignBoardCommentTodosRoute
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
@@ -1439,6 +1445,7 @@ export interface RootRouteChildren {
   ApiMarvinFathomWebhookRoute: typeof ApiMarvinFathomWebhookRoute
   ApiMarvinGmailCallbackRoute: typeof ApiMarvinGmailCallbackRoute
   ApiMarvinUploadRoute: typeof ApiMarvinUploadRoute
+  ApiMaterialCatalogSuggestionsRoute: typeof ApiMaterialCatalogSuggestionsRoute
   ApiMyTodosRoute: typeof ApiMyTodosRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiPresentationBoardRoute: typeof ApiPresentationBoardRoute
@@ -1460,12 +1467,18 @@ export interface RootRouteChildren {
   ApiScrapeProductsRoute: typeof ApiScrapeProductsRoute
   ApiScrapeUrlRoute: typeof ApiScrapeUrlRoute
   ApiSharedDesignBoardRoute: typeof ApiSharedDesignBoardRoute
+  ApiSpecBookMaterialRoute: typeof ApiSpecBookMaterialRoute
   ApiSpecBookSourceStatusRoute: typeof ApiSpecBookSourceStatusRoute
+  ApiSpecCompletionReviewRoute: typeof ApiSpecCompletionReviewRoute
+  ApiSpecOrderingRoute: typeof ApiSpecOrderingRoute
   ApiStudioRemindersRoute: typeof ApiStudioRemindersRoute
+  ApiSuggestBoardColorRoute: typeof ApiSuggestBoardColorRoute
+  ApiSuggestPlanDimensionsRoute: typeof ApiSuggestPlanDimensionsRoute
   ApiUploadDesignBoardImageRoute: typeof ApiUploadDesignBoardImageRoute
   ApiUploadProjectDocumentRoute: typeof ApiUploadProjectDocumentRoute
   ApiUploadRoomImageRoute: typeof ApiUploadRoomImageRoute
   ApiUsersRoute: typeof ApiUsersRoute
+  ApiViewUserRoute: typeof ApiViewUserRoute
   CatalogProductIdRoute: typeof CatalogProductIdRoute
   ClientFinancialsRoute: typeof ClientFinancialsRoute
   ExtensionConnectRoute: typeof ExtensionConnectRoute
@@ -1515,27 +1528,6 @@ declare module '@tanstack/react-router' {
       path: '/view-user'
       fullPath: '/view-user'
       preLoaderRoute: typeof ViewUserRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/view-user': {
-      id: '/api/view-user'
-      path: '/api/view-user'
-      fullPath: '/api/view-user'
-      preLoaderRoute: typeof ApiViewUserRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spec-ordering': {
-      id: '/api/spec-ordering'
-      path: '/api/spec-ordering'
-      fullPath: '/api/spec-ordering'
-      preLoaderRoute: typeof ApiSpecOrderingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spec-book-material': {
-      id: '/api/spec-book-material'
-      path: '/api/spec-book-material'
-      fullPath: '/api/spec-book-material'
-      preLoaderRoute: typeof ApiSpecBookMaterialRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -1599,13 +1591,6 @@ declare module '@tanstack/react-router' {
       path: '/construction-uploads'
       fullPath: '/construction-uploads'
       preLoaderRoute: typeof ConstructionUploadsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/construction-uploads': {
-      id: '/api/construction-uploads'
-      path: '/api/construction-uploads'
-      fullPath: '/api/construction-uploads'
-      preLoaderRoute: typeof ApiConstructionUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog': {
@@ -1699,6 +1684,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CatalogProductIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/view-user': {
+      id: '/api/view-user'
+      path: '/api/view-user'
+      fullPath: '/api/view-user'
+      preLoaderRoute: typeof ApiViewUserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/users': {
       id: '/api/users'
       path: '/api/users'
@@ -1727,11 +1719,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUploadDesignBoardImageRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/spec-book-source-status': {
-      id: '/api/spec-book-source-status'
-      path: '/api/spec-book-source-status'
-      fullPath: '/api/spec-book-source-status'
-      preLoaderRoute: typeof ApiSpecBookSourceStatusRouteImport
+    '/api/suggest-plan-dimensions': {
+      id: '/api/suggest-plan-dimensions'
+      path: '/api/suggest-plan-dimensions'
+      fullPath: '/api/suggest-plan-dimensions'
+      preLoaderRoute: typeof ApiSuggestPlanDimensionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/suggest-board-color': {
+      id: '/api/suggest-board-color'
+      path: '/api/suggest-board-color'
+      fullPath: '/api/suggest-board-color'
+      preLoaderRoute: typeof ApiSuggestBoardColorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/studio-reminders': {
@@ -1739,6 +1738,34 @@ declare module '@tanstack/react-router' {
       path: '/api/studio-reminders'
       fullPath: '/api/studio-reminders'
       preLoaderRoute: typeof ApiStudioRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-ordering': {
+      id: '/api/spec-ordering'
+      path: '/api/spec-ordering'
+      fullPath: '/api/spec-ordering'
+      preLoaderRoute: typeof ApiSpecOrderingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-completion-review': {
+      id: '/api/spec-completion-review'
+      path: '/api/spec-completion-review'
+      fullPath: '/api/spec-completion-review'
+      preLoaderRoute: typeof ApiSpecCompletionReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-book-source-status': {
+      id: '/api/spec-book-source-status'
+      path: '/api/spec-book-source-status'
+      fullPath: '/api/spec-book-source-status'
+      preLoaderRoute: typeof ApiSpecBookSourceStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-book-material': {
+      id: '/api/spec-book-material'
+      path: '/api/spec-book-material'
+      fullPath: '/api/spec-book-material'
+      preLoaderRoute: typeof ApiSpecBookMaterialRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/shared-design-board': {
@@ -1888,6 +1915,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMyTodosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/material-catalog-suggestions': {
+      id: '/api/material-catalog-suggestions'
+      path: '/api/material-catalog-suggestions'
+      fullPath: '/api/material-catalog-suggestions'
+      preLoaderRoute: typeof ApiMaterialCatalogSuggestionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/marvin-upload': {
       id: '/api/marvin-upload'
       path: '/api/marvin-upload'
@@ -2021,6 +2055,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCreateStripePaymentLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/construction-uploads': {
+      id: '/api/construction-uploads'
+      path: '/api/construction-uploads'
+      fullPath: '/api/construction-uploads'
+      preLoaderRoute: typeof ApiConstructionUploadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/construction-document-notifications': {
       id: '/api/construction-document-notifications'
       path: '/api/construction-document-notifications'
@@ -2035,32 +2076,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiClientDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/spec-completion-review': {
-      id: '/api/spec-completion-review'
-      path: '/api/spec-completion-review'
-      fullPath: '/api/spec-completion-review'
-      preLoaderRoute: typeof ApiSpecCompletionReviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/check-spec-completion': {
       id: '/api/check-spec-completion'
       path: '/api/check-spec-completion'
       fullPath: '/api/check-spec-completion'
       preLoaderRoute: typeof ApiCheckSpecCompletionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/suggest-board-color': {
-      id: '/api/suggest-board-color'
-      path: '/api/suggest-board-color'
-      fullPath: '/api/suggest-board-color'
-      preLoaderRoute: typeof ApiSuggestBoardColorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/suggest-plan-dimensions': {
-      id: '/api/suggest-plan-dimensions'
-      path: '/api/suggest-plan-dimensions'
-      fullPath: '/api/suggest-plan-dimensions'
-      preLoaderRoute: typeof ApiSuggestPlanDimensionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/check-material-plans': {
@@ -2310,15 +2330,10 @@ const ApiMarvinCronRouteWithChildren = ApiMarvinCronRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
-  ViewUserRoute: ViewUserRoute,
-  ApiViewUserRoute: ApiViewUserRoute,
-  ApiSpecOrderingRoute: ApiSpecOrderingRoute,
-  ApiSpecBookMaterialRoute: ApiSpecBookMaterialRoute,
   IndexRoute: IndexRoute,
   CatalogRoute: CatalogRoute,
-  EaDeskRoute: EaDeskRoute,
   ConstructionUploadsRoute: ConstructionUploadsRoute,
-  ApiConstructionUploadsRoute: ApiConstructionUploadsRoute,
+  EaDeskRoute: EaDeskRoute,
   FinancialsRoute: FinancialsRoute,
   LoginRoute: LoginRoute,
   PeopleVendorsRoute: PeopleVendorsRoute,
@@ -2326,16 +2341,15 @@ const rootRouteChildren: RootRouteChildren = {
   ProcurementRoute: ProcurementRoute,
   ProjectManagementRoute: ProjectManagementRoute,
   TermsRoute: TermsRoute,
+  ViewUserRoute: ViewUserRoute,
   ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
-  ApiSpecCompletionReviewRoute: ApiSpecCompletionReviewRoute,
-  ApiCheckSpecCompletionRoute: ApiCheckSpecCompletionRoute,
-  ApiSuggestBoardColorRoute: ApiSuggestBoardColorRoute,
-  ApiSuggestPlanDimensionsRoute: ApiSuggestPlanDimensionsRoute,
-  ApiCheckMaterialPlansRoute: ApiCheckMaterialPlansRoute,
   ApiCheckMaterialFinishesRoute: ApiCheckMaterialFinishesRoute,
+  ApiCheckMaterialPlansRoute: ApiCheckMaterialPlansRoute,
+  ApiCheckSpecCompletionRoute: ApiCheckSpecCompletionRoute,
   ApiClientDashboardRoute: ApiClientDashboardRoute,
   ApiConstructionDocumentNotificationsRoute:
     ApiConstructionDocumentNotificationsRoute,
+  ApiConstructionUploadsRoute: ApiConstructionUploadsRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
   ApiDesignBoardCommentTodosRoute: ApiDesignBoardCommentTodosRoute,
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
@@ -2355,6 +2369,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMarvinFathomWebhookRoute: ApiMarvinFathomWebhookRoute,
   ApiMarvinGmailCallbackRoute: ApiMarvinGmailCallbackRoute,
   ApiMarvinUploadRoute: ApiMarvinUploadRoute,
+  ApiMaterialCatalogSuggestionsRoute: ApiMaterialCatalogSuggestionsRoute,
   ApiMyTodosRoute: ApiMyTodosRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiPresentationBoardRoute: ApiPresentationBoardRoute,
@@ -2376,12 +2391,18 @@ const rootRouteChildren: RootRouteChildren = {
   ApiScrapeProductsRoute: ApiScrapeProductsRoute,
   ApiScrapeUrlRoute: ApiScrapeUrlRoute,
   ApiSharedDesignBoardRoute: ApiSharedDesignBoardRoute,
+  ApiSpecBookMaterialRoute: ApiSpecBookMaterialRoute,
   ApiSpecBookSourceStatusRoute: ApiSpecBookSourceStatusRoute,
+  ApiSpecCompletionReviewRoute: ApiSpecCompletionReviewRoute,
+  ApiSpecOrderingRoute: ApiSpecOrderingRoute,
   ApiStudioRemindersRoute: ApiStudioRemindersRoute,
+  ApiSuggestBoardColorRoute: ApiSuggestBoardColorRoute,
+  ApiSuggestPlanDimensionsRoute: ApiSuggestPlanDimensionsRoute,
   ApiUploadDesignBoardImageRoute: ApiUploadDesignBoardImageRoute,
   ApiUploadProjectDocumentRoute: ApiUploadProjectDocumentRoute,
   ApiUploadRoomImageRoute: ApiUploadRoomImageRoute,
   ApiUsersRoute: ApiUsersRoute,
+  ApiViewUserRoute: ApiViewUserRoute,
   CatalogProductIdRoute: CatalogProductIdRoute,
   ClientFinancialsRoute: ClientFinancialsRoute,
   ExtensionConnectRoute: ExtensionConnectRoute,

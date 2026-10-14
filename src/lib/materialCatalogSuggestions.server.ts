@@ -1,0 +1,250 @@
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { authorizeCompletionProject } from "@/lib/specCompletion.server";
+import { cleanUuid } from "@/lib/ids";
+import {
+  rankCatalogSuggestions,
+  catalogProductMatches,
+  untouchedCatalogPlaceholder,
+  type CatalogUse,
+} from "@/lib/materialCatalogSuggestions";
+import { templateForRoomName } from "@/lib/roomTemplates";
+import { buildClientProductName } from "@/lib/clientProductName";
+import { materialCoversTemplateSuggestion } from "@/lib/materialSuggestions";
+import { materialVisibleInProcurement } from "@/lib/materialSelection";
+import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Product, MaterialItem } from "@/lib/db";
+
+const admin: SupabaseClient = supabaseAdmin;
+type CatalogHistory = {
+  product_id: string | null;
+  project_id: string;
+  not_needed: boolean;
+  room: { name: string } | null;
+};
+type RoomCatalogHistory = { product_id: string; room: { name: string; project_id: string } | null };
+const json = (body: unknown, status = 200) =>
+  Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+async function allRows<T>(table: string, select: string) {
+  const rows: T[] = [];
+  for (let offset = 0; offset < 20000; offset += 1000) {
+    const { data, error } = await admin
+      .from(table)
+      .select(select)
+      .order("id")
+      .range(offset, offset + 999);
+    if (error) throw error;
+    rows.push(...((data ?? []) as T[]));
+    if (!data || data.length < 1000) return rows;
+  }
+  throw new Error("Catalog is too large for this lookup.");
+}
+
+export async function materialCatalogRequest(request: Request) {
+  const access = await authorizeCompletionProject(request, [
+    "project_id",
+    "room_id",
+    "label",
+    "action",
+    "product_id",
+    "existing_item_id",
+    "expected_updated_at",
+    "criteria",
+  ]);
+  if (access instanceof Response) return access;
+  const { projectId, body } = access;
+  const roomId = cleanUuid(body.room_id);
+  if (
+    !roomId ||
+    !["list", "add"].includes(body.action) ||
+    typeof body.label !== "string" ||
+    body.label.length > 180
+  )
+    return json({ error: "Choose a room and missing item." }, 400);
+  const { data: room, error: roomError } = await admin
+    .from("rooms")
+    .select("id,name")
+    .eq("id", roomId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (roomError) throw roomError;
+  if (!room) return json({ error: "This room is not in the project." }, 404);
+  const template = templateForRoomName(room.name, true).find((item) => item.label === body.label);
+  if (!template) return json({ error: "Choose an item from this room’s missing-items list." }, 400);
+  if (body.action === "list") {
+    const criteria = body.criteria ?? {};
+    if (
+      !criteria ||
+      typeof criteria !== "object" ||
+      Array.isArray(criteria) ||
+      Object.keys(criteria).some((key) => !["search", "width", "mount"].includes(key)) ||
+      (criteria.search !== undefined &&
+        (typeof criteria.search !== "string" || criteria.search.length > 100)) ||
+      (criteria.width != null &&
+        (typeof criteria.width !== "number" ||
+          !Number.isFinite(criteria.width) ||
+          criteria.width <= 0 ||
+          criteria.width > 200)) ||
+      (criteria.mount !== undefined &&
+        !["any", "wall", "undermount", "vessel", "drop_in"].includes(criteria.mount))
+    )
+      return json({ error: "Enter valid catalog filters." }, 400);
+    const [products, history, roomHistory] = await Promise.all([
+      allRows<Product>("products", "*"),
+      allRows<CatalogHistory>(
+        "material_items",
+        "id,product_id,project_id,not_needed,room:rooms!material_items_room_id_fkey(name)",
+      ),
+      allRows<RoomCatalogHistory>(
+        "room_products",
+        "id,product_id,room:rooms!room_products_room_id_fkey(name,project_id)",
+      ),
+    ]);
+    const uses: CatalogUse[] = history
+      .filter((row) => row.product_id && !row.not_needed)
+      .map((row) => ({
+        product_id: row.product_id!,
+        project_id: row.project_id,
+        room_name: row.room?.name || "",
+      }));
+    for (const row of roomHistory) {
+      if (row.room?.project_id)
+        uses.push({
+          product_id: row.product_id,
+          project_id: row.room.project_id,
+          room_name: row.room.name,
+        });
+    }
+    return json({
+      suggestions: rankCatalogSuggestions(
+        products,
+        uses,
+        projectId,
+        room.name,
+        template.label,
+        template.category,
+        criteria,
+      ),
+    });
+  }
+  const productId = cleanUuid(body.product_id);
+  if (!productId || (body.existing_item_id != null && !cleanUuid(body.existing_item_id)))
+    return json({ error: "Choose a catalog product." }, 400);
+  const [
+    { data: product, error: productError },
+    { data: items, error: itemsError },
+    { data: board, error: boardError },
+  ] = await Promise.all([
+    admin.from("products").select("*").eq("id", productId).maybeSingle(),
+    admin
+      .from("material_items")
+      .select("*,product:products(*)")
+      .eq("room_id", roomId)
+      .eq("project_id", projectId),
+    admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),
+  ]);
+  if (productError || itemsError || boardError) throw productError || itemsError || boardError;
+  if (!product || !catalogProductMatches(product, template.label, template.category, room.name))
+    return json({ error: "Choose a matching catalog product." }, 400);
+  const currentItems = (items ?? []) as MaterialItem[];
+  const stale = new Set(staleSpecBookMaterialIds(projectId, currentItems, board?.board_state));
+  const selected = currentItems.find(
+    (item) =>
+      !stale.has(item.id) &&
+      materialVisibleInProcurement(item) &&
+      materialCoversTemplateSuggestion(item, template, room.name),
+  );
+  if (selected)
+    return json(
+      { error: "This item already has a selection. Refresh Materials to review it." },
+      409,
+    );
+  if (currentItems.some((item) => item.not_needed && item.item_label === template.label))
+    return json({ error: "This item was marked not needed. Restore it in Materials first." }, 409);
+  const existing = body.existing_item_id
+    ? currentItems.find((item) => item.id === body.existing_item_id)
+    : currentItems.find(
+        (item) => item.item_label === template.label && untouchedCatalogPlaceholder(item),
+      );
+  if (
+    body.existing_item_id &&
+    (!existing ||
+      existing.item_label !== template.label ||
+      !untouchedCatalogPlaceholder(existing) ||
+      existing.updated_at !== body.expected_updated_at)
+  )
+    return json({ error: "This item changed. Refresh Materials before adding a product." }, 409);
+  const patch = {
+    product_id: product.id,
+    product_url: product.product_url,
+    image_url: product.image_url,
+    color: product.finish,
+    is_required: false,
+    not_needed: false,
+    quantity: null,
+    quantity_tbd: true,
+    quantity_unit: "count",
+    scrape_status: "scraped",
+    scrape_error: null,
+  };
+  // Manual selection: retain the catalog product and leave quantity for staff to confirm.
+  const result = existing
+    ? await admin
+        .from("material_items")
+        .update(patch)
+        .eq("id", existing.id)
+        .eq("project_id", projectId)
+        .eq("room_id", roomId)
+        .eq("updated_at", existing.updated_at)
+        .is("product_id", null)
+        .select("id")
+        .maybeSingle()
+    : await admin
+        .from("material_items")
+        .insert({
+          ...patch,
+          project_id: projectId,
+          room_id: roomId,
+          item_label: template.label,
+          client_product_name: buildClientProductName(room.name, template.label),
+          category: template.category,
+          sort_order: currentItems.length,
+          source_board_id: null,
+          source_board_page_id: null,
+          source_board_element_id: null,
+          ordered: false,
+        })
+        .select("id")
+        .single();
+  if (result.error) throw result.error;
+  if (!result.data)
+    return json({ error: "This item changed. Refresh Materials before adding." }, 409);
+  const { data: links, error: linksError } = await admin
+    .from("room_products")
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("product_id", productId)
+    .limit(1);
+  if (linksError)
+    return json(
+      {
+        error:
+          "The material was added, but its room connection could not be confirmed. Refresh Materials.",
+      },
+      409,
+    );
+  if (!links?.length) {
+    const { error } = await admin
+      .from("room_products")
+      .insert({ room_id: roomId, product_id: productId, is_key_selection: false });
+    if (error)
+      return json(
+        {
+          error:
+            "The material was added, but its room connection could not be confirmed. Refresh Materials.",
+        },
+        409,
+      );
+  }
+  return json({ item_id: result.data.id });
+}

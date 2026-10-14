@@ -121,12 +121,9 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-6 sm:p-8">
         <DialogHeader>
           <DialogTitle className="font-display text-3xl">Spec Book completion review</DialogTitle>
-          <DialogDescription>New checks first refresh and save missing product details and prices, then look for Jessica’s newer construction PDFs and review the latest selections and plans. Existing manual details and prices are kept. Opening saved results does not refresh products, email, or run another AI check.</DialogDescription>
-          {productRefresh && <p className="text-xs text-muted-foreground">Product info refreshed: {productRefresh.saved} saved{productRefresh.failed ? `; ${productRefresh.failed} products could not be refreshed and were reviewed using their saved details` : ""}.</p>}
-          <p className="text-xs text-muted-foreground">Missing-size checks apply to unresolved products with multiple published size choices. Blank dimensions alone do not create an issue.</p>
-          <p className="text-xs text-muted-foreground">Prices are optional for countertops, paint, and cabinetry.</p>
-          <p className="text-xs text-muted-foreground">GPT-6.1 Sol · High reasoning · $3 target per AI check. Requests estimated above $5 are stopped. Color and dimension suggestions are separate checks.</p>
+          <DialogDescription className="sr-only">Refresh product info, then review and resolve the project’s Spec Book findings. Opening saved results does not run a new check.</DialogDescription>
         </DialogHeader>
+        {productRefresh && <p className="text-xs text-muted-foreground">Product info refreshed: {productRefresh.saved} saved{productRefresh.failed ? `; ${productRefresh.failed} products could not be refreshed and were reviewed using their saved details` : ""}.</p>}
         <SpecCompletionResults key={reviewedSignature + (activeReport?.checked_at ?? "pending")} projectId={projectId} rooms={rooms} items={items} findings={details}
           issues={saved?.issues} onStatusChange={saved ? changeStatus : undefined} savingIssue={savingIssue}
           onSaveDetail={saved && !busy ? saveDetail : undefined}
