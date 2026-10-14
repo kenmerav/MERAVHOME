@@ -2,6 +2,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { refreshMaterialProductInfo } from "@/lib/materialProductRefresh";
 import { hasCompletionValue, needsCompletionColor, needsCompletionPrice } from "@/lib/specCompletion";
 import type { MaterialItem, Product } from "@/lib/db";
+import { materialVisibleInProcurement } from "@/lib/materialSelection";
+import { toProductCategory } from "@/lib/roomTemplates";
 
 type CatalogProductInfo = Pick<Product, "name" | "category" | "product_url" | "price" | "finish" | "dimensions" | "image_url"> & Partial<Pick<Product, "selected_size">>;
 export function missingCatalogProductInfo(product: CatalogProductInfo, material: Partial<MaterialItem> = {}) {
@@ -13,6 +15,19 @@ export function missingCatalogProductInfo(product: CatalogProductInfo, material:
     !hasCompletionValue(product.dimensions) && !hasCompletionValue(product.selected_size) ? "dimensions" : null,
     needsCompletionColor({ ...item, color: null, product: { ...product, finish: color } as Product }) ? "color" : null,
   ].filter((field): field is string => !!field);
+}
+
+export function missingMaterialProductInfo(items: MaterialItem[]) {
+  return items.filter(materialVisibleInProcurement).flatMap(item => {
+    const product = item.product || { name: item.item_label, category: toProductCategory(item.category), product_url: item.product_url,
+      image_url: null, price: null, dimensions: null, finish: null };
+    const missing = missingCatalogProductInfo(product, item);
+    if (!missing.length) return [];
+    let hasLink = false;
+    try { const url = new URL(item.product_url || ""); hasLink = ["http:", "https:"].includes(url.protocol) && !url.username && !url.password; }
+    catch { /* Keep missing items without a source in the review. */ }
+    return [{ item, missing, hasLink }];
+  });
 }
 
 // Run after the catalog choice has been saved. A retailer failure must never

@@ -268,6 +268,12 @@ describe("material metadata enrichment", () => {
     expect(writes.find(q => q.table === "material_items").write).toMatchObject({ scrape_status: "scraped", scrape_error: null, color: "White" });
     expect(writes.find(q => q.table === "products").write.dimensions).toBe("3cm");
   });
+  it.each(["Paint", "Cabinetry"])("keeps missing %s pricing optional while saving its other details", async category => {
+    mock.query.mockImplementation(q => q.op === "update" ? { error: null } : q.table === "material_items" ? { data: { id: item, room_id: null, item_label: `${category} Finish`, category } } : { data: { id: product, price: null } });
+    const response = await handlers.PUT({ request: request("PUT", { project_id: project, rows: [{ material_item_id: item, existing_product_id: product, url, scraped: { color: "White", dimensions: "Sample size: 4 in" } }] }) });
+    expect(await response.json()).toMatchObject({ price_missing_count: 0 });
+    expect(mock.query.mock.calls.map(([q]) => q).find(q => q.table === "material_items" && q.op === "update").write).toMatchObject({ scrape_status: "scraped", scrape_error: null, color: "White" });
+  });
   it("scrapes priced items with missing specs and does not stop at a direct Shopify price", async () => {
     mock.query.mockResolvedValue({
       data: [
