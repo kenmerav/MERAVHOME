@@ -92,10 +92,12 @@ export function constructionPageEntries(
   pages: number,
   views: ConstructionDrawingView[],
   rooms: { id: string; name: string }[] = [],
+  printedAreas: { page: number; area: string | null }[] = [],
 ) {
   if (!Number.isSafeInteger(pages) || pages < 0 || pages > MAX_CONSTRUCTION_PAGES)
     throw Error("This PDF has an unsupported page count.");
   const byPage = new Map<number, ConstructionDrawingView[]>();
+  const areasByPage = new Map(printedAreas.map((label) => [label.page, label.area]));
   for (const view of views) byPage.set(view.page, [...(byPage.get(view.page) || []), view]);
   return Array.from({ length: pages }, (_, index) => {
     const page = index + 1,
@@ -104,10 +106,11 @@ export function constructionPageEntries(
     const names = [
       ...new Set(pageViews.map((v) => rooms.find((r) => r.id === v.roomId)?.name).filter(Boolean)),
     ];
-    const label = [`Page ${page}`, ...sheets, ...pageViews.map((v) => v.title), ...names].join(
-      " · ",
-    );
-    return { page, sheets, label, views: pageViews };
+    const area = areasByPage.get(page) || null;
+    const label = [area, `Page ${page}`, ...sheets, ...pageViews.map((v) => v.title), ...names]
+      .filter(Boolean)
+      .join(" · ");
+    return { page, sheets, area, label, views: pageViews };
   });
 }
 export function filterConstructionPages<T extends { page: number; label: string }>(

@@ -8,6 +8,7 @@ import {
   claimConstructionIndex,
   validateDrawingCitation,
   failConstructionScan,
+  saveConstructionPageAreas,
 } from "./constructionDrawingViews.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -124,6 +125,19 @@ export async function measuredApi(request: Request) {
     }
     if (!roomId) throw new ProjectAccessError("Choose a room.", 400);
     const body = (await boundedJson(request, 1024 * 1024)) as any;
+    if (body.action === "save-page-areas") {
+      const pageAreas = await saveConstructionPageAreas(
+        projectId,
+        scopedId.parse(body.documentId),
+        context.rooms,
+        z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .parse(body.sourceKey),
+        body.pageAreas,
+      );
+      return privateJson({ pageAreas });
+    }
     if (body.action === "save-rendering") {
       const result = await saveMeasuredRoomRendering(
         projectId,

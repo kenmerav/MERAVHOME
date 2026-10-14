@@ -31,6 +31,16 @@ rendered at full preview quality; superseded page renders are cancelled. Preview
 pinned to document revision, physical page and crop, so an old preview cannot be selected under
 a new page citation. Source images and citations continue through the same private save flow.
 
+Page labels use the literal printed **AREA** field, read with local browser OCR from the title
+block. The language engine/dictionary download is public; drawing pixels stay in the browser.
+OCR does not use OpenAI credits. Names remain as printed, including wrapped names and bathroom
+numbers. A missing/uncertain AREA keeps its physical page label instead of guessing from project
+room assignments. Page/sheet numbers remain visible and search includes the printed area name.
+Complete results (including null labels) persist in the existing private bucket as a separate
+`<source-key>-areas-v1.json` record. Project/room authorization, current source revision and
+page coverage are checked before saving. Later visits reuse this record; labels do not overwrite
+the room-view index, drawings or Spec Book. New document revisions get their own labels.
+
 Indices live privately under `<project-id>/measured/drawings/<source-key>.json` in the same bucket.
 Their key includes document identity, source path, revision metadata and current rooms; changed
 documents invalidate the index. Cropped source images are immutable room-scoped assets. Source

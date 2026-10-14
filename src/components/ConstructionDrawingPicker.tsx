@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createClientOnlyFn } from "@tanstack/react-start";
 import { studioHeaders } from "@/lib/measuredRequest";
 import {
   drawingBoundsSchema,
@@ -14,6 +15,7 @@ import {
   previewConstructionPage,
   cropConstructionPage,
 } from "@/lib/constructionPdfPreview";
+import { printedAreaPageName, type PrintedPageAreas } from "@/lib/constructionPageAreas";
 
 type DrawingData = {
   documents: { id: string; title: string; updatedAt: string }[];
@@ -24,8 +26,19 @@ type DrawingData = {
   status?: string;
   error?: string;
   pages?: number;
+  pageAreas?: PrintedPageAreas | null;
 };
 const fullPage: DrawingBounds = { left: 0, top: 0, right: 1, bottom: 1 };
+const readPrintedAreas = createClientOnlyFn(
+  async (
+    pdf: Awaited<ReturnType<typeof openConstructionPdf>>,
+    progress: (done: number, total: number) => void,
+    signal: AbortSignal,
+  ) => {
+    const { readConstructionPageAreas } = await import("@/lib/constructionPageAreas.client");
+    return readConstructionPageAreas(pdf, progress, signal);
+  },
+);
 export function ConstructionDrawingPicker({
   projectId,
   roomId,
@@ -60,6 +73,12 @@ export function ConstructionDrawingPicker({
     [documentsLoading, setDocumentsLoading] = useState(true),
     [choosing, setChoosing] = useState(false),
     [starting, setStarting] = useState(false);
+  const [localAreas, setLocalAreas] = useState<{ key: string; value: PrintedPageAreas } | null>(
+    null,
+  );
+  const [areaProgress, setAreaProgress] = useState<{ done: number; total: number } | null>(null);
+  const [areaError, setAreaError] = useState("");
+  const [areaRetry, setAreaRetry] = useState(0);
   const epoch = useRef(0);
   const choosingRef = useRef(false);
   const selectionRef = useRef("");
@@ -121,9 +140,12 @@ export function ConstructionDrawingPicker({
   const loading = pdfLoading || pageLoading;
   const allViews = useMemo(() => data.allViews || data.views || [], [data.allViews, data.views]);
   const pageCount = pdf?.numPages || data.pages || 0;
+  const pageAreas = documentKey
+    ? data.pageAreas || (localAreas?.key === documentKey ? localAreas.value : undefined)
+    : undefined;
   const pages = useMemo(
-    () => constructionPageEntries(pageCount, allViews, data.rooms),
-    [pageCount, allViews, data.rooms],
+    () => constructionPageEntries(pageCount, allViews, data.rooms, pageAreas?.labels),
+    [pageCount, allViews, data.rooms, pageAreas],
   );
   const visiblePages = useMemo(
     () => filterConstructionPages(pages, pageSearch),
@@ -178,6 +200,55 @@ export function ConstructionDrawingPicker({
       if (loaded) void loaded.destroy();
     };
   }, [documentKey]);
+  useEffect(() => {
+    if (!pdf || !documentKey || !data.document || data.pageAreas) {
+      setAreaProgress(null);
+      return;
+    }
+    let active = true;
+    const controller = new AbortController();
+    const doc = data.document;
+    setAreaError("");
+    setAreaProgress({ done: 0, total: pdf.numPages });
+    void (async () => {
+      try {
+        if (!active) return;
+        const labels =
+          localAreas?.key === documentKey
+            ? localAreas.value
+            : await readPrintedAreas(
+                pdf,
+                (done, total) => {
+                  if (active) setAreaProgress({ done, total });
+                },
+                controller.signal,
+              );
+        if (!active) return;
+        setLocalAreas({ key: documentKey, value: labels });
+        const result = await request(
+          {
+            action: "save-page-areas",
+            documentId: doc.id,
+            sourceKey: documentKey,
+            pageAreas: labels,
+          },
+          doc.id,
+        );
+        if (active) setLocalAreas({ key: documentKey, value: result.pageAreas });
+      } catch (e) {
+        if (active)
+          setAreaError(
+            "Could not read or save the printed area names. All pages are still available.",
+          );
+      } finally {
+        if (active) setAreaProgress(null);
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [pdf, documentKey, data.pageAreas, areaRetry]);
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
@@ -262,7 +333,7 @@ export function ConstructionDrawingPicker({
           documentTitle: data.document.title,
           sourceKey: data.document.key,
           viewId: viewId || `manual-page-${page}`,
-          title: selected?.title || `Manually selected PDF page ${page}`,
+          title: selected?.title || printedAreaPageName(page, currentPage?.area),
           sheet:
             selected?.sheet ||
             (currentPage?.sheets.length === 1 ? currentPage.sheets[0] : `PDF page ${page}`),
@@ -365,6 +436,24 @@ export function ConstructionDrawingPicker({
                   Every page is available, including pages without a room match. Browsing does not
                   use AI credits.
                 </p>
+                {areaProgress && (
+                  <p role="status" className="text-xs mt-2">
+                    Reading printed area names… {areaProgress.done} of {areaProgress.total} pages.
+                    No AI credits used.
+                  </p>
+                )}
+                {areaError && (
+                  <p className="text-xs mt-2">
+                    {areaError}{" "}
+                    <button
+                      className="underline"
+                      type="button"
+                      onClick={() => setAreaRetry((old) => old + 1)}
+                    >
+                      Retry area labels
+                    </button>
+                  </p>
+                )}
                 {pageCount ? (
                   <>
                     <label className="block text-xs mt-3" htmlFor="construction-page-search">
@@ -394,9 +483,11 @@ export function ConstructionDrawingPicker({
                           onClick={() => selectPage(p.page)}
                           className={`w-full text-left border px-3 py-2 text-sm disabled:opacity-40 ${p.page === page ? "border-ink bg-bone" : "border-transparent hover:bg-bone/60"}`}
                         >
-                          <span>Page {p.page}</span>
+                          <span>{p.area || `Page ${p.page}`}</span>
                           <span className="block text-xs text-muted-foreground truncate">
+                            {p.area ? `Page ${p.page} · ` : ""}
                             {p.sheets.join(" · ") || "Full page available"}
+                            {pageAreas && !p.area ? " · Area name not found" : ""}
                           </span>
                         </button>
                       ))}
@@ -433,7 +524,7 @@ export function ConstructionDrawingPicker({
                         >
                           {pages.map((p) => (
                             <option key={p.page} value={p.page}>
-                              Page {p.page}
+                              {printedAreaPageName(p.page, p.area)}
                               {p.sheets.length ? ` · ${p.sheets.join(" / ")}` : ""}
                             </option>
                           ))}
@@ -575,7 +666,7 @@ export function ConstructionDrawingPicker({
             </div>
             <div>
               <p className="text-sm mb-3">
-                PDF page {page}
+                {currentPage?.area ? `${currentPage.area} · ` : ""}PDF page {page}
                 {pageCount ? ` of ${pageCount}` : ""}
                 {currentPage?.sheets.length ? ` · ${currentPage.sheets.join(" / ")}` : ""}
                 {selected ? ` · ${selected.title}` : " · Full page"}

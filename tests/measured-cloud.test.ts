@@ -535,6 +535,44 @@ describe("Shared measured rendering boundary and persistence", () => {
     expect(body.views.map((v: any) => v.id)).toEqual(["primary"]);
     expect(body.allViews.map((v: any) => v.id)).toEqual(["primary", "shared"]);
     expect(body.rooms).toEqual([{ id: room, name: "Primary Bathroom" }]);
+    const pageAreas = {
+      version: 1,
+      pages: 31,
+      labels: Array.from({ length: 31 }, (_, i) => ({
+        page: i + 1,
+        area: i === 15 ? "PRIMARY BATH" : null,
+      })),
+    };
+    const save = { action: "save-page-areas", documentId: docId, sourceKey: key, pageAreas };
+    expect((await measuredApi(request(save))).status).toBe(200);
+    expect((await (await measuredApi(get)).json()).pageAreas).toEqual(pageAreas);
+    expect((await measuredApi(request({ ...save, sourceKey: "f".repeat(64) }))).status).toBe(409);
+    expect((await measuredApi(request({ ...save, documentId: selection }))).status).toBe(404);
+    expect(
+      (
+        await measuredApi(
+          request({
+            ...save,
+            pageAreas: { ...pageAreas, pages: 30, labels: pageAreas.labels.slice(0, 30) },
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    const retry = await (
+      await measuredApi(
+        request({
+          ...save,
+          pageAreas: {
+            ...pageAreas,
+            labels: pageAreas.labels.map((l) => ({ ...l, area: "A different guess" })),
+          },
+        }),
+      )
+    ).json();
+    expect(retry.pageAreas).toEqual(pageAreas);
+    expect((await measuredApi(request(save, false))).status).toBe(401);
+    fake.profile.role = "Client";
+    expect((await measuredApi(request(save))).status).toBe(403);
     expect(fake.start).not.toHaveBeenCalled();
     expect(fake.generate).not.toHaveBeenCalled();
     expect(fake.interpret).not.toHaveBeenCalled();
