@@ -34,13 +34,13 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind) {
   return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimits[kind] };
 }
 
-export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false): Promise<Response> {
+export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false, fetcher:typeof fetch = fetch): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) throw new Error("AI configuration unavailable");
   const headers = { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" };
   const countedRequest = { ...request, model: SPEC_REVIEW_MODEL, reasoning: { effort: "high" } };
   let countResponse: Response;
   try {
-    countResponse = await fetch("https://api.openai.com/v1/responses/input_tokens", {
+    countResponse = await fetcher("https://api.openai.com/v1/responses/input_tokens", {
       method: "POST", signal: AbortSignal.timeout(45000), headers, body: JSON.stringify(countedRequest),
     });
   } catch {
@@ -54,7 +54,7 @@ export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, 
   const budget = reviewCostCeiling(count?.input_tokens, kind);
   // One generation per button press, no automatic retries or hosted tools.
   // This guards estimated model-token cost, not an account-wide billing limit.
-  return fetch("https://api.openai.com/v1/responses", {
+  return fetcher("https://api.openai.com/v1/responses", {
     method: "POST", signal: AbortSignal.timeout(background ? 60000 : reviewTimeouts[kind]), headers,
     body: JSON.stringify({ ...countedRequest, service_tier: "default", store: false,
       max_output_tokens: budget.maxOutputTokens, ...(background ? { background: true } : {}) }),
