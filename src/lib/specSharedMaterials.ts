@@ -90,7 +90,9 @@ export function sameCompletionVariant(a: MaterialItem, b: MaterialItem) {
 function roomSelections(shared: MaterialItem, items: MaterialItem[], rooms: Room[]) {
   const byRoom = new Map(rooms.filter(room => !isSharedCompletionRoom(room)).map(room => [room.id, room]));
   return items.filter(item => materialVisibleInProcurement(item) && byRoom.has(item.room_id) &&
-    sharedSelectionCovers(shared, item.item_label, byRoom.get(item.room_id)!.name));
+    (sameCompletionVariant(shared, item) ||
+      sharedSelectionCovers(shared, item.item_label, byRoom.get(item.room_id)!.name) ||
+      sharedSelectionCovers(item, shared.item_label, byRoom.get(item.room_id)!.name)));
 }
 
 export function sharedCompletionContext(items: MaterialItem[], rooms: Room[]) {

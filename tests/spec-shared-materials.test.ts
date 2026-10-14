@@ -73,6 +73,8 @@ it("computes the shared remainder after separately selected copies, rather than 
   expect(result[0]).toMatchObject({ room_id: "shared", item_id: "shared-sinks", suggested: "5 count" });
   expect(result[0].message).toContain("room-specific selections");
   expect(cleanCompletionPlanFindings([allocation], [material(), ...local], rooms, 29)).toEqual([]);
+  expect(cleanCompletionPlanFindings([allocation], [material({ quantity: 1 }), local[0],
+    { ...local[1], item_label: "Unlabeled Item" }], rooms, 29)[0].suggested).toBe("5 count");
   expect(sharedCompletionContext(items, rooms)[0].room_selections).toEqual(local.map(item => ({
     item_id: item.id, room_id: item.room_id, quantity: 1, quantity_tbd: false, quantity_unit: "count", same_variant: true,
   })));
