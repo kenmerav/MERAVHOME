@@ -16,6 +16,7 @@ import {
   cropConstructionPage,
 } from "@/lib/constructionPdfPreview";
 import { printedAreaPageName, type PrintedPageAreas } from "@/lib/constructionPageAreas";
+import { ConstructionCropSelector } from "@/components/ConstructionCropSelector";
 
 type DrawingData = {
   documents: { id: string; title: string; updatedAt: string }[];
@@ -79,6 +80,7 @@ export function ConstructionDrawingPicker({
   const [areaProgress, setAreaProgress] = useState<{ done: number; total: number } | null>(null);
   const [areaError, setAreaError] = useState("");
   const [areaRetry, setAreaRetry] = useState(0);
+  const [cropEditorKey, setCropEditorKey] = useState<string | null>(null);
   const epoch = useRef(0);
   const choosingRef = useRef(false);
   const selectionRef = useRef("");
@@ -103,6 +105,7 @@ export function ConstructionDrawingPicker({
     );
     setError("");
     setViewId("");
+    setCropEditorKey(null);
     setBounds(fullPage);
     setPage(1);
     setPageSearch("");
@@ -135,6 +138,8 @@ export function ConstructionDrawingPicker({
   const canvas =
     documentKey && rendered?.key === documentKey && rendered.page === page ? rendered.canvas : null;
   const previewKey = constructionPreviewKey(documentKey, page, bounds);
+  const sheetKey = documentKey ? `${documentKey}:${page}` : "";
+  const editingCrop = !!canvas && cropEditorKey === sheetKey;
   selectionRef.current = previewKey;
   const preview = canvas && previewState?.key === previewKey ? previewState.url : "";
   const loading = pdfLoading || pageLoading;
@@ -158,6 +163,7 @@ export function ConstructionDrawingPicker({
   function selectPage(number: number) {
     if (!Number.isInteger(number) || number < 1 || number > pageCount) return;
     setError("");
+    setCropEditorKey(null);
     setViewId("");
     setBounds(fullPage);
     setPage(number);
@@ -165,6 +171,7 @@ export function ConstructionDrawingPicker({
   function selectView(id: string) {
     const view = allViews.find((v) => v.id === id);
     setError("");
+    setCropEditorKey(null);
     setViewId(id);
     if (view) {
       setPage(view.page);
@@ -311,6 +318,7 @@ export function ConstructionDrawingPicker({
   async function choose(kind: "source" | "support") {
     if (
       choosingRef.current ||
+      editingCrop ||
       disabled ||
       !canvas ||
       !preview ||
@@ -629,7 +637,7 @@ export function ConstructionDrawingPicker({
                 </p>
               )}
               <details className="mt-4">
-                <summary className="text-sm cursor-pointer">Adjust drawing crop</summary>
+                <summary className="text-sm cursor-pointer">Advanced crop coordinates</summary>
                 <button
                   type="button"
                   className="underline text-xs mt-3"
@@ -669,8 +677,23 @@ export function ConstructionDrawingPicker({
                 {currentPage?.area ? `${currentPage.area} · ` : ""}PDF page {page}
                 {pageCount ? ` of ${pageCount}` : ""}
                 {currentPage?.sheets.length ? ` · ${currentPage.sheets.join(" / ")}` : ""}
-                {selected ? ` · ${selected.title}` : " · Full page"}
+                {selected
+                  ? ` · ${selected.title}`
+                  : bounds.left === 0 &&
+                      bounds.top === 0 &&
+                      bounds.right === 1 &&
+                      bounds.bottom === 1
+                    ? " · Full page"
+                    : " · Selected area"}
               </p>
+              <button
+                type="button"
+                className="border border-ink px-4 py-3 mb-3 text-sm disabled:opacity-40"
+                disabled={disabled || loading || !canvas}
+                onClick={() => setCropEditorKey(sheetKey)}
+              >
+                Select drawing area
+              </button>
               {loading || (canvas && !preview && drawingBoundsSchema.safeParse(bounds).success) ? (
                 <p className="text-sm">Loading selected PDF page…</p>
               ) : preview ? (
@@ -683,13 +706,14 @@ export function ConstructionDrawingPicker({
                 <p className="text-sm">Choose a PDF page or matched room view.</p>
               )}
               <p className="text-xs text-muted-foreground mt-2">
-                Review this crop before using it. Adjust its edges to retain dimensions and exclude
-                neighboring views.
+                Use Select drawing area to drag a box around the view you want. Include its title
+                and dimensions.
               </p>
               <div className="flex gap-3 mt-3">
                 <button
                   disabled={
                     disabled ||
+                    editingCrop ||
                     loading ||
                     !preview ||
                     !drawingBoundsSchema.safeParse(bounds).success
@@ -702,6 +726,7 @@ export function ConstructionDrawingPicker({
                 <button
                   disabled={
                     disabled ||
+                    editingCrop ||
                     loading ||
                     !preview ||
                     !drawingBoundsSchema.safeParse(bounds).success
@@ -715,6 +740,20 @@ export function ConstructionDrawingPicker({
             </div>
           </div>
         </>
+      )}
+      {editingCrop && canvas && (
+        <ConstructionCropSelector
+          key={sheetKey}
+          canvas={canvas}
+          bounds={bounds}
+          page={page}
+          onClose={() => setCropEditorKey(null)}
+          onApply={(next) => {
+            setBounds(next);
+            setViewId("");
+            setCropEditorKey(null);
+          }}
+        />
       )}
       {error && (
         <p role="alert" className="text-sm text-red-700 mt-3">
