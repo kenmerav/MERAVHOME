@@ -61,7 +61,12 @@ export function allowsMissingMaterialPrice(item: MaterialItem) {
   if (/^Paint$/i.test(item.product?.category || "")) return true;
   if (/\b(?:faucets?|sinks?|toilets?|mirrors?|lamps?|sconces?|pendants?|chandeliers?|stools?|chairs?|tables?|dispensers?)\b/i.test(label)) return false;
   try {
-    const path = new URL(item.product_url || item.product?.product_url || "").pathname;
+    const source = new URL(item.product_url || item.product?.product_url || "");
+    const path = source.pathname;
+    // Color selections can be grouped with shiplap or cabinetry. A paint
+    // manufacturer's color page still does not require a purchase price.
+    if (/(?:^|\.)(?:sherwin-williams\.com|benjaminmoore\.com)$/i.test(source.hostname) &&
+      /paint-colors|\/color\/|color-family/i.test(path)) return true;
     if (/(?:^|\/)(?:[a-z]+-)?countertops?(?:\/|$)/i.test(path)) return true;
   } catch { /* Labels and categories can still identify the material. */ }
   return /\b(?:countertops?|cabinetry|cabinets?|paint|roman clay|limewash)\b/i.test(label) ||
