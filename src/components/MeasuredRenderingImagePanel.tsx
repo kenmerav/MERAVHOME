@@ -17,6 +17,7 @@ export function MeasuredRenderingImagePanel({
   revisionNumber,
   savedRendering,
   busy,
+  revisionBlockedReason,
   onSave,
   onRevise,
   onOpenGallery,
@@ -30,6 +31,7 @@ export function MeasuredRenderingImagePanel({
   revisionNumber?: number;
   savedRendering?: SavedMeasuredRendering | null;
   busy: boolean;
+  revisionBlockedReason?: string;
   onSave: (caption: string, approve: boolean) => Promise<void>;
   onRevise: (notes: string) => Promise<boolean>;
   onOpenGallery?: () => void;
@@ -54,7 +56,7 @@ export function MeasuredRenderingImagePanel({
     }
   }
   async function revise() {
-    if (disabled || !adjustments.trim()) return;
+    if (disabled || revisionBlockedReason || !adjustments.trim()) return;
     setSubmitting(true);
     setError("");
     try {
@@ -187,7 +189,7 @@ export function MeasuredRenderingImagePanel({
             </p>
             <button
               className="bg-ink text-primary-foreground px-4 py-2 text-sm disabled:opacity-50"
-              disabled={disabled || !adjustments.trim()}
+              disabled={disabled || !!revisionBlockedReason || !adjustments.trim()}
               onClick={() => void revise()}
             >
               {submitting
@@ -196,6 +198,11 @@ export function MeasuredRenderingImagePanel({
                   ? "Rendering in progress…"
                   : "Create adjusted version"}
             </button>
+            {revisionBlockedReason && (
+              <p role="status" className="text-sm text-amber-900">
+                {revisionBlockedReason}
+              </p>
+            )}
           </div>
         </div>
       ) : (

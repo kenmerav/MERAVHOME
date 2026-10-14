@@ -12,6 +12,7 @@ import {
   type SpecSelection,
 } from "@/lib/measuredRendering";
 import { inspectGlb } from "@/lib/measuredModelFile";
+import { measuredLayoutIssues, measuredSpatialNotes } from "@/lib/measuredSpatial";
 import { ConstructionDrawingPicker } from "@/components/ConstructionDrawingPicker";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
 import { MeasuredRenderingProgress, type RenderingProgressJob } from "./MeasuredRenderingProgress";
@@ -114,6 +115,14 @@ export function MeasuredRenderingWorkspace({
     [elevation, items, models],
   );
   const displayedJob = history.find((j) => j.id === presentationJobId);
+  const layoutIssues = useMemo(
+    () => (elevation ? measuredLayoutIssues(elevation) : []),
+    [elevation],
+  );
+  const spatialNotes = useMemo(
+    () => (elevation ? measuredSpatialNotes(elevation) : []),
+    [elevation],
+  );
   const query = `projectId=${encodeURIComponent(projectId)}${roomId ? "&roomId=" + encodeURIComponent(roomId) : ""}`;
   async function api(action?: Record<string, unknown>, extra = "") {
     const res = await fetch(`/api/measured-rendering?${query}${extra}`, {
@@ -472,6 +481,10 @@ export function MeasuredRenderingWorkspace({
     }
   }
   async function photograph(revision?: { parentJobId: string; revisionNotes: string }) {
+    if (layoutIssues.length) {
+      setError(layoutIssues.join(" "));
+      return false;
+    }
     if (inFlight.current || (!revision && (!scene?.basePath || dirty))) return false;
     inFlight.current = true;
     setStartingRequest(true);
@@ -679,6 +692,7 @@ export function MeasuredRenderingWorkspace({
             elevation &&
             !busy &&
             !startingRequest &&
+            (!(scene?.basePath && !dirty) || layoutIssues.length === 0) &&
             progressJob?.status === "complete" &&
             progressJob.kind === "interpret"
               ? scene?.basePath && !dirty
@@ -778,13 +792,33 @@ export function MeasuredRenderingWorkspace({
           1. Build & save camera view
         </button>
         <button
-          disabled={!scene?.basePath || dirty || !!busy || startingRequest}
+          disabled={
+            !scene?.basePath || dirty || !!busy || startingRequest || layoutIssues.length > 0
+          }
           onClick={() => void photograph()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
           2. Create photorealistic image
         </button>
       </div>
+      {layoutIssues.length > 0 && (
+        <section
+          role="status"
+          aria-label="Layout confirmation needed"
+          className="border border-amber-300 bg-amber-50 p-4 mt-4 mb-6 text-sm"
+        >
+          <strong>Confirm island / freestanding layout before creating an image</strong>
+          {layoutIssues.map((issue) => (
+            <p key={issue} className="mt-2">
+              {issue}
+            </p>
+          ))}
+          <p className="mt-2">
+            You can browse the PDF and add the plan with “Add as supporting view.” The elevation
+            preview can still be saved.
+          </p>
+        </section>
+      )}
       {roomId && (
         <ConstructionDrawingPicker
           projectId={projectId}
@@ -895,12 +929,23 @@ export function MeasuredRenderingWorkspace({
           revisionNumber={displayedJob?.revisionNumber}
           savedRendering={displayedJob?.savedRendering}
           busy={!!busy || startingRequest || progressJob?.status === "unknown"}
+          revisionBlockedReason={layoutIssues.length ? layoutIssues.join(" ") : undefined}
           onSave={saveRendering}
           onRevise={(revisionNotes) =>
             photograph({ parentJobId: presentationJobId, revisionNotes })
           }
           onOpenGallery={onOpenGallery ? () => onOpenGallery(roomId) : undefined}
         />
+      )}
+      {spatialNotes.length > 0 && (
+        <section className="border p-4 mb-6 text-sm" aria-label="Drawing layout notes">
+          <strong>Drawing layout notes</strong>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            {spatialNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </section>
       )}
       {review && (
         <section className="border p-4 bg-bone/40 mb-6">

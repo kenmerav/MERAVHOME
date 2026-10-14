@@ -41,6 +41,7 @@ export async function interpretMeasuredElevation(
         id: "mirror-left",
         name: "Left mirror",
         kind: "mirror",
+        installation: "wall-mounted",
         x: 31,
         y: 48,
         z: 1,
@@ -69,7 +70,7 @@ export async function interpretMeasuredElevation(
             type: "input_text",
             text:
               prompt +
-              " Allowed element kinds: cabinet, countertop, mirror, light, faucet, sink, bench, tile, glass, wall, niche, hardware. front must be drawers, doors, open or solid. inferredAxes may contain only width, height, depth, position. Use six-digit #RRGGBB preview colours. Only the room depth may be null. If an element depth is unknown, use a positive representative depth and include depth in inferredAxes and a question; never claim it is measured. Return concise JSON, with all required fields and no prose.",
+              " Allowed element kinds: cabinet, countertop, mirror, light, faucet, sink, bench, tile, glass, wall, niche, hardware. installation, when known, must be freestanding, wall-mounted, ceiling-mounted or built-in. Mark every island cabinet, filler, toe plinth and countertop freestanding. Read an opening to another room as empty space: build only its jambs/header/piers; never cover it with a full wall or extend adjacent shiplap across it. State the opening in questions so the image step retains this source fact. z is the object's depth CENTRE, not its front face. An elevation alone cannot establish an island's setback or circulation clearances: mark position in inferredAxes and ask for a dimensioned plan whenever these are not supplied. A product depth does not establish installation position. front must be drawers, doors, open or solid. inferredAxes may contain only width, height, depth, position. Use six-digit #RRGGBB preview colours. Only the room depth may be null. If an element depth is unknown, use a positive representative depth and include depth in inferredAxes and a question; never claim it is measured. Return concise JSON, with all required fields and no prose.",
           },
           { type: "input_image", image_url: source, detail: "original" },
           {

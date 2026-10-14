@@ -40,6 +40,7 @@ import {
   type CloudScene,
 } from "./measuredCloud.server";
 import { saveMeasuredRoomRendering } from "./measuredRoomRendering.server";
+import { measuredLayoutIssues } from "./measuredSpatial";
 
 export async function measuredApi(request: Request) {
   try {
@@ -282,6 +283,8 @@ export async function measuredApi(request: Request) {
           roomId,
           parent?.sceneId || scopedId.parse(body.sceneId),
         );
+        const layoutIssues = measuredLayoutIssues(scene.elevation);
+        if (layoutIssues.length) throw new ProjectAccessError(layoutIssues.join(" "), 409);
         await validateDrawingCitation(projectId, context.rooms, scene.sourceCitation);
         for (const citation of scene.supportCitations || [])
           await validateDrawingCitation(projectId, context.rooms, citation);

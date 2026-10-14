@@ -24,6 +24,7 @@ import { retrieveSpecReview } from "./specReviewAI.server";
 import { generateMeasuredPhotoreal, type PhotorealInput } from "./measuredPhotoreal.server";
 import { drawingCitationSchema, type DrawingCitation } from "./constructionDrawingViews";
 import { canUseRenderingStudio } from "./permissions";
+import { measuredLayoutIssues } from "./measuredSpatial";
 
 export const MEASURED_BUCKET = "rendering-studio-files";
 export const scopedId = z
@@ -470,6 +471,8 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
       return saveInterpretation(job, { ...result, elevation: result.elevation });
     }
     const scene = await loadScene(projectId, roomId, job.sceneId!);
+    const layoutIssues = measuredLayoutIssues(scene.elevation);
+    if (layoutIssues.length) throw new Error(layoutIssues.join(" "));
     if (!scene.basePath) throw new Error("Save the measured camera view first.");
     const modelProofs = scene.models.map((m) => ({
       specId: m.specId,
@@ -496,11 +499,11 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
     for (const [asset, role] of [
       [
         scene.basePath,
-        "Measured 3D camera: preserve this layout, perspective and specified product dimensions.",
+        "Measured 3D camera: preserve layout, perspective, depth positions and specified product dimensions. The neutral background is not evidence of a solid wall; the source drawing controls openings.",
       ],
       [
         scene.sourcePath,
-        "Construction elevation: cabinetry details, niche/bench and exact tile-band placement.",
+        "Construction elevation: preserve open passages to adjoining rooms, freestanding islands, cabinetry details, niche/bench and exact tile-band placement.",
       ],
       ...(scene.qualityPath
         ? [

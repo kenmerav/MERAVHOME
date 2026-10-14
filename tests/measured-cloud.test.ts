@@ -800,6 +800,67 @@ describe("Shared measured rendering boundary and persistence", () => {
       id + ".png",
     );
   });
+  it("blocks an elevation-only island before queueing an image or revision, including jobs queued before the fix", async () => {
+    const sourceElevation = structuredClone(elevation);
+    sourceElevation.elements[0] = {
+      ...sourceElevation.elements[0],
+      name: "Island cabinet",
+      kind: "cabinet",
+      specId: null,
+      inferredAxes: ["position", "depth"],
+    };
+    const saved = await saveCloudScene(project, room, fake.profile.id, [item], {
+      elevation: sourceElevation,
+      sourcePath: source,
+      basePath: base,
+      models: [],
+      camera: { type: "elevation", position: [50, 50, 500], target: [50, 46, 0] },
+    });
+    const id = "99999999-9999-4999-8999-999999999999";
+    const body = { action: "photoreal", operationId: id, sceneId: saved.id };
+    const response = await measuredApi(request(body));
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("Island layout is unverified");
+    expect(await readStored(jobPath(project, room, id))).toBeNull();
+    expect(fake.start).not.toHaveBeenCalled();
+    await writeStored(jobPath(project, room, originalPhoto), {
+      version: 1,
+      id: originalPhoto,
+      projectId: project,
+      roomId: room,
+      createdBy: fake.profile.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      kind: "photoreal",
+      status: "complete",
+      sceneId: saved.id,
+      imagePath: base,
+    });
+    expect(
+      (
+        await measuredApi(
+          request({ ...body, parentJobId: originalPhoto, revisionNotes: "Move it forward" }),
+        )
+      ).status,
+    ).toBe(409);
+    await writeStored(jobPath(project, room, id), {
+      version: 1,
+      id,
+      projectId: project,
+      roomId: room,
+      createdBy: fake.profile.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      kind: "photoreal",
+      status: "queued",
+      sceneId: saved.id,
+    });
+    expect(await processCloudJob(project, room, id)).toBe("failed");
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect((await readStored<CloudJob>(jobPath(project, room, id)))?.error).toContain(
+      "Island layout is unverified",
+    );
+  });
   it("records exhausted credits as failed without retrying a paid step", async () => {
     const saved = await scene();
     const id = "99999999-9999-4999-8999-999999999999";

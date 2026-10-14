@@ -1,5 +1,6 @@
 import type { MeasuredElevation, RenderReview } from "./measuredRendering";
 import { measuredPhotorealPrompt } from "./measuredPhotoreal";
+import { measuredLayoutIssues } from "./measuredSpatial";
 
 export type PhotorealInput = { name: string; mime: string; bytes: Uint8Array; role: string };
 export function inlinePhotorealInput(data: string, name: string, role: string): PhotorealInput {
@@ -17,6 +18,8 @@ export async function generateMeasuredPhotoreal(
   fetcher: typeof fetch = fetch,
   revisionNotes?: string,
 ) {
+  const layoutIssues = measuredLayoutIssues(elevation);
+  if (layoutIssues.length) throw new Error(layoutIssues.join(" "));
   if (!process.env.OPENAI_API_KEY)
     throw new Error("Photorealistic rendering needs the server's OpenAI connection.");
   if (
