@@ -36,6 +36,11 @@ it("recognizes common accessory and shower aliases without confusing toilet seat
   expect(matches("Toilet roll holder", "Toilet Paper Holder")).toBe(true);
   expect(matches("Showerhead", "Shower System")).toBe(true);
   expect(matches("Shower tub combo", "Shower System")).toBe(true);
+  expect(matches("Shower faucet", "Shower System")).toBe(true);
+  expect(matches("Bathroom 2 shower-faucet", "Shower System")).toBe(true);
+  expect(matches("Selected plumbing", "Shower System", { product: { name: "Delta Shower Faucet" } })).toBe(true);
+  expect(matches("Sink faucet", "Shower System")).toBe(false);
+  expect(matches("Shower drain", "Shower System")).toBe(false);
   expect(matches("Bathroom toilet", "Toilet")).toBe(true);
   expect(matches("Toilet seat", "Toilet")).toBe(false);
   expect(matches("Sink drain", "Sink", { category: "Plumbing" })).toBe(false);

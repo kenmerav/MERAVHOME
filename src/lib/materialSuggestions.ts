@@ -28,7 +28,7 @@ export function materialCoversTemplateSuggestion(item: MaterialItem, suggestion:
     case "faucet": return has(/\b(faucets?|lavatory faucet|basin tap)\b/);
     case "toilet": return has(/\b(toilets?|water closet|wc)\b/) &&
       !has(/\b(toilet (?:seats?|paper|roll|brush)|water closet seats?)\b/);
-    case "shower system": return has(/\b(shower system|shower trim|shower valve|shower ?heads?|rain ?heads?|hand ?shower|shower tub combo|tub shower)\b/);
+    case "shower system": return has(/\b(shower system|shower faucets?|shower trim|shower valve|shower ?heads?|rain ?heads?|hand ?shower|shower tub combo|tub shower)\b/);
     case "shower drain": return has(/\b(shower drain|linear drain|tile in drain)\b/);
     case "sink drain": return has(/\b(sink drain|basin drain|lavatory drain|pop up drain)\b/);
     case "pendant":
