@@ -1,11 +1,21 @@
+import { sleep } from "workflow";
 export async function measuredRenderingWorkflow(projectId: string, roomId: string, jobId: string) {
   "use workflow";
   try {
-    return await runMeasuredRenderingStep(projectId, roomId, jobId);
-  } catch {
-    await markMeasuredRenderingFailed(projectId, roomId, jobId);
-    return "failed";
-  }
+    let status = await runMeasuredRenderingStep(projectId, roomId, jobId);
+    for (let attempt = 0; status === "processing" && attempt < 120; attempt++) {
+      await sleep("15s");
+      status = await collectMeasuredDrawing(projectId, roomId, jobId);
+    }
+    if (status !== "processing") return status;
+  } catch {}
+  await markMeasuredRenderingFailed(projectId, roomId, jobId);
+  return "failed";
+}
+export async function collectMeasuredDrawing(projectId: string, roomId: string, jobId: string) {
+  "use step";
+  const { collectCloudInterpretation } = await import("../lib/measuredCloud.server");
+  return collectCloudInterpretation(projectId, roomId, jobId);
 }
 export async function runMeasuredRenderingStep(projectId: string, roomId: string, jobId: string) {
   "use step";

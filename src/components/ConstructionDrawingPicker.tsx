@@ -281,9 +281,18 @@ export function ConstructionDrawingPicker({
                   }}
                 >
                   <option value="">Choose a view</option>
-                  {data.views?.map((v) => (
+                  {data.views?.map((v, index) => (
                     <option key={v.id} value={v.id}>
-                      {v.sheet} · {v.title} · PDF {v.page}
+                      {v.sheet} · {v.title}
+                      {data.views!.filter(
+                        (other) =>
+                          other.sheet === v.sheet &&
+                          other.title === v.title &&
+                          other.page === v.page,
+                      ).length > 1
+                        ? ` · View ${index + 1}`
+                        : ""}{" "}
+                      · PDF {v.page}
                     </option>
                   ))}
                 </select>
@@ -360,6 +369,10 @@ export function ConstructionDrawingPicker({
               ) : (
                 <p className="text-sm">Choose a PDF page or matched room view.</p>
               )}
+              <p className="text-xs text-muted-foreground mt-2">
+                Review this crop before using it. Adjust its edges to retain dimensions and exclude
+                neighboring views.
+              </p>
               <div className="flex gap-3 mt-3">
                 <button
                   disabled={

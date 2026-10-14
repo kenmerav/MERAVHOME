@@ -60,6 +60,9 @@ manual inspection before another attempt. Each job pins its sources and Spec Boo
 `OPENAI_MEASURED_PHOTOREAL_MODEL` defaults to `gpt-image-2.5-sunburst`, maximum quality.
 Existing `OPENAI_API_KEY` is server-only. These optional overrides are not changed by deployment.
 API billing credits are separate from this feature and must be available for new generation.
+Detailed drawing-to-3D interpretation also runs as a saved background response. Collection steps
+poll the same response for up to 30 minutes; they never send another paid interpretation. This
+avoids the former four-minute request timeout observed while testing Spec K's source crop.
 
 ## Spec K reference
 

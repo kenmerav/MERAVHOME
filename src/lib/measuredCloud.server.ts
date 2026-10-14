@@ -16,7 +16,11 @@ import {
 } from "./measuredAccess.server";
 import { inspectGlb } from "./measuredModelFile";
 import { safeImageBuffer } from "./measuredImage.server";
-import { interpretMeasuredElevation } from "./measuredInterpret.server";
+import {
+  interpretMeasuredElevation,
+  parseMeasuredInterpretation,
+} from "./measuredInterpret.server";
+import { retrieveSpecReview } from "./specReviewAI.server";
 import { generateMeasuredPhotoreal, type PhotorealInput } from "./measuredPhotoreal.server";
 import { drawingCitationSchema, type DrawingCitation } from "./constructionDrawingViews";
 
@@ -193,6 +197,7 @@ export type CloudJob = {
   kind: "interpret" | "photoreal" | "drawings";
   documentId?: string;
   indexKey?: string;
+  responseId?: string;
   sourceCitation?: DrawingCitation;
   supportCitations?: DrawingCitation[];
   roomName?: string;
@@ -430,39 +435,18 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
             .join(" — "),
           fetch,
           supporting,
+          true,
         );
-      reconcileElevation(result.elevation, items);
-      const scene: CloudScene = {
-        version: 1,
-        id: job.id,
-        projectId,
-        roomId,
-        createdBy: job.createdBy,
-        createdAt: now(),
-        elevation: result.elevation,
-        items,
-        sourcePath: job.sourcePath!,
-        sourceCitation: job.sourceCitation,
-        supportCitations: job.supportCitations || [],
-        supportPaths: job.supportPaths || [],
-        models: [],
-        signature: sceneSignature(result.elevation, items),
-        method: "model-interpretation",
-      };
-      await writeStored(scenePath(projectId, roomId, scene.id), scene, true);
-      await writeStored(
-        path,
-        {
-          ...job,
-          status: "complete",
-          updatedAt: now(),
-          resultSceneId: scene.id,
-          usage: result.usage,
-          model: result.model,
-        },
-        true,
-      );
-      return "complete";
+      if (result.responseId) {
+        await writeStored(
+          path,
+          { ...job, status: "processing", responseId: result.responseId, updatedAt: now() },
+          true,
+        );
+        return "processing";
+      }
+      if (!result.elevation) throw Error("No measured elevation was returned.");
+      return saveInterpretation(job, { ...result, elevation: result.elevation });
     }
     const scene = await loadScene(projectId, roomId, job.sceneId!);
     if (!scene.basePath) throw new Error("Save the measured camera view first.");
@@ -564,4 +548,59 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
     await failCloudJob(projectId, roomId, id, message);
     return "failed";
   }
+}
+async function saveInterpretation(
+  job: CloudJob,
+  result: { elevation: MeasuredElevation; usage: unknown; model: string },
+) {
+  const items = z.array(specSelectionSchema).parse(job.items);
+  reconcileElevation(result.elevation, items);
+  const scene: CloudScene = {
+    version: 1,
+    id: job.id,
+    projectId: job.projectId,
+    roomId: job.roomId,
+    createdBy: job.createdBy,
+    createdAt: new Date().toISOString(),
+    elevation: result.elevation,
+    items,
+    sourcePath: job.sourcePath!,
+    sourceCitation: job.sourceCitation,
+    supportCitations: job.supportCitations || [],
+    supportPaths: job.supportPaths || [],
+    models: [],
+    signature: sceneSignature(result.elevation, items),
+    method: "model-interpretation",
+  };
+  await writeStored(scenePath(job.projectId, job.roomId, scene.id), scene, true);
+  await writeStored(
+    jobPath(job.projectId, job.roomId, job.id),
+    {
+      ...job,
+      status: "complete",
+      updatedAt: new Date().toISOString(),
+      resultSceneId: scene.id,
+      usage: result.usage,
+      model: result.model,
+    },
+    true,
+  );
+  return "complete";
+}
+export async function collectCloudInterpretation(projectId: string, roomId: string, id: string) {
+  const job = await readStored<CloudJob>(jobPath(projectId, roomId, id));
+  if (!job || job.projectId !== projectId || job.roomId !== roomId || job.kind !== "interpret")
+    throw Error("Drawing reading job not found.");
+  if (job.status === "complete" || job.status === "failed") return job.status;
+  await authorizeSavedJob(job);
+  if (!job.responseId)
+    throw Error(
+      "Drawing reading stopped before saving its response. No automatic paid retry was made.",
+    );
+  const response = await retrieveSpecReview(job.responseId),
+    body = await response.json();
+  if (!response.ok) throw Error(body.error?.message || "Could not retrieve drawing reading.");
+  if (["queued", "in_progress"].includes(body.status)) return "processing";
+  if (body.status !== "completed") throw Error("The drawing service could not complete this view.");
+  return saveInterpretation(job, parseMeasuredInterpretation(body));
 }

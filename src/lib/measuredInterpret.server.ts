@@ -6,6 +6,7 @@ export async function interpretMeasuredElevation(
   name: string,
   fetcher: typeof fetch = fetch,
   supportingSources: string[] = [],
+  background = false,
 ) {
   if (!process.env.OPENAI_API_KEY)
     throw new ProjectAccessError(
@@ -61,7 +62,7 @@ export async function interpretMeasuredElevation(
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
-    signal: AbortSignal.timeout(240000),
+    signal: AbortSignal.timeout(background ? 60000 : 240000),
     body: JSON.stringify({
       model: process.env.OPENAI_MEASURED_RENDERING_MODEL || "gpt-6-astra",
       reasoning: { effort: "high" },
@@ -85,10 +86,24 @@ export async function interpretMeasuredElevation(
       ],
       text: { format: { type: "json_object" } },
       max_output_tokens: 18000,
+      ...(background ? { background: true, store: false } : {}),
     }),
   });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || "Drawing interpretation failed.");
+  if (background && ["queued", "in_progress"].includes(body.status)) {
+    if (!/^resp_[a-zA-Z0-9_-]{1,200}$/.test(body.id))
+      throw Error("Could not save the drawing response.");
+    return {
+      responseId: body.id as string,
+      elevation: undefined,
+      usage: body.usage,
+      model: body.model,
+    };
+  }
+  return { ...parseMeasuredInterpretation(body), responseId: undefined };
+}
+export function parseMeasuredInterpretation(body: any) {
   if (body.status === "incomplete")
     throw new Error("Interpretation was incomplete. Use a smaller elevation crop.");
   const output = (body.output || [])
