@@ -97,6 +97,7 @@ import {
   type RoomDesignWorkflowState,
 } from "@/lib/roomDesignWorkflow";
 import { canManageStudio } from "@/lib/permissions";
+import { mergeRoomDesignEdits, roomDesignStatesEqual } from "@/lib/roomDesignSync";
 import {
   inferMaterialCategory,
   productMatchesItemCategory,
@@ -427,6 +428,10 @@ function createSavedRoomWorkflowDraft(
   };
 }
 
+function savedRoomWorkflowStage(state?: Record<string, unknown>) {
+  return typeof state?.stage === "number" ? Math.min(5, Math.max(0, state.stage)) : 0;
+}
+
 function serializeRoomWorkflowDraft(
   draft: RoomWorkflowDraft,
   stage: number,
@@ -568,6 +573,8 @@ function RoomDesignPage() {
     queryKey: ["roomDesignWorkflows", id],
     queryFn: async () => (await db.listRoomDesignWorkflows(id)) ?? [],
     enabled: project?.design_workflow_version === "room_design_v2",
+    refetchInterval: 5000,
+    refetchOnWindowFocus: "always",
   });
   const { data: roomImages = [] } = useQuery({
     queryKey: ["projectRoomImages", id],
@@ -742,8 +749,14 @@ function RoomDesignWorkflow({
   const [newRoomName, setNewRoomName] = useState("");
   const activeRoom = rooms.find((room) => room.id === roomId);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const [saveError, setSaveError] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualBoardHydratedRef = useRef(false);
+  const workflowBases = useRef(new Map(initialRooms.map(room => {
+    const saved = workflowByRoom.get(room.id);
+    return [room.id, {updatedAt:saved?.updated_at ?? null,state:serializeRoomWorkflowDraft(
+      createSavedRoomWorkflowDraft(room.name,saved?.state,roomImages,room.id),savedRoomWorkflowStage(saved?.state))}] as const;
+  })));
 
   useEffect(() => {
     if (!linkedCatalogIdsKey) return;
@@ -785,17 +798,25 @@ function RoomDesignWorkflow({
   const persistDraft = async (targetRoomId: string, draft: RoomWorkflowDraft, stage = step) => {
     setSaveStatus("saving");
     try {
-      await db.upsertRoomDesignWorkflow(
-        projectId,
-        targetRoomId,
-        serializeRoomWorkflowDraft(draft, stage),
-        profile.id,
-      );
+      const local = serializeRoomWorkflowDraft(draft,stage);
+      const base = workflowBases.current.get(targetRoomId)?.state ?? serializeRoomWorkflowDraft(createRoomWorkflowDraft(draft.linksRoomName),0);
+      let confirmed = false;
+      for (let attempt=0;attempt<3;attempt++) {
+        const latest = await db.getRoomDesignWorkflow(projectId,targetRoomId);
+        const remote = serializeRoomWorkflowDraft(createSavedRoomWorkflowDraft(draft.linksRoomName,latest?.state,roomImages,targetRoomId),savedRoomWorkflowStage(latest?.state));
+        const merged = mergeRoomDesignEdits(base,local,remote);
+        if (latest && roomDesignStatesEqual(merged,remote)) {confirmed=true;break;}
+        const saved = await db.saveRoomDesignWorkflowIfFresh(projectId,targetRoomId,merged,profile.id,latest?.updated_at ?? null);
+        if (saved) {confirmed=true;break;}
+      }
+      if (!confirmed) throw new Error("The room changed during saving. Refresh it before continuing.");
       setSaveStatus("saved");
+      setSaveError("");
       queryClient.invalidateQueries({ queryKey: ["roomDesignWorkflows", projectId] });
     } catch (error) {
       console.error("Could not save Room Design workflow", error);
       setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : "Your edits could not be saved.");
     }
   };
 
@@ -893,6 +914,8 @@ function RoomDesignWorkflow({
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const draft = currentRoomDraft();
+    const baseline = workflowBases.current.get(roomId)?.state;
+    if (baseline && roomDesignStatesEqual(serializeRoomWorkflowDraft(draft,step),baseline)) return;
     saveTimer.current = setTimeout(() => void persistDraft(roomId, draft, step), 800);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -970,6 +993,32 @@ function RoomDesignWorkflow({
     setMaterialsSent(draft.materialsSent);
     setStep(0);
   };
+
+  useEffect(() => {
+    if (gathering || sourcing) return;
+    for (const saved of workflows) {
+      const room = rooms.find(item=>item.id===saved.room_id);
+      if (!room) continue;
+      const base = workflowBases.current.get(room.id);
+      if (base?.updatedAt === saved.updated_at) continue;
+      const remote = serializeRoomWorkflowDraft(createSavedRoomWorkflowDraft(room.name,saved.state,roomImages,room.id),savedRoomWorkflowStage(saved.state));
+      const localDraft = room.id===roomId ? currentRoomDraft() : roomDrafts[room.id];
+      const local = localDraft ? serializeRoomWorkflowDraft(localDraft,room.id===roomId ? step : base?.state.stage ?? 0) : remote;
+      try {
+        const merged = base ? mergeRoomDesignEdits(base.state,local,remote) : remote;
+        const draft = createSavedRoomWorkflowDraft(room.name,merged,roomImages,room.id);
+        workflowBases.current.set(room.id,{updatedAt:saved.updated_at,state:remote});
+        setRoomDrafts(current=>({...current,[room.id]:draft}));
+        if (room.id===roomId) {applyRoomDraft(draft);setStep(step);}
+      } catch (error) {
+        console.error("Room Design changed while editing",error);
+        setSaveStatus("error");
+        setSaveError(error instanceof Error ? error.message : "The saved room changed. Your edits are still on this page.");
+      }
+    }
+    // Read current edits when a new saved version arrives; typing must not reset the editor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[workflows,roomId,gathering,sourcing]);
 
   const changeRoom = (nextRoomId: string) => {
     if (nextRoomId === roomId) return;
@@ -1547,6 +1596,8 @@ function RoomDesignWorkflow({
             </Button>
           </div>
         </header>
+
+        {saveStatus === "error" && saveError && <p role="alert" className="mb-5 text-sm text-destructive">{saveError}</p>}
 
         <section className="mb-5 grid gap-3 border border-border bg-bone/25 p-4 md:grid-cols-2">
           <div className="space-y-2">

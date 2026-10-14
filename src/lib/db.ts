@@ -731,15 +731,16 @@ export const db = {
         .eq("project_id", projectId)
         .order("updated_at", { ascending: false })
     ).data as RoomDesignWorkflowRecord[] | null,
-  getRoomDesignWorkflow: async (projectId: string, roomId: string) =>
-    (
-      await supabase
+  getRoomDesignWorkflow: async (projectId: string, roomId: string) => {
+    const {data,error} = await supabase
         .from("room_design_workflows" as any)
         .select("*")
         .eq("project_id", projectId)
         .eq("room_id", roomId)
-        .maybeSingle()
-    ).data as RoomDesignWorkflowRecord | null,
+        .maybeSingle();
+    if (error) throw error;
+    return data as RoomDesignWorkflowRecord | null;
+  },
   upsertRoomDesignWorkflow: async (
     projectId: string,
     roomId: string,
@@ -762,6 +763,22 @@ export const db = {
       .single();
     if (error) throw error;
     return data as RoomDesignWorkflowRecord;
+  },
+  saveRoomDesignWorkflowIfFresh: async (
+    projectId: string,
+    roomId: string,
+    state: Record<string, unknown>,
+    updatedBy: string,
+    expectedUpdatedAt: string | null,
+  ) => {
+    const values = {project_id:projectId,room_id:roomId,version:1,state,updated_by:updatedBy};
+    const table = supabase.from("room_design_workflows" as any);
+    const {data,error} = expectedUpdatedAt
+      ? await table.update(values as any).eq("project_id",projectId).eq("room_id",roomId).eq("updated_at",expectedUpdatedAt).select().maybeSingle()
+      : await table.insert(values as any).select().maybeSingle();
+    if (error?.code === "23505") return null;
+    if (error) throw error;
+    return data as RoomDesignWorkflowRecord | null;
   },
   appendRoomDesignEvent: async (
     projectId: string,

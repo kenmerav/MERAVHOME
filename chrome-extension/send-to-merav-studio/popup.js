@@ -387,6 +387,10 @@ document.getElementById("send").addEventListener("click", async () => {
       colorFinish,
     });
     if (!response?.ok) throw new Error(response?.error || "Could not send product.");
+    if (response.destination !== destination ||
+      (destination === "room_design" && (response.roomId !== roomId || response.requiredItemKey !== requiredItemKey))) {
+      throw new Error("Studio did not confirm the selected destination. Check the project's design board before sending again, then reload the MERAV extension and reselect the room and product type.");
+    }
     status.classList.remove("error");
     setProgress(
       100,

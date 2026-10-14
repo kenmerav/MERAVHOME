@@ -197,6 +197,10 @@ async function sendImageToStudio(info, tab, overrides = {}) {
     body = await importProduct(studioUrl, extensionToken, { ...payload, imageDataUrl });
   }
 
+  if (body.destination !== destination ||
+    (destination === "room_design" && (body.roomId !== roomId || body.requiredItemKey !== requiredItemKey))) {
+    throw new Error("Studio did not confirm the selected destination. Check the project's design board before sending again, then reload the MERAV extension and choose the room and product type again.");
+  }
   if (destination === "room_design" && body.nextItemId) {
     const itemByRoom = { ...(settings.itemByRoom || {}), [roomId]: body.nextItemId };
     await chrome.storage.sync.set({ itemByRoom });

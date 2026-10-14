@@ -57,6 +57,8 @@ right-click sends can run without opening Studio or asking again.
 
 ## Notes
 
+- Version 0.4.2 checks Studio's returned destination, room, and product type before reporting a successful send. Reload the installed extension after updating its files so its background worker uses the same version as the popup.
+
 - The extension never stores Supabase service-role keys.
 - Studio stores the original image and tries free background removal.
 - After saving or reusing the catalog product and image, Room Design imports update only the

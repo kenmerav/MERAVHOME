@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
+import { extensionImportDestination } from "@/lib/extensionDestination";
 import { normalizeExtensionBoardState, type ExtensionBoardState } from "@/lib/extensionBoardState";
 import {
   createDefaultRoomDesignWorkflowState,
@@ -504,8 +505,6 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const payload = (await request.json()) as ExtensionProductPayload;
           const projectId = cleanText(payload.projectId);
           const boardPageId = cleanText(payload.boardPageId);
-          const destination =
-            payload.destination === "room_design" ? "room_design" : "design_board";
           const roomId = cleanText(payload.roomId);
           const roomName = cleanText(payload.roomName);
           const requiredItemKey = cleanText(payload.requiredItemKey);
@@ -520,12 +519,6 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const imageData = parseImageDataUrl(payload.imageDataUrl);
           if (!projectId)
             return json({ error: "Choose a Studio project in the extension settings." }, 400);
-          if (destination === "room_design" && !roomId) {
-            return json({ error: "Choose a room before adding the product." }, 400);
-          }
-          if (destination === "room_design" && !requiredItemKey) {
-            return json({ error: "Choose a product type before adding the product." }, 400);
-          }
           if (!sourcePageUrl) return json({ error: "Product URL is required." }, 400);
           if (!imageUrl && !imageData) return json({ error: "Product image is required." }, 400);
 
@@ -535,6 +528,20 @@ export const Route = createFileRoute("/api/extension/import-product")({
             .eq("id", projectId)
             .maybeSingle();
           if (!project) return json({ error: "Studio project was not found." }, 404);
+          const {data: enrollment,error: enrollmentError} = await supabaseAdmin
+            .from("room_design_projects" as any).select("project_id").eq("project_id",projectId).maybeSingle();
+          if (enrollmentError) throw enrollmentError;
+          let destination: "room_design" | "design_board";
+          try {
+            destination = extensionImportDestination({ destination: payload.destination, roomId, requiredItemKey },
+              Boolean(enrollment));
+          } catch (error) {
+            return json({ error: error instanceof Error ? error.message : "Choose an import destination." }, 400);
+          }
+          if (destination === "room_design" && !roomId)
+            return json({ error: "Choose a room before adding the product." }, 400);
+          if (destination === "room_design" && !requiredItemKey)
+            return json({ error: "Choose a product type before adding the product." }, 400);
 
           if (destination === "room_design") {
             const { data: selectedRoom, error: selectedRoomError } = await supabaseAdmin
