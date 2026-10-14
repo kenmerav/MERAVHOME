@@ -30,6 +30,7 @@ import {
   PRODUCT_CATEGORIES,
   inferMaterialCategory,
   normalizeItemCategory,
+  productMatchesItemCategory,
   templateForRoomName,
   toProductCategory,
 } from "@/lib/roomTemplates";
@@ -1626,11 +1627,11 @@ function CatalogProductPicker({
   onSelect: (productId: string | null) => void;
   disabled?: boolean;
 }) {
-  const category = toProductCategory(item.category);
+  const category = normalizeItemCategory(item.category) ?? inferMaterialCategory(item.item_label, item.product_url);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const matchingProducts = products.filter(
-    (product) => product.category === category && isUuid(product.id),
+    (product) => productMatchesItemCategory(product, category) && isUuid(product.id),
   );
   const currentProductId = cleanUuid(item.product_id);
   const selectedProduct = currentProductId
