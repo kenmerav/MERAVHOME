@@ -13,6 +13,7 @@ export default defineConfig({
       server: { entry: "server" },
     }),
     nitro({
+      vercel: { functions: { maxDuration: 300 } },
       // Queue functions cannot use Nitro's copied absolute dependency symlinks.
       noExternals: ["tslib"],
       rollupConfig: {
