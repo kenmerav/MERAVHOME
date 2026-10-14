@@ -1940,6 +1940,9 @@ function StartStep(props: {
   const [newSelectionGroup, setNewSelectionGroup] = useState<BoardGroup>("Architecture / Other");
   const [newSelectionQuantity, setNewSelectionQuantity] = useState(1);
   const [newSelectionNotes, setNewSelectionNotes] = useState("");
+  const sortedLinks = [...props.links].sort((left, right) =>
+    left.category.localeCompare(right.category, "en", { sensitivity: "base", numeric: true }),
+  );
 
   const addCustomSelection = () => {
     const category = newSelectionName.trim();
@@ -2153,7 +2156,7 @@ function StartStep(props: {
             </div>
           )}
           <div className="mt-5 divide-y divide-border border-y border-border">
-            {props.links.map((item) => (
+            {sortedLinks.map((item) => (
               <div
                 key={item.id}
                 className="grid gap-2 py-3 md:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px] md:items-center"
