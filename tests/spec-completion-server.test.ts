@@ -116,6 +116,26 @@ it("reads current project data and latest PDF, saving the review without editing
   expect(state.saved.report.plan_status).toBe('checked');
 });
 
+it("queues and saves a 409-selection, 32-room review with a Bartow-sized PDF", async () => {
+  state.rooms = Array.from({ length: 32 }, (_, index) => ({ id: `room-${index}`, name: `Room ${index}` }));
+  state.items = Array.from({ length: 409 }, (_, index) => ({ ...state.items[0], id: `selection-${index}`, room_id: state.rooms[index % 32].id }));
+  state.documents[0].file_size = 24709548;
+  state.download.mockResolvedValue({ data: new Blob([new Uint8Array(24709548)]), error: null });
+  state.fetch.mockImplementation(async (_url: string, options: RequestInit) => {
+    if (options?.method === "POST") return Response.json({ status: "queued", id: "resp_large_project_test" });
+    return Response.json({ status: "completed", output_text: JSON.stringify({ findings: [] }) });
+  });
+  const report = await (await checkSpecCompletion(request())).json();
+  expect(report.item_count).toBe(409); expect(report.plan_status).toBe("checking");
+  const payload = JSON.parse(state.fetch.mock.calls[0][1].body);
+  const context = JSON.parse(payload.input[0].content[0].text);
+  expect(context.rooms).toHaveLength(32); expect(context.selections).toHaveLength(409);
+  expect(Buffer.from(payload.input[0].content[1].file_data.split(",")[1], "base64").byteLength).toBe(24709548);
+  expect(workerStart).toHaveBeenCalledTimes(1);
+  await saveSpecCompletionInBackground(projectId, report.plan_job.request_id);
+  expect(state.saved.report.plan_status).toBe("checked"); expect(state.saved.report.item_count).toBe(409);
+});
+
 it("refreshes shared selections and supplies project-wide coverage with separately selected copies to the plan review", async () => {
   const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
   state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });

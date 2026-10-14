@@ -5,14 +5,14 @@ import { saveAndScrapeMaterialLink } from "@/lib/materialProductLink";
 const projectId = "11111111-1111-4111-8111-111111111111", itemId = "22222222-2222-4222-8222-222222222222";
 const productUrl = "https://shop.example.com/faucet?uid=123";
 const input = { projectId, roomId: "room", label: "Faucet", productUrl };
-beforeEach(() => { vi.clearAllMocks(); session.getSession.mockResolvedValue({ data: { session: { access_token: "TEST_ONLY" } } }); });
+beforeEach(() => { vi.clearAllMocks(); session.getSession.mockResolvedValue({ data: { session: { access_token: "TEST_ONLY", user: { id: "staff" } } } }); });
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 it("saves a link, automatically scrapes only that item, then saves all four product fields", async () => {
   const details = { image_url: "https://cdn.example/image.jpg", price: "$125", dimensions: "12 in", color: "Brass" };
   const calls: any[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, options: any) => {
     const body = JSON.parse(options.body); calls.push({ url, method: options.method, body });
-    expect(options.headers.Authorization).toBe("Bearer TEST_ONLY");
+    expect(new Headers(options.headers).get("Authorization")).toBe("Bearer TEST_ONLY");
     if (body.action === "link") return Response.json({ item_id: itemId });
     if (body.action === "start") return Response.json({ status: "completed", rows: [{ material_item_id: itemId, url: productUrl, scraped: details }], remaining_count: 0 });
     return Response.json({ ok: true, price_missing_count: 0 });

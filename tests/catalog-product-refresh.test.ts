@@ -15,7 +15,7 @@ it("targets only selected incomplete materials, retaining missing-link items for
   ] as any);
   expect(rows.map(row => [row.item.id, row.hasLink, row.missing])).toEqual([["missing", true, ["dimensions"]], ["no-link", false, ["price"]]]);
 });
-beforeEach(() => { vi.clearAllMocks(); auth.getSession.mockResolvedValue({ data: { session: { access_token: "TEST_ONLY" } } }); });
+beforeEach(() => { vi.clearAllMocks(); auth.getSession.mockResolvedValue({ data: { session: { access_token: "TEST_ONLY", user: { id: "staff" } } } }); });
 afterEach(() => vi.unstubAllGlobals());
 it("skips scraping entirely when the catalog product already has all four details", async () => {
   const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
@@ -27,7 +27,7 @@ it.each(["image_url", "price", "dimensions", "finish"])("automatically reads the
   const fetched = { image_url: "https://cdn.test/faucet.jpg", price: "$125", dimensions: "Height: 12 in", color: "Brass", finish: "Brushed Brass" };
   vi.stubGlobal("fetch", vi.fn(async (_url: string, options: any) => {
     const body = JSON.parse(options.body); calls.push({ method: options.method, body });
-    expect(options.headers.Authorization).toBe("Bearer TEST_ONLY");
+    expect(new Headers(options.headers).get("Authorization")).toBe("Bearer TEST_ONLY");
     return Response.json(options.method === "POST" ? { status: "completed", remaining_count: 0, rows: [{ material_item_id: itemId, existing_product_id: productId, url: product.product_url, scraped: fetched }] } : { ok: true, price_missing_count: 0 });
   }));
   expect(await refreshCatalogSelectionIfNeeded({ projectId, itemId, product: { ...product, [field]: null } })).toBeNull();

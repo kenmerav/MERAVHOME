@@ -8,6 +8,7 @@ import type { MaterialItem } from "@/lib/db";
 import type { CompletionDetailDraft } from "@/lib/specCompletionDetail";
 import { refreshMaterialProductInfo, type MaterialProductRefresh } from "@/lib/materialProductRefresh";
 import type { SpecBoardSyncSummary } from "@/lib/specBoardSync";
+import { createStudioSessionRequest } from "@/lib/studioSessionRequest";
 
 async function savedReviewRequest(body: unknown): Promise<SavedSpecCompletionReview | null> {
   const { data, error } = await supabase.auth.getSession();
@@ -44,11 +45,10 @@ export async function fetchSpecCompletion(projectId: string, options: {
   onProductsRefreshed?: (summary: MaterialProductRefresh) => Promise<void>;
   onBoardRefreshed?: (summary: SpecBoardSyncSummary) => Promise<void>;
 } = {}): Promise<SpecCompletionReport> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session) throw new Error("Sign in to check completion.");
-  const headers = { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" };
+  const request = await createStudioSessionRequest();
+  const headers = { "Content-Type": "application/json" };
   options.onProgress?.("Sending the full design board to Materials…");
-  const preparedResponse = await fetch("/api/check-spec-completion", {
+  const preparedResponse = await request("/api/check-spec-completion", {
     method: "POST", headers, body: JSON.stringify({ project_id: projectId, action: "prepare" }),
   });
   const prepared = await completionResponse<{ material_item_ids: string[]; pending_report?: SpecCompletionReport;
@@ -57,11 +57,11 @@ export async function fetchSpecCompletion(projectId: string, options: {
   if (!Array.isArray(prepared.material_item_ids)) throw new Error("Could not confirm current selections. Please retry.");
   if (prepared.board_refresh) await options.onBoardRefreshed?.(prepared.board_refresh);
   const summary = await refreshMaterialProductInfo(projectId, prepared.material_item_ids, {
-    authorization: headers.Authorization, onProgress: options.onProgress,
+    request, onProgress: options.onProgress,
   });
   await options.onProductsRefreshed?.(summary);
   options.onProgress?.("Checking construction PDFs and Spec Book…");
-  const response = await fetch("/api/check-spec-completion", {
+  const response = await request("/api/check-spec-completion", {
     method: "POST", headers,
     body: JSON.stringify({ project_id: projectId, ...(prepared.board_updated_at !== undefined
       ? { expected_board_updated_at: prepared.board_updated_at } : {}) }),

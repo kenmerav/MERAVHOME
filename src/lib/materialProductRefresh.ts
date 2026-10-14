@@ -1,4 +1,5 @@
 import { cleanUuid } from "@/lib/ids";
+import { createStudioSessionRequest, type StudioSessionRequest } from "@/lib/studioSessionRequest";
 
 type ScrapedRow = {
   material_item_id: string;
@@ -18,9 +19,9 @@ type ScrapeBatch = {
 };
 export type MaterialProductRefresh = { saved: number; failed: number; priceMissing: number };
 
-async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, authorization: string): Promise<T> {
-  const response = await fetch("/api/scrape-materials", {
-    method, headers: { "Content-Type": "application/json", Authorization: authorization }, body: JSON.stringify(body),
+async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, request: StudioSessionRequest): Promise<T> {
+  const response = await request("/api/scrape-materials", {
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   let result: any;
   try { result = await response.json(); }
@@ -32,15 +33,18 @@ async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, authoriza
 // Use the same start/poll/save workflow as Materials. Save every batch before
 // moving on; the completion check must never race ahead of the product writes.
 export async function refreshMaterialProductInfo(projectId: string, materialItemIds: string[], options: {
-  authorization: string;
+  /** Existing callers may pass this; requests always use the current session. */
+  authorization?: string;
   onProgress?: (message: string) => void;
   force?: boolean;
+  request?: StudioSessionRequest;
 }): Promise<MaterialProductRefresh> {
   const scope = [...new Set(materialItemIds.map(cleanUuid).filter((id): id is string => !!id))];
   if (!cleanUuid(projectId) || scope.length !== new Set(materialItemIds).size)
     throw new Error("Could not confirm the current project selections. Refresh the page and try again.");
   const summary: MaterialProductRefresh = { saved: 0, failed: 0, priceMissing: 0 };
   if (!scope.length) return summary;
+  const request = options.request ?? await createStudioSessionRequest();
   const scopeIds = new Set(scope);
   const processed = new Set<string>();
   for (let batchNumber = 1; batchNumber <= 100; batchNumber++) {
@@ -49,7 +53,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
       action: "start", project_id: projectId, material_item_ids: scope,
       exclude_material_item_ids: [...processed],
       ...(options.force ? { force: true } : {}),
-    }, options.authorization);
+    }, request);
     let completed = batch;
     if (batch.status === "started") {
       if (!batch.batch_id || !batch.candidates?.length) throw new Error("Product info refresh could not start. Please retry.");
@@ -59,7 +63,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
         const result = await scrapeRequest<ScrapeBatch>("POST", {
           action: fallback ? "fallback" : "poll", project_id: projectId,
           ...(!fallback ? { batch_id: batch.batch_id } : {}), candidates: batch.candidates,
-        }, options.authorization);
+        }, request);
         if (result.status === "processing" && !fallback) {
           options.onProgress?.(`Refreshing product info · batch ${batchNumber} (${result.completed_count ?? 0} of ${result.total_count ?? batch.candidates.length})…`);
           continue;
@@ -79,7 +83,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
       options.onProgress?.(`Saving product info · ${summary.saved + successful.length} products…`);
       const saved = await scrapeRequest<{ ok?: boolean; price_missing_count?: number }>("PUT", { project_id: projectId, rows: successful.map(row => ({
         ...row, existing_product_id: cleanUuid(row.existing_product_id),
-      })) }, options.authorization);
+      })) }, request);
       if (saved.ok !== true) throw new Error("Product info could not be saved. The completion review has not started; please retry.");
       summary.saved += successful.length;
       summary.priceMissing += saved.price_missing_count ?? 0;

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const session = vi.hoisted(() => ({ getSession: vi.fn() }));
+const session = vi.hoisted(() => ({ getSession: vi.fn(), refreshSession: vi.fn() }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: session } }));
 import { fetchSpecCompletion } from "@/lib/specCompletionClient";
 import { refreshMaterialProductInfo } from "@/lib/materialProductRefresh";
@@ -13,7 +13,7 @@ const row = (id = itemId, scraped: Record<string, unknown> = { price: "$87.90" }
   material_item_id: id, url: "https://www.fergusonhome.com/delta-dt061411/s1901985?uid=4499531", scraped,
 });
 const report = { checked_at: "2026-10-13", findings: [], plan_status: "no_document" };
-beforeEach(() => { session.getSession.mockResolvedValue({ data: { session: { access_token: "TEST_ONLY" } }, error: null }); });
+beforeEach(() => { session.getSession.mockReset().mockResolvedValue({ data: { session: { access_token: "TEST_ONLY", user: { id: "staff" } } }, error: null }); session.refreshSession.mockReset(); });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 it("saves product prices and refreshes the screen before starting completion, eliminating the old missing-price finding", async () => {
@@ -26,7 +26,7 @@ it("saves product prices and refreshes the screen before starting completion, el
   const saving = new Promise<void>(resolve => { finishSave = resolve; });
   const request = vi.fn(async (url: string, options: RequestInit) => {
     const body = JSON.parse(String(options.body));
-    expect((options.headers as any).Authorization).toBe("Bearer TEST_ONLY");
+    expect(new Headers(options.headers).get("Authorization")).toBe("Bearer TEST_ONLY");
     if (url === "/api/check-spec-completion" && body.action === "prepare") {
       order.push("prepare"); return Response.json({ material_item_ids: [itemId], board_updated_at: "saved-board-revision", board_refresh: { imported: 1, updated: 2, added: 1, issues: [] } });
     }
@@ -127,4 +127,67 @@ it("skips product scraping for projects with no active selections", async () => 
   const request = vi.fn().mockResolvedValueOnce(Response.json({ material_item_ids: [] })).mockResolvedValueOnce(Response.json(report));
   vi.stubGlobal("fetch", request); await fetchSpecCompletion(project);
   expect(request).toHaveBeenCalledTimes(2); expect(request.mock.calls.every(call => call[0] === "/api/check-spec-completion")).toBe(true);
+});
+
+it("uses the latest session for product saves and the final plan check after a long refresh", async () => {
+  let token = "INITIAL";
+  session.getSession.mockImplementation(async () => ({ data: { session: { access_token: token, user: { id: "staff" } } }, error: null }));
+  const sent: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+    sent.push(new Headers(options.headers).get("Authorization")!);
+    const body=JSON.parse(String(options.body));
+    if(body.action==="prepare") return Response.json({material_item_ids:[itemId]});
+    if(url==="/api/scrape-materials" && options.method==="POST") {
+      token="RENEWED"; return Response.json({status:"completed",rows:[row()],remaining_count:0});
+    }
+    if(options.method==="PUT")return Response.json({ok:true});
+    return Response.json(report);
+  }));
+  await fetchSpecCompletion(project);
+  expect(sent).toEqual(["Bearer INITIAL","Bearer INITIAL","Bearer RENEWED","Bearer RENEWED"]);
+});
+
+it("completes 409 selections across 35 batches after more than an hour and one expired-session rejection", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-14T15:00:00Z"));
+  const started = Date.now();
+  const ids = Array.from({ length: 409 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`);
+  session.getSession.mockImplementation(async () => ({ data: { session: {
+    access_token: Date.now() - started < 3_600_000 ? "INITIAL" : "RENEWED", user: { id: "staff" },
+  } }, error: null }));
+  session.refreshSession.mockResolvedValue({ data: { session: { access_token: "RENEWED", user: { id: "staff" } } }, error: null });
+  const saved: string[] = [];
+  let batchIds: string[] = [], batchCount = 0, rejected = false, reviewed = false;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+    const body = JSON.parse(String(options.body));
+    const token = new Headers(options.headers).get("Authorization");
+    if (body.action === "prepare") return Response.json({ material_item_ids: ids });
+    if (body.action === "start") {
+      expect(body.exclude_material_item_ids).toEqual(saved);
+      batchIds = ids.filter(id => !saved.includes(id)).slice(0, 12); batchCount++;
+      return Response.json({ status: "started", batch_id: `batch-${batchCount}`, candidates: batchIds.map(id => row(id)), remaining_count: 409 - saved.length - batchIds.length });
+    }
+    if (body.action === "poll") {
+      if (batchCount === 20 && !rejected) {
+        rejected = true; return Response.json({ error: "Your session expired." }, { status: 401 });
+      }
+      // Slow retailers make the entire refresh span a session renewal.
+      vi.setSystemTime(new Date(Date.now() + 120_000));
+      return Response.json({ status: "completed", rows: batchIds.map(id => row(id)) });
+    }
+    if (options.method === "PUT") {
+      expect(token).toBe(Date.now() - started < 3_600_000 ? "Bearer INITIAL" : "Bearer RENEWED");
+      saved.push(...body.rows.map((value: any) => value.material_item_id));
+      return Response.json({ ok: true });
+    }
+    expect(url).toBe("/api/check-spec-completion");
+    expect(saved).toEqual(ids); expect(token).toBe("Bearer RENEWED"); reviewed = true;
+    return Response.json({ ...report, item_count: 409 });
+  }));
+  const checking = fetchSpecCompletion(project);
+  await vi.runAllTimersAsync();
+  expect((await checking).item_count).toBe(409);
+  expect(batchCount).toBe(35); expect(new Set(saved).size).toBe(409);
+  expect(Date.now() - started).toBeGreaterThan(3_600_000);
+  expect(session.refreshSession).toHaveBeenCalledTimes(1); expect(reviewed).toBe(true);
 });
