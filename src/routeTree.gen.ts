@@ -9,168 +9,125 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ViewUserRouteImport } from './routes/view-user'
-import { Route as TermsRouteImport } from './routes/terms'
-import { Route as ProjectManagementRouteImport } from './routes/project-management'
-import { Route as ProcurementRouteImport } from './routes/procurement'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as PeopleVendorsRouteImport } from './routes/people-vendors'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as FinancialsRouteImport } from './routes/financials'
-import { Route as EaDeskRouteImport } from './routes/ea-desk'
-import { Route as ConstructionUploadsRouteImport } from './routes/construction-uploads'
-import { Route as CatalogRouteImport } from './routes/catalog'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as UsersIndexRouteImport } from './routes/users.index'
-import { Route as SpecbooksIndexRouteImport } from './routes/specbooks.index'
-import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
-import { Route as PresentationsIndexRouteImport } from './routes/presentations.index'
-import { Route as HoursIndexRouteImport } from './routes/hours.index'
-import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
-import { Route as PrototypeDesignBoardRouteImport } from './routes/prototype.design-board'
-import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
-import { Route as ExtensionConnectRouteImport } from './routes/extension.connect'
-import { Route as ClientFinancialsRouteImport } from './routes/client.financials'
-import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
-import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
-import { Route as ApiUsersRouteImport } from './routes/api/users'
-import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
-import { Route as ApiUploadProjectDocumentRouteImport } from './routes/api/upload-project-document'
-import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
-import { Route as ApiSuggestPlanDimensionsRouteImport } from './routes/api/suggest-plan-dimensions'
-import { Route as ApiSuggestBoardColorRouteImport } from './routes/api/suggest-board-color'
-import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
-import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
-import { Route as ApiSpecCompletionReviewRouteImport } from './routes/api/spec-completion-review'
-import { Route as ApiSpecBookSourceStatusRouteImport } from './routes/api/spec-book-source-status'
-import { Route as ApiSpecBookMaterialRouteImport } from './routes/api/spec-book-material'
-import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
-import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
-import { Route as ApiScrapeProductsRouteImport } from './routes/api/scrape-products'
-import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
-import { Route as ApiScrapeCartonCoverageRouteImport } from './routes/api/scrape-carton-coverage'
-import { Route as ApiRoomDesignImageSourceRouteImport } from './routes/api/room-design-image-source'
-import { Route as ApiRoomDesignImageRouteImport } from './routes/api/room-design-image'
-import { Route as ApiRenderingStudioRouteImport } from './routes/api/rendering-studio'
-import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
-import { Route as ApiProjectsRouteImport } from './routes/api/projects'
-import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
-import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
-import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
-import { Route as ApiProjectCapturesRouteImport } from './routes/api/project-captures'
-import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
-import { Route as ApiProcurementMcpRouteImport } from './routes/api/procurement-mcp'
-import { Route as ApiProcurementGmailCallbackRouteImport } from './routes/api/procurement-gmail-callback'
-import { Route as ApiProcurementEmailRouteImport } from './routes/api/procurement-email'
-import { Route as ApiPresentationBoardRouteImport } from './routes/api/presentation-board'
-import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
-import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
-import { Route as ApiMaterialCatalogSuggestionsRouteImport } from './routes/api/material-catalog-suggestions'
-import { Route as ApiMarvinUploadRouteImport } from './routes/api/marvin-upload'
-import { Route as ApiMarvinGmailCallbackRouteImport } from './routes/api/marvin-gmail-callback'
-import { Route as ApiMarvinFathomWebhookRouteImport } from './routes/api/marvin-fathom-webhook'
-import { Route as ApiMarvinCronRouteImport } from './routes/api/marvin-cron'
-import { Route as ApiMarvinRouteImport } from './routes/api/marvin'
-import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
-import { Route as ApiImportRenderingPdfRouteImport } from './routes/api/import-rendering-pdf'
-import { Route as ApiImportRenderingPackageRouteImport } from './routes/api/import-rendering-package'
-import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
-import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
-import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
-import { Route as ApiEaWorkspaceRouteImport } from './routes/api/ea-workspace'
-import { Route as ApiEaDocumentEvidenceRouteImport } from './routes/api/ea-document-evidence'
-import { Route as ApiEaCalendarRouteImport } from './routes/api/ea-calendar'
-import { Route as ApiDuplicateProjectRouteImport } from './routes/api/duplicate-project'
-import { Route as ApiDrawingVerificationRouteImport } from './routes/api/drawing-verification'
-import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
-import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
-import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
-import { Route as ApiConstructionUploadsRouteImport } from './routes/api/construction-uploads'
-import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
-import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
-import { Route as ApiCheckSpecCompletionRouteImport } from './routes/api/check-spec-completion'
-import { Route as ApiCheckMaterialPlansRouteImport } from './routes/api/check-material-plans'
-import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
+import { Route as CatalogRouteImport } from './routes/catalog'
+import { Route as ConstructionUploadsRouteImport } from './routes/construction-uploads'
+import { Route as EaDeskRouteImport } from './routes/ea-desk'
+import { Route as FinancialsRouteImport } from './routes/financials'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as PeopleVendorsRouteImport } from './routes/people-vendors'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ProcurementRouteImport } from './routes/procurement'
+import { Route as ProjectManagementRouteImport } from './routes/project-management'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as ViewUserRouteImport } from './routes/view-user'
 import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar-notifications'
-import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
-import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
-import { Route as ProjectsIdRoomDesignRouteImport } from './routes/projects.$id.room-design'
-import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
-import { Route as ProjectsIdRenderingStudioRouteImport } from './routes/projects.$id.rendering-studio'
-import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
-import { Route as ProjectsIdOperationsRouteImport } from './routes/projects.$id.operations'
-import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
-import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
-import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
-import { Route as ProjectsIdDesignBoardPresentationRouteImport } from './routes/projects.$id.design-board-presentation'
-import { Route as ProjectsIdConstructionDocsRouteImport } from './routes/projects.$id.construction-docs'
-import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
-import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
-import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
-import { Route as ApiQuickbooksSyncInvoiceRouteImport } from './routes/api/quickbooks/sync-invoice'
-import { Route as ApiQuickbooksStatusRouteImport } from './routes/api/quickbooks/status'
-import { Route as ApiQuickbooksProjectLinkRouteImport } from './routes/api/quickbooks/project-link'
-import { Route as ApiQuickbooksDisconnectRouteImport } from './routes/api/quickbooks/disconnect'
-import { Route as ApiQuickbooksCustomersRouteImport } from './routes/api/quickbooks/customers'
-import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
-import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
-import { Route as ApiMarvinCronStageRouteImport } from './routes/api/marvin-cron.$stage'
-import { Route as ApiExtensionRoomDesignRouteImport } from './routes/api/extension/room-design'
-import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
-import { Route as ApiExtensionPricesRouteImport } from './routes/api/extension/prices'
-import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
-import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/extension/connect-token'
+import { Route as ApiCheckMaterialFinishesRouteImport } from './routes/api/check-material-finishes'
+import { Route as ApiCheckMaterialPlansRouteImport } from './routes/api/check-material-plans'
+import { Route as ApiCheckSpecCompletionRouteImport } from './routes/api/check-spec-completion'
+import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dashboard'
+import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
+import { Route as ApiConstructionUploadsRouteImport } from './routes/api/construction-uploads'
+import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
+import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
+import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
+import { Route as ApiDrawingVerificationRouteImport } from './routes/api/drawing-verification'
+import { Route as ApiDuplicateProjectRouteImport } from './routes/api/duplicate-project'
+import { Route as ApiEaCalendarRouteImport } from './routes/api/ea-calendar'
+import { Route as ApiEaDocumentEvidenceRouteImport } from './routes/api/ea-document-evidence'
+import { Route as ApiEaWorkspaceRouteImport } from './routes/api/ea-workspace'
+import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
+import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
+import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
+import { Route as ApiImportRenderingPackageRouteImport } from './routes/api/import-rendering-package'
+import { Route as ApiImportRenderingPdfRouteImport } from './routes/api/import-rendering-pdf'
+import { Route as ApiMarkFinancialPaymentDueRouteImport } from './routes/api/mark-financial-payment-due'
+import { Route as ApiMarvinRouteImport } from './routes/api/marvin'
+import { Route as ApiMarvinCronRouteImport } from './routes/api/marvin-cron'
+import { Route as ApiMarvinFathomWebhookRouteImport } from './routes/api/marvin-fathom-webhook'
+import { Route as ApiMarvinGmailCallbackRouteImport } from './routes/api/marvin-gmail-callback'
+import { Route as ApiMarvinUploadRouteImport } from './routes/api/marvin-upload'
+import { Route as ApiMaterialCatalogSuggestionsRouteImport } from './routes/api/material-catalog-suggestions'
+import { Route as ApiMeasuredRenderingRouteImport } from './routes/api/measured-rendering'
+import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
+import { Route as ApiParseInvoicePdfRouteImport } from './routes/api/parse-invoice-pdf'
+import { Route as ApiPresentationBoardRouteImport } from './routes/api/presentation-board'
+import { Route as ApiProcurementEmailRouteImport } from './routes/api/procurement-email'
+import { Route as ApiProcurementGmailCallbackRouteImport } from './routes/api/procurement-gmail-callback'
+import { Route as ApiProcurementMcpRouteImport } from './routes/api/procurement-mcp'
+import { Route as ApiProcurementRunsRouteImport } from './routes/api/procurement-runs'
+import { Route as ApiProjectCapturesRouteImport } from './routes/api/project-captures'
+import { Route as ApiProjectManagementRouteImport } from './routes/api/project-management'
+import { Route as ApiProjectTaskAttachmentRouteImport } from './routes/api/project-task-attachment'
+import { Route as ApiProjectTodosRouteImport } from './routes/api/project-todos'
+import { Route as ApiProjectsRouteImport } from './routes/api/projects'
+import { Route as ApiRemoveDesignBoardBackgroundRouteImport } from './routes/api/remove-design-board-background'
+import { Route as ApiRenderingStudioRouteImport } from './routes/api/rendering-studio'
+import { Route as ApiRoomDesignImageRouteImport } from './routes/api/room-design-image'
+import { Route as ApiRoomDesignImageSourceRouteImport } from './routes/api/room-design-image-source'
+import { Route as ApiScrapeCartonCoverageRouteImport } from './routes/api/scrape-carton-coverage'
+import { Route as ApiScrapeMaterialsRouteImport } from './routes/api/scrape-materials'
+import { Route as ApiScrapeProductsRouteImport } from './routes/api/scrape-products'
+import { Route as ApiScrapeUrlRouteImport } from './routes/api/scrape-url'
+import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-design-board'
+import { Route as ApiSpecBookMaterialRouteImport } from './routes/api/spec-book-material'
+import { Route as ApiSpecBookSourceStatusRouteImport } from './routes/api/spec-book-source-status'
+import { Route as ApiSpecCompletionReviewRouteImport } from './routes/api/spec-completion-review'
+import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
+import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
+import { Route as ApiSuggestBoardColorRouteImport } from './routes/api/suggest-board-color'
+import { Route as ApiSuggestPlanDimensionsRouteImport } from './routes/api/suggest-plan-dimensions'
+import { Route as ApiUploadDesignBoardImageRouteImport } from './routes/api/upload-design-board-image'
+import { Route as ApiUploadProjectDocumentRouteImport } from './routes/api/upload-project-document'
+import { Route as ApiUploadRoomImageRouteImport } from './routes/api/upload-room-image'
+import { Route as ApiUsersRouteImport } from './routes/api/users'
+import { Route as ApiViewUserRouteImport } from './routes/api/view-user'
+import { Route as CatalogProductIdRouteImport } from './routes/catalog_.$productId'
+import { Route as ClientFinancialsRouteImport } from './routes/client.financials'
+import { Route as ExtensionConnectRouteImport } from './routes/extension.connect'
+import { Route as HoursIndexRouteImport } from './routes/hours.index'
+import { Route as PresentationsIndexRouteImport } from './routes/presentations.index'
+import { Route as PresentationsIdRouteImport } from './routes/presentations.$id'
+import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
+import { Route as PrototypeDesignBoardRouteImport } from './routes/prototype.design-board'
+import { Route as SpecbooksIndexRouteImport } from './routes/specbooks.index'
+import { Route as SpecbooksIdRouteImport } from './routes/specbooks.$id'
+import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as ApiExtensionBoardPagesRouteImport } from './routes/api/extension/board-pages'
+import { Route as ApiExtensionConnectTokenRouteImport } from './routes/api/extension/connect-token'
+import { Route as ApiExtensionImportProductRouteImport } from './routes/api/extension/import-product'
+import { Route as ApiExtensionPricesRouteImport } from './routes/api/extension/prices'
+import { Route as ApiExtensionProjectsRouteImport } from './routes/api/extension/projects'
+import { Route as ApiExtensionRoomDesignRouteImport } from './routes/api/extension/room-design'
+import { Route as ApiMarvinCronStageRouteImport } from './routes/api/marvin-cron.$stage'
+import { Route as ApiQuickbooksCallbackRouteImport } from './routes/api/quickbooks/callback'
+import { Route as ApiQuickbooksConnectUrlRouteImport } from './routes/api/quickbooks/connect-url'
+import { Route as ApiQuickbooksCustomersRouteImport } from './routes/api/quickbooks/customers'
+import { Route as ApiQuickbooksDisconnectRouteImport } from './routes/api/quickbooks/disconnect'
+import { Route as ApiQuickbooksProjectLinkRouteImport } from './routes/api/quickbooks/project-link'
+import { Route as ApiQuickbooksStatusRouteImport } from './routes/api/quickbooks/status'
+import { Route as ApiQuickbooksSyncInvoiceRouteImport } from './routes/api/quickbooks/sync-invoice'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe/webhook'
+import { Route as ClientApprovalsProjectIdRouteImport } from './routes/client.approvals.$projectId'
+import { Route as ProjectsIdIndexRouteImport } from './routes/projects.$id.index'
+import { Route as ProjectsIdApprovalsRouteImport } from './routes/projects.$id.approvals'
+import { Route as ProjectsIdConstructionDocsRouteImport } from './routes/projects.$id.construction-docs'
+import { Route as ProjectsIdDesignBoardPresentationRouteImport } from './routes/projects.$id.design-board-presentation'
+import { Route as ProjectsIdDesignBoardsRouteImport } from './routes/projects.$id.design-boards'
+import { Route as ProjectsIdFinancialsRouteImport } from './routes/projects.$id.financials'
+import { Route as ProjectsIdMaterialsRouteImport } from './routes/projects.$id.materials'
+import { Route as ProjectsIdMeasuredRenderingRouteImport } from './routes/projects.$id.measured-rendering'
+import { Route as ProjectsIdOperationsRouteImport } from './routes/projects.$id.operations'
+import { Route as ProjectsIdPresentationRouteImport } from './routes/projects.$id.presentation'
+import { Route as ProjectsIdRenderingStudioRouteImport } from './routes/projects.$id.rendering-studio'
+import { Route as ProjectsIdRenderingsRouteImport } from './routes/projects.$id.renderings'
+import { Route as ProjectsIdRoomDesignRouteImport } from './routes/projects.$id.room-design'
+import { Route as SpecbooksPublicIdRouteImport } from './routes/specbooks.public.$id'
 import { Route as ProjectsIdRoomsRoomIdRouteImport } from './routes/projects.$id.rooms.$roomId'
 
-const ViewUserRoute = ViewUserRouteImport.update({
-  id: '/view-user',
-  path: '/view-user',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectManagementRoute = ProjectManagementRouteImport.update({
-  id: '/project-management',
-  path: '/project-management',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProcurementRoute = ProcurementRouteImport.update({
-  id: '/procurement',
-  path: '/procurement',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PeopleVendorsRoute = PeopleVendorsRouteImport.update({
-  id: '/people-vendors',
-  path: '/people-vendors',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FinancialsRoute = FinancialsRouteImport.update({
-  id: '/financials',
-  path: '/financials',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EaDeskRoute = EaDeskRouteImport.update({
-  id: '/ea-desk',
-  path: '/ea-desk',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConstructionUploadsRoute = ConstructionUploadsRouteImport.update({
-  id: '/construction-uploads',
-  path: '/construction-uploads',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CatalogRoute = CatalogRouteImport.update({
@@ -178,346 +135,81 @@ const CatalogRoute = CatalogRouteImport.update({
   path: '/catalog',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ConstructionUploadsRoute = ConstructionUploadsRouteImport.update({
+  id: '/construction-uploads',
+  path: '/construction-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UsersIndexRoute = UsersIndexRouteImport.update({
-  id: '/users/',
-  path: '/users/',
+const EaDeskRoute = EaDeskRouteImport.update({
+  id: '/ea-desk',
+  path: '/ea-desk',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SpecbooksIndexRoute = SpecbooksIndexRouteImport.update({
-  id: '/specbooks/',
-  path: '/specbooks/',
+const FinancialsRoute = FinancialsRouteImport.update({
+  id: '/financials',
+  path: '/financials',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
-  id: '/projects/',
-  path: '/projects/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PresentationsIndexRoute = PresentationsIndexRouteImport.update({
-  id: '/presentations/',
-  path: '/presentations/',
+const PeopleVendorsRoute = PeopleVendorsRouteImport.update({
+  id: '/people-vendors',
+  path: '/people-vendors',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HoursIndexRoute = HoursIndexRouteImport.update({
-  id: '/hours/',
-  path: '/hours/',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SpecbooksIdRoute = SpecbooksIdRouteImport.update({
-  id: '/specbooks/$id',
-  path: '/specbooks/$id',
+const ProcurementRoute = ProcurementRouteImport.update({
+  id: '/procurement',
+  path: '/procurement',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PrototypeDesignBoardRoute = PrototypeDesignBoardRouteImport.update({
-  id: '/prototype/design-board',
-  path: '/prototype/design-board',
+const ProjectManagementRoute = ProjectManagementRouteImport.update({
+  id: '/project-management',
+  path: '/project-management',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PresentationsIdRoute = PresentationsIdRouteImport.update({
-  id: '/presentations/$id',
-  path: '/presentations/$id',
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ExtensionConnectRoute = ExtensionConnectRouteImport.update({
-  id: '/extension/connect',
-  path: '/extension/connect',
+const ViewUserRoute = ViewUserRouteImport.update({
+  id: '/view-user',
+  path: '/view-user',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClientFinancialsRoute = ClientFinancialsRouteImport.update({
-  id: '/client/financials',
-  path: '/client/financials',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
-  id: '/catalog_/$productId',
-  path: '/catalog/$productId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiViewUserRoute = ApiViewUserRouteImport.update({
-  id: '/api/view-user',
-  path: '/api/view-user',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiUsersRoute = ApiUsersRouteImport.update({
-  id: '/api/users',
-  path: '/api/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiUploadRoomImageRoute = ApiUploadRoomImageRouteImport.update({
-  id: '/api/upload-room-image',
-  path: '/api/upload-room-image',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiUploadProjectDocumentRoute =
-  ApiUploadProjectDocumentRouteImport.update({
-    id: '/api/upload-project-document',
-    path: '/api/upload-project-document',
+const ApiCalendarNotificationsRoute =
+  ApiCalendarNotificationsRouteImport.update({
+    id: '/api/calendar-notifications',
+    path: '/api/calendar-notifications',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiUploadDesignBoardImageRoute =
-  ApiUploadDesignBoardImageRouteImport.update({
-    id: '/api/upload-design-board-image',
-    path: '/api/upload-design-board-image',
+const ApiCheckMaterialFinishesRoute =
+  ApiCheckMaterialFinishesRouteImport.update({
+    id: '/api/check-material-finishes',
+    path: '/api/check-material-finishes',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiSuggestPlanDimensionsRoute =
-  ApiSuggestPlanDimensionsRouteImport.update({
-    id: '/api/suggest-plan-dimensions',
-    path: '/api/suggest-plan-dimensions',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiSuggestBoardColorRoute = ApiSuggestBoardColorRouteImport.update({
-  id: '/api/suggest-board-color',
-  path: '/api/suggest-board-color',
+const ApiCheckMaterialPlansRoute = ApiCheckMaterialPlansRouteImport.update({
+  id: '/api/check-material-plans',
+  path: '/api/check-material-plans',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiStudioRemindersRoute = ApiStudioRemindersRouteImport.update({
-  id: '/api/studio-reminders',
-  path: '/api/studio-reminders',
+const ApiCheckSpecCompletionRoute = ApiCheckSpecCompletionRouteImport.update({
+  id: '/api/check-spec-completion',
+  path: '/api/check-spec-completion',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
-  id: '/api/spec-ordering',
-  path: '/api/spec-ordering',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSpecCompletionReviewRoute = ApiSpecCompletionReviewRouteImport.update({
-  id: '/api/spec-completion-review',
-  path: '/api/spec-completion-review',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSpecBookSourceStatusRoute = ApiSpecBookSourceStatusRouteImport.update({
-  id: '/api/spec-book-source-status',
-  path: '/api/spec-book-source-status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSpecBookMaterialRoute = ApiSpecBookMaterialRouteImport.update({
-  id: '/api/spec-book-material',
-  path: '/api/spec-book-material',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSharedDesignBoardRoute = ApiSharedDesignBoardRouteImport.update({
-  id: '/api/shared-design-board',
-  path: '/api/shared-design-board',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
-  id: '/api/scrape-url',
-  path: '/api/scrape-url',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiScrapeProductsRoute = ApiScrapeProductsRouteImport.update({
-  id: '/api/scrape-products',
-  path: '/api/scrape-products',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
-  id: '/api/scrape-materials',
-  path: '/api/scrape-materials',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiScrapeCartonCoverageRoute = ApiScrapeCartonCoverageRouteImport.update({
-  id: '/api/scrape-carton-coverage',
-  path: '/api/scrape-carton-coverage',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRoomDesignImageSourceRoute =
-  ApiRoomDesignImageSourceRouteImport.update({
-    id: '/api/room-design-image-source',
-    path: '/api/room-design-image-source',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiRoomDesignImageRoute = ApiRoomDesignImageRouteImport.update({
-  id: '/api/room-design-image',
-  path: '/api/room-design-image',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRenderingStudioRoute = ApiRenderingStudioRouteImport.update({
-  id: '/api/rendering-studio',
-  path: '/api/rendering-studio',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRemoveDesignBoardBackgroundRoute =
-  ApiRemoveDesignBoardBackgroundRouteImport.update({
-    id: '/api/remove-design-board-background',
-    path: '/api/remove-design-board-background',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiProjectsRoute = ApiProjectsRouteImport.update({
-  id: '/api/projects',
-  path: '/api/projects',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProjectTodosRoute = ApiProjectTodosRouteImport.update({
-  id: '/api/project-todos',
-  path: '/api/project-todos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProjectTaskAttachmentRoute =
-  ApiProjectTaskAttachmentRouteImport.update({
-    id: '/api/project-task-attachment',
-    path: '/api/project-task-attachment',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
-  id: '/api/project-management',
-  path: '/api/project-management',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProjectCapturesRoute = ApiProjectCapturesRouteImport.update({
-  id: '/api/project-captures',
-  path: '/api/project-captures',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProcurementRunsRoute = ApiProcurementRunsRouteImport.update({
-  id: '/api/procurement-runs',
-  path: '/api/procurement-runs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProcurementMcpRoute = ApiProcurementMcpRouteImport.update({
-  id: '/api/procurement-mcp',
-  path: '/api/procurement-mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProcurementGmailCallbackRoute =
-  ApiProcurementGmailCallbackRouteImport.update({
-    id: '/api/procurement-gmail-callback',
-    path: '/api/procurement-gmail-callback',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiProcurementEmailRoute = ApiProcurementEmailRouteImport.update({
-  id: '/api/procurement-email',
-  path: '/api/procurement-email',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPresentationBoardRoute = ApiPresentationBoardRouteImport.update({
-  id: '/api/presentation-board',
-  path: '/api/presentation-board',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
-  id: '/api/parse-invoice-pdf',
-  path: '/api/parse-invoice-pdf',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMyTodosRoute = ApiMyTodosRouteImport.update({
-  id: '/api/my-todos',
-  path: '/api/my-todos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMaterialCatalogSuggestionsRoute =
-  ApiMaterialCatalogSuggestionsRouteImport.update({
-    id: '/api/material-catalog-suggestions',
-    path: '/api/material-catalog-suggestions',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiMarvinUploadRoute = ApiMarvinUploadRouteImport.update({
-  id: '/api/marvin-upload',
-  path: '/api/marvin-upload',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMarvinGmailCallbackRoute = ApiMarvinGmailCallbackRouteImport.update({
-  id: '/api/marvin-gmail-callback',
-  path: '/api/marvin-gmail-callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMarvinFathomWebhookRoute = ApiMarvinFathomWebhookRouteImport.update({
-  id: '/api/marvin-fathom-webhook',
-  path: '/api/marvin-fathom-webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMarvinCronRoute = ApiMarvinCronRouteImport.update({
-  id: '/api/marvin-cron',
-  path: '/api/marvin-cron',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMarvinRoute = ApiMarvinRouteImport.update({
-  id: '/api/marvin',
-  path: '/api/marvin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMarkFinancialPaymentDueRoute =
-  ApiMarkFinancialPaymentDueRouteImport.update({
-    id: '/api/mark-financial-payment-due',
-    path: '/api/mark-financial-payment-due',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiImportRenderingPdfRoute = ApiImportRenderingPdfRouteImport.update({
-  id: '/api/import-rendering-pdf',
-  path: '/api/import-rendering-pdf',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiImportRenderingPackageRoute =
-  ApiImportRenderingPackageRouteImport.update({
-    id: '/api/import-rendering-package',
-    path: '/api/import-rendering-package',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiImportMaterialsPdfRoute = ApiImportMaterialsPdfRouteImport.update({
-  id: '/api/import-materials-pdf',
-  path: '/api/import-materials-pdf',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiImageDataUrlRoute = ApiImageDataUrlRouteImport.update({
-  id: '/api/image-data-url',
-  path: '/api/image-data-url',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
-  id: '/api/generate-rendering',
-  path: '/api/generate-rendering',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiEaWorkspaceRoute = ApiEaWorkspaceRouteImport.update({
-  id: '/api/ea-workspace',
-  path: '/api/ea-workspace',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiEaDocumentEvidenceRoute = ApiEaDocumentEvidenceRouteImport.update({
-  id: '/api/ea-document-evidence',
-  path: '/api/ea-document-evidence',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiEaCalendarRoute = ApiEaCalendarRouteImport.update({
-  id: '/api/ea-calendar',
-  path: '/api/ea-calendar',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDuplicateProjectRoute = ApiDuplicateProjectRouteImport.update({
-  id: '/api/duplicate-project',
-  path: '/api/duplicate-project',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDrawingVerificationRoute = ApiDrawingVerificationRouteImport.update({
-  id: '/api/drawing-verification',
-  path: '/api/drawing-verification',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDesignBoardQuestionRoute = ApiDesignBoardQuestionRouteImport.update({
-  id: '/api/design-board-question',
-  path: '/api/design-board-question',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDesignBoardCommentTodosRoute =
-  ApiDesignBoardCommentTodosRouteImport.update({
-    id: '/api/design-board-comment-todos',
-    path: '/api/design-board-comment-todos',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiCreateStripePaymentLinkRoute =
-  ApiCreateStripePaymentLinkRouteImport.update({
-    id: '/api/create-stripe-payment-link',
-    path: '/api/create-stripe-payment-link',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiConstructionUploadsRoute = ApiConstructionUploadsRouteImport.update({
-  id: '/api/construction-uploads',
-  path: '/api/construction-uploads',
+const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
+  id: '/api/client-dashboard',
+  path: '/api/client-dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiConstructionDocumentNotificationsRoute =
@@ -526,121 +218,403 @@ const ApiConstructionDocumentNotificationsRoute =
     path: '/api/construction-document-notifications',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiClientDashboardRoute = ApiClientDashboardRouteImport.update({
-  id: '/api/client-dashboard',
-  path: '/api/client-dashboard',
+const ApiConstructionUploadsRoute = ApiConstructionUploadsRouteImport.update({
+  id: '/api/construction-uploads',
+  path: '/api/construction-uploads',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCheckSpecCompletionRoute = ApiCheckSpecCompletionRouteImport.update({
-  id: '/api/check-spec-completion',
-  path: '/api/check-spec-completion',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCheckMaterialPlansRoute = ApiCheckMaterialPlansRouteImport.update({
-  id: '/api/check-material-plans',
-  path: '/api/check-material-plans',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCheckMaterialFinishesRoute =
-  ApiCheckMaterialFinishesRouteImport.update({
-    id: '/api/check-material-finishes',
-    path: '/api/check-material-finishes',
+const ApiCreateStripePaymentLinkRoute =
+  ApiCreateStripePaymentLinkRouteImport.update({
+    id: '/api/create-stripe-payment-link',
+    path: '/api/create-stripe-payment-link',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiCalendarNotificationsRoute =
-  ApiCalendarNotificationsRouteImport.update({
-    id: '/api/calendar-notifications',
-    path: '/api/calendar-notifications',
+const ApiDesignBoardCommentTodosRoute =
+  ApiDesignBoardCommentTodosRouteImport.update({
+    id: '/api/design-board-comment-todos',
+    path: '/api/design-board-comment-todos',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
-  id: '/projects/$id/',
-  path: '/projects/$id/',
+const ApiDesignBoardQuestionRoute = ApiDesignBoardQuestionRouteImport.update({
+  id: '/api/design-board-question',
+  path: '/api/design-board-question',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SpecbooksPublicIdRoute = SpecbooksPublicIdRouteImport.update({
-  id: '/specbooks/public/$id',
-  path: '/specbooks/public/$id',
+const ApiDrawingVerificationRoute = ApiDrawingVerificationRouteImport.update({
+  id: '/api/drawing-verification',
+  path: '/api/drawing-verification',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsIdRoomDesignRoute = ProjectsIdRoomDesignRouteImport.update({
-  id: '/projects/$id/room-design',
-  path: '/projects/$id/room-design',
+const ApiDuplicateProjectRoute = ApiDuplicateProjectRouteImport.update({
+  id: '/api/duplicate-project',
+  path: '/api/duplicate-project',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsIdRenderingsRoute = ProjectsIdRenderingsRouteImport.update({
-  id: '/projects/$id/renderings',
-  path: '/projects/$id/renderings',
+const ApiEaCalendarRoute = ApiEaCalendarRouteImport.update({
+  id: '/api/ea-calendar',
+  path: '/api/ea-calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsIdRenderingStudioRoute =
-  ProjectsIdRenderingStudioRouteImport.update({
-    id: '/projects/$id/rendering-studio',
-    path: '/projects/$id/rendering-studio',
+const ApiEaDocumentEvidenceRoute = ApiEaDocumentEvidenceRouteImport.update({
+  id: '/api/ea-document-evidence',
+  path: '/api/ea-document-evidence',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEaWorkspaceRoute = ApiEaWorkspaceRouteImport.update({
+  id: '/api/ea-workspace',
+  path: '/api/ea-workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
+  id: '/api/generate-rendering',
+  path: '/api/generate-rendering',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImageDataUrlRoute = ApiImageDataUrlRouteImport.update({
+  id: '/api/image-data-url',
+  path: '/api/image-data-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImportMaterialsPdfRoute = ApiImportMaterialsPdfRouteImport.update({
+  id: '/api/import-materials-pdf',
+  path: '/api/import-materials-pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImportRenderingPackageRoute =
+  ApiImportRenderingPackageRouteImport.update({
+    id: '/api/import-rendering-package',
+    path: '/api/import-rendering-package',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ProjectsIdPresentationRoute = ProjectsIdPresentationRouteImport.update({
-  id: '/projects/$id/presentation',
-  path: '/projects/$id/presentation',
+const ApiImportRenderingPdfRoute = ApiImportRenderingPdfRouteImport.update({
+  id: '/api/import-rendering-pdf',
+  path: '/api/import-rendering-pdf',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsIdOperationsRoute = ProjectsIdOperationsRouteImport.update({
-  id: '/projects/$id/operations',
-  path: '/projects/$id/operations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectsIdMaterialsRoute = ProjectsIdMaterialsRouteImport.update({
-  id: '/projects/$id/materials',
-  path: '/projects/$id/materials',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectsIdFinancialsRoute = ProjectsIdFinancialsRouteImport.update({
-  id: '/projects/$id/financials',
-  path: '/projects/$id/financials',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectsIdDesignBoardsRoute = ProjectsIdDesignBoardsRouteImport.update({
-  id: '/projects/$id/design-boards',
-  path: '/projects/$id/design-boards',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectsIdDesignBoardPresentationRoute =
-  ProjectsIdDesignBoardPresentationRouteImport.update({
-    id: '/projects/$id/design-board-presentation',
-    path: '/projects/$id/design-board-presentation',
+const ApiMarkFinancialPaymentDueRoute =
+  ApiMarkFinancialPaymentDueRouteImport.update({
+    id: '/api/mark-financial-payment-due',
+    path: '/api/mark-financial-payment-due',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ProjectsIdConstructionDocsRoute =
-  ProjectsIdConstructionDocsRouteImport.update({
-    id: '/projects/$id/construction-docs',
-    path: '/projects/$id/construction-docs',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ProjectsIdApprovalsRoute = ProjectsIdApprovalsRouteImport.update({
-  id: '/projects/$id/approvals',
-  path: '/projects/$id/approvals',
+const ApiMarvinRoute = ApiMarvinRouteImport.update({
+  id: '/api/marvin',
+  path: '/api/marvin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClientApprovalsProjectIdRoute =
-  ClientApprovalsProjectIdRouteImport.update({
-    id: '/client/approvals/$projectId',
-    path: '/client/approvals/$projectId',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
-  id: '/api/stripe/webhook',
-  path: '/api/stripe/webhook',
+const ApiMarvinCronRoute = ApiMarvinCronRouteImport.update({
+  id: '/api/marvin-cron',
+  path: '/api/marvin-cron',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiQuickbooksSyncInvoiceRoute =
-  ApiQuickbooksSyncInvoiceRouteImport.update({
-    id: '/api/quickbooks/sync-invoice',
-    path: '/api/quickbooks/sync-invoice',
+const ApiMarvinFathomWebhookRoute = ApiMarvinFathomWebhookRouteImport.update({
+  id: '/api/marvin-fathom-webhook',
+  path: '/api/marvin-fathom-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinGmailCallbackRoute = ApiMarvinGmailCallbackRouteImport.update({
+  id: '/api/marvin-gmail-callback',
+  path: '/api/marvin-gmail-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinUploadRoute = ApiMarvinUploadRouteImport.update({
+  id: '/api/marvin-upload',
+  path: '/api/marvin-upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMaterialCatalogSuggestionsRoute =
+  ApiMaterialCatalogSuggestionsRouteImport.update({
+    id: '/api/material-catalog-suggestions',
+    path: '/api/material-catalog-suggestions',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiQuickbooksStatusRoute = ApiQuickbooksStatusRouteImport.update({
-  id: '/api/quickbooks/status',
-  path: '/api/quickbooks/status',
+const ApiMeasuredRenderingRoute = ApiMeasuredRenderingRouteImport.update({
+  id: '/api/measured-rendering',
+  path: '/api/measured-rendering',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMyTodosRoute = ApiMyTodosRouteImport.update({
+  id: '/api/my-todos',
+  path: '/api/my-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiParseInvoicePdfRoute = ApiParseInvoicePdfRouteImport.update({
+  id: '/api/parse-invoice-pdf',
+  path: '/api/parse-invoice-pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPresentationBoardRoute = ApiPresentationBoardRouteImport.update({
+  id: '/api/presentation-board',
+  path: '/api/presentation-board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProcurementEmailRoute = ApiProcurementEmailRouteImport.update({
+  id: '/api/procurement-email',
+  path: '/api/procurement-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProcurementGmailCallbackRoute =
+  ApiProcurementGmailCallbackRouteImport.update({
+    id: '/api/procurement-gmail-callback',
+    path: '/api/procurement-gmail-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiProcurementMcpRoute = ApiProcurementMcpRouteImport.update({
+  id: '/api/procurement-mcp',
+  path: '/api/procurement-mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProcurementRunsRoute = ApiProcurementRunsRouteImport.update({
+  id: '/api/procurement-runs',
+  path: '/api/procurement-runs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProjectCapturesRoute = ApiProjectCapturesRouteImport.update({
+  id: '/api/project-captures',
+  path: '/api/project-captures',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProjectManagementRoute = ApiProjectManagementRouteImport.update({
+  id: '/api/project-management',
+  path: '/api/project-management',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProjectTaskAttachmentRoute =
+  ApiProjectTaskAttachmentRouteImport.update({
+    id: '/api/project-task-attachment',
+    path: '/api/project-task-attachment',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiProjectTodosRoute = ApiProjectTodosRouteImport.update({
+  id: '/api/project-todos',
+  path: '/api/project-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProjectsRoute = ApiProjectsRouteImport.update({
+  id: '/api/projects',
+  path: '/api/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRemoveDesignBoardBackgroundRoute =
+  ApiRemoveDesignBoardBackgroundRouteImport.update({
+    id: '/api/remove-design-board-background',
+    path: '/api/remove-design-board-background',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiRenderingStudioRoute = ApiRenderingStudioRouteImport.update({
+  id: '/api/rendering-studio',
+  path: '/api/rendering-studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRoomDesignImageRoute = ApiRoomDesignImageRouteImport.update({
+  id: '/api/room-design-image',
+  path: '/api/room-design-image',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRoomDesignImageSourceRoute =
+  ApiRoomDesignImageSourceRouteImport.update({
+    id: '/api/room-design-image-source',
+    path: '/api/room-design-image-source',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiScrapeCartonCoverageRoute = ApiScrapeCartonCoverageRouteImport.update({
+  id: '/api/scrape-carton-coverage',
+  path: '/api/scrape-carton-coverage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiScrapeMaterialsRoute = ApiScrapeMaterialsRouteImport.update({
+  id: '/api/scrape-materials',
+  path: '/api/scrape-materials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiScrapeProductsRoute = ApiScrapeProductsRouteImport.update({
+  id: '/api/scrape-products',
+  path: '/api/scrape-products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiScrapeUrlRoute = ApiScrapeUrlRouteImport.update({
+  id: '/api/scrape-url',
+  path: '/api/scrape-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSharedDesignBoardRoute = ApiSharedDesignBoardRouteImport.update({
+  id: '/api/shared-design-board',
+  path: '/api/shared-design-board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecBookMaterialRoute = ApiSpecBookMaterialRouteImport.update({
+  id: '/api/spec-book-material',
+  path: '/api/spec-book-material',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecBookSourceStatusRoute = ApiSpecBookSourceStatusRouteImport.update({
+  id: '/api/spec-book-source-status',
+  path: '/api/spec-book-source-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecCompletionReviewRoute = ApiSpecCompletionReviewRouteImport.update({
+  id: '/api/spec-completion-review',
+  path: '/api/spec-completion-review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
+  id: '/api/spec-ordering',
+  path: '/api/spec-ordering',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStudioRemindersRoute = ApiStudioRemindersRouteImport.update({
+  id: '/api/studio-reminders',
+  path: '/api/studio-reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSuggestBoardColorRoute = ApiSuggestBoardColorRouteImport.update({
+  id: '/api/suggest-board-color',
+  path: '/api/suggest-board-color',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSuggestPlanDimensionsRoute =
+  ApiSuggestPlanDimensionsRouteImport.update({
+    id: '/api/suggest-plan-dimensions',
+    path: '/api/suggest-plan-dimensions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiUploadDesignBoardImageRoute =
+  ApiUploadDesignBoardImageRouteImport.update({
+    id: '/api/upload-design-board-image',
+    path: '/api/upload-design-board-image',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiUploadProjectDocumentRoute =
+  ApiUploadProjectDocumentRouteImport.update({
+    id: '/api/upload-project-document',
+    path: '/api/upload-project-document',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiUploadRoomImageRoute = ApiUploadRoomImageRouteImport.update({
+  id: '/api/upload-room-image',
+  path: '/api/upload-room-image',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUsersRoute = ApiUsersRouteImport.update({
+  id: '/api/users',
+  path: '/api/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiViewUserRoute = ApiViewUserRouteImport.update({
+  id: '/api/view-user',
+  path: '/api/view-user',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CatalogProductIdRoute = CatalogProductIdRouteImport.update({
+  id: '/catalog_/$productId',
+  path: '/catalog/$productId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientFinancialsRoute = ClientFinancialsRouteImport.update({
+  id: '/client/financials',
+  path: '/client/financials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExtensionConnectRoute = ExtensionConnectRouteImport.update({
+  id: '/extension/connect',
+  path: '/extension/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HoursIndexRoute = HoursIndexRouteImport.update({
+  id: '/hours/',
+  path: '/hours/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PresentationsIndexRoute = PresentationsIndexRouteImport.update({
+  id: '/presentations/',
+  path: '/presentations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PresentationsIdRoute = PresentationsIdRouteImport.update({
+  id: '/presentations/$id',
+  path: '/presentations/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrototypeDesignBoardRoute = PrototypeDesignBoardRouteImport.update({
+  id: '/prototype/design-board',
+  path: '/prototype/design-board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpecbooksIndexRoute = SpecbooksIndexRouteImport.update({
+  id: '/specbooks/',
+  path: '/specbooks/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpecbooksIdRoute = SpecbooksIdRouteImport.update({
+  id: '/specbooks/$id',
+  path: '/specbooks/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersIndexRoute = UsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiExtensionBoardPagesRoute = ApiExtensionBoardPagesRouteImport.update({
+  id: '/api/extension/board-pages',
+  path: '/api/extension/board-pages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiExtensionConnectTokenRoute =
+  ApiExtensionConnectTokenRouteImport.update({
+    id: '/api/extension/connect-token',
+    path: '/api/extension/connect-token',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiExtensionImportProductRoute =
+  ApiExtensionImportProductRouteImport.update({
+    id: '/api/extension/import-product',
+    path: '/api/extension/import-product',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiExtensionPricesRoute = ApiExtensionPricesRouteImport.update({
+  id: '/api/extension/prices',
+  path: '/api/extension/prices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiExtensionProjectsRoute = ApiExtensionProjectsRouteImport.update({
+  id: '/api/extension/projects',
+  path: '/api/extension/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiExtensionRoomDesignRoute = ApiExtensionRoomDesignRouteImport.update({
+  id: '/api/extension/room-design',
+  path: '/api/extension/room-design',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarvinCronStageRoute = ApiMarvinCronStageRouteImport.update({
+  id: '/$stage',
+  path: '/$stage',
+  getParentRoute: () => ApiMarvinCronRoute,
+} as any)
+const ApiQuickbooksCallbackRoute = ApiQuickbooksCallbackRouteImport.update({
+  id: '/api/quickbooks/callback',
+  path: '/api/quickbooks/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiQuickbooksConnectUrlRoute = ApiQuickbooksConnectUrlRouteImport.update({
+  id: '/api/quickbooks/connect-url',
+  path: '/api/quickbooks/connect-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiQuickbooksCustomersRoute = ApiQuickbooksCustomersRouteImport.update({
+  id: '/api/quickbooks/customers',
+  path: '/api/quickbooks/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiQuickbooksDisconnectRoute = ApiQuickbooksDisconnectRouteImport.update({
+  id: '/api/quickbooks/disconnect',
+  path: '/api/quickbooks/disconnect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiQuickbooksProjectLinkRoute =
@@ -649,61 +623,100 @@ const ApiQuickbooksProjectLinkRoute =
     path: '/api/quickbooks/project-link',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiQuickbooksDisconnectRoute = ApiQuickbooksDisconnectRouteImport.update({
-  id: '/api/quickbooks/disconnect',
-  path: '/api/quickbooks/disconnect',
+const ApiQuickbooksStatusRoute = ApiQuickbooksStatusRouteImport.update({
+  id: '/api/quickbooks/status',
+  path: '/api/quickbooks/status',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiQuickbooksCustomersRoute = ApiQuickbooksCustomersRouteImport.update({
-  id: '/api/quickbooks/customers',
-  path: '/api/quickbooks/customers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiQuickbooksConnectUrlRoute = ApiQuickbooksConnectUrlRouteImport.update({
-  id: '/api/quickbooks/connect-url',
-  path: '/api/quickbooks/connect-url',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiQuickbooksCallbackRoute = ApiQuickbooksCallbackRouteImport.update({
-  id: '/api/quickbooks/callback',
-  path: '/api/quickbooks/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMarvinCronStageRoute = ApiMarvinCronStageRouteImport.update({
-  id: '/$stage',
-  path: '/$stage',
-  getParentRoute: () => ApiMarvinCronRoute,
-} as any)
-const ApiExtensionRoomDesignRoute = ApiExtensionRoomDesignRouteImport.update({
-  id: '/api/extension/room-design',
-  path: '/api/extension/room-design',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiExtensionProjectsRoute = ApiExtensionProjectsRouteImport.update({
-  id: '/api/extension/projects',
-  path: '/api/extension/projects',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiExtensionPricesRoute = ApiExtensionPricesRouteImport.update({
-  id: '/api/extension/prices',
-  path: '/api/extension/prices',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiExtensionImportProductRoute =
-  ApiExtensionImportProductRouteImport.update({
-    id: '/api/extension/import-product',
-    path: '/api/extension/import-product',
+const ApiQuickbooksSyncInvoiceRoute =
+  ApiQuickbooksSyncInvoiceRouteImport.update({
+    id: '/api/quickbooks/sync-invoice',
+    path: '/api/quickbooks/sync-invoice',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiExtensionConnectTokenRoute =
-  ApiExtensionConnectTokenRouteImport.update({
-    id: '/api/extension/connect-token',
-    path: '/api/extension/connect-token',
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe/webhook',
+  path: '/api/stripe/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientApprovalsProjectIdRoute =
+  ClientApprovalsProjectIdRouteImport.update({
+    id: '/client/approvals/$projectId',
+    path: '/client/approvals/$projectId',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiExtensionBoardPagesRoute = ApiExtensionBoardPagesRouteImport.update({
-  id: '/api/extension/board-pages',
-  path: '/api/extension/board-pages',
+const ProjectsIdIndexRoute = ProjectsIdIndexRouteImport.update({
+  id: '/projects/$id/',
+  path: '/projects/$id/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdApprovalsRoute = ProjectsIdApprovalsRouteImport.update({
+  id: '/projects/$id/approvals',
+  path: '/projects/$id/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdConstructionDocsRoute =
+  ProjectsIdConstructionDocsRouteImport.update({
+    id: '/projects/$id/construction-docs',
+    path: '/projects/$id/construction-docs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProjectsIdDesignBoardPresentationRoute =
+  ProjectsIdDesignBoardPresentationRouteImport.update({
+    id: '/projects/$id/design-board-presentation',
+    path: '/projects/$id/design-board-presentation',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProjectsIdDesignBoardsRoute = ProjectsIdDesignBoardsRouteImport.update({
+  id: '/projects/$id/design-boards',
+  path: '/projects/$id/design-boards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdFinancialsRoute = ProjectsIdFinancialsRouteImport.update({
+  id: '/projects/$id/financials',
+  path: '/projects/$id/financials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdMaterialsRoute = ProjectsIdMaterialsRouteImport.update({
+  id: '/projects/$id/materials',
+  path: '/projects/$id/materials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdMeasuredRenderingRoute =
+  ProjectsIdMeasuredRenderingRouteImport.update({
+    id: '/projects/$id/measured-rendering',
+    path: '/projects/$id/measured-rendering',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProjectsIdOperationsRoute = ProjectsIdOperationsRouteImport.update({
+  id: '/projects/$id/operations',
+  path: '/projects/$id/operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdPresentationRoute = ProjectsIdPresentationRouteImport.update({
+  id: '/projects/$id/presentation',
+  path: '/projects/$id/presentation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdRenderingStudioRoute =
+  ProjectsIdRenderingStudioRouteImport.update({
+    id: '/projects/$id/rendering-studio',
+    path: '/projects/$id/rendering-studio',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProjectsIdRenderingsRoute = ProjectsIdRenderingsRouteImport.update({
+  id: '/projects/$id/renderings',
+  path: '/projects/$id/renderings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdRoomDesignRoute = ProjectsIdRoomDesignRouteImport.update({
+  id: '/projects/$id/room-design',
+  path: '/projects/$id/room-design',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpecbooksPublicIdRoute = SpecbooksPublicIdRouteImport.update({
+  id: '/specbooks/public/$id',
+  path: '/specbooks/public/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsIdRoomsRoomIdRoute = ProjectsIdRoomsRoomIdRouteImport.update({
@@ -752,6 +765,7 @@ export interface FileRoutesByFullPath {
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
   '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
+  '/api/measured-rendering': typeof ApiMeasuredRenderingRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
@@ -818,6 +832,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
+  '/projects/$id/measured-rendering': typeof ProjectsIdMeasuredRenderingRoute
   '/projects/$id/operations': typeof ProjectsIdOperationsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
@@ -867,6 +882,7 @@ export interface FileRoutesByTo {
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
   '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
+  '/api/measured-rendering': typeof ApiMeasuredRenderingRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
@@ -933,6 +949,7 @@ export interface FileRoutesByTo {
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
+  '/projects/$id/measured-rendering': typeof ProjectsIdMeasuredRenderingRoute
   '/projects/$id/operations': typeof ProjectsIdOperationsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
@@ -983,6 +1000,7 @@ export interface FileRoutesById {
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
   '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
+  '/api/measured-rendering': typeof ApiMeasuredRenderingRoute
   '/api/my-todos': typeof ApiMyTodosRoute
   '/api/parse-invoice-pdf': typeof ApiParseInvoicePdfRoute
   '/api/presentation-board': typeof ApiPresentationBoardRoute
@@ -1049,6 +1067,7 @@ export interface FileRoutesById {
   '/projects/$id/design-boards': typeof ProjectsIdDesignBoardsRoute
   '/projects/$id/financials': typeof ProjectsIdFinancialsRoute
   '/projects/$id/materials': typeof ProjectsIdMaterialsRoute
+  '/projects/$id/measured-rendering': typeof ProjectsIdMeasuredRenderingRoute
   '/projects/$id/operations': typeof ProjectsIdOperationsRoute
   '/projects/$id/presentation': typeof ProjectsIdPresentationRoute
   '/projects/$id/rendering-studio': typeof ProjectsIdRenderingStudioRoute
@@ -1100,6 +1119,7 @@ export interface FileRouteTypes {
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
     | '/api/material-catalog-suggestions'
+    | '/api/measured-rendering'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
@@ -1166,6 +1186,7 @@ export interface FileRouteTypes {
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
+    | '/projects/$id/measured-rendering'
     | '/projects/$id/operations'
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
@@ -1215,6 +1236,7 @@ export interface FileRouteTypes {
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
     | '/api/material-catalog-suggestions'
+    | '/api/measured-rendering'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
@@ -1281,6 +1303,7 @@ export interface FileRouteTypes {
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
+    | '/projects/$id/measured-rendering'
     | '/projects/$id/operations'
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
@@ -1330,6 +1353,7 @@ export interface FileRouteTypes {
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
     | '/api/material-catalog-suggestions'
+    | '/api/measured-rendering'
     | '/api/my-todos'
     | '/api/parse-invoice-pdf'
     | '/api/presentation-board'
@@ -1396,6 +1420,7 @@ export interface FileRouteTypes {
     | '/projects/$id/design-boards'
     | '/projects/$id/financials'
     | '/projects/$id/materials'
+    | '/projects/$id/measured-rendering'
     | '/projects/$id/operations'
     | '/projects/$id/presentation'
     | '/projects/$id/rendering-studio'
@@ -1446,6 +1471,7 @@ export interface RootRouteChildren {
   ApiMarvinGmailCallbackRoute: typeof ApiMarvinGmailCallbackRoute
   ApiMarvinUploadRoute: typeof ApiMarvinUploadRoute
   ApiMaterialCatalogSuggestionsRoute: typeof ApiMaterialCatalogSuggestionsRoute
+  ApiMeasuredRenderingRoute: typeof ApiMeasuredRenderingRoute
   ApiMyTodosRoute: typeof ApiMyTodosRoute
   ApiParseInvoicePdfRoute: typeof ApiParseInvoicePdfRoute
   ApiPresentationBoardRoute: typeof ApiPresentationBoardRoute
@@ -1511,6 +1537,7 @@ export interface RootRouteChildren {
   ProjectsIdDesignBoardsRoute: typeof ProjectsIdDesignBoardsRoute
   ProjectsIdFinancialsRoute: typeof ProjectsIdFinancialsRoute
   ProjectsIdMaterialsRoute: typeof ProjectsIdMaterialsRoute
+  ProjectsIdMeasuredRenderingRoute: typeof ProjectsIdMeasuredRenderingRoute
   ProjectsIdOperationsRoute: typeof ProjectsIdOperationsRoute
   ProjectsIdPresentationRoute: typeof ProjectsIdPresentationRoute
   ProjectsIdRenderingStudioRoute: typeof ProjectsIdRenderingStudioRoute
@@ -1523,74 +1550,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/view-user': {
-      id: '/view-user'
-      path: '/view-user'
-      fullPath: '/view-user'
-      preLoaderRoute: typeof ViewUserRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/project-management': {
-      id: '/project-management'
-      path: '/project-management'
-      fullPath: '/project-management'
-      preLoaderRoute: typeof ProjectManagementRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/procurement': {
-      id: '/procurement'
-      path: '/procurement'
-      fullPath: '/procurement'
-      preLoaderRoute: typeof ProcurementRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/people-vendors': {
-      id: '/people-vendors'
-      path: '/people-vendors'
-      fullPath: '/people-vendors'
-      preLoaderRoute: typeof PeopleVendorsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/financials': {
-      id: '/financials'
-      path: '/financials'
-      fullPath: '/financials'
-      preLoaderRoute: typeof FinancialsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ea-desk': {
-      id: '/ea-desk'
-      path: '/ea-desk'
-      fullPath: '/ea-desk'
-      preLoaderRoute: typeof EaDeskRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/construction-uploads': {
-      id: '/construction-uploads'
-      path: '/construction-uploads'
-      fullPath: '/construction-uploads'
-      preLoaderRoute: typeof ConstructionUploadsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/catalog': {
@@ -1600,501 +1564,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CatalogRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/construction-uploads': {
+      id: '/construction-uploads'
+      path: '/construction-uploads'
+      fullPath: '/construction-uploads'
+      preLoaderRoute: typeof ConstructionUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/users/': {
-      id: '/users/'
-      path: '/users'
-      fullPath: '/users/'
-      preLoaderRoute: typeof UsersIndexRouteImport
+    '/ea-desk': {
+      id: '/ea-desk'
+      path: '/ea-desk'
+      fullPath: '/ea-desk'
+      preLoaderRoute: typeof EaDeskRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/specbooks/': {
-      id: '/specbooks/'
-      path: '/specbooks'
-      fullPath: '/specbooks/'
-      preLoaderRoute: typeof SpecbooksIndexRouteImport
+    '/financials': {
+      id: '/financials'
+      path: '/financials'
+      fullPath: '/financials'
+      preLoaderRoute: typeof FinancialsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/': {
-      id: '/projects/'
-      path: '/projects'
-      fullPath: '/projects/'
-      preLoaderRoute: typeof ProjectsIndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/presentations/': {
-      id: '/presentations/'
-      path: '/presentations'
-      fullPath: '/presentations/'
-      preLoaderRoute: typeof PresentationsIndexRouteImport
+    '/people-vendors': {
+      id: '/people-vendors'
+      path: '/people-vendors'
+      fullPath: '/people-vendors'
+      preLoaderRoute: typeof PeopleVendorsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/hours/': {
-      id: '/hours/'
-      path: '/hours'
-      fullPath: '/hours/'
-      preLoaderRoute: typeof HoursIndexRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/specbooks/$id': {
-      id: '/specbooks/$id'
-      path: '/specbooks/$id'
-      fullPath: '/specbooks/$id'
-      preLoaderRoute: typeof SpecbooksIdRouteImport
+    '/procurement': {
+      id: '/procurement'
+      path: '/procurement'
+      fullPath: '/procurement'
+      preLoaderRoute: typeof ProcurementRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/prototype/design-board': {
-      id: '/prototype/design-board'
-      path: '/prototype/design-board'
-      fullPath: '/prototype/design-board'
-      preLoaderRoute: typeof PrototypeDesignBoardRouteImport
+    '/project-management': {
+      id: '/project-management'
+      path: '/project-management'
+      fullPath: '/project-management'
+      preLoaderRoute: typeof ProjectManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/presentations/$id': {
-      id: '/presentations/$id'
-      path: '/presentations/$id'
-      fullPath: '/presentations/$id'
-      preLoaderRoute: typeof PresentationsIdRouteImport
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/extension/connect': {
-      id: '/extension/connect'
-      path: '/extension/connect'
-      fullPath: '/extension/connect'
-      preLoaderRoute: typeof ExtensionConnectRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/client/financials': {
-      id: '/client/financials'
-      path: '/client/financials'
-      fullPath: '/client/financials'
-      preLoaderRoute: typeof ClientFinancialsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/catalog_/$productId': {
-      id: '/catalog_/$productId'
-      path: '/catalog/$productId'
-      fullPath: '/catalog/$productId'
-      preLoaderRoute: typeof CatalogProductIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/view-user': {
-      id: '/api/view-user'
-      path: '/api/view-user'
-      fullPath: '/api/view-user'
-      preLoaderRoute: typeof ApiViewUserRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/users': {
-      id: '/api/users'
-      path: '/api/users'
-      fullPath: '/api/users'
-      preLoaderRoute: typeof ApiUsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/upload-room-image': {
-      id: '/api/upload-room-image'
-      path: '/api/upload-room-image'
-      fullPath: '/api/upload-room-image'
-      preLoaderRoute: typeof ApiUploadRoomImageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/upload-project-document': {
-      id: '/api/upload-project-document'
-      path: '/api/upload-project-document'
-      fullPath: '/api/upload-project-document'
-      preLoaderRoute: typeof ApiUploadProjectDocumentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/upload-design-board-image': {
-      id: '/api/upload-design-board-image'
-      path: '/api/upload-design-board-image'
-      fullPath: '/api/upload-design-board-image'
-      preLoaderRoute: typeof ApiUploadDesignBoardImageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/suggest-plan-dimensions': {
-      id: '/api/suggest-plan-dimensions'
-      path: '/api/suggest-plan-dimensions'
-      fullPath: '/api/suggest-plan-dimensions'
-      preLoaderRoute: typeof ApiSuggestPlanDimensionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/suggest-board-color': {
-      id: '/api/suggest-board-color'
-      path: '/api/suggest-board-color'
-      fullPath: '/api/suggest-board-color'
-      preLoaderRoute: typeof ApiSuggestBoardColorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/studio-reminders': {
-      id: '/api/studio-reminders'
-      path: '/api/studio-reminders'
-      fullPath: '/api/studio-reminders'
-      preLoaderRoute: typeof ApiStudioRemindersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spec-ordering': {
-      id: '/api/spec-ordering'
-      path: '/api/spec-ordering'
-      fullPath: '/api/spec-ordering'
-      preLoaderRoute: typeof ApiSpecOrderingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spec-completion-review': {
-      id: '/api/spec-completion-review'
-      path: '/api/spec-completion-review'
-      fullPath: '/api/spec-completion-review'
-      preLoaderRoute: typeof ApiSpecCompletionReviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spec-book-source-status': {
-      id: '/api/spec-book-source-status'
-      path: '/api/spec-book-source-status'
-      fullPath: '/api/spec-book-source-status'
-      preLoaderRoute: typeof ApiSpecBookSourceStatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/spec-book-material': {
-      id: '/api/spec-book-material'
-      path: '/api/spec-book-material'
-      fullPath: '/api/spec-book-material'
-      preLoaderRoute: typeof ApiSpecBookMaterialRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/shared-design-board': {
-      id: '/api/shared-design-board'
-      path: '/api/shared-design-board'
-      fullPath: '/api/shared-design-board'
-      preLoaderRoute: typeof ApiSharedDesignBoardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/scrape-url': {
-      id: '/api/scrape-url'
-      path: '/api/scrape-url'
-      fullPath: '/api/scrape-url'
-      preLoaderRoute: typeof ApiScrapeUrlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/scrape-products': {
-      id: '/api/scrape-products'
-      path: '/api/scrape-products'
-      fullPath: '/api/scrape-products'
-      preLoaderRoute: typeof ApiScrapeProductsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/scrape-materials': {
-      id: '/api/scrape-materials'
-      path: '/api/scrape-materials'
-      fullPath: '/api/scrape-materials'
-      preLoaderRoute: typeof ApiScrapeMaterialsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/scrape-carton-coverage': {
-      id: '/api/scrape-carton-coverage'
-      path: '/api/scrape-carton-coverage'
-      fullPath: '/api/scrape-carton-coverage'
-      preLoaderRoute: typeof ApiScrapeCartonCoverageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/room-design-image-source': {
-      id: '/api/room-design-image-source'
-      path: '/api/room-design-image-source'
-      fullPath: '/api/room-design-image-source'
-      preLoaderRoute: typeof ApiRoomDesignImageSourceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/room-design-image': {
-      id: '/api/room-design-image'
-      path: '/api/room-design-image'
-      fullPath: '/api/room-design-image'
-      preLoaderRoute: typeof ApiRoomDesignImageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/rendering-studio': {
-      id: '/api/rendering-studio'
-      path: '/api/rendering-studio'
-      fullPath: '/api/rendering-studio'
-      preLoaderRoute: typeof ApiRenderingStudioRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/remove-design-board-background': {
-      id: '/api/remove-design-board-background'
-      path: '/api/remove-design-board-background'
-      fullPath: '/api/remove-design-board-background'
-      preLoaderRoute: typeof ApiRemoveDesignBoardBackgroundRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/projects': {
-      id: '/api/projects'
-      path: '/api/projects'
-      fullPath: '/api/projects'
-      preLoaderRoute: typeof ApiProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/project-todos': {
-      id: '/api/project-todos'
-      path: '/api/project-todos'
-      fullPath: '/api/project-todos'
-      preLoaderRoute: typeof ApiProjectTodosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/project-task-attachment': {
-      id: '/api/project-task-attachment'
-      path: '/api/project-task-attachment'
-      fullPath: '/api/project-task-attachment'
-      preLoaderRoute: typeof ApiProjectTaskAttachmentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/project-management': {
-      id: '/api/project-management'
-      path: '/api/project-management'
-      fullPath: '/api/project-management'
-      preLoaderRoute: typeof ApiProjectManagementRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/project-captures': {
-      id: '/api/project-captures'
-      path: '/api/project-captures'
-      fullPath: '/api/project-captures'
-      preLoaderRoute: typeof ApiProjectCapturesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/procurement-runs': {
-      id: '/api/procurement-runs'
-      path: '/api/procurement-runs'
-      fullPath: '/api/procurement-runs'
-      preLoaderRoute: typeof ApiProcurementRunsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/procurement-mcp': {
-      id: '/api/procurement-mcp'
-      path: '/api/procurement-mcp'
-      fullPath: '/api/procurement-mcp'
-      preLoaderRoute: typeof ApiProcurementMcpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/procurement-gmail-callback': {
-      id: '/api/procurement-gmail-callback'
-      path: '/api/procurement-gmail-callback'
-      fullPath: '/api/procurement-gmail-callback'
-      preLoaderRoute: typeof ApiProcurementGmailCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/procurement-email': {
-      id: '/api/procurement-email'
-      path: '/api/procurement-email'
-      fullPath: '/api/procurement-email'
-      preLoaderRoute: typeof ApiProcurementEmailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/presentation-board': {
-      id: '/api/presentation-board'
-      path: '/api/presentation-board'
-      fullPath: '/api/presentation-board'
-      preLoaderRoute: typeof ApiPresentationBoardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/parse-invoice-pdf': {
-      id: '/api/parse-invoice-pdf'
-      path: '/api/parse-invoice-pdf'
-      fullPath: '/api/parse-invoice-pdf'
-      preLoaderRoute: typeof ApiParseInvoicePdfRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/my-todos': {
-      id: '/api/my-todos'
-      path: '/api/my-todos'
-      fullPath: '/api/my-todos'
-      preLoaderRoute: typeof ApiMyTodosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/material-catalog-suggestions': {
-      id: '/api/material-catalog-suggestions'
-      path: '/api/material-catalog-suggestions'
-      fullPath: '/api/material-catalog-suggestions'
-      preLoaderRoute: typeof ApiMaterialCatalogSuggestionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/marvin-upload': {
-      id: '/api/marvin-upload'
-      path: '/api/marvin-upload'
-      fullPath: '/api/marvin-upload'
-      preLoaderRoute: typeof ApiMarvinUploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/marvin-gmail-callback': {
-      id: '/api/marvin-gmail-callback'
-      path: '/api/marvin-gmail-callback'
-      fullPath: '/api/marvin-gmail-callback'
-      preLoaderRoute: typeof ApiMarvinGmailCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/marvin-fathom-webhook': {
-      id: '/api/marvin-fathom-webhook'
-      path: '/api/marvin-fathom-webhook'
-      fullPath: '/api/marvin-fathom-webhook'
-      preLoaderRoute: typeof ApiMarvinFathomWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/marvin-cron': {
-      id: '/api/marvin-cron'
-      path: '/api/marvin-cron'
-      fullPath: '/api/marvin-cron'
-      preLoaderRoute: typeof ApiMarvinCronRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/marvin': {
-      id: '/api/marvin'
-      path: '/api/marvin'
-      fullPath: '/api/marvin'
-      preLoaderRoute: typeof ApiMarvinRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/mark-financial-payment-due': {
-      id: '/api/mark-financial-payment-due'
-      path: '/api/mark-financial-payment-due'
-      fullPath: '/api/mark-financial-payment-due'
-      preLoaderRoute: typeof ApiMarkFinancialPaymentDueRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/import-rendering-pdf': {
-      id: '/api/import-rendering-pdf'
-      path: '/api/import-rendering-pdf'
-      fullPath: '/api/import-rendering-pdf'
-      preLoaderRoute: typeof ApiImportRenderingPdfRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/import-rendering-package': {
-      id: '/api/import-rendering-package'
-      path: '/api/import-rendering-package'
-      fullPath: '/api/import-rendering-package'
-      preLoaderRoute: typeof ApiImportRenderingPackageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/import-materials-pdf': {
-      id: '/api/import-materials-pdf'
-      path: '/api/import-materials-pdf'
-      fullPath: '/api/import-materials-pdf'
-      preLoaderRoute: typeof ApiImportMaterialsPdfRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/image-data-url': {
-      id: '/api/image-data-url'
-      path: '/api/image-data-url'
-      fullPath: '/api/image-data-url'
-      preLoaderRoute: typeof ApiImageDataUrlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/generate-rendering': {
-      id: '/api/generate-rendering'
-      path: '/api/generate-rendering'
-      fullPath: '/api/generate-rendering'
-      preLoaderRoute: typeof ApiGenerateRenderingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ea-workspace': {
-      id: '/api/ea-workspace'
-      path: '/api/ea-workspace'
-      fullPath: '/api/ea-workspace'
-      preLoaderRoute: typeof ApiEaWorkspaceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ea-document-evidence': {
-      id: '/api/ea-document-evidence'
-      path: '/api/ea-document-evidence'
-      fullPath: '/api/ea-document-evidence'
-      preLoaderRoute: typeof ApiEaDocumentEvidenceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ea-calendar': {
-      id: '/api/ea-calendar'
-      path: '/api/ea-calendar'
-      fullPath: '/api/ea-calendar'
-      preLoaderRoute: typeof ApiEaCalendarRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/duplicate-project': {
-      id: '/api/duplicate-project'
-      path: '/api/duplicate-project'
-      fullPath: '/api/duplicate-project'
-      preLoaderRoute: typeof ApiDuplicateProjectRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/drawing-verification': {
-      id: '/api/drawing-verification'
-      path: '/api/drawing-verification'
-      fullPath: '/api/drawing-verification'
-      preLoaderRoute: typeof ApiDrawingVerificationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/design-board-question': {
-      id: '/api/design-board-question'
-      path: '/api/design-board-question'
-      fullPath: '/api/design-board-question'
-      preLoaderRoute: typeof ApiDesignBoardQuestionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/design-board-comment-todos': {
-      id: '/api/design-board-comment-todos'
-      path: '/api/design-board-comment-todos'
-      fullPath: '/api/design-board-comment-todos'
-      preLoaderRoute: typeof ApiDesignBoardCommentTodosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/create-stripe-payment-link': {
-      id: '/api/create-stripe-payment-link'
-      path: '/api/create-stripe-payment-link'
-      fullPath: '/api/create-stripe-payment-link'
-      preLoaderRoute: typeof ApiCreateStripePaymentLinkRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/construction-uploads': {
-      id: '/api/construction-uploads'
-      path: '/api/construction-uploads'
-      fullPath: '/api/construction-uploads'
-      preLoaderRoute: typeof ApiConstructionUploadsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/construction-document-notifications': {
-      id: '/api/construction-document-notifications'
-      path: '/api/construction-document-notifications'
-      fullPath: '/api/construction-document-notifications'
-      preLoaderRoute: typeof ApiConstructionDocumentNotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/client-dashboard': {
-      id: '/api/client-dashboard'
-      path: '/api/client-dashboard'
-      fullPath: '/api/client-dashboard'
-      preLoaderRoute: typeof ApiClientDashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/check-spec-completion': {
-      id: '/api/check-spec-completion'
-      path: '/api/check-spec-completion'
-      fullPath: '/api/check-spec-completion'
-      preLoaderRoute: typeof ApiCheckSpecCompletionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/check-material-plans': {
-      id: '/api/check-material-plans'
-      path: '/api/check-material-plans'
-      fullPath: '/api/check-material-plans'
-      preLoaderRoute: typeof ApiCheckMaterialPlansRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/check-material-finishes': {
-      id: '/api/check-material-finishes'
-      path: '/api/check-material-finishes'
-      fullPath: '/api/check-material-finishes'
-      preLoaderRoute: typeof ApiCheckMaterialFinishesRouteImport
+    '/view-user': {
+      id: '/view-user'
+      path: '/view-user'
+      fullPath: '/view-user'
+      preLoaderRoute: typeof ViewUserRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/calendar-notifications': {
@@ -2104,193 +1641,508 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCalendarNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/': {
-      id: '/projects/$id/'
-      path: '/projects/$id'
-      fullPath: '/projects/$id/'
-      preLoaderRoute: typeof ProjectsIdIndexRouteImport
+    '/api/check-material-finishes': {
+      id: '/api/check-material-finishes'
+      path: '/api/check-material-finishes'
+      fullPath: '/api/check-material-finishes'
+      preLoaderRoute: typeof ApiCheckMaterialFinishesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/specbooks/public/$id': {
-      id: '/specbooks/public/$id'
-      path: '/specbooks/public/$id'
-      fullPath: '/specbooks/public/$id'
-      preLoaderRoute: typeof SpecbooksPublicIdRouteImport
+    '/api/check-material-plans': {
+      id: '/api/check-material-plans'
+      path: '/api/check-material-plans'
+      fullPath: '/api/check-material-plans'
+      preLoaderRoute: typeof ApiCheckMaterialPlansRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/room-design': {
-      id: '/projects/$id/room-design'
-      path: '/projects/$id/room-design'
-      fullPath: '/projects/$id/room-design'
-      preLoaderRoute: typeof ProjectsIdRoomDesignRouteImport
+    '/api/check-spec-completion': {
+      id: '/api/check-spec-completion'
+      path: '/api/check-spec-completion'
+      fullPath: '/api/check-spec-completion'
+      preLoaderRoute: typeof ApiCheckSpecCompletionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/renderings': {
-      id: '/projects/$id/renderings'
-      path: '/projects/$id/renderings'
-      fullPath: '/projects/$id/renderings'
-      preLoaderRoute: typeof ProjectsIdRenderingsRouteImport
+    '/api/client-dashboard': {
+      id: '/api/client-dashboard'
+      path: '/api/client-dashboard'
+      fullPath: '/api/client-dashboard'
+      preLoaderRoute: typeof ApiClientDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/rendering-studio': {
-      id: '/projects/$id/rendering-studio'
-      path: '/projects/$id/rendering-studio'
-      fullPath: '/projects/$id/rendering-studio'
-      preLoaderRoute: typeof ProjectsIdRenderingStudioRouteImport
+    '/api/construction-document-notifications': {
+      id: '/api/construction-document-notifications'
+      path: '/api/construction-document-notifications'
+      fullPath: '/api/construction-document-notifications'
+      preLoaderRoute: typeof ApiConstructionDocumentNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/presentation': {
-      id: '/projects/$id/presentation'
-      path: '/projects/$id/presentation'
-      fullPath: '/projects/$id/presentation'
-      preLoaderRoute: typeof ProjectsIdPresentationRouteImport
+    '/api/construction-uploads': {
+      id: '/api/construction-uploads'
+      path: '/api/construction-uploads'
+      fullPath: '/api/construction-uploads'
+      preLoaderRoute: typeof ApiConstructionUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/operations': {
-      id: '/projects/$id/operations'
-      path: '/projects/$id/operations'
-      fullPath: '/projects/$id/operations'
-      preLoaderRoute: typeof ProjectsIdOperationsRouteImport
+    '/api/create-stripe-payment-link': {
+      id: '/api/create-stripe-payment-link'
+      path: '/api/create-stripe-payment-link'
+      fullPath: '/api/create-stripe-payment-link'
+      preLoaderRoute: typeof ApiCreateStripePaymentLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/materials': {
-      id: '/projects/$id/materials'
-      path: '/projects/$id/materials'
-      fullPath: '/projects/$id/materials'
-      preLoaderRoute: typeof ProjectsIdMaterialsRouteImport
+    '/api/design-board-comment-todos': {
+      id: '/api/design-board-comment-todos'
+      path: '/api/design-board-comment-todos'
+      fullPath: '/api/design-board-comment-todos'
+      preLoaderRoute: typeof ApiDesignBoardCommentTodosRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/financials': {
-      id: '/projects/$id/financials'
-      path: '/projects/$id/financials'
-      fullPath: '/projects/$id/financials'
-      preLoaderRoute: typeof ProjectsIdFinancialsRouteImport
+    '/api/design-board-question': {
+      id: '/api/design-board-question'
+      path: '/api/design-board-question'
+      fullPath: '/api/design-board-question'
+      preLoaderRoute: typeof ApiDesignBoardQuestionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/design-boards': {
-      id: '/projects/$id/design-boards'
-      path: '/projects/$id/design-boards'
-      fullPath: '/projects/$id/design-boards'
-      preLoaderRoute: typeof ProjectsIdDesignBoardsRouteImport
+    '/api/drawing-verification': {
+      id: '/api/drawing-verification'
+      path: '/api/drawing-verification'
+      fullPath: '/api/drawing-verification'
+      preLoaderRoute: typeof ApiDrawingVerificationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/design-board-presentation': {
-      id: '/projects/$id/design-board-presentation'
-      path: '/projects/$id/design-board-presentation'
-      fullPath: '/projects/$id/design-board-presentation'
-      preLoaderRoute: typeof ProjectsIdDesignBoardPresentationRouteImport
+    '/api/duplicate-project': {
+      id: '/api/duplicate-project'
+      path: '/api/duplicate-project'
+      fullPath: '/api/duplicate-project'
+      preLoaderRoute: typeof ApiDuplicateProjectRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/construction-docs': {
-      id: '/projects/$id/construction-docs'
-      path: '/projects/$id/construction-docs'
-      fullPath: '/projects/$id/construction-docs'
-      preLoaderRoute: typeof ProjectsIdConstructionDocsRouteImport
+    '/api/ea-calendar': {
+      id: '/api/ea-calendar'
+      path: '/api/ea-calendar'
+      fullPath: '/api/ea-calendar'
+      preLoaderRoute: typeof ApiEaCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/$id/approvals': {
-      id: '/projects/$id/approvals'
-      path: '/projects/$id/approvals'
-      fullPath: '/projects/$id/approvals'
-      preLoaderRoute: typeof ProjectsIdApprovalsRouteImport
+    '/api/ea-document-evidence': {
+      id: '/api/ea-document-evidence'
+      path: '/api/ea-document-evidence'
+      fullPath: '/api/ea-document-evidence'
+      preLoaderRoute: typeof ApiEaDocumentEvidenceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/client/approvals/$projectId': {
-      id: '/client/approvals/$projectId'
-      path: '/client/approvals/$projectId'
-      fullPath: '/client/approvals/$projectId'
-      preLoaderRoute: typeof ClientApprovalsProjectIdRouteImport
+    '/api/ea-workspace': {
+      id: '/api/ea-workspace'
+      path: '/api/ea-workspace'
+      fullPath: '/api/ea-workspace'
+      preLoaderRoute: typeof ApiEaWorkspaceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/stripe/webhook': {
-      id: '/api/stripe/webhook'
-      path: '/api/stripe/webhook'
-      fullPath: '/api/stripe/webhook'
-      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+    '/api/generate-rendering': {
+      id: '/api/generate-rendering'
+      path: '/api/generate-rendering'
+      fullPath: '/api/generate-rendering'
+      preLoaderRoute: typeof ApiGenerateRenderingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/sync-invoice': {
-      id: '/api/quickbooks/sync-invoice'
-      path: '/api/quickbooks/sync-invoice'
-      fullPath: '/api/quickbooks/sync-invoice'
-      preLoaderRoute: typeof ApiQuickbooksSyncInvoiceRouteImport
+    '/api/image-data-url': {
+      id: '/api/image-data-url'
+      path: '/api/image-data-url'
+      fullPath: '/api/image-data-url'
+      preLoaderRoute: typeof ApiImageDataUrlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/status': {
-      id: '/api/quickbooks/status'
-      path: '/api/quickbooks/status'
-      fullPath: '/api/quickbooks/status'
-      preLoaderRoute: typeof ApiQuickbooksStatusRouteImport
+    '/api/import-materials-pdf': {
+      id: '/api/import-materials-pdf'
+      path: '/api/import-materials-pdf'
+      fullPath: '/api/import-materials-pdf'
+      preLoaderRoute: typeof ApiImportMaterialsPdfRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/project-link': {
-      id: '/api/quickbooks/project-link'
-      path: '/api/quickbooks/project-link'
-      fullPath: '/api/quickbooks/project-link'
-      preLoaderRoute: typeof ApiQuickbooksProjectLinkRouteImport
+    '/api/import-rendering-package': {
+      id: '/api/import-rendering-package'
+      path: '/api/import-rendering-package'
+      fullPath: '/api/import-rendering-package'
+      preLoaderRoute: typeof ApiImportRenderingPackageRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/disconnect': {
-      id: '/api/quickbooks/disconnect'
-      path: '/api/quickbooks/disconnect'
-      fullPath: '/api/quickbooks/disconnect'
-      preLoaderRoute: typeof ApiQuickbooksDisconnectRouteImport
+    '/api/import-rendering-pdf': {
+      id: '/api/import-rendering-pdf'
+      path: '/api/import-rendering-pdf'
+      fullPath: '/api/import-rendering-pdf'
+      preLoaderRoute: typeof ApiImportRenderingPdfRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/customers': {
-      id: '/api/quickbooks/customers'
-      path: '/api/quickbooks/customers'
-      fullPath: '/api/quickbooks/customers'
-      preLoaderRoute: typeof ApiQuickbooksCustomersRouteImport
+    '/api/mark-financial-payment-due': {
+      id: '/api/mark-financial-payment-due'
+      path: '/api/mark-financial-payment-due'
+      fullPath: '/api/mark-financial-payment-due'
+      preLoaderRoute: typeof ApiMarkFinancialPaymentDueRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/connect-url': {
-      id: '/api/quickbooks/connect-url'
-      path: '/api/quickbooks/connect-url'
-      fullPath: '/api/quickbooks/connect-url'
-      preLoaderRoute: typeof ApiQuickbooksConnectUrlRouteImport
+    '/api/marvin': {
+      id: '/api/marvin'
+      path: '/api/marvin'
+      fullPath: '/api/marvin'
+      preLoaderRoute: typeof ApiMarvinRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/quickbooks/callback': {
-      id: '/api/quickbooks/callback'
-      path: '/api/quickbooks/callback'
-      fullPath: '/api/quickbooks/callback'
-      preLoaderRoute: typeof ApiQuickbooksCallbackRouteImport
+    '/api/marvin-cron': {
+      id: '/api/marvin-cron'
+      path: '/api/marvin-cron'
+      fullPath: '/api/marvin-cron'
+      preLoaderRoute: typeof ApiMarvinCronRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/marvin-cron/$stage': {
-      id: '/api/marvin-cron/$stage'
-      path: '/$stage'
-      fullPath: '/api/marvin-cron/$stage'
-      preLoaderRoute: typeof ApiMarvinCronStageRouteImport
-      parentRoute: typeof ApiMarvinCronRoute
-    }
-    '/api/extension/room-design': {
-      id: '/api/extension/room-design'
-      path: '/api/extension/room-design'
-      fullPath: '/api/extension/room-design'
-      preLoaderRoute: typeof ApiExtensionRoomDesignRouteImport
+    '/api/marvin-fathom-webhook': {
+      id: '/api/marvin-fathom-webhook'
+      path: '/api/marvin-fathom-webhook'
+      fullPath: '/api/marvin-fathom-webhook'
+      preLoaderRoute: typeof ApiMarvinFathomWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/extension/projects': {
-      id: '/api/extension/projects'
-      path: '/api/extension/projects'
-      fullPath: '/api/extension/projects'
-      preLoaderRoute: typeof ApiExtensionProjectsRouteImport
+    '/api/marvin-gmail-callback': {
+      id: '/api/marvin-gmail-callback'
+      path: '/api/marvin-gmail-callback'
+      fullPath: '/api/marvin-gmail-callback'
+      preLoaderRoute: typeof ApiMarvinGmailCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/extension/prices': {
-      id: '/api/extension/prices'
-      path: '/api/extension/prices'
-      fullPath: '/api/extension/prices'
-      preLoaderRoute: typeof ApiExtensionPricesRouteImport
+    '/api/marvin-upload': {
+      id: '/api/marvin-upload'
+      path: '/api/marvin-upload'
+      fullPath: '/api/marvin-upload'
+      preLoaderRoute: typeof ApiMarvinUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/extension/import-product': {
-      id: '/api/extension/import-product'
-      path: '/api/extension/import-product'
-      fullPath: '/api/extension/import-product'
-      preLoaderRoute: typeof ApiExtensionImportProductRouteImport
+    '/api/material-catalog-suggestions': {
+      id: '/api/material-catalog-suggestions'
+      path: '/api/material-catalog-suggestions'
+      fullPath: '/api/material-catalog-suggestions'
+      preLoaderRoute: typeof ApiMaterialCatalogSuggestionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/measured-rendering': {
+      id: '/api/measured-rendering'
+      path: '/api/measured-rendering'
+      fullPath: '/api/measured-rendering'
+      preLoaderRoute: typeof ApiMeasuredRenderingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/my-todos': {
+      id: '/api/my-todos'
+      path: '/api/my-todos'
+      fullPath: '/api/my-todos'
+      preLoaderRoute: typeof ApiMyTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/parse-invoice-pdf': {
+      id: '/api/parse-invoice-pdf'
+      path: '/api/parse-invoice-pdf'
+      fullPath: '/api/parse-invoice-pdf'
+      preLoaderRoute: typeof ApiParseInvoicePdfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/presentation-board': {
+      id: '/api/presentation-board'
+      path: '/api/presentation-board'
+      fullPath: '/api/presentation-board'
+      preLoaderRoute: typeof ApiPresentationBoardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-email': {
+      id: '/api/procurement-email'
+      path: '/api/procurement-email'
+      fullPath: '/api/procurement-email'
+      preLoaderRoute: typeof ApiProcurementEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-gmail-callback': {
+      id: '/api/procurement-gmail-callback'
+      path: '/api/procurement-gmail-callback'
+      fullPath: '/api/procurement-gmail-callback'
+      preLoaderRoute: typeof ApiProcurementGmailCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-mcp': {
+      id: '/api/procurement-mcp'
+      path: '/api/procurement-mcp'
+      fullPath: '/api/procurement-mcp'
+      preLoaderRoute: typeof ApiProcurementMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/procurement-runs': {
+      id: '/api/procurement-runs'
+      path: '/api/procurement-runs'
+      fullPath: '/api/procurement-runs'
+      preLoaderRoute: typeof ApiProcurementRunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-captures': {
+      id: '/api/project-captures'
+      path: '/api/project-captures'
+      fullPath: '/api/project-captures'
+      preLoaderRoute: typeof ApiProjectCapturesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-management': {
+      id: '/api/project-management'
+      path: '/api/project-management'
+      fullPath: '/api/project-management'
+      preLoaderRoute: typeof ApiProjectManagementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-task-attachment': {
+      id: '/api/project-task-attachment'
+      path: '/api/project-task-attachment'
+      fullPath: '/api/project-task-attachment'
+      preLoaderRoute: typeof ApiProjectTaskAttachmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/project-todos': {
+      id: '/api/project-todos'
+      path: '/api/project-todos'
+      fullPath: '/api/project-todos'
+      preLoaderRoute: typeof ApiProjectTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/projects': {
+      id: '/api/projects'
+      path: '/api/projects'
+      fullPath: '/api/projects'
+      preLoaderRoute: typeof ApiProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/remove-design-board-background': {
+      id: '/api/remove-design-board-background'
+      path: '/api/remove-design-board-background'
+      fullPath: '/api/remove-design-board-background'
+      preLoaderRoute: typeof ApiRemoveDesignBoardBackgroundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rendering-studio': {
+      id: '/api/rendering-studio'
+      path: '/api/rendering-studio'
+      fullPath: '/api/rendering-studio'
+      preLoaderRoute: typeof ApiRenderingStudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/room-design-image': {
+      id: '/api/room-design-image'
+      path: '/api/room-design-image'
+      fullPath: '/api/room-design-image'
+      preLoaderRoute: typeof ApiRoomDesignImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/room-design-image-source': {
+      id: '/api/room-design-image-source'
+      path: '/api/room-design-image-source'
+      fullPath: '/api/room-design-image-source'
+      preLoaderRoute: typeof ApiRoomDesignImageSourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/scrape-carton-coverage': {
+      id: '/api/scrape-carton-coverage'
+      path: '/api/scrape-carton-coverage'
+      fullPath: '/api/scrape-carton-coverage'
+      preLoaderRoute: typeof ApiScrapeCartonCoverageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/scrape-materials': {
+      id: '/api/scrape-materials'
+      path: '/api/scrape-materials'
+      fullPath: '/api/scrape-materials'
+      preLoaderRoute: typeof ApiScrapeMaterialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/scrape-products': {
+      id: '/api/scrape-products'
+      path: '/api/scrape-products'
+      fullPath: '/api/scrape-products'
+      preLoaderRoute: typeof ApiScrapeProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/scrape-url': {
+      id: '/api/scrape-url'
+      path: '/api/scrape-url'
+      fullPath: '/api/scrape-url'
+      preLoaderRoute: typeof ApiScrapeUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/shared-design-board': {
+      id: '/api/shared-design-board'
+      path: '/api/shared-design-board'
+      fullPath: '/api/shared-design-board'
+      preLoaderRoute: typeof ApiSharedDesignBoardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-book-material': {
+      id: '/api/spec-book-material'
+      path: '/api/spec-book-material'
+      fullPath: '/api/spec-book-material'
+      preLoaderRoute: typeof ApiSpecBookMaterialRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-book-source-status': {
+      id: '/api/spec-book-source-status'
+      path: '/api/spec-book-source-status'
+      fullPath: '/api/spec-book-source-status'
+      preLoaderRoute: typeof ApiSpecBookSourceStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-completion-review': {
+      id: '/api/spec-completion-review'
+      path: '/api/spec-completion-review'
+      fullPath: '/api/spec-completion-review'
+      preLoaderRoute: typeof ApiSpecCompletionReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/spec-ordering': {
+      id: '/api/spec-ordering'
+      path: '/api/spec-ordering'
+      fullPath: '/api/spec-ordering'
+      preLoaderRoute: typeof ApiSpecOrderingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/studio-reminders': {
+      id: '/api/studio-reminders'
+      path: '/api/studio-reminders'
+      fullPath: '/api/studio-reminders'
+      preLoaderRoute: typeof ApiStudioRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/suggest-board-color': {
+      id: '/api/suggest-board-color'
+      path: '/api/suggest-board-color'
+      fullPath: '/api/suggest-board-color'
+      preLoaderRoute: typeof ApiSuggestBoardColorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/suggest-plan-dimensions': {
+      id: '/api/suggest-plan-dimensions'
+      path: '/api/suggest-plan-dimensions'
+      fullPath: '/api/suggest-plan-dimensions'
+      preLoaderRoute: typeof ApiSuggestPlanDimensionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-design-board-image': {
+      id: '/api/upload-design-board-image'
+      path: '/api/upload-design-board-image'
+      fullPath: '/api/upload-design-board-image'
+      preLoaderRoute: typeof ApiUploadDesignBoardImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-project-document': {
+      id: '/api/upload-project-document'
+      path: '/api/upload-project-document'
+      fullPath: '/api/upload-project-document'
+      preLoaderRoute: typeof ApiUploadProjectDocumentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-room-image': {
+      id: '/api/upload-room-image'
+      path: '/api/upload-room-image'
+      fullPath: '/api/upload-room-image'
+      preLoaderRoute: typeof ApiUploadRoomImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/users': {
+      id: '/api/users'
+      path: '/api/users'
+      fullPath: '/api/users'
+      preLoaderRoute: typeof ApiUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/view-user': {
+      id: '/api/view-user'
+      path: '/api/view-user'
+      fullPath: '/api/view-user'
+      preLoaderRoute: typeof ApiViewUserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/catalog_/$productId': {
+      id: '/catalog_/$productId'
+      path: '/catalog/$productId'
+      fullPath: '/catalog/$productId'
+      preLoaderRoute: typeof CatalogProductIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/client/financials': {
+      id: '/client/financials'
+      path: '/client/financials'
+      fullPath: '/client/financials'
+      preLoaderRoute: typeof ClientFinancialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/extension/connect': {
+      id: '/extension/connect'
+      path: '/extension/connect'
+      fullPath: '/extension/connect'
+      preLoaderRoute: typeof ExtensionConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hours/': {
+      id: '/hours/'
+      path: '/hours'
+      fullPath: '/hours/'
+      preLoaderRoute: typeof HoursIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/presentations/': {
+      id: '/presentations/'
+      path: '/presentations'
+      fullPath: '/presentations/'
+      preLoaderRoute: typeof PresentationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/presentations/$id': {
+      id: '/presentations/$id'
+      path: '/presentations/$id'
+      fullPath: '/presentations/$id'
+      preLoaderRoute: typeof PresentationsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/': {
+      id: '/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof ProjectsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prototype/design-board': {
+      id: '/prototype/design-board'
+      path: '/prototype/design-board'
+      fullPath: '/prototype/design-board'
+      preLoaderRoute: typeof PrototypeDesignBoardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/specbooks/': {
+      id: '/specbooks/'
+      path: '/specbooks'
+      fullPath: '/specbooks/'
+      preLoaderRoute: typeof SpecbooksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/specbooks/$id': {
+      id: '/specbooks/$id'
+      path: '/specbooks/$id'
+      fullPath: '/specbooks/$id'
+      preLoaderRoute: typeof SpecbooksIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/users/': {
+      id: '/users/'
+      path: '/users'
+      fullPath: '/users/'
+      preLoaderRoute: typeof UsersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/extension/board-pages': {
+      id: '/api/extension/board-pages'
+      path: '/api/extension/board-pages'
+      fullPath: '/api/extension/board-pages'
+      preLoaderRoute: typeof ApiExtensionBoardPagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/extension/connect-token': {
@@ -2300,11 +2152,200 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiExtensionConnectTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/extension/board-pages': {
-      id: '/api/extension/board-pages'
-      path: '/api/extension/board-pages'
-      fullPath: '/api/extension/board-pages'
-      preLoaderRoute: typeof ApiExtensionBoardPagesRouteImport
+    '/api/extension/import-product': {
+      id: '/api/extension/import-product'
+      path: '/api/extension/import-product'
+      fullPath: '/api/extension/import-product'
+      preLoaderRoute: typeof ApiExtensionImportProductRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/extension/prices': {
+      id: '/api/extension/prices'
+      path: '/api/extension/prices'
+      fullPath: '/api/extension/prices'
+      preLoaderRoute: typeof ApiExtensionPricesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/extension/projects': {
+      id: '/api/extension/projects'
+      path: '/api/extension/projects'
+      fullPath: '/api/extension/projects'
+      preLoaderRoute: typeof ApiExtensionProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/extension/room-design': {
+      id: '/api/extension/room-design'
+      path: '/api/extension/room-design'
+      fullPath: '/api/extension/room-design'
+      preLoaderRoute: typeof ApiExtensionRoomDesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/marvin-cron/$stage': {
+      id: '/api/marvin-cron/$stage'
+      path: '/$stage'
+      fullPath: '/api/marvin-cron/$stage'
+      preLoaderRoute: typeof ApiMarvinCronStageRouteImport
+      parentRoute: typeof ApiMarvinCronRoute
+    }
+    '/api/quickbooks/callback': {
+      id: '/api/quickbooks/callback'
+      path: '/api/quickbooks/callback'
+      fullPath: '/api/quickbooks/callback'
+      preLoaderRoute: typeof ApiQuickbooksCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/connect-url': {
+      id: '/api/quickbooks/connect-url'
+      path: '/api/quickbooks/connect-url'
+      fullPath: '/api/quickbooks/connect-url'
+      preLoaderRoute: typeof ApiQuickbooksConnectUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/customers': {
+      id: '/api/quickbooks/customers'
+      path: '/api/quickbooks/customers'
+      fullPath: '/api/quickbooks/customers'
+      preLoaderRoute: typeof ApiQuickbooksCustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/disconnect': {
+      id: '/api/quickbooks/disconnect'
+      path: '/api/quickbooks/disconnect'
+      fullPath: '/api/quickbooks/disconnect'
+      preLoaderRoute: typeof ApiQuickbooksDisconnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/project-link': {
+      id: '/api/quickbooks/project-link'
+      path: '/api/quickbooks/project-link'
+      fullPath: '/api/quickbooks/project-link'
+      preLoaderRoute: typeof ApiQuickbooksProjectLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/status': {
+      id: '/api/quickbooks/status'
+      path: '/api/quickbooks/status'
+      fullPath: '/api/quickbooks/status'
+      preLoaderRoute: typeof ApiQuickbooksStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quickbooks/sync-invoice': {
+      id: '/api/quickbooks/sync-invoice'
+      path: '/api/quickbooks/sync-invoice'
+      fullPath: '/api/quickbooks/sync-invoice'
+      preLoaderRoute: typeof ApiQuickbooksSyncInvoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/stripe/webhook': {
+      id: '/api/stripe/webhook'
+      path: '/api/stripe/webhook'
+      fullPath: '/api/stripe/webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/client/approvals/$projectId': {
+      id: '/client/approvals/$projectId'
+      path: '/client/approvals/$projectId'
+      fullPath: '/client/approvals/$projectId'
+      preLoaderRoute: typeof ClientApprovalsProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/': {
+      id: '/projects/$id/'
+      path: '/projects/$id'
+      fullPath: '/projects/$id/'
+      preLoaderRoute: typeof ProjectsIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/approvals': {
+      id: '/projects/$id/approvals'
+      path: '/projects/$id/approvals'
+      fullPath: '/projects/$id/approvals'
+      preLoaderRoute: typeof ProjectsIdApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/construction-docs': {
+      id: '/projects/$id/construction-docs'
+      path: '/projects/$id/construction-docs'
+      fullPath: '/projects/$id/construction-docs'
+      preLoaderRoute: typeof ProjectsIdConstructionDocsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/design-board-presentation': {
+      id: '/projects/$id/design-board-presentation'
+      path: '/projects/$id/design-board-presentation'
+      fullPath: '/projects/$id/design-board-presentation'
+      preLoaderRoute: typeof ProjectsIdDesignBoardPresentationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/design-boards': {
+      id: '/projects/$id/design-boards'
+      path: '/projects/$id/design-boards'
+      fullPath: '/projects/$id/design-boards'
+      preLoaderRoute: typeof ProjectsIdDesignBoardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/financials': {
+      id: '/projects/$id/financials'
+      path: '/projects/$id/financials'
+      fullPath: '/projects/$id/financials'
+      preLoaderRoute: typeof ProjectsIdFinancialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/materials': {
+      id: '/projects/$id/materials'
+      path: '/projects/$id/materials'
+      fullPath: '/projects/$id/materials'
+      preLoaderRoute: typeof ProjectsIdMaterialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/measured-rendering': {
+      id: '/projects/$id/measured-rendering'
+      path: '/projects/$id/measured-rendering'
+      fullPath: '/projects/$id/measured-rendering'
+      preLoaderRoute: typeof ProjectsIdMeasuredRenderingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/operations': {
+      id: '/projects/$id/operations'
+      path: '/projects/$id/operations'
+      fullPath: '/projects/$id/operations'
+      preLoaderRoute: typeof ProjectsIdOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/presentation': {
+      id: '/projects/$id/presentation'
+      path: '/projects/$id/presentation'
+      fullPath: '/projects/$id/presentation'
+      preLoaderRoute: typeof ProjectsIdPresentationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/rendering-studio': {
+      id: '/projects/$id/rendering-studio'
+      path: '/projects/$id/rendering-studio'
+      fullPath: '/projects/$id/rendering-studio'
+      preLoaderRoute: typeof ProjectsIdRenderingStudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/renderings': {
+      id: '/projects/$id/renderings'
+      path: '/projects/$id/renderings'
+      fullPath: '/projects/$id/renderings'
+      preLoaderRoute: typeof ProjectsIdRenderingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$id/room-design': {
+      id: '/projects/$id/room-design'
+      path: '/projects/$id/room-design'
+      fullPath: '/projects/$id/room-design'
+      preLoaderRoute: typeof ProjectsIdRoomDesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/specbooks/public/$id': {
+      id: '/specbooks/public/$id'
+      path: '/specbooks/public/$id'
+      fullPath: '/specbooks/public/$id'
+      preLoaderRoute: typeof SpecbooksPublicIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/$id/rooms/$roomId': {
@@ -2370,6 +2411,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMarvinGmailCallbackRoute: ApiMarvinGmailCallbackRoute,
   ApiMarvinUploadRoute: ApiMarvinUploadRoute,
   ApiMaterialCatalogSuggestionsRoute: ApiMaterialCatalogSuggestionsRoute,
+  ApiMeasuredRenderingRoute: ApiMeasuredRenderingRoute,
   ApiMyTodosRoute: ApiMyTodosRoute,
   ApiParseInvoicePdfRoute: ApiParseInvoicePdfRoute,
   ApiPresentationBoardRoute: ApiPresentationBoardRoute,
@@ -2436,6 +2478,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsIdDesignBoardsRoute: ProjectsIdDesignBoardsRoute,
   ProjectsIdFinancialsRoute: ProjectsIdFinancialsRoute,
   ProjectsIdMaterialsRoute: ProjectsIdMaterialsRoute,
+  ProjectsIdMeasuredRenderingRoute: ProjectsIdMeasuredRenderingRoute,
   ProjectsIdOperationsRoute: ProjectsIdOperationsRoute,
   ProjectsIdPresentationRoute: ProjectsIdPresentationRoute,
   ProjectsIdRenderingStudioRoute: ProjectsIdRenderingStudioRoute,

@@ -436,6 +436,7 @@ function ProjectRenderingsPage() {
               ))}
             </div>
             <div className="flex flex-wrap justify-end gap-3">
+              <Link to="/projects/$id/measured-rendering" params={{id}} search={{roomId:undefined}} className="border border-ink px-5 py-3 text-sm hover:bg-bone">Drawing + Spec Book</Link>
               <ImportRenderingPackageDialog projectId={id} />
               <button
                 disabled={busy || totals.sk === 0}
