@@ -12,7 +12,20 @@ export default defineConfig({
     tanstackStart({
       server: { entry: "server" },
     }),
-    nitro(),
+    nitro({
+      rollupConfig: {
+        plugins: [{
+          name: "preserve-workflow-step-registration",
+          transform(code, id) {
+            // Workflow steps register at module load. Preserve this generated
+            // module in Nitro's queue handler instead of a lazy app chunk.
+            if (id.replaceAll("\\", "/").endsWith("/.nitro/workflow/steps.mjs")) {
+              return { code, map: null, moduleSideEffects: "no-treeshake" };
+            }
+          },
+        }],
+      },
+    }),
     viteReact(),
     tailwindcss(),
     tsConfigPaths(),
