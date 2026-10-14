@@ -34,10 +34,17 @@ it.each(["replaced", "unavailable", "checked"])("stops when the saved job is %s"
   expect(state.sleep).not.toHaveBeenCalled();
   expect(state.fail).not.toHaveBeenCalled();
 });
+it("continues collecting large reviews past the former forty-poll cutoff", async () => {
+  let polls = 0;
+  state.poll.mockImplementation(async () => ++polls <= 48 ? "checking" : "checked");
+  expect(await saveSpecCompletionInBackground(project, job)).toBe("checked");
+  expect(state.poll).toHaveBeenCalledTimes(49);
+  expect(state.fail).not.toHaveBeenCalled();
+});
 it("records a failed collector after its bounded window, without another AI run", async () => {
   state.poll.mockResolvedValue("checking");
   expect(await saveSpecCompletionInBackground(project, job)).toBe("unavailable");
-  expect(state.poll).toHaveBeenCalledTimes(40);
+  expect(state.poll).toHaveBeenCalledTimes(120);
   expect(state.fail).toHaveBeenCalledWith(project, job);
 });
 it("keeps a durable failure recoverable if saving fails", async () => {

@@ -5,7 +5,9 @@ import { sleep } from "workflow";
 export async function saveSpecCompletionInBackground(projectId: string, requestId: string) {
   "use workflow";
   try {
-    for (let attempt = 0; attempt < 40; attempt++) {
+    // Large plan sets need more than the former ten-minute polling window.
+    // These steps retrieve the existing response and never generate again.
+    for (let attempt = 0; attempt < 120; attempt++) {
       const status = await collectCompletionResult(projectId, requestId);
       if (status !== "checking") return status;
       await sleep("15s");

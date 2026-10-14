@@ -141,7 +141,9 @@ async function finishPendingReview(projectId: string, saved: any, items: Materia
     if (!response.ok && response.status !== 404) return saved;
     const value = await response.json().catch(() => null);
     if (response.ok && ["queued", "in_progress"].includes(value?.status)) {
-      if (Date.now() - Date.parse(job.started_at) < 9 * 60_000) return saved;
+      // A large plan set can still be generating after ten minutes. Continue
+      // collecting that same response; a real 404 handles expired results.
+      if (Date.now() - Date.parse(job.started_at) < 30 * 60_000) return saved;
       report.plan_status = "unavailable";
       report.plan_message = "The plan review did not finish within its collection window. Selection details are saved. No automatic retry or new AI charge was made.";
       try { return await updateActiveCompletionReview(projectId, report, items, rooms, boardState); }

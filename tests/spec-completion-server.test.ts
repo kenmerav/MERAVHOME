@@ -253,10 +253,22 @@ it('reattaches a saved pending review once without refreshing sources or startin
   expect(state.fetch).toHaveBeenCalledTimes(paidCalls);
   expect(state.refresh).toHaveBeenCalledTimes(documentRefreshes);
 });
+it('collects a large plan review past nine minutes and saves the same paid result', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  const started = await (await checkSpecCompletion(request())).json();
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(started.checked_at) + 12 * 60_000);
+  state.fetch.mockImplementation(async () => Response.json({ status: 'in_progress' }));
+  expect(await pollCompletionSave(projectId, started.plan_job.request_id)).toBe('checking');
+  state.fetch.mockImplementation(async () => Response.json({ status: 'completed', output_text: '{"findings":[]}' }));
+  expect(await pollCompletionSave(projectId, started.plan_job.request_id)).toBe('checked');
+  expect(state.saved.report.plan_status).toBe('checked');
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(1);
+  vi.restoreAllMocks();
+});
 it('retires an overdue AI response without retrying generation', async () => {
   state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
   const started = await (await checkSpecCompletion(request())).json();
-  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(started.checked_at) + 10 * 60_000);
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(started.checked_at) + 31 * 60_000);
   state.fetch.mockImplementation(async () => Response.json({ status: 'in_progress' }));
   expect(await pollCompletionSave(projectId, started.plan_job.request_id)).toBe('unavailable');
   expect(state.saved.report.plan_message).toContain('No automatic retry');
