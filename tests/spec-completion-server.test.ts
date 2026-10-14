@@ -45,6 +45,29 @@ import { savedSpecCompletionRequest } from "@/lib/savedSpecCompletionApi.server"
 import { completionSourceSignature } from "@/lib/savedSpecCompletion.server";
 const request = (body: any = { project_id: projectId }, token = true) => new Request("https://studio.test/api/check-spec-completion", {
   method: "POST", headers: { ...(token ? { Authorization: "Bearer TEST_ONLY_TOKEN" } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+it("prepares only active current selections without refreshing PDFs, saving findings, or starting AI", async () => {
+  state.board = { pages: [{ id: "p", elements: [] }] };
+  state.items.push({ ...state.items[0], id: "removed", not_needed: true },
+    { ...state.items[0], id: "placeholder", is_required: true, product_id: null, product_url: null },
+    { ...state.items[0], id: "stale", source_board_id: projectId, source_board_page_id: "p", source_board_element_id: "deleted" },
+    { ...state.items[0], id: "wrong-room", room_id: "former" });
+  const response = await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }));
+  expect(await response.json()).toEqual({ material_item_ids: ["sink"] });
+  expect(state.refresh).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled(); expect(state.saved).toBeNull();
+});
+
+it("checks staff and project access before preparing a product refresh", async () => {
+  state.profile = { role: "Employee", is_active: true, can_view_all_projects: false }; state.assigned = false;
+  expect((await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }))).status).toBe(403);
+  expect(state.reads.some(read => read.table === "material_items")).toBe(false);
+  expect(state.refresh).not.toHaveBeenCalled();
+});
+
+it("rejects unknown preparation actions", async () => {
+  expect((await checkSpecCompletion(request({ project_id: projectId, action: "refresh-every-project" }))).status).toBe(400);
+  expect(state.refresh).not.toHaveBeenCalled();
+});
 beforeEach(() => {
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true; state.project = true; state.dataError = false;
   state.storageError = null; state.saved = null; state.writes = []; state.writeMisses = 0;

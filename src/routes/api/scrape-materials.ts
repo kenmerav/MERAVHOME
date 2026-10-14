@@ -554,6 +554,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const body = (await request.json()) as {
             action?: "start" | "poll" | "fallback";
             project_id?: string;
+            material_item_ids?: string[];
             exclude_material_item_ids?: string[];
             batch_id?: string;
             candidates?: Array<{
@@ -684,9 +685,12 @@ export const Route = createFileRoute("/api/scrape-materials")({
               "id, category, color, product_url, product_id, scrape_status, product:products(id, price, sku, finish, dimensions, carton_coverage_sq_ft)",
             )
             .eq("project_id", projectId)
+            .eq("not_needed", false)
             .not("product_url", "is", null);
           if (error) return json({ error: error.message }, 500);
-          const linkedItems = items ?? [];
+          const scopedIds = Array.isArray(body.material_item_ids)
+            ? new Set(body.material_item_ids.map(cleanUuid).filter((id): id is string => !!id)) : null;
+          const linkedItems = (items ?? []).filter(item => !scopedIds || scopedIds.has(item.id));
           const validLinkItems = linkedItems.filter((item) => isScrapeableUrl(item.product_url));
           const invalid_link_count = linkedItems.length - validLinkItems.length;
           const candidates = validLinkItems.filter((item: any) => {
