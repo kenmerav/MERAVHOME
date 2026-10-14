@@ -86,7 +86,12 @@ export function productDisplayCategory(product: ProductCategoryShape): ItemCateg
   if (product.category === "Countertops") return "Countertops";
   if (product.category === "Hardware") {
     const nameCategory = inferMaterialCategory(product.name, product.product_url);
-    if (nameCategory === "Doors Base & Case" || nameCategory === "Cabinetry") return nameCategory;
+    if (nameCategory !== "Other" && nameCategory !== "Hardware") return nameCategory;
+    // A stale cabinet subtype must not pull named bathroom accessories into
+    // Cabinetry. Generic model numbers can still use their saved subtype.
+    if (nameCategory === "Hardware" && /\b(?:hooks?|towel|paper holder|shower door)\b/i.test(
+      normalizeCategoryText(`${product.name ?? ""} ${product.product_url ?? ""}`),
+    )) return "Hardware";
     const subtype = normalizeItemCategory(product.subcategory);
     if (subtype === "Doors Base & Case" || ["Base & Case", "Door Hardware", "Door Hinges"].includes(product.subcategory ?? "")) {
       return "Doors Base & Case";
@@ -124,17 +129,19 @@ export function productMatchesItemCategory(
   product: ProductCategoryShape,
   category: ItemCategory,
 ): boolean {
-  if (category === "Tile & Stone") return product.category === "Tile";
-  if (category === "Countertops") return product.category === "Countertops";
+  return productDisplayCategory(product) === category;
+}
 
-  const strictCategory = toProductCategory(category);
-  if (product.category !== strictCategory) return false;
-
-  if (strictCategory === "Decor" || strictCategory === "Hardware") {
-    return productDisplayCategory(product) === category;
-  }
-
-  return true;
+export function productMatchesMaterialSelection(product: ProductCategoryShape, item: {
+  category?: string | null; item_label?: string | null; product_url?: string | null; product?: ProductCategoryShape | null;
+}) {
+  const category = normalizeItemCategory(item.category) ?? inferMaterialCategory(item.item_label, item.product_url);
+  if (productMatchesItemCategory(product, category)) return true;
+  if (category !== "Cabinetry") return false;
+  const label = normalizeCategoryText(item.item_label ?? "");
+  if (/\b(?:knobs?|pulls?|handles?|hinges?|latch(?:es)?|slides?|hardware)\b/.test(label)) return false;
+  const finish = /\b(?:cabinet|cabinetry) (?:finish|color|paint)\b/.test(label) || item.product?.category === "Paint";
+  return finish && productDisplayCategory(product) === "Paint";
 }
 
 export function sampleAppliesToCategory(category: ItemCategory | string | null | undefined) {
@@ -230,7 +237,7 @@ export function inferMaterialCategory(
   }
 
   if (
-    /\b(ceiling fan|sconce|sconces|pendant|pendants|lamp|light|lighting|chandelier|lantern|flush mount|semi flush)\b/.test(
+    /\b(?:ceiling fan|sconces?|pendants?|lamps?|lighting|chandelier|lantern|flush mount|semi flush)\b|\blights?\b(?! (?:blue|green|pink|gray|grey|brown|beige|taupe|cream|red|yellow|orange|purple)\b)/.test(
       text,
     )
   ) {

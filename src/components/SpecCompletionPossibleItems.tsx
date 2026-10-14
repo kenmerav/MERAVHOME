@@ -23,6 +23,7 @@ export function SpecCompletionPossibleItems({ projectId, rooms, items, document,
     queryFn: () => fetchMaterialPlanCheck(projectId, document!.id),
     enabled: open && !!document && rooms.some(room => /bath|powder/i.test(room.name)),
     staleTime: 24 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false,
+    refetchInterval: query => query.state.data?.status === "checking" ? 5000 : false,
   });
   const room = rooms.find(room => room.id === roomId) ?? rooms[0];
   const evidence = plan.data?.document?.id === document?.id ? plan.data?.rooms.find(row => row.room_id === room?.id) : undefined;
@@ -39,7 +40,7 @@ export function SpecCompletionPossibleItems({ projectId, rooms, items, document,
           {rooms.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
         </select>
       </label>
-      {plan.isFetching && <p role="status" className="text-xs text-muted-foreground">Checking bathroom layouts against the latest plans…</p>}
+      {(plan.isFetching || plan.data?.status === "checking") && <p role="status" className="text-xs text-muted-foreground">Checking bathroom layouts against the latest plans…</p>}
       {(plan.error || plan.data?.status === "unavailable") && <p role="status" className="text-xs text-amber-900">Bathroom layout could not be confirmed. Review shower suggestions against the plans.</p>}
       <p className="text-xs text-muted-foreground">These are possibilities to review, not additional completion issues. Catalog choices save to Materials and the Spec Book with quantity TBD.</p>
       <div className="divide-y border">

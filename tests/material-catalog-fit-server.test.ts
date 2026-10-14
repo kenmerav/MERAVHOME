@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   cache: null as any,
   document: null as any,
   items: [] as any[],
+  rooms: [] as any[],
   board: null as any,
   tasks: [] as Promise<unknown>[],
   reads: [] as any[],
@@ -24,7 +25,7 @@ vi.mock("@/lib/specReviewAI.server", () => ({
   CreditsUnavailable: class extends Error {},
   SpecReviewCostError: class extends Error {},
 }));
-vi.mock("@/lib/materialPlanCheck.server", () => ({
+vi.mock("@/lib/constructionDocumentPath.server", () => ({
   projectDocumentStoragePath: (url: string, project: string) => {
     if (!url.includes(project + "/construction-docs/")) throw Error("Invalid path");
     return project + "/construction-docs/plan.pdf";
@@ -42,6 +43,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         if (table === "project_documents")
           return { data: state.document ? [state.document] : [], error: null };
         if (table === "material_items") return { data: state.items, error: null };
+        if (table === "rooms") return { data: state.rooms, error: null };
         if (table === "design_boards") return { data: { board_state: state.board }, error: null };
         if (table === "spec_completion_reviews") {
           if (insert) {
@@ -93,14 +95,14 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     },
   },
 }));
-import { loadCatalogFitContext } from "@/lib/materialCatalogFit.server";
+import { loadCatalogFitContext, loadCatalogDocumentFit, parsedDocumentRequirements } from "@/lib/materialCatalogFit.server";
 const flush = async () => {
   await Promise.all(state.tasks.splice(0));
 };
 const output = {
   status: "completed",
   output_text: JSON.stringify({
-    requirements: [
+    rooms: [{ room_id: room.id, requirements: [
       {
         label: "Sink",
         field: "mount",
@@ -113,13 +115,15 @@ const output = {
         exact_object: true,
         inferred: false,
       },
-    ],
+    ], shower: "absent", confidence: "high", complete_layout: true, page: 9, sheet: "ID0.7",
+      evidence: "Complete proposed powder layout shows no shower." }],
   }),
 };
 beforeEach(() => {
   vi.clearAllMocks();
   state.cache = null;
   state.items = [];
+  state.rooms = [room];
   state.board = null;
   state.tasks = [];
   state.reads = [];
@@ -158,7 +162,7 @@ it("uses the latest project document and scoped room selections", async () => {
     room_id: room.id,
   });
   expect(state.generate).toHaveBeenCalledTimes(1);
-  expect(state.generate.mock.calls[0][1]).toBe("dimensions");
+  expect(state.generate.mock.calls[0][1]).toBe("completion");
   expect(state.generate.mock.calls[0][2]).toBe(true);
 });
 it("does not generate again when another missing item or filter opens in the same room", async () => {
@@ -254,4 +258,81 @@ it("changes the add-context key when the room's selected plumbing changes withou
   const after = await loadCatalogFitContext(projectId, room, true);
   expect(after.contextKey).not.toBe(before.contextKey);
   expect(state.generate).toHaveBeenCalledTimes(1);
+});
+
+it("shares one persisted extraction across rooms, concurrent openings and layout checks", async () => {
+  const other = { id: "bathroom-two", name: "Bathroom 2" };
+  state.rooms = [room, other];
+  const value = JSON.parse(output.output_text);
+  value.rooms.push({ ...value.rooms[0], room_id: other.id,
+    requirements: [{ ...value.rooms[0].requirements[0], value: "undermount" }] });
+  state.generate.mockResolvedValue(Response.json({ status: "completed", output_text: JSON.stringify(value) }));
+  await Promise.all([loadCatalogFitContext(projectId, room, true), loadCatalogFitContext(projectId, other, true)]);
+  await flush();
+  const first = await loadCatalogFitContext(projectId, room, true);
+  const second = await loadCatalogFitContext(projectId, other, true);
+  const layouts = await loadCatalogDocumentFit(projectId, state.document, state.rooms, true);
+  expect(first.plan.requirements[0].value).toBe("wall");
+  expect(second.plan.requirements[0].value).toBe("undermount");
+  expect(layouts?.bathroom_layouts).toHaveLength(2);
+  expect(state.generate).toHaveBeenCalledTimes(1);
+  expect(state.download).toHaveBeenCalledTimes(1);
+  expect(Object.values(state.cache.report.catalog_fit_checks)).toHaveLength(1);
+});
+
+it("invalidates extraction after a room identity changes, but not a selected product", async () => {
+  await loadCatalogFitContext(projectId, room, true); await flush();
+  const renamed = { ...room, name: "Guest Bath" };
+  state.rooms = [renamed];
+  await loadCatalogFitContext(projectId, renamed, true); await flush();
+  expect(state.generate).toHaveBeenCalledTimes(2);
+});
+
+it("retains completed room caches from before the release without a new AI charge", async () => {
+  const { createHash } = await import("node:crypto");
+  const key = createHash("sha256").update(JSON.stringify(["catalog-fit-v1", projectId,
+    room.id, room.name, state.document.id, state.document.updated_at])).digest("hex");
+  state.cache = { updated_at: new Date().toISOString(), report: { catalog_fit_checks: {
+    [key]: { key, room_id: room.id, room_name: room.name, status: "checked", document: state.document,
+      request_id: "legacy", started_at: new Date().toISOString(), requirements: [{ label: "Sink", field: "mount", value: "wall" }] },
+  } } };
+  expect((await loadCatalogFitContext(projectId, room, true)).plan.requirements[0].value).toBe("wall");
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it("requires complete, unique room mapping and does not accept cross-room requirements", () => {
+  const value = JSON.parse(output.output_text);
+  const rooms = [{ ...room, targets: ["Sink"] }];
+  for (const rows of [[], [value.rooms[0], value.rooms[0]], [{ ...value.rooms[0], room_id: "other-project" }]])
+    expect(() => parsedDocumentRequirements({ status: "completed", output_text: JSON.stringify({ rooms: rows }) }, rooms, 26)).toThrow();
+  const wrongLabel = { ...value, rooms: [{ ...value.rooms[0], requirements: [{ ...value.rooms[0].requirements[0], label: "Other room product" }] }] };
+  expect(parsedDocumentRequirements({ status: "completed", output_text: JSON.stringify(wrongLabel) }, rooms, 26).room_requirements[room.id]).toEqual([]);
+});
+
+it("fails closed on an incomplete multi-room response without charging automatically again", async () => {
+  state.generate.mockResolvedValue(Response.json({ status: "completed", output_text: JSON.stringify({ rooms: [] }) }));
+  await loadCatalogFitContext(projectId, room, true); await flush();
+  expect((await loadCatalogFitContext(projectId, room, true)).plan.status).toBe("unavailable");
+  expect(state.generate).toHaveBeenCalledTimes(1);
+});
+
+it("reuses the database result after server modules restart", async () => {
+  await loadCatalogFitContext(projectId, room, true); await flush();
+  vi.resetModules();
+  const restarted = await import("@/lib/materialCatalogFit.server");
+  expect((await restarted.loadCatalogFitContext(projectId, room, true)).plan.status).toBe("checked");
+  expect(state.generate).toHaveBeenCalledTimes(1);
+  expect(state.download).toHaveBeenCalledTimes(1);
+});
+
+it("requires explicit retry and claims only one new request when retries race", async () => {
+  state.generate.mockRejectedValue(Error("network failed"));
+  await loadCatalogFitContext(projectId, room, true); await flush();
+  await loadCatalogFitContext(projectId, room, true);
+  expect(state.generate).toHaveBeenCalledTimes(1);
+  state.generate.mockResolvedValue(Response.json(output));
+  await Promise.all([loadCatalogFitContext(projectId, room, true, true), loadCatalogFitContext(projectId, room, true, true)]);
+  await flush();
+  expect(state.generate).toHaveBeenCalledTimes(2);
+  expect((await loadCatalogFitContext(projectId, room, true)).plan.status).toBe("checked");
 });

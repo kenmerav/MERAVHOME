@@ -30,7 +30,7 @@ import {
   PRODUCT_CATEGORIES,
   inferMaterialCategory,
   normalizeItemCategory,
-  productMatchesItemCategory,
+  productMatchesMaterialSelection,
   templateForRoomName,
   toProductCategory,
 } from "@/lib/roomTemplates";
@@ -310,11 +310,12 @@ function MaterialsPage() {
     enabled: reviewPlans && !!latestPlan && canManageMaterials && rooms.length > 0,
     staleTime: 24 * 60 * 60 * 1000, retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: query => query.state.data?.status === "checking" ? 5000 : false,
   });
   const planStatus = !reviewPlans ? "idle" : documentsQuery.isError ? "error" :
     documentsQuery.isPending ? "checking" : !latestPlan ? "no_document" :
     planQuery.isError || planQuery.data?.status === "unavailable" ? "error" :
-    planQuery.isPending ? "checking" : "checked";
+    planQuery.isPending || planQuery.data?.status === "checking" ? "checking" : "checked";
 
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();
@@ -1631,7 +1632,7 @@ function CatalogProductPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const matchingProducts = products.filter(
-    (product) => productMatchesItemCategory(product, category) && isUuid(product.id),
+    (product) => productMatchesMaterialSelection(product, item) && isUuid(product.id),
   );
   const currentProductId = cleanUuid(item.product_id);
   const selectedProduct = currentProductId
