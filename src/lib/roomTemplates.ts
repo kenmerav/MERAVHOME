@@ -132,6 +132,18 @@ export function productMatchesItemCategory(
   return productDisplayCategory(product) === category;
 }
 
+export function productMatchesMaterialSelection(product: ProductCategoryShape, item: {
+  category?: string | null; item_label?: string | null; product_url?: string | null; product?: ProductCategoryShape | null;
+}) {
+  const category = normalizeItemCategory(item.category) ?? inferMaterialCategory(item.item_label, item.product_url);
+  if (productMatchesItemCategory(product, category)) return true;
+  if (category !== "Cabinetry") return false;
+  const label = normalizeCategoryText(item.item_label ?? "");
+  if (/\b(?:knobs?|pulls?|handles?|hinges?|latch(?:es)?|slides?|hardware)\b/.test(label)) return false;
+  const finish = /\b(?:cabinet|cabinetry) (?:finish|color|paint)\b/.test(label) || item.product?.category === "Paint";
+  return finish && productDisplayCategory(product) === "Paint";
+}
+
 export function sampleAppliesToCategory(category: ItemCategory | string | null | undefined) {
   return (
     category === "Tile & Stone" ||
@@ -225,7 +237,7 @@ export function inferMaterialCategory(
   }
 
   if (
-    /\b(ceiling fan|sconce|sconces|pendant|pendants|lamp|light|lighting|chandelier|lantern|flush mount|semi flush)\b/.test(
+    /\b(?:ceiling fan|sconces?|pendants?|lamps?|lighting|chandelier|lantern|flush mount|semi flush)\b|\blights?\b(?! (?:blue|green|pink|gray|grey|brown|beige|taupe|cream|red|yellow|orange|purple)\b)/.test(
       text,
     )
   ) {

@@ -30,7 +30,7 @@ import {
   PRODUCT_CATEGORIES,
   inferMaterialCategory,
   normalizeItemCategory,
-  productMatchesItemCategory,
+  productMatchesMaterialSelection,
   templateForRoomName,
   toProductCategory,
 } from "@/lib/roomTemplates";
@@ -1631,7 +1631,7 @@ function CatalogProductPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const matchingProducts = products.filter(
-    (product) => productMatchesItemCategory(product, category) && isUuid(product.id),
+    (product) => productMatchesMaterialSelection(product, item) && isUuid(product.id),
   );
   const currentProductId = cleanUuid(item.product_id);
   const selectedProduct = currentProductId

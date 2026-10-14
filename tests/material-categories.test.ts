@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { inferMaterialCategory, normalizeItemCategory, productDisplayCategory, productMatchesItemCategory, toProductCategory } from "@/lib/roomTemplates";
+import { inferMaterialCategory, normalizeItemCategory, productDisplayCategory, productMatchesItemCategory, productMatchesMaterialSelection, toProductCategory } from "@/lib/roomTemplates";
 
 it.each(["Cabinet Knob", "Drawer Pull", "Drawer Slide", "Cabinet Door Hinge", "Cabinet Latch", "Cupboard Latch", "Appliance Pull", "Bin Pull", "Knob", "Cabinet Hardware"])("groups %s with cabinetry", name => {
   expect(inferMaterialCategory(name)).toBe("Cabinetry");
@@ -7,6 +7,17 @@ it.each(["Cabinet Knob", "Drawer Pull", "Drawer Slide", "Cabinet Door Hinge", "C
   expect(productDisplayCategory(product)).toBe("Cabinetry");
   expect(productMatchesItemCategory(product, "Cabinetry")).toBe(true);
   expect(productMatchesItemCategory(product, "Hardware")).toBe(false);
+});
+it("does not interpret a color name as a light fixture",()=>{
+  expect(inferMaterialCategory("Alba, Light Blue")).toBe("Other");
+  expect(productDisplayCategory({name:"Alba, Light Blue",category:"Decor",subcategory:"Wall Coverings"})).toBe("Wall Coverings");
+  expect(inferMaterialCategory("Light Blue Glass Pendant")).toBe("Lighting");
+});
+it("offers paint colors for cabinet finishes without offering them for cabinet hardware",()=>{
+  const paint={name:"Sea Salt",category:"Paint"};
+  expect(productMatchesMaterialSelection(paint,{category:"Cabinetry",item_label:"Cabinet Finish"})).toBe(true);
+  expect(productMatchesMaterialSelection(paint,{category:"Cabinetry",item_label:"upper cabinets",product:paint})).toBe(true);
+  expect(productMatchesMaterialSelection(paint,{category:"Cabinetry",item_label:"Cabinet Knob",product:paint})).toBe(false);
 });
 it.each(["Cabinet Pulls", "Cabinet Knobs", "Cabinet Hinges", "Cabinet Latches", "Appliance Pulls", "Cabinetry", "Cabinetry & Hardware"])("recognizes catalog %s even with a model-only name", subcategory => {
   expect(productDisplayCategory({ category: "Hardware", name: "TK825PN", subcategory })).toBe("Cabinetry");
