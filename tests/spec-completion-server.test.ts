@@ -270,6 +270,19 @@ it("retires old blanket dimension flags from open results while retaining team d
   result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
   expect(result.issues).toHaveLength(3); expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
 });
+it("removes saved countertop price and price-basis warnings from both detail and plan checks, preserving completed history", async () => {
+  state.items.push({ ...state.items[0], id: "counter", item_label: "Countertop", category: "Countertops", product: { name: "Quartz slab", price: "$50-$60", price_unit: null } });
+  const finding = (source: string, field: string) => ({ item_id: "counter", room_id: roomId, field, source });
+  state.saved = { report: { checked_at: "earlier", document: null, findings: [finding("details", "price"), finding("plans", "price")] }, source_signature: "old", issues: {
+    detail: { key: "detail", status: "open", finding: finding("details", "price") },
+    basis: { key: "basis", status: "open", finding: finding("details", "price_unit") },
+    plan: { key: "plan", status: "open", finding: finding("plans", "price") },
+    completed: { key: "completed", status: "completed", finding: finding("plans", "price") },
+  } };
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(result.issues.map((issue: any) => issue.key)).toEqual(["completed"]); expect(result.report.findings).toEqual([]);
+  expect(state.saved.issues.plan.status).toBe("open"); expect(state.rpc).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled();
+});
 it("recognizes current saved results and detects later material edits without an AI call", async () => {
   const doc = { id: state.documents[0].id, title: state.documents[0].title, updated_at: state.documents[0].updated_at };
   state.saved = { report: { checked_at: "earlier", document: doc }, source_signature: completionSourceSignature(state.items, state.rooms, doc), issues: {} };

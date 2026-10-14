@@ -207,6 +207,17 @@ describe("material metadata enrichment", () => {
       scrape_error: null,
     });
   });
+  it.each([null, "$50-$60"])("does not flag an optional countertop price %s after saving useful product specs", async price => {
+    mock.query.mockImplementation(q => q.op === "update" ? { error: null } : q.table === "material_items"
+      ? { data: { id: item, room_id: null, item_label: "Countertop", category: "Countertops", notes: "Designer note" } }
+      : { data: { id: product, name: "Quartz countertop", price: null } });
+    const response = await handlers.PUT({ request: request("PUT", { rows: [{ material_item_id: item, existing_product_id: product,
+      url: "https://vendor.test/quartz-countertops/white/", scraped: { name: "Quartz countertop", price, dimensions: "3cm", color: "White" } }] }) });
+    expect(await response.json()).toMatchObject({ price_missing_count: 0 });
+    const writes = mock.query.mock.calls.map(([q]) => q).filter(q => q.op === "update");
+    expect(writes.find(q => q.table === "material_items").write).toMatchObject({ scrape_status: "scraped", scrape_error: null, color: "White" });
+    expect(writes.find(q => q.table === "products").write.dimensions).toBe("3cm");
+  });
   it("scrapes priced items with missing specs and does not stop at a direct Shopify price", async () => {
     mock.query.mockResolvedValue({
       data: [

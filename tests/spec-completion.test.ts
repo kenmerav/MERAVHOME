@@ -52,15 +52,29 @@ it.each([
     expect(checkSpecDetails([material], rooms).some(row => ["price", "price_unit"].includes(row.field))).toBe(false);
   }
 });
-it("still requires prices for cabinet hardware and ordinary purchased items and reviews an entered price range", () => {
+it("still requires prices for cabinet hardware and ordinary purchased items while countertop ranges are optional", () => {
   for (const [category, label] of [["Cabinetry", "Cabinet knob"], ["Plumbing", "Faucet"], ["Lighting", "Painted metal lamp"]]) {
     const material = item({ category, item_label: label });
     material.product = { ...material.product, name: label, price: null } as MaterialItem["product"];
     expect(needsCompletionPrice(material)).toBe(true);
   }
   const quote = item({ category: "Countertops", item_label: "Countertop" });
+  quote.product!.name = "Quartz countertop";
+  quote.product!.product_url = "https://vendor.test/quartz-countertops/white/";
   quote.product!.price = "$100–$200";
-  expect(needsCompletionPrice(quote)).toBe(true);
+  expect(needsCompletionPrice(quote)).toBe(false);
+});
+it.each([null, "", "TBD", "Contact for quote", "$50-$60", "$100–$200", "$0.00", "$60.00"])("never requires countertop pricing or price basis for %s", price => {
+  const counter = item({ item_label: "Counter top", category: "Other", product: { name: "Quartz slab", price, price_unit: null, product_url: "https://vendor.test/products/slab/quartz/" } as any });
+  expect(needsCompletionPrice(counter)).toBe(false); expect(needsCompletionPriceUnit(counter)).toBe(false);
+  expect(checkSpecDetails([counter], rooms).some(row => ["price", "price_unit"].includes(row.field))).toBe(false);
+});
+it("continues requiring prices for countertop fixtures while ignoring AI countertop price suggestions", () => {
+  const faucet = item({ item_label: "Countertop Faucet", category: "Countertops" }); faucet.product!.name = "Faucet"; faucet.product!.price = null;
+  expect(needsCompletionPrice(faucet)).toBe(true);
+  const counter = item({ item_label: "Countertop", category: "Countertops" }); counter.product!.name = "Quartz countertop";
+  counter.product!.product_url = "https://vendor.test/quartz-countertops/white/";
+  expect(cleanCompletionPlanFindings([{ ...quantity, field: "price", explicit_specification: true, value: "$250", price_unit: "sq_ft", currency: "USD" }], [counter], rooms, 14)).toEqual([]);
 });
 it("recognizes a countertop slab used as a shower surround from its linked product type", () => {
   const surround = item({ item_label: "Lower Surround of Shower", category: "Plumbing", product_url: "https://www.msisurfaces.com/quartz-countertops/calacatta-aravine-quartz/" });

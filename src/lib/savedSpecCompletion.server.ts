@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
 import { cleanCompletionPlanFindings, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
@@ -185,6 +186,8 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
   const byItem = new Map(items.map(item => [item.id, item]));
   const sharedIds = new Set(sharedCompletionSelections(items, rooms).map(item => item.id));
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
+    const pricingItem = byItem.get(issue.finding.item_id ?? "");
+    if (issue.status === "open" && ["price", "price_unit"].includes(issue.finding.field) && pricingItem && isCountertopMaterial(pricingItem)) return false;
     if (issue.status === "open" && issue.finding.source === "plans" && issue.finding.field === "missing_item" &&
       sharedCompletionCoversMissing(items, rooms, issue.finding.room_id, issue.finding.item_label)) return false;
     if (issue.status === "open" && issue.finding.source === "plans" && issue.finding.field === "quantity" &&
@@ -198,7 +201,10 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
     if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);
     return true;
   });
-  return { report: saved.report, issues,
+  return { report: { ...saved.report, findings: saved.report.findings?.filter((finding: any) => {
+    const item = byItem.get(finding.item_id ?? "");
+    return !(["price", "price_unit"].includes(finding.field) && item && isCountertopMaterial(item));
+  }) }, issues,
     stale: saved.source_signature !== completionSourceSignature(items, rooms, currentDocument, board.data?.board_state) };
 }
 
