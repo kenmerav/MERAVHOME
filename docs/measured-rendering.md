@@ -1,9 +1,27 @@
 # Drawing + Spec Book — live Studio
 
 Studio team members with project access can open a project's Renderings page and choose
-**Drawing + Spec Book**. Choose the room and upload a dimensioned elevation image, with up to
+**Drawing + Spec Book**, now embedded in Rendering Studio. The **SketchUp & saved elevations**
+tab preserves the prior queues, revisions, package imports and presentation-sheet controls.
+Choose the room and upload a dimensioned elevation image, with up to
 three supporting plan/elevation images. Original images upload directly to the existing private
 `rendering-studio-files` bucket using scoped signed upload tokens.
+
+The construction-view picker reads existing project Construction Docs. **Find room views** runs
+one shared, budget-guarded PDF index for all current project rooms. It lists individual elevations,
+plans and details by room, printed view title, sheet and one-based physical PDF page. Multiple views
+on a sheet stay separate. Unclear room associations are excluded from automatic room matching.
+Select **Work on this view**, or add up to three other crops as supporting views. Crop edges are
+suggestions: review and adjust them to retain dimensions and exclude unrelated elevations.
+Manual PDF page/crop selection remains available without AI indexing.
+
+Indices live privately under `<project-id>/measured/drawings/<source-key>.json` in the same bucket.
+Their key includes document identity, source path, revision metadata and current rooms; changed
+documents invalidate the index. Cropped source images are immutable room-scoped assets. Source
+document, sheet/page/view and reviewed crop bounds persist with camera versions and jobs. Index
+jobs use Vercel Workflow and poll a single background response, with no automatic paid retries.
+The PDF scan uses the existing Spec review token-cost guard ($5 ceiling) and GPT-6.1 Sol high
+reasoning. It has no new tables, grants, public storage or environment settings.
 
 Drawing reading matches only that room's Spec Book products (and shared sinks/paint). Explicit
 overall product dimensions override drawn product sizes while maintaining installation centres.
@@ -53,6 +71,9 @@ built-in image tool. Both are clearly labelled reference tests, not proof of suc
 generation. Tile courses, niche height, floor material and small product details still need review.
 Private Spec K assets are saved in scoped Studio storage; no test snapshots, credentials or generated
 image binaries are committed to Git.
+The initial production release also successfully generated a new Spec K image through the live
+API from a saved browser camera and reopened its persisted job. This verifies photoreal generation;
+it does not certify the source reconstruction or image geometry as exact.
 
 Validation covers dimensional precedence, fractional parsing, ambiguous envelopes, fit checks,
 private access, cross-project asset rejection, stale Spec Book rejection, durable shared records,

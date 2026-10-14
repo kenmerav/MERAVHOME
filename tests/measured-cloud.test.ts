@@ -50,32 +50,45 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
                     project_id: "22222222-2222-4222-8222-222222222222",
                   },
                 ]
-              : table === "material_items"
+              : table === "project_documents"
                 ? [
                     {
-                      id: "44444444-4444-4444-8444-444444444444",
-                      room_id: "33333333-3333-4333-8333-333333333333",
+                      id: "88888888-8888-4888-8888-888888888888",
                       project_id: "22222222-2222-4222-8222-222222222222",
-                      item_label: "Mirror",
-                      category: "Mirrors",
-                      cad_label: null,
-                      quantity: "3",
-                      color: "Polished Nickel",
-                      notes: null,
-                      product_id: "55555555-5555-4555-8555-555555555555",
-                      not_needed: false,
-                      image_url: "https://example.com/mirror.png",
-                      product_url: "https://example.com/mirror",
-                      product: {
-                        name: "Selected mirror",
-                        dimensions: '20" W x 30" H x 1.5" D',
-                        finish: "Polished Nickel",
-                        image_url: "https://example.com/mirror.png",
-                        product_url: "https://example.com/mirror",
-                      },
+                      document_type: "Construction Doc",
+                      title: "Project drawings",
+                      updated_at: "2026-10-14T12:00:00Z",
+                      file_size: 1000,
+                      file_url:
+                        "https://storage.test/storage/v1/object/public/project-files/22222222-2222-4222-8222-222222222222/construction-docs/source.pdf",
                     },
                   ]
-                : [];
+                : table === "material_items"
+                  ? [
+                      {
+                        id: "44444444-4444-4444-8444-444444444444",
+                        room_id: "33333333-3333-4333-8333-333333333333",
+                        project_id: "22222222-2222-4222-8222-222222222222",
+                        item_label: "Mirror",
+                        category: "Mirrors",
+                        cad_label: null,
+                        quantity: "3",
+                        color: "Polished Nickel",
+                        notes: null,
+                        product_id: "55555555-5555-4555-8555-555555555555",
+                        not_needed: false,
+                        image_url: "https://example.com/mirror.png",
+                        product_url: "https://example.com/mirror",
+                        product: {
+                          name: "Selected mirror",
+                          dimensions: '20" W x 30" H x 1.5" D',
+                          finish: "Polished Nickel",
+                          image_url: "https://example.com/mirror.png",
+                          product_url: "https://example.com/mirror",
+                        },
+                      },
+                    ]
+                  : [];
       const result = () => ({
         data: rows().filter((r: any) => filters.every(([k, v]) => r[k] === v)),
         error: null,
@@ -192,6 +205,7 @@ const request = (body?: unknown, auth = true) =>
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
 beforeEach(() => {
+  vi.stubEnv("SUPABASE_URL", "https://storage.test");
   fake.files.clear();
   fake.files.set(source, png);
   fake.files.set(base, png);
@@ -199,14 +213,12 @@ beforeEach(() => {
   fake.profile.is_active = true;
   fake.profile.can_view_all_projects = true;
   fake.start.mockClear();
-  fake.generate
-    .mockReset()
-    .mockResolvedValue({
-      bytes: Buffer.from(png),
-      prompt: "locked prompt",
-      model: "gpt-image-2.5-sunburst",
-      usage: {},
-    });
+  fake.generate.mockReset().mockResolvedValue({
+    bytes: Buffer.from(png),
+    prompt: "locked prompt",
+    model: "gpt-image-2.5-sunburst",
+    usage: {},
+  });
   fake.interpret.mockReset().mockResolvedValue({ elevation, model: "gpt-6-astra", usage: {} });
 });
 async function scene() {
@@ -219,6 +231,23 @@ async function scene() {
   });
 }
 describe("Shared measured rendering boundary and persistence", () => {
+  it("shares one document view scan across repeated requests", async () => {
+    const body = { action: "index-drawings", documentId: "88888888-8888-4888-8888-888888888888" };
+    expect((await measuredApi(request(body))).status).toBe(202);
+    expect((await measuredApi(request(body))).status).toBe(200);
+    expect(fake.start).toHaveBeenCalledTimes(1);
+    expect(fake.generate).not.toHaveBeenCalled();
+  });
+  it("rejects construction documents outside this project before dispatch", async () => {
+    expect(
+      (
+        await measuredApi(
+          request({ action: "index-drawings", documentId: "99999999-9999-4999-8999-999999999999" }),
+        )
+      ).status,
+    ).toBe(404);
+    expect(fake.start).not.toHaveBeenCalled();
+  });
   it("requires sign-in before any storage read", async () => {
     const result = await measuredApi(request(undefined, false));
     expect(result.status).toBe(401);
