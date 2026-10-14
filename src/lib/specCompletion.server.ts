@@ -108,13 +108,26 @@ export async function authorizeCompletionProject(request: Request, allowedKeys =
 }
 
 export async function checkSpecCompletion(request: Request) {
-  const access = await authorizeCompletionProject(request);
+  const access = await authorizeCompletionProject(request, ["project_id", "action"]);
   if (access instanceof Response) return access;
-  const { projectId, userId } = access;
+  const { projectId, userId, body } = access;
+  if (body.action !== undefined && body.action !== "prepare") return json({ error: "Choose a valid completion action." }, 400);
   // Confirm saving is available before starting any paid AI work.
   await assertCompletionStorage(projectId);
   const existing = await readSavedCompletionReview(projectId);
-  if (existing?.report.plan_status === "checking") return json(existing.report);
+  if (existing?.report.plan_status === "checking") return json(body.action === "prepare"
+    ? { material_item_ids: [], pending_report: existing.report } : existing.report);
+  if (body.action === "prepare") {
+    const [items, rooms, board] = await Promise.all([
+      readProjectRows("material_items", "*,product:products(*)", projectId),
+      readProjectRows("rooms", "id,name", projectId),
+      admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),
+    ]);
+    if (board.error) throw board.error;
+    const staleIds = new Set(staleSpecBookMaterialIds(projectId, items, board.data?.board_state));
+    const roomIds = new Set(rooms.map(room => room.id));
+    return json({ material_item_ids: completionItems(items).filter(item => roomIds.has(item.room_id) && !staleIds.has(item.id)).map(item => item.id) });
+  }
   // Refresh only this authorized project's PDFs before choosing the document.
   // Filing uses no AI. Leave time for the existing paid plan review.
   let refresh: NonNullable<SpecCompletionReport["document_refresh"]>;

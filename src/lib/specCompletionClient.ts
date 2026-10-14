@@ -6,6 +6,7 @@ import type { SavedSpecCompletionReview, SavedCompletionIssue, CompletionIssueSt
 import { completionResponse } from "@/lib/specCompletionResponse";
 import type { MaterialItem } from "@/lib/db";
 import type { CompletionDetailDraft } from "@/lib/specCompletionDetail";
+import { refreshMaterialProductInfo, type MaterialProductRefresh } from "@/lib/materialProductRefresh";
 
 async function savedReviewRequest(body: unknown): Promise<SavedSpecCompletionReview | null> {
   const { data, error } = await supabase.auth.getSession();
@@ -37,11 +38,27 @@ export async function saveCompletionDetail(projectId: string, item: MaterialItem
   return completionResponse(response, "Could not save this detail.");
 }
 
-export async function fetchSpecCompletion(projectId: string): Promise<SpecCompletionReport> {
+export async function fetchSpecCompletion(projectId: string, options: {
+  onProgress?: (message: string) => void;
+  onProductsRefreshed?: (summary: MaterialProductRefresh) => Promise<void>;
+} = {}): Promise<SpecCompletionReport> {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("Sign in to check completion.");
+  const headers = { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" };
+  options.onProgress?.("Finding current selections…");
+  const preparedResponse = await fetch("/api/check-spec-completion", {
+    method: "POST", headers, body: JSON.stringify({ project_id: projectId, action: "prepare" }),
+  });
+  const prepared = await completionResponse<{ material_item_ids: string[]; pending_report?: SpecCompletionReport }>(preparedResponse, "Could not prepare the completion check.");
+  if (prepared.pending_report) return prepared.pending_report;
+  if (!Array.isArray(prepared.material_item_ids)) throw new Error("Could not confirm current selections. Please retry.");
+  const summary = await refreshMaterialProductInfo(projectId, prepared.material_item_ids, {
+    authorization: headers.Authorization, onProgress: options.onProgress,
+  });
+  await options.onProductsRefreshed?.(summary);
+  options.onProgress?.("Checking construction PDFs and Spec Book…");
   const response = await fetch("/api/check-spec-completion", {
-    method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
+    method: "POST", headers,
     body: JSON.stringify({ project_id: projectId }),
   });
   return completionResponse(response, "Could not check completion.");

@@ -13,6 +13,7 @@ import { saveCompletionDetail } from "@/lib/specCompletionClient";
 import type { CompletionDetailDraft } from "@/lib/specCompletionDetail";
 import { hasCompletionValue, needsCompletionColor } from "@/lib/specCompletion";
 import { materialPriceUnit } from "@/lib/productPriceUnit";
+import type { MaterialProductRefresh } from "@/lib/materialProductRefresh";
 
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
@@ -26,6 +27,8 @@ export function SpecCompletionReview(props: CompletionReviewProps) {
 function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionReviewProps) {
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [productRefresh, setProductRefresh] = useState<MaterialProductRefresh | null>(null);
   const [report, setReport] = useState<SpecCompletionReport | null>(null);
   const [error, setError] = useState("");
   const qc = useQueryClient();
@@ -41,24 +44,35 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   const lock = useRef(false);
   const [reviewedSignature, setReviewedSignature] = useState("");
   const signature = JSON.stringify([projectId, rooms, items.map(item => [item.id, item.updated_at, item.product?.updated_at, item.quantity, item.quantity_tbd, item.quantity_unit, item.color, item.not_needed])]);
+  const currentSignature = useRef(signature);
+  currentSignature.current = signature;
   const run = async () => {
     if (lock.current || pending) return;
     lock.current = true;
     setOpen(true); setChecking(true); setError(""); setReport(null); setViewSaved(false);
+    setProgress("Refreshing product info…"); setProductRefresh(null);
     setReviewedSignature(signature);
     try {
-      setReport(await fetchSpecCompletion(projectId));
+      setReport(await fetchSpecCompletion(projectId, {
+        onProgress: setProgress,
+        onProductsRefreshed: async summary => {
+          setProductRefresh(summary);
+          await Promise.all([["materialItems", projectId], ["products"], ["catalog"], ["procurement"], ["roomProducts"]]
+            .map(queryKey => qc.invalidateQueries({ queryKey })));
+        },
+      }));
       await savedQuery.refetch({ throwOnError: true }); setViewSaved(true);
+      setReviewedSignature(currentSignature.current);
     }
     catch (error) { setError(error instanceof Error ? error.message : "Could not check completion."); }
     finally {
-      lock.current = false; setChecking(false);
+      lock.current = false; setChecking(false); setProgress("");
       // The pre-check may have added PDFs; refresh any open project document lists.
       void qc.invalidateQueries({ queryKey: ["projectDocuments", projectId] });
     }
   };
   const openSaved = async () => {
-    setOpen(true); setViewSaved(true); setError(""); setReviewedSignature(signature);
+    setOpen(true); setViewSaved(true); setError(""); setProductRefresh(null); setReviewedSignature(signature);
     try { await savedQuery.refetch({ throwOnError: true }); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not load the saved review."); }
   };
@@ -92,7 +106,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   };
   const saved = viewSaved ? savedQuery.data : null;
   const activeReport = saved?.report ?? report;
-  const details = activeReport?.findings ?? checkSpecDetails(items, rooms);
+  const details = activeReport?.findings ?? (checking ? [] : checkSpecDetails(items, rooms));
   const count = savedQuery.data ? completionIssueCounts(savedQuery.data.issues).open : 0;
   return <>
     {savedQuery.data && <button type="button" onClick={() => void openSaved()} disabled={checking || !!savingIssue}
@@ -100,14 +114,15 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
     <button type="button" onClick={() => void run()} disabled={busy}
       className="inline-flex items-center gap-2 border border-ink px-5 py-2.5 text-sm text-ink disabled:opacity-60 print:hidden">
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-      {busy ? "Checking Spec Book…" : "Check Spec Book for Completion"}
+      {busy ? progress || "Checking Spec Book…" : "Check Spec Book for Completion"}
     </button>
     {savedQuery.error && <p className="text-xs text-muted-foreground print:hidden">{savedQuery.error.message}</p>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-6 sm:p-8">
         <DialogHeader>
           <DialogTitle className="font-display text-3xl">Spec Book completion review</DialogTitle>
-          <DialogDescription>New checks first look for Jessica’s newer construction PDFs for this project, then review the latest attached plans. Findings are saved with the project. Opening saved results does not refresh email or run another AI check.</DialogDescription>
+          <DialogDescription>New checks first refresh and save missing product details and prices, then look for Jessica’s newer construction PDFs and review the latest selections and plans. Existing manual details and prices are kept. Opening saved results does not refresh products, email, or run another AI check.</DialogDescription>
+          {productRefresh && <p className="text-xs text-muted-foreground">Product info refreshed: {productRefresh.saved} saved{productRefresh.failed ? `; ${productRefresh.failed} products could not be refreshed and were reviewed using their saved details` : ""}.</p>}
           <p className="text-xs text-muted-foreground">Missing-size checks apply to unresolved products with multiple published size choices. Blank dimensions alone do not create an issue.</p>
           <p className="text-xs text-muted-foreground">Prices are optional for countertops, paint, and cabinetry.</p>
           <p className="text-xs text-muted-foreground">GPT-6.1 Sol · High reasoning · $3 target per AI check. Requests estimated above $5 are stopped. Color and dimension suggestions are separate checks.</p>
@@ -119,13 +134,13 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
           itemCount={activeReport?.item_count ?? completionItems(items).length} checking={busy || (viewSaved && savedQuery.isFetching && !saved)}
           planStatus={activeReport?.plan_status} document={activeReport?.document ?? null}
           checkedAt={activeReport?.checked_at}
-          message={error || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Checking for newer construction PDFs, then reviewing current selections and plans…")}
+          message={error || progress || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Refreshing product info, then checking construction PDFs and selections…")}
           documentRefresh={activeReport?.document_refresh}
-          stale={!!saved?.stale || reviewedSignature !== signature} />
+          stale={!checking && (!!saved?.stale || reviewedSignature !== signature)} />
         <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4">
           <p className="text-xs text-muted-foreground">{saved ? "Issue decisions are saved for the team. Edit Materials to change product information." : "No quantities or selections have been changed."}</p>
           <button type="button" className="shrink-0 bg-ink px-5 py-2.5 text-sm text-white disabled:opacity-50"
-            disabled={busy || !!savingIssue} onClick={() => void run()}>{busy ? "Checking plans…" : "Run a new check"}</button>
+            disabled={busy || !!savingIssue} onClick={() => void run()}>{busy ? progress || "Checking plans…" : "Run a new check"}</button>
         </div>
       </DialogContent>
     </Dialog>
