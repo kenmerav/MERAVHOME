@@ -18,6 +18,7 @@ import { MaterialPhotoUpload } from "@/components/MaterialPhotoUpload";
 import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
 import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggestions";
+import { saveAndScrapeMaterialLink } from "@/lib/materialProductLink";
 import { formatPriceWithUnit, materialPriceUnit, inferProductPriceUnit } from "@/lib/productPriceUnit";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
@@ -54,7 +55,6 @@ import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialHasUserSelection } from "@/lib/materialSelection";
 import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel, suggestedTemplatesForRoom, confirmedNoShower, type BathroomPlanEvidence } from "@/lib/materialSuggestions";
 import { fetchMaterialPlanCheck } from "@/lib/materialPlanCheck";
-import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/projects/$id/materials")({
@@ -400,8 +400,8 @@ function MaterialsPage() {
         .filter((row) => row.material_item_id);
       const res = await fetch("/api/scrape-materials", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: safeRows }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}` },
+        body: JSON.stringify({ project_id: projectId, rows: safeRows }),
       });
       const body = await readApiJson<{ error?: string; price_missing_count?: number }>(res);
       if (!res.ok) throw new Error(body?.error || "Could not save scraped products");
@@ -429,6 +429,9 @@ function MaterialsPage() {
     setScraping(true);
     setScrapeStatus("Starting scrape...");
     try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error || !data.session) throw new Error("Sign in to scrape product info.");
+      const scrapeHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` };
       const collectedRows: ScrapedRow[] = [];
       const collectedIds = new Set<string>();
       let invalidLinkCount = 0;
@@ -445,7 +448,7 @@ function MaterialsPage() {
         );
         const res = await fetch("/api/scrape-materials", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: scrapeHeaders,
           body: JSON.stringify({
             action: "start",
             project_id: projectId,
@@ -484,7 +487,7 @@ function MaterialsPage() {
               setScrapeStatus(`Finishing batch ${batchCount + 1} one product at a time...`);
               const fallbackRes = await fetch("/api/scrape-materials", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: scrapeHeaders,
                 body: JSON.stringify({
                   action: "fallback",
                   project_id: projectId,
@@ -502,7 +505,7 @@ function MaterialsPage() {
             }
             const pollRes = await fetch("/api/scrape-materials", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: scrapeHeaders,
               body: JSON.stringify({
                 action: "poll",
                 project_id: projectId,
@@ -899,6 +902,7 @@ function RoomMaterialsSection({
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activatedSuggestionKeys, setActivatedSuggestionKeys] = useState<string[]>([]);
+  const [linkProgress, setLinkProgress] = useState<Record<string, string>>({});
   const [bulkOrderedBy, setBulkOrderedBy] = useState<MaterialItem["ordered_by"] | "none">("none");
   const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
   const focusedReviewItem = useRef<string | null>(null);
@@ -995,52 +999,16 @@ function RoomMaterialsSection({
       qc.invalidateQueries({ queryKey: ["procurement"] }),
     ]);
 
-  const ensureProductConnection = async (item: MaterialItem, productUrl: string) => {
-    const url = productUrl.trim();
-    if (!url || item.product_id) return;
-
-    const matchingProducts = (await db.listProductsByUrl(url)) ?? [];
-    const normalizedColor = item.color?.trim().toLocaleLowerCase() ?? "";
-    const product =
-      matchingProducts.find((candidate) => {
-        const finish = candidate.finish?.trim().toLocaleLowerCase() ?? "";
-        return normalizedColor ? finish === normalizedColor : true;
-      }) ??
-      (await db.createProduct({
-        name: item.item_label.trim() || item.client_product_name?.trim() || "Untitled product",
-        ...productCategoryPatchForMaterialCategory(item.category),
-        product_url: url,
-        image_url: item.image_url || null,
-        finish: item.color || null,
-        notes: CATALOG_NAME_PENDING_NOTE,
-      }));
-
-    if (!product) throw new Error("Could not create the linked catalog product.");
-
-    const materialResult = await db.updateMaterialItem(item.id, {
-      product_id: product.id,
-      product_url: url,
-      not_needed: false,
-    });
-    if (materialResult.error) throw materialResult.error;
-
-    const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
-    if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
-      await db.addRoomProduct({
-        room_id: room.id,
-        product_id: product.id,
-        is_key_selection: false,
-      });
-    }
-
-    qc.invalidateQueries({ queryKey: ["catalog"] });
-    qc.invalidateQueries({ queryKey: ["product", product.id] });
-  };
-
   const activateSuggestion = async (
     suggestion: MaterialSuggestion,
     productUrl: string | null,
   ) => {
+    if (productUrl) {
+      const result = await saveAndScrapeMaterialLink({ projectId, roomId: room.id, label: suggestion.label, productUrl, existingItem: suggestion.existingItem });
+      if (result.warning) toast.warning(result.warning);
+      await Promise.all([["materialItems", projectId], ["catalog"], ["products"], ["roomProducts", room.id], ["spec-completion-review", projectId], ["procurement"]].map(queryKey => qc.invalidateQueries({ queryKey })));
+      return;
+    }
     setActivatedSuggestionKeys((current) =>
       current.includes(suggestion.key) ? current : [...current, suggestion.key],
     );
@@ -1125,16 +1093,25 @@ function RoomMaterialsSection({
   }, [sortedItems]);
 
   const update = async (id: string, patch: Partial<MaterialItem>) => {
-    if (!isUuid(id)) return toast.error("Could not save this item because its ID is invalid.");
+    if (!isUuid(id)) { toast.error("Could not save this item because its ID is invalid."); return; }
     const currentItem = activeItems.find((item) => item.id === id);
-    if (!currentItem) return toast.error("Could not find this material item.");
+    if (!currentItem) { toast.error("Could not find this material item."); return; }
 
     try {
+      if (typeof patch.product_url === "string" && patch.product_url.trim()) {
+        if (linkProgress[id]) return;
+        setLinkProgress(current => ({ ...current, [id]: "Saving link…" }));
+        try {
+          const result = await saveAndScrapeMaterialLink({ projectId, roomId: room.id, label: currentItem.item_label, productUrl: patch.product_url, existingItem: currentItem,
+            onProgress: message => setLinkProgress(current => ({ ...current, [id]: message })) });
+          if (result.warning) toast.warning(result.warning);
+          else toast.success("Product link and available product details saved.");
+          await Promise.all([["materialItems", projectId], ["catalog"], ["products"], ["roomProducts", room.id], ["spec-completion-review", projectId], ["procurement"]].map(queryKey => qc.invalidateQueries({ queryKey })));
+        } finally { setLinkProgress(current => { const next = { ...current }; delete next[id]; return next; }); }
+        return;
+      }
       const result = await db.updateMaterialItem(id, patch);
       if (result.error) throw result.error;
-      if (typeof patch.product_url === "string" && patch.product_url.trim()) {
-        await ensureProductConnection(currentItem, patch.product_url);
-      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save this material item.");
       return;
@@ -1538,6 +1515,7 @@ function RoomMaterialsSection({
                     <td className="py-2 pr-3">
                       <InlineInput
                         value={it.product_url ?? ""}
+                        disabled={!!linkProgress[it.id]}
                         onSave={(v) =>
                           update(it.id, { product_url: v || null, scrape_status: "pending" })
                         }
@@ -1547,10 +1525,10 @@ function RoomMaterialsSection({
                             : undefined
                         }
                       />
+                      {linkProgress[it.id] && <p role="status" className="mt-1 text-[11px] text-muted-foreground">{linkProgress[it.id]}</p>}
                       {!hasProductLink && (
                         <div className="mt-1 text-[11px] text-amber-800">
-                          Add a source link so this item can flow cleanly into scraping, specs, and
-                          procurement.
+                          Add a product link to automatically get its image, price, dimensions and color.
                         </div>
                       )}
                     </td>
@@ -2166,7 +2144,7 @@ export function MaterialSuggestionReview({
           )}
           <p className="text-sm leading-relaxed text-muted-foreground">
             Choose a suggestion from your catalog, paste a product link, or add a placeholder for
-            later. Anything untouched will still be here the next time you open this list.
+            later. Adding a link automatically gets the image, price, dimensions and color. Anything untouched will still be here the next time you open this list.
           </p>
           <div className="max-h-[60vh] divide-y divide-border overflow-y-auto border border-border">
             {suggestions.map((suggestion) => {
@@ -2207,7 +2185,7 @@ export function MaterialSuggestionReview({
                       onClick={() => choose(suggestion, "add")}
                       className="bg-ink px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
                     >
-                      {saving ? "Saving…" : productUrl.trim() ? "Add with link" : "Add for later"}
+                      {saving ? productUrl.trim() ? "Getting product info…" : "Saving…" : productUrl.trim() ? "Add with link" : "Add for later"}
                     </button>
                     <button
                       type="button"

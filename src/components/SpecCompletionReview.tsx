@@ -19,6 +19,7 @@ import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggesti
 import { SpecCompletionPossibleItems } from "@/components/SpecCompletionPossibleItems";
 import { untouchedCatalogPlaceholder } from "@/lib/materialCatalogSuggestions";
 import { completionCatalogTemplate } from "@/lib/specCompletionCatalog";
+import { MaterialProductLinkInput } from "@/components/MaterialProductLinkInput";
 
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
@@ -272,6 +273,9 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                 <p className="text-xs text-muted-foreground">{item ? "Choose a replacement if the selection needs correction. Quantity is kept." : "Choose a product to fill this missing item."}</p>
               </div>}
               {selectionChanged && <p className="mt-3 text-xs text-amber-900">The selected product has changed since this check. Run the check again to review its current details and fit.</p>}
+              {catalogIssue && onStatusChange && ["missing_item", "product", "link"].includes(catalogIssue.finding.field) && !item?.not_needed &&
+                <MaterialProductLinkInput projectId={projectId} roomId={room.id} label={catalogIssue.finding.item_label} existingItem={item || placeholder || null}
+                  issue={catalogIssue} disabled={checking || !!savingIssue} onSaved={catalogSaved} />}
               {group.map(issue => {
                 const row = issue.finding;
                 const earlier = !!issues && issue.last_seen_at !== checkedAt;

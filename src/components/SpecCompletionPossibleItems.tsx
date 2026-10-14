@@ -7,6 +7,7 @@ import { fetchMaterialPlanCheck } from "@/lib/materialPlanCheck";
 import type { MaterialItem } from "@/lib/db";
 import type { CompletionRoom, SpecCompletionReport } from "@/lib/specCompletion";
 import type { SavedCompletionIssue } from "@/lib/savedSpecCompletion";
+import { MaterialProductLinkInput } from "@/components/MaterialProductLinkInput";
 
 export function SpecCompletionPossibleItems({ projectId, rooms, items, document, disabled, onAdded, issues, checkedAt }: {
   projectId: string; rooms: CompletionRoom[]; items: MaterialItem[];
@@ -45,10 +46,11 @@ export function SpecCompletionPossibleItems({ projectId, rooms, items, document,
         {room && suggestions.map(suggestion => {
           const issue = issues.find(row => row.status === "open" && row.last_seen_at === checkedAt && row.finding.room_id === room.id &&
             row.finding.field === "missing_item" && completionCatalogTemplate(row.finding.item_label).label === completionCatalogTemplate(suggestion.label).label);
-          return <div key={suggestion.label} className="flex items-center justify-between gap-4 p-4">
+          return <div key={suggestion.label} className="p-4"><div className="flex items-center justify-between gap-4">
           <div><p className="font-medium">{suggestion.label}</p><p className="text-xs text-muted-foreground">{suggestion.category}</p></div>
           <MaterialCatalogSuggestions projectId={projectId} roomId={room.id} roomName={room.name} label={issue?.finding.item_label || suggestion.label} existingItem={suggestion.existingItem} disabled={disabled || plan.isFetching} considerShared completionIssue={issue}
             onAdded={async () => { await qc.invalidateQueries({ queryKey: ["materialItems", projectId] }); await onAdded(); }} />
+          </div><MaterialProductLinkInput projectId={projectId} roomId={room.id} label={issue?.finding.item_label || suggestion.label} existingItem={suggestion.existingItem} issue={issue} disabled={disabled || plan.isFetching} onSaved={onAdded} />
         </div>; })}
         {!suggestions.length && <p className="p-4 text-sm text-muted-foreground">No additional template items to review for this room.</p>}
       </div>

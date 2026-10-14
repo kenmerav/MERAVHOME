@@ -34,6 +34,7 @@ async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, authoriza
 export async function refreshMaterialProductInfo(projectId: string, materialItemIds: string[], options: {
   authorization: string;
   onProgress?: (message: string) => void;
+  force?: boolean;
 }): Promise<MaterialProductRefresh> {
   const scope = [...new Set(materialItemIds.map(cleanUuid).filter((id): id is string => !!id))];
   if (!cleanUuid(projectId) || scope.length !== new Set(materialItemIds).size)
@@ -47,6 +48,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
     const batch = await scrapeRequest<ScrapeBatch>("POST", {
       action: "start", project_id: projectId, material_item_ids: scope,
       exclude_material_item_ids: [...processed],
+      ...(options.force ? { force: true } : {}),
     }, options.authorization);
     let completed = batch;
     if (batch.status === "started") {
@@ -75,7 +77,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
     summary.failed += uniqueRows.length - successful.length;
     if (successful.length) {
       options.onProgress?.(`Saving product info · ${summary.saved + successful.length} products…`);
-      const saved = await scrapeRequest<{ ok?: boolean; price_missing_count?: number }>("PUT", { rows: successful.map(row => ({
+      const saved = await scrapeRequest<{ ok?: boolean; price_missing_count?: number }>("PUT", { project_id: projectId, rows: successful.map(row => ({
         ...row, existing_product_id: cleanUuid(row.existing_product_id),
       })) }, options.authorization);
       if (saved.ok !== true) throw new Error("Product info could not be saved. The completion review has not started; please retry.");

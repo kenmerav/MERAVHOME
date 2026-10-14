@@ -16,6 +16,9 @@ it('offers catalog selection and possible-room-items review inside a saved missi
   expect(html).toContain('Suggest from Catalog');
   expect(html).toContain('Review possible items');
   expect(html).toContain('Choose a product to fill this missing item.');
+  expect(html).toContain('Product link for Shower Drain');
+  expect(html).toContain('Save link &amp; get product info');
+  expect(html).toContain('Automatically gets the image, price, dimensions and color');
 });
 it('does not offer replacement of a product changed since the saved finding', () => {
   const finding = { id: 'price', item_id: 'sink', room_id: 'bath', item_label: 'Sink', source: 'details', field: 'price' } as CompletionFinding;

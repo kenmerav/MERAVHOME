@@ -5,7 +5,10 @@ import {
   normalizeFirecrawlProduct,
 } from "../src/lib/firecrawlProduct";
 
-const mock = vi.hoisted(() => ({ query: vi.fn() }));
+const mock = vi.hoisted(() => ({ query: vi.fn(), denied: null as Response | null, currentUrl: "" }));
+vi.mock("@/lib/specCompletion.server", () => ({ authorizeCompletionProject: async (request: Request) => mock.denied ?? {
+  projectId: "11111111-1111-4111-8111-111111111111", body: await request.json(), userId: "staff",
+} }));
 vi.mock("../src/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from: (table: string) => {
@@ -28,7 +31,15 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
           return chain;
         };
       chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
-        Promise.resolve(mock.query(state)).then(resolve, reject);
+        Promise.resolve(mock.query(state)).then(result => {
+          // Existing specification fixtures use one current material/variant.
+          if (state.table === "material_items" && state.op === "select" && result?.data && !Array.isArray(result.data)) result = { ...result, data: {
+            project_id: "11111111-1111-4111-8111-111111111111", product_id: "33333333-3333-4333-8333-333333333333", product_url: mock.currentUrl,
+            updated_at: "2026-10-14T20:00:00Z", ...result.data,
+          } };
+          if (state.op === "update" && !result?.error && !result?.data) result = { ...result, data: { id: "22222222-2222-4222-8222-222222222222" } };
+          return resolve(result);
+        }, reject);
       return chain;
     },
   },
@@ -46,6 +57,7 @@ const item = "22222222-2222-4222-8222-222222222222";
 const product = "33333333-3333-4333-8333-333333333333";
 const url = "https://shop.example.com/products/sconce?variant=123";
 function request(method: string, body: unknown) {
+  mock.currentUrl = (body as any)?.rows?.[0]?.url || url;
   return new Request("https://studio.example/api/scrape-materials", {
     method,
     headers: { "Content-Type": "application/json" },
@@ -54,6 +66,7 @@ function request(method: string, body: unknown) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mock.denied = null;
   vi.stubEnv("FIRECRAWL_API_KEY", "test-only");
 });
 afterEach(() => {
@@ -62,6 +75,33 @@ afterEach(() => {
 });
 
 describe("source-grounded product specifications", () => {
+  it("denies unauthenticated scraping and saves before accessing material rows", async () => {
+    mock.denied = Response.json({ error: "Sign in" }, { status: 401 });
+    expect((await handlers.POST({ request: request("POST", { project_id: project }) })).status).toBe(401);
+    expect((await handlers.PUT({ request: request("PUT", { project_id: project, rows: [] }) })).status).toBe(401);
+    expect(mock.query).not.toHaveBeenCalled();
+  });
+  it("does not attach an older scrape when the material link changed in the meantime", async () => {
+    mock.query.mockResolvedValue({ data: { id: item, product_url: "https://retailer.test/new-link" } });
+    expect((await handlers.PUT({ request: request("PUT", { project_id: project, rows: [{ material_item_id: item, existing_product_id: product, url, scraped: { image_url: "https://cdn.test/image.jpg", price: "$99" } }] }) })).status).toBe(409);
+    expect(mock.query.mock.calls.every(([q]) => q.op === "select")).toBe(true);
+  });
+  it("saves a new image and uses the finish as color when the retailer has no separate color field", async () => {
+    mock.query.mockImplementation(q => q.op === "update" ? { error: null } : q.table === "material_items" ? { data: { id: item, room_id: null, color: null, image_url: null } } : { data: { id: product } });
+    expect((await handlers.PUT({ request: request("PUT", { project_id: project, rows: [{ material_item_id: item, existing_product_id: product, url, scraped: { image_url: "https://cdn.test/image.jpg", price: "$99", finish: "Polished Nickel", dimensions: "20 in" } }] }) })).status).toBe(200);
+    const write = mock.query.mock.calls.map(([q]) => q).find(q => q.op === "update" && q.table === "material_items");
+    expect(write.write).toMatchObject({ color: "Polished Nickel", image_url: "https://cdn.test/image.jpg" });
+    expect(write.filters).toContainEqual(["eq", "project_id", project]);
+    expect(write.filters).toContainEqual(["eq", "product_url", url]);
+    expect(write.filters).toContainEqual(["eq", "updated_at", "2026-10-14T20:00:00Z"]);
+  });
+  it("forces a fresh read for only the newly saved link even when its previous specs were complete", async () => {
+    mock.query.mockResolvedValue({ data: [item, product].map(id => ({ id, category: "Lighting", product_url: url, color: "White", product: { id: product, price: "$100", finish: "White", dimensions: "12 in", image_url: "https://cdn.test/old.jpg" } })) });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: "batch", data: {} })));
+    const response = await handlers.POST({ request: request("POST", { project_id: project, action: "start", force: true, material_item_ids: [item] }) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).candidates.map((row: any) => row.material_item_id)).toEqual([item]);
+  });
   it("identifies clear selling units when extraction omits the unit field", () => {
     expect(normalizeFirecrawlProduct({ json: { name: "Kitchen Faucet", price: "$269.40" } }, "https://retailer.test/faucet"))
       .toMatchObject({ price: "$269.40", price_unit: "unit" });
@@ -270,7 +310,7 @@ describe("material metadata enrichment", () => {
           category: "Lighting",
           product_url: url,
           color: "White",
-          product: { id: product, price: "100", finish: "Matte", dimensions: "12 in W" },
+          product: { id: product, price: "100", finish: "Matte", dimensions: "12 in W", image_url: "https://cdn.test/image.jpg" },
         },
         {
           id: product,

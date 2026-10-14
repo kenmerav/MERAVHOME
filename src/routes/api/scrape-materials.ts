@@ -10,6 +10,7 @@ import {
 } from "@/lib/productPricing";
 import { cleanUuid } from "@/lib/ids";
 import { isCountertopMaterial } from "@/lib/countertopPricing";
+import { authorizeCompletionProject } from "@/lib/specCompletion.server";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
 import { productPriceUnit, inferProductPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
@@ -552,12 +553,15 @@ export const Route = createFileRoute("/api/scrape-materials")({
       // Phase 1 — Firecrawl batch jobs return immediately; the client polls until ready.
       POST: async ({ request }) => {
         try {
-          const body = (await request.json()) as {
+          const access = await authorizeCompletionProject(request, ["action", "project_id", "material_item_ids", "exclude_material_item_ids", "batch_id", "candidates", "force"]);
+          if (access instanceof Response) return access;
+          const body = access.body as {
             action?: "start" | "poll" | "fallback";
             project_id?: string;
             material_item_ids?: string[];
             exclude_material_item_ids?: string[];
             batch_id?: string;
+            force?: boolean;
             candidates?: Array<{
               material_item_id?: string;
               url?: string;
@@ -683,7 +687,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const { data: items, error } = await supabaseAdmin
             .from("material_items")
             .select(
-              "id, category, color, product_url, product_id, scrape_status, product:products(id, price, sku, finish, dimensions, carton_coverage_sq_ft)",
+              "id, category, color, product_url, product_id, scrape_status, product:products(id, price, sku, finish, dimensions, image_url, carton_coverage_sq_ft)",
             )
             .eq("project_id", projectId)
             .eq("not_needed", false)
@@ -698,7 +702,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             const tileItem = /tile|stone/i.test(String(item.category ?? ""));
             return (
               !excludedIds.has(item.id) &&
-              (!exactProductPrice(item.product?.price) ||
+              (body.force === true || item.scrape_status === "pending" || !hasValue(item.product?.image_url) || !exactProductPrice(item.product?.price) ||
                 missingProductSpecifications({
                   finish: item.product?.finish,
                   color: item.color,
@@ -819,7 +823,10 @@ export const Route = createFileRoute("/api/scrape-materials")({
       // Phase 2 — save scraped rows to catalog + link material_items.
       PUT: async ({ request }) => {
         try {
-          const { rows } = (await request.json()) as {
+          const access = await authorizeCompletionProject(request, ["project_id", "rows"]);
+          if (access instanceof Response) return access;
+          const { projectId } = access;
+          const { rows } = access.body as {
             rows: Array<{
               material_item_id: string;
               url: string;
@@ -838,11 +845,16 @@ export const Route = createFileRoute("/api/scrape-materials")({
             if (!materialItemId) continue;
 
             // Look up material item early so we have its category + room
-            const { data: matItem } = await supabaseAdmin
+            const { data: matItem, error: materialReadError } = await supabaseAdmin
               .from("material_items")
-              .select("id, room_id, category, color, item_label, client_product_name, notes")
+              .select("id, project_id, room_id, category, color, image_url, item_label, client_product_name, notes, product_id, product_url, not_needed, updated_at")
               .eq("id", materialItemId)
+              .eq("project_id", projectId)
               .maybeSingle();
+            if (materialReadError) throw materialReadError;
+            if (!matItem || matItem.not_needed || matItem.product_url?.trim() !== row.url?.trim() ||
+              (matItem.product_id ?? null) !== cleanUuid(row.existing_product_id))
+              return json({ error: "This material link changed while scraping. Refresh and retry with its current link." }, 409);
 
             let productId = cleanUuid(row.existing_product_id);
             let savedPrice = exactProductPrice(row.scraped.price);
@@ -961,16 +973,22 @@ export const Route = createFileRoute("/api/scrape-materials")({
               };
               if (savedPrice) pricedCount += 1;
               else if (!optionalPrice) priceMissingCount += 1;
-              const scrapedColor = firstString(row.scraped.color);
+              const scrapedColor = firstString(row.scraped.color, row.scraped.finish);
               if (scrapedColor && !hasValue(matItem?.color)) {
                 materialUpdate.color = scrapedColor;
               }
+              if (row.scraped.image_url && !hasValue(matItem?.image_url)) materialUpdate.image_url = row.scraped.image_url;
 
-              const { error: materialUpdateError } = await supabaseAdmin
+              const { data: linkedMaterial, error: materialUpdateError } = await supabaseAdmin
                 .from("material_items")
                 .update(materialUpdate)
-                .eq("id", materialItemId);
+                .eq("id", materialItemId)
+                .eq("project_id", projectId)
+                .eq("product_url", matItem.product_url)
+                .eq("updated_at", matItem.updated_at)
+                .select("id").maybeSingle();
               if (materialUpdateError) return json({ error: materialUpdateError.message }, 500);
+              if (!linkedMaterial) return json({ error: "This material changed before its product details could be linked. Refresh and retry." }, 409);
 
               const roomId = cleanUuid(matItem?.room_id);
               if (roomId) {
