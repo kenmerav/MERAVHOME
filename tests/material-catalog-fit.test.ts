@@ -87,6 +87,23 @@ it("does not assume an installation tolerance for an oversized product", () => {
     ).status,
   ).toBe("conflict");
 });
+it("does not exclude the scheduled drain by treating its advertised size as overall body width", () => {
+  const result = assessCatalogFit(
+    product({ name: 'Delta 4" Tile-In Square Shower Drain', dimensions: 'Width: 4.5625 in', finish: 'Polished Nickel' }),
+    'Shower Drain',
+    [item()],
+    plan([requirement({ label: 'Shower Drain', value: 4, evidence: 'Fixture schedule F5: DELTA 4-inch TILE-IN SQUARE SHOWER DRAIN; Bathroom 2.' })]),
+  );
+  expect(result.status).toBe('needs_review');
+  expect(result.finish_match).toBe(true);
+  expect(result.notes.join(' ')).toContain('advertised size alone');
+});
+it("keeps a conflict when the fixture schedule explicitly specifies overall width", () => {
+  expect(assessCatalogFit(
+    product({dimensions:'Overall Width: 30 in'}), 'Sink', [],
+    plan([requirement({evidence:'Fixture schedule F1: sink overall width 20 inches.'})]),
+  ).status).toBe('conflict');
+});
 it("labels missing catalog measurements as unverified rather than inferring them from the product title", () => {
   const result = assessCatalogFit(
     product({ name: "20 inch sink", dimensions: null }),

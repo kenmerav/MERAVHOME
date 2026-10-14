@@ -13,6 +13,7 @@ import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { formatPriceWithUnit } from "@/lib/productPriceUnit";
 import type { CatalogSuggestion, SinkMount } from "@/lib/materialCatalogSuggestions";
 import type { PublicCatalogPlanFit, CoordinationSource } from "@/lib/materialCatalogFit";
+import { isNominalFitRequirement } from "@/lib/materialCatalogFit";
 import { toast } from "sonner";
 
 async function catalogRequest(body: unknown) {
@@ -192,11 +193,24 @@ export function MaterialCatalogSuggestions({
               </a>
             )}
             {plan.requirements
-              .filter((r) => r.label === label)
+              .filter(
+                (r, index, all) =>
+                  r.label === label &&
+                  (!isNominalFitRequirement(r) ||
+                    all.findIndex(
+                      (other) =>
+                        other.label === label &&
+                        other.value === r.value &&
+                        isNominalFitRequirement(other),
+                    ) === index),
+              )
               .map((r) => (
                 <div key={r.field} className="text-xs leading-relaxed">
                   <strong>
-                    {r.field.replaceAll("_", " ")}: {r.value}
+                    {isNominalFitRequirement(r)
+                      ? "Advertised product size"
+                      : r.field.replaceAll("_", " ")}
+                    : {r.value}
                     {typeof r.value === "number" ? " in" : ""}
                   </strong>{" "}
                   · page {r.page}

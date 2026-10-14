@@ -199,6 +199,15 @@ export function roomCoordinationSources(
   return sources.sort((a, b) => Number(b.primary) - Number(a.primary));
 }
 
+export function isNominalFitRequirement(r: FitRequirement) {
+  return (
+    /^(?:Sink|Shower Drain)$/i.test(r.label) &&
+    ["width", "depth", "height"].includes(r.field) &&
+    /fixture schedule/i.test(r.evidence) &&
+    !/\b(?:overall|width|depth|height|length|dimensions?)\b/i.test(r.evidence)
+  );
+}
+
 export function assessCatalogFit(
   product: Product,
   label: string,
@@ -210,11 +219,25 @@ export function assessCatalogFit(
     unknown = plan.status !== "checked";
   const requirements = plan.requirements.filter((r) => r.label === label);
   const physical = requirements.filter((r) => r.field !== "finish");
+  let nominalSizeNoted = false;
   if (!physical.length) {
     unknown = true;
     notes.push("The plans do not provide enough explicit requirements to confirm physical fit.");
   }
   for (const r of requirements) {
+    // Fixture names often use a nominal size: the scheduled Delta "4-inch"
+    // drain has a larger overall body. A name alone cannot prove the axis or
+    // installation envelope, including in previously cached AI results.
+    if (isNominalFitRequirement(r)) {
+      unknown = true;
+      if (!nominalSizeNoted) {
+        notes.push(
+          `The fixture schedule names a ${r.value} in product size. Confirm its actual overall measurements and installation clearance; the advertised size alone does not establish physical fit.`,
+        );
+        nominalSizeNoted = true;
+      }
+      continue;
+    }
     let actual: number | string | null;
     if (r.field === "mount") {
       const mount = sinkMount(product.name + " " + (product.description || ""));
