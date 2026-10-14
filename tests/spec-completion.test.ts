@@ -64,6 +64,16 @@ it("still requires prices for cabinet hardware and ordinary purchased items whil
   quote.product!.price = "$100–$200";
   expect(needsCompletionPrice(quote)).toBe(false);
 });
+it.each([
+  "https://www.sherwin-williams.com/en-us/color/color-family/neutral-paint-colors/SW7640-fawn-brindle",
+  "https://www.benjaminmoore.com/en-us/paint-colors/color/csp-95/sea-salt",
+])("recognizes paint-color selections grouped with other materials from their source %s", product_url => {
+  const color = item({ item_label: "shiplap color + ceiling and trim", category: "Wall Coverings", product_url });
+  color.product = { ...color.product, name: "Selected color", category: "Decor", price: null } as MaterialItem["product"];
+  expect(needsCompletionPrice(color)).toBe(false);
+  const knob = { ...color, item_label: "Cabinet knob", product: { ...color.product, name: "Cabinet knob" } } as MaterialItem;
+  expect(needsCompletionPrice(knob)).toBe(true);
+});
 it.each([null, "", "TBD", "Contact for quote", "$50-$60", "$100–$200", "$0.00", "$60.00"])("never requires countertop pricing or price basis for %s", price => {
   const counter = item({ item_label: "Counter top", category: "Other", product: { name: "Quartz slab", price, price_unit: null, product_url: "https://vendor.test/products/slab/quartz/" } as any });
   expect(needsCompletionPrice(counter)).toBe(false); expect(needsCompletionPriceUnit(counter)).toBe(false);

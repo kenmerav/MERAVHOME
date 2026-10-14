@@ -857,7 +857,10 @@ export const Route = createFileRoute("/api/scrape-materials")({
               return json({ error: "This material link changed while scraping. Refresh and retry with its current link." }, 409);
 
             let productId = cleanUuid(row.existing_product_id);
-            let savedPrice = exactProductPrice(row.scraped.price);
+            // These selections do not need pricing. Manufacturer color/slab
+            // pages often sell samples or show unrelated price estimates.
+            // Keep reviewed prices while refreshing the other specifications.
+            let savedPrice = allowsMissingMaterialPrice(matItem) ? "" : exactProductPrice(row.scraped.price);
             const incomingUnit = inferProductPriceUnit({
               price_unit: row.scraped.price_unit, price: savedPrice,
               name: `${matItem?.item_label || ""} ${row.scraped.name || ""}`,
