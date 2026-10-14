@@ -19,7 +19,8 @@ import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
 import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggestions";
 import { saveAndScrapeMaterialLink } from "@/lib/materialProductLink";
-import { refreshCatalogSelectionIfNeeded } from "@/lib/catalogProductRefresh";
+import { missingMaterialProductInfo, refreshCatalogSelectionIfNeeded } from "@/lib/catalogProductRefresh";
+import { refreshMaterialProductInfo } from "@/lib/materialProductRefresh";
 import { formatPriceWithUnit, materialPriceUnit, inferProductPriceUnit } from "@/lib/productPriceUnit";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
@@ -383,219 +384,30 @@ function MaterialsPage() {
     [items, project?.updated_at, rooms],
   );
 
-  const saveScrapedRows = async (rows: ScrapedRow[], announce = true) => {
-    const successfulRows = rows.filter((row) => !row.scraped.error);
-    const failedCount = rows.length - successfulRows.length;
-    let priceMissingCount = 0;
-
-    if (successfulRows.length > 0) {
-      setScrapeStatus(
-        `Saving ${successfulRows.length} product${successfulRows.length === 1 ? "" : "s"}...`,
-      );
-      const safeRows = successfulRows
-        .map((row) => ({
-          ...row,
-          material_item_id: cleanUuid(row.material_item_id) ?? "",
-          existing_product_id: cleanUuid(row.existing_product_id),
-        }))
-        .filter((row) => row.material_item_id);
-      const res = await fetch("/api/scrape-materials", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}` },
-        body: JSON.stringify({ project_id: projectId, rows: safeRows }),
-      });
-      const body = await readApiJson<{ error?: string; price_missing_count?: number }>(res);
-      if (!res.ok) throw new Error(body?.error || "Could not save scraped products");
-      priceMissingCount = body?.price_missing_count ?? 0;
-      if (announce) {
-        toast.success(
-          `Saved ${safeRows.length} product${safeRows.length === 1 ? "" : "s"} to catalog`,
-        );
-      }
-      qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
-      qc.invalidateQueries({ queryKey: ["products"] });
-      qc.invalidateQueries({ queryKey: ["procurement"] });
-    }
-
-    if (announce && failedCount > 0) {
-      toast.warning(
-        `${failedCount} item${failedCount === 1 ? " was" : "s were"} left unchanged because product details could not be scraped.`,
-      );
-    }
-    return priceMissingCount;
-  };
-
   const runScrape = async () => {
     if (!projectId) return toast.error("Invalid project link.");
-    setScraping(true);
-    setScrapeStatus("Starting scrape...");
+    setScraping(true); setScrapeStatus("Finding missing product details…");
     try {
       const { data, error } = await supabase.auth.getSession();
       if (error || !data.session) throw new Error("Sign in to scrape product info.");
-      const scrapeHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` };
-      const collectedRows: ScrapedRow[] = [];
-      const collectedIds = new Set<string>();
-      let invalidLinkCount = 0;
-      let alreadyScrapedCount = 0;
-      let remainingCount = 0;
-      let batchCount = 0;
-      let priceMissingCount = 0;
-
-      while (true) {
-        setScrapeStatus(
-          collectedRows.length > 0
-            ? `Scraping... ${collectedRows.length} found`
-            : "Finding product details...",
-        );
-        const res = await fetch("/api/scrape-materials", {
-          method: "POST",
-          headers: scrapeHeaders,
-          body: JSON.stringify({
-            action: "start",
-            project_id: projectId,
-            exclude_material_item_ids: Array.from(collectedIds),
-          }),
+      const current = await db.listSpecBookMaterialItems(projectId);
+      const missing = missingMaterialProductInfo(current);
+      const linked = missing.filter(row => row.hasLink);
+      if (linked.length) {
+        const summary = await refreshMaterialProductInfo(projectId, linked.map(row => row.item.id), {
+          authorization: `Bearer ${data.session.access_token}`, force: true, onProgress: setScrapeStatus,
         });
-        const body = await readApiJson<{
-          status?: "started" | "processing" | "completed" | "failed";
-          batch_id?: string;
-          candidates?: Array<{
-            material_item_id?: string;
-            url?: string;
-            existing_product_id?: string | null;
-          }>;
-          prefetched_rows?: ScrapedRow[];
-          rows?: ScrapedRow[];
-          completed_count?: number;
-          total_count?: number;
-          invalid_link_count?: number;
-          already_scraped_count?: number;
-          remaining_count?: number;
-          error?: string;
-        }>(res);
-        if (!res.ok) throw new Error(body?.error || "Scrape failed");
-
-        let completedBody = body;
-        if (body?.status === "started") {
-          if (!body.batch_id || !body.candidates?.length)
-            throw new Error("Scrape batch did not start correctly.");
-          let pollCount = 0;
-          while (true) {
-            await new Promise((resolve) => window.setTimeout(resolve, 1200));
-            setScrapeStatus(`Scraping batch ${batchCount + 1}...`);
-            pollCount += 1;
-            if (pollCount >= 100) {
-              setScrapeStatus(`Finishing batch ${batchCount + 1} one product at a time...`);
-              const fallbackRes = await fetch("/api/scrape-materials", {
-                method: "POST",
-                headers: scrapeHeaders,
-                body: JSON.stringify({
-                  action: "fallback",
-                  project_id: projectId,
-                  candidates: body.candidates,
-                }),
-              });
-              const fallbackBody = await readApiJson<typeof body>(fallbackRes);
-              if (!fallbackRes.ok) throw new Error(fallbackBody?.error || "Scrape fallback failed");
-              completedBody = {
-                ...body,
-                ...fallbackBody,
-                rows: [...(body.prefetched_rows ?? []), ...(fallbackBody?.rows ?? [])],
-              };
-              break;
-            }
-            const pollRes = await fetch("/api/scrape-materials", {
-              method: "POST",
-              headers: scrapeHeaders,
-              body: JSON.stringify({
-                action: "poll",
-                project_id: projectId,
-                batch_id: body.batch_id,
-                candidates: body.candidates,
-              }),
-            });
-            const pollBody = await readApiJson<typeof body>(pollRes);
-            if (!pollRes.ok) throw new Error(pollBody?.error || "Scrape batch failed");
-            if (pollBody?.status === "processing") {
-              const completed = pollBody.completed_count ?? 0;
-              const total = pollBody.total_count ?? body.candidates.length;
-              setScrapeStatus(
-                completed > 0
-                  ? `Scraping batch ${batchCount + 1} (${completed} of ${total})...`
-                  : `Scraping batch ${batchCount + 1}...`,
-              );
-              continue;
-            }
-            completedBody = {
-              ...body,
-              ...pollBody,
-              rows: [...(body.prefetched_rows ?? []), ...(pollBody?.rows ?? [])],
-            };
-            break;
-          }
-        }
-
-        const rows = (completedBody?.rows ?? []) as ScrapedRow[];
-        invalidLinkCount = completedBody?.invalid_link_count ?? invalidLinkCount;
-        alreadyScrapedCount = completedBody?.already_scraped_count ?? alreadyScrapedCount;
-        remainingCount = completedBody?.remaining_count ?? 0;
-
-        rows.forEach((row) => {
-          if (collectedIds.has(row.material_item_id)) return;
-          collectedIds.add(row.material_item_id);
-          collectedRows.push(row);
-        });
-
-        if (rows.length > 0) {
-          priceMissingCount += await saveScrapedRows(rows, false);
-        }
-
-        batchCount += 1;
-        if (rows.length === 0 || remainingCount === 0) break;
-        if (batchCount > 100) {
-          throw new Error("Scrape stopped after 100 batches. Run it again to continue.");
-        }
-      }
-
-      const rows = collectedRows;
-      if (rows.length === 0) {
-        const parts = [
-          alreadyScrapedCount > 0
-            ? `${alreadyScrapedCount} item${alreadyScrapedCount === 1 ? "" : "s"} already checked or complete`
-            : "",
-          invalidLinkCount > 0
-            ? `${invalidLinkCount} item${invalidLinkCount === 1 ? "" : "s"} without a valid link`
-            : "",
-        ].filter(Boolean);
-        toast.info(
-          parts.length
-            ? `Nothing new to scrape. Skipped ${parts.join(" and ")}.`
-            : "Nothing new to scrape.",
-        );
-      } else {
-        const failedCount = rows.filter((row) => row.scraped.error).length;
-        const savedCount = rows.length - failedCount;
-        if (savedCount > 0) {
-          toast.success(
-            `Saved ${savedCount} product${savedCount === 1 ? "" : "s"}. ${savedCount - priceMissingCount} with prices.`,
-          );
-        }
-        if (priceMissingCount > 0) {
-          toast.warning(
-            `${priceMissingCount} item${priceMissingCount === 1 ? " still needs" : "s still need"} an exact price. Review the flagged rows for variant ranges or missing prices.`,
-          );
-        }
-        if (failedCount > 0) {
-          toast.warning(
-            `${failedCount} item${failedCount === 1 ? " still needs" : "s still need"} product details.`,
-          );
-        }
-      }
-    } catch (e: any) {
-      toast.error(e?.message || "Scrape failed");
+        toast.success(`Checked product info for ${summary.saved} materials.`);
+        if (summary.failed) toast.warning(`${summary.failed} materials could not be read. Their saved selections and details are kept.`);
+      } else toast.info("No missing product details with usable links to refresh.");
+      const noLink = missing.length - linked.length;
+      if (noLink) toast.warning(`${noLink} materials need a product link before their missing details can be refreshed.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not refresh product info.");
     } finally {
-      setScrapeStatus("");
-      setScraping(false);
+      await Promise.all([["materialItems", projectId], ["products"], ["catalog"], ["procurement"], ["roomProducts"], ["spec-completion-review", projectId]]
+        .map(queryKey => qc.invalidateQueries({ queryKey })));
+      setScrapeStatus(""); setScraping(false);
     }
   };
 

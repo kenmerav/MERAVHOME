@@ -9,9 +9,8 @@ import {
   selectedSkuPriceFromHtml,
 } from "@/lib/productPricing";
 import { cleanUuid } from "@/lib/ids";
-import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { authorizeCompletionProject } from "@/lib/specCompletion.server";
-import { hasCompletionValue } from "@/lib/specCompletion";
+import { allowsMissingMaterialPrice, hasCompletionValue } from "@/lib/specCompletion";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
 import { productPriceUnit, inferProductPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
@@ -962,7 +961,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
 
             if (productId) {
               const range = firstPrice(row.scraped.price);
-              const optionalPrice = isCountertopMaterial({ ...matItem, product_url: row.url, product: payload });
+              const optionalPrice = allowsMissingMaterialPrice({ ...matItem, product_url: row.url, product: payload });
               const priceReview =
                 range && !exactProductPrice(range)
                   ? `Retailer price range ${range}. Select the exact size/finish before assigning a price.`

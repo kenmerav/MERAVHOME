@@ -1,9 +1,20 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const auth = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth } }));
-import { missingCatalogProductInfo, refreshCatalogSelectionIfNeeded } from "@/lib/catalogProductRefresh";
+import { missingCatalogProductInfo, missingMaterialProductInfo, refreshCatalogSelectionIfNeeded } from "@/lib/catalogProductRefresh";
 const projectId = "11111111-1111-4111-8111-111111111111", itemId = "22222222-2222-4222-8222-222222222222", productId = "33333333-3333-4333-8333-333333333333";
 const product: any = { id: productId, name: "Bathroom Faucet", category: "Plumbing", product_url: "https://retailer.test/faucet?uid=123", image_url: "https://cdn.test/faucet.jpg", price: "$125", dimensions: "Height: 12 in", finish: "Brushed Brass" };
+it("targets only selected incomplete materials, retaining missing-link items for review", () => {
+  const selected = { id: itemId, room_id: "room", item_label: "Faucet", category: "Plumbing", product_id: productId, product_url: product.product_url, product, is_required: false, not_needed: false };
+  const rows = missingMaterialProductInfo([
+    selected,
+    { ...selected, id: "missing", product: { ...product, dimensions: "TBD" } },
+    { ...selected, id: "no-link", product_url: "No Link", product: { ...product, price: null } },
+    { ...selected, id: "excluded", not_needed: true, product: { ...product, price: null } },
+    { id: "untouched", is_required: true, item_label: "Sink", category: "Plumbing", not_needed: false },
+  ] as any);
+  expect(rows.map(row => [row.item.id, row.hasLink, row.missing])).toEqual([["missing", true, ["dimensions"]], ["no-link", false, ["price"]]]);
+});
 beforeEach(() => { vi.clearAllMocks(); auth.getSession.mockResolvedValue({ data: { session: { access_token: "TEST_ONLY" } } }); });
 afterEach(() => vi.unstubAllGlobals());
 it("skips scraping entirely when the catalog product already has all four details", async () => {
