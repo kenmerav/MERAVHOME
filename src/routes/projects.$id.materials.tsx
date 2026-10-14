@@ -310,11 +310,12 @@ function MaterialsPage() {
     enabled: reviewPlans && !!latestPlan && canManageMaterials && rooms.length > 0,
     staleTime: 24 * 60 * 60 * 1000, retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: query => query.state.data?.status === "checking" ? 5000 : false,
   });
   const planStatus = !reviewPlans ? "idle" : documentsQuery.isError ? "error" :
     documentsQuery.isPending ? "checking" : !latestPlan ? "no_document" :
     planQuery.isError || planQuery.data?.status === "unavailable" ? "error" :
-    planQuery.isPending ? "checking" : "checked";
+    planQuery.isPending || planQuery.data?.status === "checking" ? "checking" : "checked";
 
   const byRoom = useMemo(() => {
     const map = new Map<string, MaterialItem[]>();

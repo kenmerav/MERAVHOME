@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { BathroomPlanEvidence } from "@/lib/materialSuggestions";
 
 export type MaterialPlanCheck = {
-  status: "checked" | "no_document" | "unavailable";
+  status: "checking" | "checked" | "no_document" | "unavailable";
   document: { id: string; title: string } | null;
   rooms: BathroomPlanEvidence[];
   message?: string;

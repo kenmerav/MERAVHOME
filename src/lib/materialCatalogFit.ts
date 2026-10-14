@@ -1,5 +1,6 @@
 import type { MaterialItem, Product } from "@/lib/db";
 import { catalogWidth, sinkMount } from "@/lib/materialCatalogSuggestions";
+import type { BathroomPlanEvidence } from "./materialSuggestions";
 
 export type FitField =
   | "width"
@@ -30,6 +31,10 @@ export type CatalogPlanFit = {
   pages: number | null;
   requirements: FitRequirement[];
   message: string;
+  // Shared document extraction, stored only in the private server review cache.
+  extraction_rooms?: { id: string; name: string; targets: string[] }[];
+  room_requirements?: Record<string, FitRequirement[]>;
+  bathroom_layouts?: BathroomPlanEvidence[];
 };
 export type PublicCatalogPlanFit =
   | Pick<CatalogPlanFit, "status" | "document" | "requirements" | "message">

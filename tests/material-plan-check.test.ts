@@ -3,7 +3,8 @@ const projectId = "527d1356-919b-48b9-877e-1924c766282b";
 const docId = "cd3700c1-2889-43f9-b7a7-3e2af36036b1";
 const roomId = "9015b5ff-6343-462b-9539-9e62ed1c52d0";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true,
-  documents: [] as any[], rooms: [] as any[], reads: [] as any[], download: vi.fn(), fetch: vi.fn() }));
+  documents: [] as any[], rooms: [] as any[], reads: [] as any[], download: vi.fn(), fetch: vi.fn(), load: vi.fn() }));
+vi.mock("@/lib/materialCatalogFit.server", () => ({ loadCatalogDocumentFit: state.load }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 20 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
   auth: { getUser: async () => ({ data: { user: state.authenticated ? { id: "staff" } : null }, error: null }) },
@@ -36,6 +37,10 @@ beforeEach(() => {
   state.rooms = [{ id: roomId, name: "Bathroom 3" }, { id: "kitchen", name: "Kitchen" }]; state.reads = [];
   state.download.mockResolvedValue({ data: new Blob(["fixture-pdf"]), error: null });
   state.fetch.mockResolvedValue(Response.json({ status: "completed", output_text: JSON.stringify({ rooms: [evidence] }) }));
+  state.load.mockImplementation(async (project: string, document: any) => {
+    projectDocumentStoragePath(document.file_url, project, "https://example.supabase.co");
+    return { status: "checked", bathroom_layouts: cleanBathroomPlanEvidence([evidence], state.rooms.filter(r => /bath|powder/i.test(r.name)), 20) };
+  });
   vi.stubGlobal("fetch", state.fetch); vi.stubEnv("OPENAI_API_KEY", "TEST_ONLY_KEY"); vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -47,19 +52,17 @@ it("checks the latest project plan and returns room-specific, page-supported evi
   expect(state.reads[0]).toMatchObject({ table: "project_documents", filters: {
     project_id: projectId, document_type: "Construction Doc", superseded_by_document_id: null,
   } });
-  const body = JSON.parse(state.fetch.mock.calls[0][1].body);
-  expect(body.store).toBe(false);
-  expect(body.input[0].content[1]).toMatchObject({ type: "input_file", detail: "high" });
-  expect(body.input[0].content[1].file_url).toBeUndefined();
-  expect(body.instructions).toContain("untrusted evidence");
+  expect(state.load).toHaveBeenCalledWith(projectId, state.documents[0], state.rooms, true);
+  expect(state.fetch).not.toHaveBeenCalled();
 });
-it("reuses a scan for the same document and rescans when the document or room identity changes", async () => {
+it("routes layout reads through the persistent shared extraction instead of direct AI calls", async () => {
   await Promise.all([checkMaterialPlans(request()), checkMaterialPlans(request())]);
-  expect(state.fetch).toHaveBeenCalledTimes(1);
+  expect(state.load).toHaveBeenCalledTimes(2);
   state.documents[0].updated_at = "new-version";
-  await checkMaterialPlans(request()); expect(state.fetch).toHaveBeenCalledTimes(2);
+  await checkMaterialPlans(request()); expect(state.load.mock.calls[2][1].updated_at).toBe("new-version");
   state.rooms[0].name = "Guest Bathroom";
-  await checkMaterialPlans(request()); expect(state.fetch).toHaveBeenCalledTimes(3);
+  await checkMaterialPlans(request()); expect(state.load.mock.calls[3][2][0].name).toBe("Guest Bathroom");
+  expect(state.fetch).not.toHaveBeenCalled();
 });
 it.each(["Client", "Contractor", "GC", "Builder"])("denies external %s access before reading PDFs", async role => {
   state.profile.role = role; expect((await checkMaterialPlans(request())).status).toBe(403);
@@ -91,18 +94,25 @@ it("leaves shower suggestions undecided for missing or unreadable PDFs", async (
   expect(result.status).toBe("unavailable"); expect(result.rooms).toEqual([]);
   expect(state.fetch).not.toHaveBeenCalled();
 });
-it("retains uncertainty after failed or incomplete AI scans", async () => {
-  state.fetch.mockResolvedValue(Response.json({ status: "incomplete", output_text: JSON.stringify({ rooms: [evidence] }) }));
+it("retains uncertainty when the shared extraction is unavailable or cannot be loaded", async () => {
+  state.load.mockResolvedValue({ status: "unavailable", bathroom_layouts: [] });
   expect((await (await checkMaterialPlans(request())).json()).status).toBe("unavailable");
-  state.fetch.mockRejectedValue(new Error("timeout"));
+  state.load.mockRejectedValue(new Error("timeout"));
   expect((await (await checkMaterialPlans(request())).json()).status).toBe("unavailable");
 });
 it("clearly reports exhausted AI credits without claiming the plans were reviewed", async () => {
-  state.fetch.mockResolvedValue(Response.json({ error: { code: "credit_balance_exhausted" } }, { status: 429 }));
+  state.load.mockResolvedValue({ status: "unavailable", message: "Plan review needs AI credits. Catalog fit remains unconfirmed." });
   const result = await (await checkMaterialPlans(request())).json();
   expect(result.status).toBe("unavailable");
   expect(result.rooms).toEqual([]);
   expect(result.message).toContain("needs AI credits");
+});
+it("returns pending status without accepting incomplete layout evidence", async () => {
+  state.load.mockResolvedValue({ status: "checking", bathroom_layouts: [evidence] });
+  const result = await (await checkMaterialPlans(request())).json();
+  expect(result.status).toBe("checking");
+  expect(result.rooms).toEqual([]);
+  expect(state.fetch).not.toHaveBeenCalled();
 });
 it.each([{ ...evidence, complete_layout: false }, { ...evidence, confidence: "medium" },
   { ...evidence, page: 21 }, { ...evidence, evidence: "" }, { ...evidence, room_id: "wrong-room" }])(
