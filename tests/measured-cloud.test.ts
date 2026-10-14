@@ -11,6 +11,7 @@ const fake = vi.hoisted(() => ({
   start: vi.fn(async () => ({ runId: "test-run" })),
   generate: vi.fn(),
   interpret: vi.fn(),
+  retrieve:vi.fn(),
 }));
 const project = "22222222-2222-4222-8222-222222222222",
   room = "33333333-3333-4333-8333-333333333333",
@@ -139,7 +140,9 @@ vi.mock("../src/lib/measuredPhotoreal.server", () => ({
 }));
 vi.mock("../src/lib/measuredInterpret.server", () => ({
   interpretMeasuredElevation: fake.interpret,
+  parseMeasuredInterpretation:(body:any)=>({elevation:body.elevation,usage:body.usage,model:body.model}),
 }));
+vi.mock("../src/lib/specReviewAI.server",()=>({retrieveSpecReview:fake.retrieve,fetchSpecReview:vi.fn()}));
 import { measuredApi } from "../src/lib/measuredRendering.server";
 import {
   scopedAsset,
@@ -150,6 +153,7 @@ import {
   writeStored,
   readStored,
   processCloudJob,
+  collectCloudInterpretation,
   type CloudJob,
 } from "../src/lib/measuredCloud.server";
 import { specSelectionSchema, type MeasuredElevation } from "../src/lib/measuredRendering";
@@ -220,6 +224,7 @@ beforeEach(() => {
     usage: {},
   });
   fake.interpret.mockReset().mockResolvedValue({ elevation, model: "gpt-6-astra", usage: {} });
+  fake.retrieve.mockReset();
 });
 async function scene() {
   return saveCloudScene(project, room, fake.profile.id, [item], {
@@ -231,6 +236,20 @@ async function scene() {
   });
 }
 describe("Shared measured rendering boundary and persistence", () => {
+  it("collects a slow drawing response without sending another paid interpretation",async()=>{
+    const response=await measuredApi(request({action:"interpret",operationId:"99999999-9999-4999-8999-999999999999",sourcePath:source}));
+    const {jobId}=await response.json();
+    fake.interpret.mockResolvedValueOnce({responseId:"resp_saved",elevation:undefined,model:"gpt-6-astra"});
+    expect(await processCloudJob(project,room,jobId)).toBe("processing");
+    fake.retrieve.mockResolvedValueOnce(Response.json({status:"in_progress"}));
+    expect(await collectCloudInterpretation(project,room,jobId)).toBe("processing");
+    fake.retrieve.mockResolvedValueOnce(Response.json({status:"completed",elevation,usage:{},model:"gpt-6-astra"}));
+    expect(await collectCloudInterpretation(project,room,jobId)).toBe("complete");
+    expect(fake.interpret).toHaveBeenCalledTimes(1);
+    const job=await readStored<CloudJob>(jobPath(project,room,jobId));
+    expect(job?.resultSceneId).toBe(jobId);
+    expect(await readStored(scenePath(project,room,jobId))).toMatchObject({sourcePath:source});
+  });
   it("shares one document view scan across repeated requests", async () => {
     const body = { action: "index-drawings", documentId: "88888888-8888-4888-8888-888888888888" };
     expect((await measuredApi(request(body))).status).toBe(202);
