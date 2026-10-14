@@ -14,6 +14,7 @@ import {
 import { inspectGlb } from "@/lib/measuredModelFile";
 import { ConstructionDrawingPicker } from "@/components/ConstructionDrawingPicker";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
+import { MeasuredRenderingProgress, type RenderingProgressJob } from "./MeasuredRenderingProgress";
 
 type Model = MeasuredProductModel & { path?: string };
 type Scene = {
@@ -42,6 +43,8 @@ type HistoryJob = {
   error?: string;
   imageUrl?: string;
   sceneId?: string;
+  updatedAt?: string;
+  sourceCitation?: DrawingCitation;
 };
 type Capture = { image: string; camera: { type: string; position: number[]; target: number[] } };
 export function MeasuredRenderingWorkspace({
@@ -79,6 +82,14 @@ export function MeasuredRenderingWorkspace({
   const [history, setHistory] = useState<HistoryJob[]>([]),
     [scenes, setScenes] = useState<Array<{ id: string; name: string; createdAt: string }>>([]),
     [selectedSceneId, setSelectedSceneId] = useState("");
+  const [progressJob, setProgressJob] = useState<RenderingProgressJob | null>(null),
+    [activityStartedAt, setActivityStartedAt] = useState(""),
+    [lastCheckedAt, setLastCheckedAt] = useState(""),
+    [checkingStatus, setCheckingStatus] = useState(false),
+    [startingRequest, setStartingRequest] = useState(false),
+    [statusError, setStatusError] = useState("");
+  const statusRequest = useRef("");
+  const currentJob = useRef("");
   const capture = useRef<(() => Capture) | null>(null),
     generation = useRef(0),
     inFlight = useRef(false),
@@ -92,6 +103,7 @@ export function MeasuredRenderingWorkspace({
     const res = await fetch(`/api/measured-rendering?${query}${extra}`, {
       method: action ? "POST" : "GET",
       headers: await studioHeaders(),
+      signal: AbortSignal.timeout(action ? 60000 : 30000),
       ...(action ? { body: JSON.stringify(action) } : {}),
     });
     const data = await res.json();
@@ -124,9 +136,12 @@ export function MeasuredRenderingWorkspace({
       (j: HistoryJob) => j.status === "queued" || j.status === "processing",
     );
     if (active) {
+      currentJob.current = active.id;
       setJobId(active.id);
       setJobKind(active.kind);
       setBusy(active.kind);
+      setProgressJob(active);
+      setLastCheckedAt(new Date().toISOString());
     }
   }
   useEffect(() => {
@@ -160,6 +175,13 @@ export function MeasuredRenderingWorkspace({
     setError("");
     setBusy("loading");
     setJobId("");
+    currentJob.current = "";
+    setProgressJob(null);
+    setStatusError("");
+    setCheckingStatus(false);
+    setLastCheckedAt("");
+    statusRequest.current = "";
+    setActivityStartedAt(new Date().toISOString());
     applyScene(null);
     api()
       .then((data) => {
@@ -173,8 +195,11 @@ export function MeasuredRenderingWorkspace({
         );
         setBusy(active?.kind || "");
         if (active) {
+          currentJob.current = active.id;
           setJobId(active.id);
           setJobKind(active.kind);
+          setProgressJob(active);
+          setLastCheckedAt(new Date().toISOString());
         }
       })
       .catch((e) => {
@@ -187,56 +212,72 @@ export function MeasuredRenderingWorkspace({
       generation.current++;
     };
   }, [roomId, projectId]);
+  async function checkJobStatus(id = jobId || operation.current?.id || progressJob?.id) {
+    if (!id || currentJob.current !== id) return;
+    const key = `${query}:${id}`,
+      epoch = generation.current;
+    if (statusRequest.current === key) return;
+    statusRequest.current = key;
+    setCheckingStatus(true);
+    try {
+      const data = await api(undefined, `&job=${encodeURIComponent(id)}`);
+      if (epoch !== generation.current || currentJob.current !== id) return;
+      setProgressJob(data);
+      setLastCheckedAt(new Date().toISOString());
+      setStatusError("");
+      setHistory((old) =>
+        old.map((j) =>
+          j.id === id
+            ? { ...j, status: data.status, updatedAt: data.updatedAt, error: data.error }
+            : j,
+        ),
+      );
+      if (data.status === "complete") {
+        setJobId("");
+        setBusy("");
+        operation.current = null;
+        if (data.scene) {
+          applyScene(data.scene);
+        }
+        if (data.imageUrl) {
+          setPresentation(data.imageUrl);
+          setPresentationNotes([
+            "Generated from the saved measured camera and selected product photos. Compare fine geometry, materials and tile courses with the drawing before acceptance.",
+          ]);
+        }
+        const list = await api();
+        if (epoch === generation.current && currentJob.current === id) {
+          setHistory(list.jobs || []);
+          setScenes(list.scenes || []);
+        }
+      } else if (data.status === "failed") {
+        setError(data.error || "Rendering could not finish.");
+        setJobId("");
+        setBusy("");
+        operation.current = null;
+      } else {
+        setJobId(id);
+        setJobKind(data.kind);
+        setBusy(data.kind);
+      }
+    } catch (e) {
+      if (epoch === generation.current && currentJob.current === id) {
+        setStatusError(
+          "Could not update the saved status. Check again or reopen this room. No new read or image was started.",
+        );
+      }
+    } finally {
+      if (statusRequest.current === key) {
+        statusRequest.current = "";
+        if (epoch === generation.current && currentJob.current === id) setCheckingStatus(false);
+      }
+    }
+  }
   useEffect(() => {
     if (!jobId) return;
-    let active = true;
-    let polling = false;
-    const timer = setInterval(async () => {
-      if (polling) return;
-      polling = true;
-      try {
-        const data = await api(undefined, `&job=${jobId}`);
-        if (!active) return;
-        if (data.status === "complete") {
-          setJobId("");
-          setBusy("");
-          operation.current = null;
-          if (data.scene) {
-            applyScene(data.scene);
-          }
-          if (data.imageUrl) {
-            setPresentation(data.imageUrl);
-            setPresentationNotes([
-              "Generated from the saved measured camera and selected product photos. Compare fine geometry, materials and tile courses with the drawing before acceptance.",
-            ]);
-          }
-          const list = await api();
-          if (active) {
-            setHistory(list.jobs || []);
-            setScenes(list.scenes || []);
-          }
-        } else if (data.status === "failed") {
-          setError(data.error || "Rendering could not finish.");
-          setJobId("");
-          setBusy("");
-          operation.current = null;
-        } else if (Date.now() - new Date(data.createdAt).getTime() > 15 * 60 * 1000) {
-          setError(
-            "This job is taking longer than expected. Its saved status remains in history; reopen it before starting another attempt.",
-          );
-          setBusy("");
-        }
-      } catch (e) {
-        if (active) {
-          setError(e instanceof Error ? e.message : "Could not read job status.");
-          setBusy("");
-        }
-      } finally {
-        polling = false;
-      }
-    }, 2500);
+    void checkJobStatus(jobId);
+    const timer = setInterval(() => void checkJobStatus(jobId), 2500);
     return () => {
-      active = false;
       clearInterval(timer);
     };
   }, [jobId, query]);
@@ -252,6 +293,10 @@ export function MeasuredRenderingWorkspace({
     setDirty(true);
     setPresentation("");
     operation.current = null;
+    if (!jobId) {
+      setProgressJob(null);
+      currentJob.current = "";
+    }
   }
   async function chooseImage(files: File[], kind: "source" | "support" | "quality") {
     if (!files.length) return;
@@ -266,6 +311,7 @@ export function MeasuredRenderingWorkspace({
       return;
     }
     setBusy("upload");
+    setActivityStartedAt(new Date().toISOString());
     setError("");
     try {
       const paths = await Promise.all(files.map((f) => upload(f)));
@@ -295,12 +341,28 @@ export function MeasuredRenderingWorkspace({
   async function readDrawing() {
     if (inFlight.current || !sourcePath) return;
     inFlight.current = true;
+    setStartingRequest(true);
+    const epoch = generation.current;
+    let requestId = "";
     setBusy("interpret");
+    const startedAt = new Date().toISOString();
+    setActivityStartedAt(startedAt);
+    setLastCheckedAt("");
+    setStatusError("");
     setError("");
     try {
       const key = JSON.stringify([sourcePath, supportPaths]);
       if (operation.current?.kind !== "interpret" || operation.current.key !== key)
         operation.current = { id: crypto.randomUUID(), kind: "interpret", key };
+      requestId = operation.current.id;
+      currentJob.current = requestId;
+      setProgressJob({
+        id: operation.current.id,
+        kind: "interpret",
+        status: "starting",
+        createdAt: startedAt,
+        sourceCitation,
+      });
       const data = await api({
         action: "interpret",
         operationId: operation.current.id,
@@ -309,13 +371,27 @@ export function MeasuredRenderingWorkspace({
         sourceCitation,
         supportCitations,
       });
+      if (epoch !== generation.current || operation.current?.id !== requestId) return;
       setJobId(data.jobId);
       setJobKind("interpret");
+      const job = {
+        id: data.jobId,
+        kind: "interpret",
+        status: data.status,
+        createdAt: data.createdAt || startedAt,
+        updatedAt: data.updatedAt,
+        sourceCitation,
+      };
+      setProgressJob(job);
+      setHistory((old) => [job, ...old.filter((j) => j.id !== job.id)]);
     } catch (e) {
+      if (epoch !== generation.current || operation.current?.id !== requestId) return;
       setError(e instanceof Error ? e.message : "Could not start drawing reading.");
       setBusy("");
+      setProgressJob((old) => (old ? { ...old, status: "unknown" } : null));
     } finally {
       inFlight.current = false;
+      setStartingRequest(false);
     }
   }
   async function saveCamera() {
@@ -360,6 +436,7 @@ export function MeasuredRenderingWorkspace({
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy("camera");
+    setActivityStartedAt(new Date().toISOString());
     setError("");
     try {
       await saveCamera();
@@ -373,24 +450,54 @@ export function MeasuredRenderingWorkspace({
   async function photograph() {
     if (inFlight.current || !scene?.basePath || dirty) return;
     inFlight.current = true;
+    setStartingRequest(true);
+    const epoch = generation.current;
+    let requestId = "";
     setBusy("photoreal");
+    const startedAt = new Date().toISOString();
+    setActivityStartedAt(startedAt);
+    setLastCheckedAt("");
+    setStatusError("");
     setError("");
     try {
       const key = scene.id;
       if (operation.current?.kind !== "photoreal" || operation.current.key !== key)
         operation.current = { id: crypto.randomUUID(), kind: "photoreal", key };
+      requestId = operation.current.id;
+      currentJob.current = requestId;
+      setProgressJob({
+        id: operation.current.id,
+        kind: "photoreal",
+        status: "starting",
+        createdAt: startedAt,
+        sourceCitation,
+      });
       const data = await api({
         action: "photoreal",
         sceneId: scene.id,
         operationId: operation.current.id,
       });
+      if (epoch !== generation.current || operation.current?.id !== requestId) return;
       setJobId(data.jobId);
       setJobKind("photoreal");
+      const job = {
+        id: data.jobId,
+        kind: "photoreal",
+        status: data.status,
+        createdAt: data.createdAt || startedAt,
+        updatedAt: data.updatedAt,
+        sourceCitation,
+      };
+      setProgressJob(job);
+      setHistory((old) => [job, ...old.filter((j) => j.id !== job.id)]);
     } catch (e) {
+      if (epoch !== generation.current || operation.current?.id !== requestId) return;
       setError(e instanceof Error ? e.message : "Could not start rendering.");
       setBusy("");
+      setProgressJob((old) => (old ? { ...old, status: "unknown" } : null));
     } finally {
       inFlight.current = false;
+      setStartingRequest(false);
     }
   }
   async function importModel(item: SpecSelection, file?: File) {
@@ -459,6 +566,7 @@ export function MeasuredRenderingWorkspace({
     if (kind === "support" && supportPaths.length >= 3)
       throw Error("Use at most three supporting views.");
     setBusy("upload");
+    setActivityStartedAt(new Date().toISOString());
     setError("");
     try {
       const path = await upload(blob, "image/png");
@@ -504,6 +612,32 @@ export function MeasuredRenderingWorkspace({
           {review ? `${review.changes.length} product dimension updates` : "Choose a room"}
         </p>
       </div>
+      {(busy || progressJob) && (
+        <MeasuredRenderingProgress
+          job={progressJob}
+          busy={busy}
+          startedAt={activityStartedAt}
+          lastCheckedAt={lastCheckedAt}
+          checking={checkingStatus}
+          statusError={statusError}
+          previousView={!!scene}
+          onCheck={progressJob ? () => void checkJobStatus(progressJob.id) : undefined}
+          onNext={
+            elevation &&
+            !busy &&
+            !startingRequest &&
+            progressJob?.status === "complete" &&
+            progressJob.kind === "interpret"
+              ? scene?.basePath && !dirty
+                ? () => void photograph()
+                : () => void buildCamera()
+              : undefined
+          }
+          nextLabel={
+            scene?.basePath && !dirty ? "Create photorealistic image" : "Build & save camera view"
+          }
+        />
+      )}
       <div className="flex flex-wrap gap-4 items-end mb-6">
         <label className="text-sm">
           Room
@@ -511,7 +645,7 @@ export function MeasuredRenderingWorkspace({
             aria-label="Room"
             className="block mt-1 border p-2 min-w-48"
             value={roomId}
-            disabled={inFlight.current || ["loading","camera","upload"].includes(busy)}
+            disabled={startingRequest || ["loading", "camera", "upload"].includes(busy)}
             onChange={(e) => setRoomId(e.target.value)}
           >
             <option value="">Choose room</option>
@@ -546,21 +680,21 @@ export function MeasuredRenderingWorkspace({
           />
         </label>
         <button
-          disabled={!sourcePath || !!busy}
+          disabled={!sourcePath || !!busy || startingRequest}
           onClick={() => void readDrawing()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
           Read drawing & match specs
         </button>
         <button
-          disabled={!elevation || !!busy}
+          disabled={!elevation || !!busy || startingRequest}
           onClick={() => void buildCamera()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
           1. Build & save camera view
         </button>
         <button
-          disabled={!scene?.basePath || dirty || !!busy}
+          disabled={!scene?.basePath || dirty || !!busy || startingRequest}
           onClick={() => void photograph()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
@@ -658,19 +792,6 @@ export function MeasuredRenderingWorkspace({
         <p className="mb-4 text-sm">
           This view or Spec Book has changed. Build and save the camera view before creating its
           photograph.
-        </p>
-      )}
-      {busy && (
-        <p role="status" className="mb-4 text-sm">
-          {busy === "interpret"
-            ? "Reading the drawing and matching products…"
-            : busy === "photoreal"
-              ? "Creating the photograph. You can reopen its saved job later."
-              : busy === "camera"
-                ? "Saving the measured camera and sources…"
-                : busy === "upload"
-                  ? "Uploading original references…"
-                  : "Loading saved project data…"}
         </p>
       )}
       {error && (
@@ -1007,9 +1128,13 @@ export function MeasuredRenderingWorkspace({
                   <button
                     className="underline"
                     onClick={() => {
+                      currentJob.current = j.id;
                       setJobId(j.id);
                       setJobKind(j.kind);
                       setBusy(j.kind);
+                      setProgressJob(j);
+                      setStatusError("");
+                      void checkJobStatus(j.id);
                     }}
                   >
                     Follow job

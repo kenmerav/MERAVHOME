@@ -236,6 +236,17 @@ async function scene() {
   });
 }
 describe("Shared measured rendering boundary and persistence", () => {
+  it("returns the saved start time and status without launching another drawing read", async () => {
+    const body = { action: "interpret", operationId: "99999999-9999-4999-8999-999999999999", sourcePath: source };
+    const created = await (await measuredApi(request(body))).json();
+    const repeated = await (await measuredApi(request(body))).json();
+    expect(repeated.createdAt).toBe(created.createdAt);
+    expect(fake.start).toHaveBeenCalledTimes(1);
+    const get = new Request(request().url + `&job=${created.jobId}`, { headers: { Authorization: "Bearer test-token" } });
+    const status = await (await measuredApi(get)).json();
+    expect(status).toMatchObject({ status: "queued", createdAt: created.createdAt, updatedAt: created.updatedAt });
+    expect(fake.start).toHaveBeenCalledTimes(1); expect(fake.interpret).not.toHaveBeenCalled(); expect(fake.generate).not.toHaveBeenCalled();
+  });
   it("saves an incomplete result privately and reports failure without another generation",async()=>{
     const response=await measuredApi(request({action:"interpret",operationId:"99999999-9999-4999-8999-999999999999",sourcePath:source}));
     const {jobId}=await response.json();

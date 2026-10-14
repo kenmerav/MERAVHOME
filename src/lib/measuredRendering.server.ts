@@ -95,6 +95,8 @@ export async function measuredApi(request: Request) {
               kind: j.kind,
               status: j.status,
               createdAt: j.createdAt,
+              updatedAt: j.updatedAt,
+              sourceCitation: j.sourceCitation,
               error: j.error,
               sceneId: j.sceneId,
               imageUrl: j.imagePath ? await signedAsset(projectId, roomId, j.imagePath) : null,
@@ -181,7 +183,7 @@ export async function measuredApi(request: Request) {
       const id = scopedId.parse(body.operationId);
       const path = jobPath(projectId, roomId, id),
         existing = await readStored<CloudJob>(path);
-      if (existing) return privateJson({ jobId: id, status: existing.status });
+      if (existing) return privateJson({ jobId: id, status: existing.status, createdAt: existing.createdAt, updatedAt: existing.updatedAt });
       const now = new Date().toISOString();
       let job: CloudJob = {
         version: 1,
@@ -235,8 +237,10 @@ export async function measuredApi(request: Request) {
       try {
         await writeStored(path, job);
       } catch (error) {
-        if (/already exists|duplicate/i.test(String((error as any)?.message)))
-          return privateJson({ jobId: id, status: "queued" });
+        if (/already exists|duplicate/i.test(String((error as any)?.message))) {
+          const saved = await readStored<CloudJob>(path);
+          return privateJson({ jobId: id, status: saved?.status || "queued", createdAt: saved?.createdAt, updatedAt: saved?.updatedAt });
+        }
         throw error;
       }
       try {
@@ -250,7 +254,7 @@ export async function measuredApi(request: Request) {
         );
         throw new ProjectAccessError("Could not start the rendering worker.", 503);
       }
-      return privateJson({ jobId: id, status: "queued" }, 202);
+      return privateJson({ jobId: id, status: "queued", createdAt: job.createdAt, updatedAt: job.updatedAt }, 202);
     }
     throw new ProjectAccessError("Unknown rendering action.", 400);
   } catch (error) {
