@@ -511,7 +511,7 @@ export function MeasuredRenderingWorkspace({
             aria-label="Room"
             className="block mt-1 border p-2 min-w-48"
             value={roomId}
-            disabled={!!busy}
+            disabled={inFlight.current || ["loading","camera","upload"].includes(busy)}
             onChange={(e) => setRoomId(e.target.value)}
           >
             <option value="">Choose room</option>
@@ -638,6 +638,7 @@ export function MeasuredRenderingWorkspace({
                   .finally(() => setBusy(""));
               }}
             >
+              {!selectedSceneId && <option value="">New selected view — not saved yet</option>}
               {scenes.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} · {new Date(s.createdAt).toLocaleString()}
