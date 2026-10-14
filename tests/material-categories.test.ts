@@ -40,3 +40,12 @@ it.each([
 it("keeps a model-only door catalog entry in the reviewed door group",()=>{
   expect(productDisplayCategory({category:"Hardware",subcategory:"Doors Base & Case",name:'Monroe Interior 1-3/8" Hollow Core'})).toBe("Doors Base & Case");
 });
+it.each([
+  {name:"Pull-Down Kitchen Faucet",category:"Hardware",subcategory:"Cabinet Pulls",expected:"Plumbing"},
+  {name:"Posey Towel Bar",category:"Hardware",subcategory:"Cabinet Pulls",expected:"Hardware"},
+  {name:"Sea Salt",category:"Hardware",subcategory:"Cabinet Pulls",product_url:"https://www.benjaminmoore.com/en-us/paint-colors/color/csp-95/sea-salt",expected:"Paint"},
+])("keeps a mis-tagged $name out of cabinet-hardware choices", ({expected,...product})=>{
+  expect(productDisplayCategory(product)).toBe(expected);
+  expect(productMatchesItemCategory(product,"Cabinetry")).toBe(false);
+  expect(productMatchesItemCategory(product,expected as any)).toBe(true);
+});
