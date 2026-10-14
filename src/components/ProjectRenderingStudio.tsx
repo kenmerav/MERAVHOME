@@ -134,7 +134,10 @@ export function ProjectRenderingStudio({
   const [galleryOpen, setGalleryOpen] = useState(initialGalleryOpen);
   const galleryVisible = galleryOpen || (profile !== undefined && !canUseStudio);
   const [galleryRoomId, setGalleryRoomId] = useState("");
-  const galleryRef = useRef<HTMLDetailsElement>(null);
+  const galleryRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (initialGalleryOpen) setGalleryOpen(true);
+  }, [initialGalleryOpen]);
   useEffect(() => {
     if (!galleryOpen || !galleryRoomId) return;
     const target = document.getElementById(`room-${galleryRoomId}`) || galleryRef.current;
@@ -514,24 +517,33 @@ export function ProjectRenderingStudio({
 
         {canUseStudio && (
           <MeasuredRenderingWorkspace
-            key={id}
+            key={`${id}:${initialRoomId || ""}`}
             projectId={id}
             initialRoomId={initialRoomId}
             embedded
             onOpenGallery={openGallery}
           />
         )}
-        <details
+        <section
           ref={galleryRef}
-          open={galleryVisible}
-          onToggle={(e) => setGalleryOpen(e.currentTarget.open)}
+          aria-label="Saved and imported renderings"
           className="mt-10 border-t border-border pt-6 scroll-mt-8"
         >
-          <summary className="font-display text-3xl cursor-pointer">
+          <button
+            type="button"
+            aria-expanded={galleryVisible}
+            aria-controls={`saved-renderings-${id}`}
+            onClick={() => setGalleryOpen(!galleryOpen)}
+            disabled={!canUseStudio}
+            className="font-display text-3xl inline-flex items-center gap-3 text-left"
+          >
+            <span aria-hidden="true" className="text-lg">
+              {galleryVisible ? "▾" : "▸"}
+            </span>
             Saved & imported renderings
-          </summary>
+          </button>
           {galleryVisible && (
-            <>
+            <div id={`saved-renderings-${id}`}>
               <p className="text-sm text-muted-foreground mt-3 mb-6">
                 Review saved images, manage approvals and arrange presentation pages. Existing
                 images and imported elevations remain available here.
@@ -626,9 +638,9 @@ export function ProjectRenderingStudio({
                   ))}
                 </div>
               )}
-            </>
+            </div>
           )}
-        </details>
+        </section>
       </div>
     </AppShell>
   );
