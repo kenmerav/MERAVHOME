@@ -17,6 +17,8 @@ import { materialImageUrl } from "@/lib/materialImages";
 import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
+import { MeasuredRenderingWorkspace } from "@/components/MeasuredRenderingWorkspace";
+import { isStudioTeamRole } from "@/lib/permissions";
 import { ImportRenderingPdfDialog } from "@/components/ImportRenderingPdfDialog";
 import { ImportRenderingPackageDialog } from "@/components/ImportRenderingPackageDialog";
 import {
@@ -76,6 +78,10 @@ export const Route = createFileRoute("/projects/$id/renderings")({
 function ProjectRenderingsPage() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
+  const {data:profile}=useQuery({queryKey:["currentUserProfile"],queryFn:()=>db.getCurrentUserProfile()});
+  const [workspace,setWorkspace]=useState<"studio"|"sketchup">("studio");
+  const canUseStudio=profile?.is_active===true && isStudioTeamRole(profile.role);
+  const showStudio=canUseStudio && workspace==="studio";
 
   const { data: project } = useQuery({ queryKey: ["project", id], queryFn: () => db.getProject(id) });
   const { data: rooms = [] } = useQuery({ queryKey: ["rooms", id], queryFn: async () => (await db.listRooms(id)) ?? [] });
@@ -414,12 +420,12 @@ function ProjectRenderingsPage() {
         <div className="flex items-end justify-between mb-8 flex-wrap gap-6">
           <div>
             <div className="eyebrow mb-3">{project.client_name} · {project.name}</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">AI Renderings</h1>
+            <h1 className="editorial-hero text-5xl lg:text-7xl">Rendering Studio</h1>
             <p className="text-sm text-muted-foreground mt-3 max-w-2xl">
-              Upload SketchUp views for each room, then generate photoreal renderings for the entire project at once. Approved renderings flow into the Presentation Generator.
+              Choose a room and construction view, or work from existing SketchUp images. Approved renderings flow into the Presentation Generator.
             </p>
           </div>
-          <div className="flex flex-col items-end gap-3">
+          <div className={cn("flex flex-col items-end gap-3",showStudio && "hidden")}>
             <div className="inline-flex border border-border text-xs" role="group" aria-label="Rendering fidelity">
               {(["standard", "high_fidelity"] as RenderingFidelityMode[]).map((mode) => (
                 <button
@@ -436,7 +442,6 @@ function ProjectRenderingsPage() {
               ))}
             </div>
             <div className="flex flex-wrap justify-end gap-3">
-              <Link to="/projects/$id/measured-rendering" params={{id}} search={{roomId:undefined}} className="border border-ink px-5 py-3 text-sm hover:bg-bone">Drawing + Spec Book</Link>
               <ImportRenderingPackageDialog projectId={id} />
               <button
                 disabled={busy || totals.sk === 0}
@@ -453,6 +458,13 @@ function ProjectRenderingsPage() {
           </div>
         </div>
 
+        {canUseStudio && <div role="group" aria-label="Rendering workspace" className="flex border-b mb-6 gap-6">
+          {(["studio","sketchup"] as const).map(value=><button key={value} aria-pressed={workspace===value}
+            className={cn("py-3 text-sm border-b-2",workspace===value?"border-ink text-ink":"border-transparent text-muted-foreground")}
+            onClick={()=>setWorkspace(value)}>{value==="studio"?"Drawing + Spec Book":"SketchUp & saved elevations"}</button>)}
+        </div>}
+        {showStudio && <MeasuredRenderingWorkspace key={id} projectId={id} embedded/>}
+        {!showStudio && <>
         {/* Progress strip */}
         <div className="border border-border bg-bone/40 p-5 mb-12">
           <div className="flex items-center justify-between text-xs mb-2">
@@ -504,6 +516,7 @@ function ProjectRenderingsPage() {
             ))}
           </div>
         )}
+        </>}
       </div>
     </AppShell>
   );

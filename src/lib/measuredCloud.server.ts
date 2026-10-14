@@ -18,6 +18,7 @@ import { inspectGlb } from "./measuredModelFile";
 import { safeImageBuffer } from "./measuredImage.server";
 import { interpretMeasuredElevation } from "./measuredInterpret.server";
 import { generateMeasuredPhotoreal, type PhotorealInput } from "./measuredPhotoreal.server";
+import { drawingCitationSchema, type DrawingCitation } from "./constructionDrawingViews";
 
 export const MEASURED_BUCKET = "rendering-studio-files";
 export const scopedId = z
@@ -168,6 +169,8 @@ export type CloudScene = {
   elevation: MeasuredElevation;
   items: SpecSelection[];
   sourcePath: string;
+  sourceCitation?: DrawingCitation;
+  supportCitations?: DrawingCitation[];
   supportPaths: string[];
   basePath?: string;
   qualityPath?: string;
@@ -187,7 +190,11 @@ export type CloudJob = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
-  kind: "interpret" | "photoreal";
+  kind: "interpret" | "photoreal" | "drawings";
+  documentId?: string;
+  indexKey?: string;
+  sourceCitation?: DrawingCitation;
+  supportCitations?: DrawingCitation[];
   roomName?: string;
   status: "queued" | "processing" | "complete" | "failed";
   sourcePath?: string;
@@ -258,6 +265,8 @@ export async function publicScene(scene: CloudScene, items: SpecSelection[]) {
   );
   return {
     id: scene.id,
+    sourceCitation: scene.sourceCitation,
+    supportCitations: scene.supportCitations || [],
     elevation,
     sourcePath: scene.sourcePath,
     supportPaths: scene.supportPaths,
@@ -331,6 +340,13 @@ export async function saveCloudScene(
     elevation,
     items,
     sourcePath,
+    sourceCitation: body.sourceCitation
+      ? drawingCitationSchema.parse(body.sourceCitation)
+      : undefined,
+    supportCitations: z
+      .array(drawingCitationSchema)
+      .max(3)
+      .parse(body.supportCitations || []),
     supportPaths,
     basePath,
     qualityPath,
@@ -343,7 +359,7 @@ export async function saveCloudScene(
   await writeStored(scenePath(projectId, roomId, scene.id), scene);
   return scene;
 }
-async function authorizeSavedJob(job: CloudJob) {
+export async function authorizeSavedJob(job: CloudJob) {
   const { data: profile, error } = await supabaseAdmin
     .from("user_profiles")
     .select("id,role,is_active,can_view_all_projects")
@@ -385,6 +401,17 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
   try {
     await authorizeSavedJob(job);
     if (job.kind === "interpret") {
+      if (job.sourceCitation) {
+        const { validateDrawingCitation } = await import("./constructionDrawingViews.server");
+        const { data: rooms, error } = await supabaseAdmin
+          .from("rooms")
+          .select("id,name")
+          .eq("project_id", projectId);
+        if (error) throw error;
+        await validateDrawingCitation(projectId, rooms || [], job.sourceCitation);
+        for (const citation of job.supportCitations || [])
+          await validateDrawingCitation(projectId, rooms || [], citation);
+      }
       const source = inline(await readAsset(projectId, roomId, job.sourcePath!));
       const supporting = await Promise.all(
         (job.supportPaths || []).map(async (p) => inline(await readAsset(projectId, roomId, p))),
@@ -393,7 +420,14 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
         result = await interpretMeasuredElevation(
           source,
           items,
-          job.roomName || "Room elevation",
+          [
+            job.roomName || "Room elevation",
+            job.sourceCitation
+              ? `${job.sourceCitation.sheet} / ${job.sourceCitation.title} / PDF page ${job.sourceCitation.page}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" — "),
           fetch,
           supporting,
         );
@@ -408,6 +442,8 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
         elevation: result.elevation,
         items,
         sourcePath: job.sourcePath!,
+        sourceCitation: job.sourceCitation,
+        supportCitations: job.supportCitations || [],
         supportPaths: job.supportPaths || [],
         models: [],
         signature: sceneSignature(result.elevation, items),
