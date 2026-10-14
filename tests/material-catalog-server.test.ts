@@ -164,6 +164,13 @@ it("keeps plan fit corrections open after a replacement until staff confirms the
   expect((await materialCatalogRequest(request({ ...reviewIssue("dimensions"), action: "replace" }))).status).toBe(200);
   expect(state.status).not.toHaveBeenCalled();
 });
+it("replaces the specific material even when the room has another fixture of the same type", async () => {
+  const existing = state.queues.material_items[0].data[0];
+  Object.assign(existing, { product_id: "old-product", is_required: false });
+  state.queues.material_items[0].data.push({ ...existing, id: "second-toilet" });
+  expect((await materialCatalogRequest(request({ ...reviewIssue(), action: "replace" }))).status).toBe(200);
+  expect(state.writes[0].filters.id).toBe(itemId);
+});
 it.each(["ordered", "received", "installed"])("refuses replacement of a %s material", async field => {
   Object.assign(state.queues.material_items[0].data[0], { product_id: "old-product", [field]: true });
   expect((await materialCatalogRequest(request({ ...reviewIssue(), action: "replace" }))).status).toBe(409);

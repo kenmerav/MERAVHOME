@@ -267,7 +267,7 @@ export async function materialCatalogRequest(request: Request) {
   if (
     body.existing_item_id &&
     (!existing ||
-      (!replacing && (existing.item_label !== template.label || !untouchedCatalogPlaceholder(existing))) ||
+      (!replacing && ((completionIssue ? completionCatalogTemplate(existing.item_label, existing.category).label !== template.label : existing.item_label !== template.label) || !untouchedCatalogPlaceholder(existing))) ||
       existing.not_needed ||
       existing.updated_at !== body.expected_updated_at)
   )
@@ -275,9 +275,6 @@ export async function materialCatalogRequest(request: Request) {
   if (replacing && (!existing || existing.id !== completionIssue?.finding.item_id ||
     existing.ordered || existing.received || existing.installed))
     return json({ error: "This selection is already ordered, received or installed. Review its replacement in Materials." }, 409);
-  if (replacing && currentItems.some(item => item.id !== existing?.id && !stale.has(item.id) &&
-    materialVisibleInProcurement(item) && materialCoversTemplateSuggestion(item, template, room.name)))
-    return json({ error: "Another selection already covers this item. Review Materials before replacing it." }, 409);
   const patch = {
     product_id: product.id,
     product_url: product.product_url,

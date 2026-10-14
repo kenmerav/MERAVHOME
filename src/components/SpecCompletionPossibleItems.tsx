@@ -2,14 +2,16 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggestions";
-import { completionPossibleItems } from "@/lib/specCompletionCatalog";
+import { completionCatalogTemplate, completionPossibleItems } from "@/lib/specCompletionCatalog";
 import { fetchMaterialPlanCheck } from "@/lib/materialPlanCheck";
 import type { MaterialItem } from "@/lib/db";
 import type { CompletionRoom, SpecCompletionReport } from "@/lib/specCompletion";
+import type { SavedCompletionIssue } from "@/lib/savedSpecCompletion";
 
-export function SpecCompletionPossibleItems({ projectId, rooms, items, document, disabled, onAdded }: {
+export function SpecCompletionPossibleItems({ projectId, rooms, items, document, disabled, onAdded, issues, checkedAt }: {
   projectId: string; rooms: CompletionRoom[]; items: MaterialItem[];
   document: SpecCompletionReport["document"]; disabled: boolean; onAdded: () => Promise<void>;
+  issues: SavedCompletionIssue[]; checkedAt?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [roomId, setRoomId] = useState(rooms[0]?.id ?? "");
@@ -40,11 +42,14 @@ export function SpecCompletionPossibleItems({ projectId, rooms, items, document,
       {(plan.error || plan.data?.status === "unavailable") && <p role="status" className="text-xs text-amber-900">Bathroom layout could not be confirmed. Review shower suggestions against the plans.</p>}
       <p className="text-xs text-muted-foreground">These are possibilities to review, not additional completion issues. Catalog choices save to Materials and the Spec Book with quantity TBD.</p>
       <div className="divide-y border">
-        {room && suggestions.map(suggestion => <div key={suggestion.label} className="flex items-center justify-between gap-4 p-4">
+        {room && suggestions.map(suggestion => {
+          const issue = issues.find(row => row.status === "open" && row.last_seen_at === checkedAt && row.finding.room_id === room.id &&
+            row.finding.field === "missing_item" && completionCatalogTemplate(row.finding.item_label).label === completionCatalogTemplate(suggestion.label).label);
+          return <div key={suggestion.label} className="flex items-center justify-between gap-4 p-4">
           <div><p className="font-medium">{suggestion.label}</p><p className="text-xs text-muted-foreground">{suggestion.category}</p></div>
-          <MaterialCatalogSuggestions projectId={projectId} roomId={room.id} roomName={room.name} label={suggestion.label} existingItem={suggestion.existingItem} disabled={disabled || plan.isFetching} considerShared
+          <MaterialCatalogSuggestions projectId={projectId} roomId={room.id} roomName={room.name} label={issue?.finding.item_label || suggestion.label} existingItem={suggestion.existingItem} disabled={disabled || plan.isFetching} considerShared completionIssue={issue}
             onAdded={async () => { await qc.invalidateQueries({ queryKey: ["materialItems", projectId] }); await onAdded(); }} />
-        </div>)}
+        </div>; })}
         {!suggestions.length && <p className="p-4 text-sm text-muted-foreground">No additional template items to review for this room.</p>}
       </div>
       {room && <a className="text-xs underline" href={`/projects/${projectId}/materials?roomId=${room.id}#materials-room-${room.id}`} target="_blank" rel="noreferrer">Add a custom item or product link in Materials ↗</a>}
