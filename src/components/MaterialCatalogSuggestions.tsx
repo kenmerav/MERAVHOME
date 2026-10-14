@@ -12,6 +12,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { formatPriceWithUnit } from "@/lib/productPriceUnit";
 import type { CatalogSuggestion, SinkMount } from "@/lib/materialCatalogSuggestions";
+import type { PublicCatalogPlanFit, CoordinationSource } from "@/lib/materialCatalogFit";
+import { isNominalFitRequirement } from "@/lib/materialCatalogFit";
 import { toast } from "sonner";
 
 async function catalogRequest(body: unknown) {
@@ -59,6 +61,7 @@ export function MaterialCatalogSuggestions({
     mount: "any" as SinkMount,
   });
   const [saving, setSaving] = useState<string | null>(null);
+  const [rechecking, setRechecking] = useState(false);
   const qc = useQueryClient();
   const isSink = /\bsinks?\b/i.test(label);
   const invalidWidth =
@@ -77,8 +80,17 @@ export function MaterialCatalogSuggestions({
     );
     return () => clearTimeout(timeout);
   }, [search, width, mount, invalidWidth]);
-  const query = useQuery<{ suggestions: CatalogSuggestion[] }>({
-    queryKey: ["materialCatalogSuggestions", projectId, roomId, label, filters],
+  const queryKey = ["materialCatalogSuggestions", projectId, roomId, label, filters];
+  const query = useQuery<{
+    suggestions: CatalogSuggestion[];
+    context_key: string;
+    context: {
+      plan: PublicCatalogPlanFit;
+      related: CoordinationSource[];
+      excluded_conflicts: number;
+    };
+  }>({
+    queryKey,
     queryFn: () =>
       catalogRequest({
         project_id: projectId,
@@ -90,7 +102,29 @@ export function MaterialCatalogSuggestions({
     enabled: open && !invalidWidth,
     staleTime: 30_000,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.context?.plan.status === "checking" ? 5000 : false,
   });
+  const context = query.data?.context;
+  const plan = context?.plan;
+  const recheckPlans = async () => {
+    setRechecking(true);
+    try {
+      const result = await catalogRequest({
+        project_id: projectId,
+        room_id: roomId,
+        label,
+        action: "list",
+        criteria: filters,
+        refresh_plan: true,
+      });
+      qc.setQueryData(queryKey, result);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setRechecking(false);
+    }
+  };
   const add = async (candidate: CatalogSuggestion) => {
     if (saving) return;
     setSaving(candidate.product.id);
@@ -101,8 +135,10 @@ export function MaterialCatalogSuggestions({
         label,
         action: "add",
         product_id: candidate.product.id,
+        expected_product_updated_at: candidate.product.updated_at,
         existing_item_id: existingItem?.id ?? null,
         expected_updated_at: existingItem?.updated_at ?? null,
+        context_key: query.data?.context_key,
       });
       await onAdded();
       await Promise.all([
@@ -116,6 +152,7 @@ export function MaterialCatalogSuggestions({
       setOpen(false);
     } catch (error) {
       await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
+      await qc.invalidateQueries({ queryKey: ["materialCatalogSuggestions", projectId, roomId] });
       toast.error((error as Error).message);
     } finally {
       setSaving(null);
@@ -144,9 +181,77 @@ export function MaterialCatalogSuggestions({
           </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Products used in this project appear first, followed by products used on other projects.
+          Suggestions consider the latest plans, this room’s selections, and previous catalog use.
           Adding one keeps its saved catalog details; quantity will be TBD.
         </p>
+        {plan && context && (
+          <div role="status" className="border border-border bg-muted/20 p-3 text-sm space-y-2">
+            <p>{plan.message}</p>
+            {plan.document && (
+              <a href={`/projects/${projectId}/construction-docs`} className="text-xs underline">
+                {plan.document.title} ↗
+              </a>
+            )}
+            {plan.requirements
+              .filter(
+                (r, index, all) =>
+                  r.label === label &&
+                  (!isNominalFitRequirement(r) ||
+                    all.findIndex(
+                      (other) =>
+                        other.label === label &&
+                        other.value === r.value &&
+                        isNominalFitRequirement(other),
+                    ) === index),
+              )
+              .map((r) => (
+                <div key={r.field} className="text-xs leading-relaxed">
+                  <strong>
+                    {isNominalFitRequirement(r)
+                      ? "Advertised product size"
+                      : r.field.replaceAll("_", " ")}
+                    : {r.value}
+                    {typeof r.value === "number" ? " in" : ""}
+                  </strong>{" "}
+                  · page {r.page}
+                  {r.sheet ? ` · ${r.sheet}` : ""}
+                  <p className="text-muted-foreground">{r.evidence}</p>
+                </div>
+              ))}
+            {plan.status === "checking" && (
+              <p className="text-xs text-muted-foreground">
+                Keep this dialog open until the plan results are saved.
+              </p>
+            )}
+            {plan.status === "unavailable" && (
+              <button
+                type="button"
+                disabled={rechecking}
+                onClick={() => void recheckPlans()}
+                className="text-xs underline"
+              >
+                {rechecking ? "Starting plan check…" : "Check plans again"}
+              </button>
+            )}
+            {context.related.length > 0 && (
+              <div className="text-xs">
+                <p className="font-medium">Comparing with this room’s plumbing:</p>
+                {context.related.slice(0, 6).map((source) => (
+                  <p key={source.item_id}>
+                    {source.label}: {source.finish}
+                  </p>
+                ))}
+              </div>
+            )}
+            {!!context.excluded_conflicts && (
+              <p className="text-xs">
+                {context.excluded_conflicts} catalog{" "}
+                {context.excluded_conflicts === 1 ? "product excluded" : "products excluded"}{" "}
+                because recorded specifications conflict with the plans.
+              </p>
+            )}
+          </div>
+        )}
         <Input
           aria-label={`Search catalog for ${label}`}
           placeholder="Search name, vendor, finish or SKU"
@@ -252,6 +357,22 @@ export function MaterialCatalogSuggestions({
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {candidate.reason}
                     </p>
+                    {candidate.fit && (
+                      <div className="text-xs space-y-1 pt-2">
+                        <p
+                          className={`font-medium ${candidate.fit.status === "matches_recorded_requirements" ? "text-emerald-800" : "text-amber-900"}`}
+                        >
+                          {candidate.fit.status === "matches_recorded_requirements"
+                            ? "Matches stated plan requirements"
+                            : "Fit needs review"}
+                        </p>
+                        {candidate.fit.notes.map((note) => (
+                          <p key={note} className="text-muted-foreground leading-relaxed">
+                            {note}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     {p.product_url && /^https?:\/\//i.test(p.product_url) && (
                       <a
                         href={p.product_url}
@@ -264,7 +385,13 @@ export function MaterialCatalogSuggestions({
                     )}
                     <button
                       type="button"
-                      disabled={!!saving || query.isFetching || filtersPending}
+                      disabled={
+                        !!saving ||
+                        query.isFetching ||
+                        filtersPending ||
+                        rechecking ||
+                        plan?.status === "checking"
+                      }
                       onClick={() => add(candidate)}
                       className="block mt-3 bg-ink px-4 py-2 text-xs text-primary-foreground disabled:opacity-50"
                     >

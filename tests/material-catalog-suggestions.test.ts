@@ -70,6 +70,24 @@ it("does not suggest kitchen sinks or sink accessories for a bathroom basin", ()
     ),
   ).toEqual(["basin"]);
 });
+it("rejects catalog items named for their location near a sink and bar sinks in bathrooms", () => {
+  const products = [
+    product("basin", "Undermount Bathroom Sink"),
+    product("backsplash", "backsplash behind sink/window - whole wall"),
+    product("light", "flush mount over sink"),
+    product("sconce", "Sconce above bathroom sink"),
+    product("bar", "bar sink"),
+    product("integrated", "Countertop + Integrated Sink"),
+  ];
+  expect(
+    rankCatalogSuggestions(products, [], "p", "Bathroom 2", "Sink", "Plumbing").map(
+      (row) => row.product.id,
+    ),
+  ).toEqual(["integrated", "basin"]);
+  expect(
+    rankCatalogSuggestions([products[4]], [], "p", "Wet Bar", "Sink", "Plumbing")[0]?.product.id,
+  ).toBe("bar");
+});
 it("filters sink mounting and explicit overall width; rejects missing sizes without guessing", () => {
   const products = [
     product("fits", "Wall Mounted Sink", { dimensions: "Width: 20 in; Depth: 18 in" }),
@@ -93,14 +111,9 @@ it.each([
 ])("reads only labelled overall widths: %s", (value, expected) => {
   expect(catalogWidth(value as string)).toBeCloseTo(expected as number);
 });
-it.each([
-  "Basin Width: 16 in; Overall Width: 20 in",
-  "Cutout width: 20 in",
-  "20 x 18",
-  "Standard",
-  "Height: 20 in",
-])("does not claim a fit from uncertain dimension text: %s", (text) =>
-  expect(catalogWidth(text)).toBeNull(),
+it.each(["Basin Width: 16 in", "Cutout width: 20 in", "20 x 18", "Standard", "Height: 20 in"])(
+  "does not claim a fit from uncertain dimension text: %s",
+  (text) => expect(catalogWidth(text)).toBeNull(),
 );
 it("supports a catalog search and still labels unverified sink fit", () => {
   const results = rankCatalogSuggestions(

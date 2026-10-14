@@ -4,11 +4,13 @@ const roomId = "de252929-38a3-4e2f-9ae9-4acc810818f3";
 const productId = "4667bd26-11c7-456f-a3c7-4e6cd066888e";
 const itemId = "2da318a0-a229-4b83-815a-de7b000c3bb7";
 const state = vi.hoisted(() => ({
+  context: vi.fn(),
   denied: null as Response | null,
   queues: {} as Record<string, any[]>,
   reads: [] as any[],
   writes: [] as any[],
 }));
+vi.mock("@/lib/materialCatalogFit.server", () => ({ loadCatalogFitContext: state.context }));
 vi.mock("@/lib/specCompletion.server", () => ({
   authorizeCompletionProject: async (request: Request) =>
     state.denied ?? {
@@ -80,10 +82,16 @@ const request = (patch = {}) =>
       product_id: productId,
       existing_item_id: itemId,
       expected_updated_at: "version",
+      context_key: "0".repeat(64),
       ...patch,
     }),
   });
 beforeEach(() => {
+  state.context.mockReset().mockResolvedValue({
+    items: [],
+    plan: { status: "no_document", document: null, requirements: [], message: "No plans" },
+    contextKey: "0".repeat(64),
+  });
   state.denied = null;
   state.reads = [];
   state.writes = [];
@@ -126,6 +134,7 @@ it("returns staff/project authorization failures before accessing catalog data",
   expect((await materialCatalogRequest(request())).status).toBe(403);
   expect(state.reads).toEqual([]);
   expect(state.writes).toEqual([]);
+  expect(state.context).not.toHaveBeenCalled();
 });
 it("does not let a caller use a room from another project", async () => {
   state.queues.rooms = [{ data: null }];
@@ -247,5 +256,96 @@ it("creates a manual material and room connection when there is no template row"
 it("respects an item explicitly marked not needed", async () => {
   state.queues.material_items[0].data[0].not_needed = true;
   expect((await materialCatalogRequest(request())).status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it("refuses an add against a stale room/document context", async () => {
+  expect((await materialCatalogRequest(request({ context_key: "1".repeat(64) }))).status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it("refuses a product whose variant or dimensions changed after the suggestion was shown", async () => {
+  state.queues.products[0].data.updated_at = "2026-10-13T23:30:00Z";
+  const response = await materialCatalogRequest(
+    request({ expected_product_updated_at: "2026-10-13T23:00:00Z" }),
+  );
+  expect(response.status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it("does not add while the construction review is still running", async () => {
+  state.context.mockResolvedValue({
+    items: [],
+    plan: { status: "checking", requirements: [] },
+    contextKey: "0".repeat(64),
+  });
+  expect((await materialCatalogRequest(request())).status).toBe(409);
+  expect(state.writes).toEqual([]);
+});
+it("prioritizes the room's shower finish over a drain used more often elsewhere", async () => {
+  state.context.mockResolvedValue({
+    contextKey: "0".repeat(64),
+    plan: { status: "no_document", document: null, requirements: [], message: "No plans" },
+    items: [
+      {
+        id: "shower",
+        product_id: "chosen",
+        item_label: "Shower system",
+        color: "Polished Nickel",
+        product: { name: "Shower Trim" },
+      },
+    ],
+  });
+  state.queues.products = [
+    {
+      data: [
+        { id: "black", name: "Round Shower Drain", category: "Plumbing", finish: "Matte Black" },
+        {
+          id: "nickel",
+          name: "Round Shower Drain",
+          category: "Plumbing",
+          finish: "Polished Nickel",
+        },
+      ],
+    },
+  ];
+  state.queues.material_items = [
+    {
+      data: [
+        { product_id: "black", project_id: projectId, not_needed: false, room: { name: "Bath 3" } },
+      ],
+    },
+  ];
+  state.queues.room_products = [{ data: [] }];
+  const result = await materialCatalogRequest(request({ label: "Shower Drain", action: "list" }));
+  const body = await result.json();
+  expect(body.suggestions[0].product.id).toBe("nickel");
+  expect(body.suggestions[0].fit.status).toBe("needs_review");
+});
+it("blocks a catalog sink that conflicts with explicitly planned mounting", async () => {
+  state.context.mockResolvedValue({
+    contextKey: "0".repeat(64),
+    items: [],
+    plan: {
+      status: "checked",
+      document: { id: "doc", title: "Latest", updated_at: "v1" },
+      requirements: [
+        {
+          label: "Sink",
+          field: "mount",
+          value: "wall",
+          page: 4,
+          sheet: "ID2",
+          evidence: "Wall mounted basin",
+        },
+      ],
+    },
+  });
+  state.queues.products[0].data = {
+    id: productId,
+    name: "Undermount Bathroom Sink",
+    category: "Plumbing",
+    dimensions: "Width: 20 in",
+  };
+  const response = await materialCatalogRequest(request({ label: "Sink" }));
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toContain("conflicts");
   expect(state.writes).toEqual([]);
 });
