@@ -11,6 +11,8 @@ import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { linkedBoardImage } from "@/lib/boardColorSuggestion";
 import type { MaterialItem } from "@/lib/db";
 import type { SavedCompletionIssue, SavedSpecCompletionReview, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
+import { groundedSavedCompletion } from "./specDrawingEvidence.server";
+import { publicSpecCompletionReport } from "./specCompletion";
 
 const admin = supabaseAdmin as any;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -80,15 +82,33 @@ export async function assertCompletionStorage(projectId: string) {
 }
 
 export async function saveCompletionReview(projectId: string, userId: string, report: SpecCompletionReport, items: MaterialItem[], rooms: CompletionRoom[], boardState?: unknown) {
-  const { data: previous, error: cacheError } = await admin.from("spec_completion_reviews").select("report").eq("project_id", projectId).maybeSingle();
-  if (cacheError) completionStorageError(cacheError);
-  if (previous?.report?.catalog_fit_checks) report = { ...report, catalog_fit_checks: previous.report.catalog_fit_checks };
-  const { error } = await admin.rpc("save_spec_completion_review", {
-    p_project_id: projectId, p_user_id: userId, p_report: report,
-    p_source_signature: completionSourceSignature(items, rooms, report.document, boardState),
-    p_issues: completionIssueRecords(report, items, rooms, boardState),
-  });
-  if (error) completionStorageError(error);
+  // Claim a project review before paid work. Conditional writes keep cache and
+  // issue changes made after the read, which a report replacement could lose.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: previous, error: readError } = await admin.from("spec_completion_reviews")
+      .select("report,issues,checked_at,updated_at").eq("project_id", projectId).maybeSingle();
+    if (readError) completionStorageError(readError);
+    if (previous?.report?.plan_status === "checking" ||
+        Date.parse(previous?.checked_at ?? previous?.report?.checked_at ?? "") >= Date.parse(report.checked_at))
+      throw new CompletionReviewConflict("A newer or pending review already exists. Open the saved review for current results.");
+    const patch = { report: preserveDrawingCaches(report, previous?.report),
+      issues: mergeCompletionRecords(previous?.issues ?? {}, completionIssueRecords(report, items, rooms, boardState), report.document),
+      source_signature: completionSourceSignature(items, rooms, report.document, boardState),
+      checked_at: report.checked_at, checked_by: userId,
+      updated_at: new Date(Math.max(Date.now(), (Date.parse(previous?.updated_at) || 0) + 1)).toISOString() };
+    const result = previous
+      ? await admin.from("spec_completion_reviews").update(patch).eq("project_id", projectId).eq("updated_at", previous.updated_at).select("project_id").maybeSingle()
+      : await admin.from("spec_completion_reviews").upsert({ project_id: projectId, ...patch }, { onConflict: "project_id", ignoreDuplicates: true }).select("project_id").maybeSingle();
+    if (result.error) completionStorageError(result.error);
+    if (result.data) return;
+  }
+  throw new CompletionReviewConflict("The saved review changed. Open it again for the latest results.");
+}
+
+function preserveDrawingCaches(report: SpecCompletionReport, current: SpecCompletionReport | undefined) {
+  return { ...report,
+    ...(current?.catalog_fit_checks ? { catalog_fit_checks: current.catalog_fit_checks } : {}),
+    ...(current?.spec_drawing_evidence ? { spec_drawing_evidence: current.spec_drawing_evidence } : {}) };
 }
 
 export function mergeCompletionRecords(prior: Record<string, SavedCompletionIssue>, incoming: Record<string, SavedCompletionIssue>, document: SpecCompletionReport["document"]) {
@@ -113,8 +133,9 @@ export async function updateActiveCompletionReview(projectId: string, report: Sp
       throw new CompletionReviewConflict("A newer completion check replaced this job. Open the saved review.");
     if (current.report.plan_status !== "checking") return current;
     const issues = mergeCompletionRecords(current.issues ?? {}, completionIssueRecords(report, items, rooms, boardState), report.document);
-    const preservedReport = { ...report, ...(current.report.catalog_fit_checks ? { catalog_fit_checks: current.report.catalog_fit_checks } : {}) };
-    const { data, error: writeError } = await admin.from("spec_completion_reviews").update({ report: preservedReport, issues, updated_at: new Date().toISOString() })
+    const preservedReport = preserveDrawingCaches(report, current.report);
+    const { data, error: writeError } = await admin.from("spec_completion_reviews").update({ report: preservedReport, issues,
+      updated_at: new Date(Math.max(Date.now(), (Date.parse(current.updated_at) || 0) + 1)).toISOString() })
       .eq("project_id", projectId).eq("updated_at", current.updated_at).select("report,issues,source_signature,updated_at").maybeSingle();
     if (writeError) completionStorageError(writeError);
     if (data) return data;
@@ -155,9 +176,17 @@ async function finishPendingReview(projectId: string, saved: any, items: Materia
       report.plan_message = "OpenAI reported no available API credits for Studio. Selection details and issue decisions are saved, but plan quantities and missing items have not been verified. Add credits to the OpenAI account used by Studio, then run a new check. No automatic retry or new AI charge was made.";
     } else try {
       if (!response.ok || !Number.isInteger(job.pages) || job.pages <= 0) throw new Error("Expired review");
-      report.findings.push(...cleanCompletionPlanFindings(completionOutput(value), items, rooms, job.pages));
+      const grounded = job.evidence_key && job.evidence_mode
+        ? await groundedSavedCompletion(projectId, job.evidence_key, job.evidence_mode, job.request_id, value)
+        : { rows: completionOutput(value), coverage_message: undefined };
+      report.findings.push(...cleanCompletionPlanFindings(grounded.rows, items, rooms, job.pages));
+      report.plan_coverage_message = grounded.coverage_message;
       report.plan_status = "checked";
-      report.plan_message = "Plans reviewed and saved. Only clearly supported findings are listed. Unclear counts and unspecified details still need your review.";
+      report.plan_message = job.evidence_mode === "compare"
+        ? "Current selections reviewed against saved drawing evidence. The full PDF was not sent again. Unclear counts and unspecified details still need your review."
+        : job.evidence_mode === "extract" ? "Plans reviewed and drawing evidence saved for reuse. Only clearly supported findings are listed. Unclear counts and unspecified details still need your review."
+        : "Plans reviewed and saved. Only clearly supported findings are listed. Unclear counts and unspecified details still need your review.";
+      if (report.plan_coverage_message) report.plan_message += " " + report.plan_coverage_message;
     } catch {
       report.plan_status = "unavailable";
       report.plan_message = "The plan check did not finish or its temporary result expired. Selection details are saved. No automatic retry or new AI charge was made.";
@@ -215,7 +244,7 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
     if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);
     return true;
   });
-  return { report: { ...saved.report, findings: saved.report.findings?.filter((finding: any) => {
+  return { report: { ...publicSpecCompletionReport(saved.report), findings: saved.report.findings?.filter((finding: any) => {
     const item = byItem.get(finding.item_id ?? "");
     return !(["price", "price_unit"].includes(finding.field) && item && isCountertopMaterial(item));
   }) }, issues,

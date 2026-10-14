@@ -19,19 +19,28 @@ export type CompletionFinding = {
 export type SpecCompletionReport = {
   board_refresh?: import("@/lib/specBoardSync").SpecBoardSyncSummary;
   catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
+  spec_drawing_evidence?: Record<string, import("@/lib/specDrawingEvidence").DrawingEvidenceJob>;
   checked_at: string; item_count: number; findings: CompletionFinding[];
   plan_status: "checked" | "no_document" | "unavailable" | "checking";
   document: { id: string; title: string; updated_at: string } | null;
   plan_message: string;
+  plan_coverage_message?: string;
   plan_failure_code?: "credit_balance_exhausted" | "insufficient_quota";
   document_refresh?: { status: "checked" | "incomplete" | "unavailable"; checked_at: string; uploaded: number; message: string };
-  plan_job?: { request_id: string; response_id: string | null; pages: number | null; started_at: string; worker_run_id?: string };
+  plan_job?: { request_id: string; response_id: string | null; pages: number | null; started_at: string; worker_run_id?: string;
+    evidence_key?: string; evidence_mode?: "extract" | "compare"; selection_signature?: string };
 };
 
 export function hasCompletionValue(value: unknown) {
   if (typeof value !== "string") return false;
   const text = value.trim();
   return !!text && !/^(?:[-—–]|tbd|tbc|n\/?a|none|unknown|not (?:specified|available|set)|pending|to be (?:determined|confirmed))\.?$/i.test(text);
+}
+
+// Extraction snapshots are private server cache, not part of browser responses.
+export function publicSpecCompletionReport(report: SpecCompletionReport): SpecCompletionReport {
+  const { spec_drawing_evidence: _evidence, catalog_fit_checks: _catalog, ...publicReport } = report;
+  return publicReport;
 }
 
 export function completionItems(items: MaterialItem[]) {
