@@ -13,6 +13,8 @@ export default defineConfig({
       server: { entry: "server" },
     }),
     nitro({
+      // Queue functions cannot use Nitro's copied absolute dependency symlinks.
+      noExternals: ["tslib"],
       rollupConfig: {
         plugins: [{
           name: "preserve-workflow-step-registration",
