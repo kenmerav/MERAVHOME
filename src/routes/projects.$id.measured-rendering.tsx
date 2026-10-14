@@ -1,19 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AppShell } from "@/components/AppShell";
-import { MeasuredRenderingWorkspace } from "@/components/MeasuredRenderingWorkspace";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/projects/$id/measured-rendering")({
-  head: () => ({ meta: [{ title: "Measured Renderings — MERAV Studio" }] }),
   validateSearch: (s: Record<string, unknown>) => ({
     roomId: typeof s.roomId === "string" ? s.roomId : undefined,
   }),
-  component: MeasuredRenderingPage,
+  beforeLoad: ({ params, search }) => {
+    throw redirect({
+      to: "/projects/$id/rendering-studio",
+      params: { id: params.id },
+      search: { roomId: search.roomId },
+      replace: true,
+    });
+  },
 });
-function MeasuredRenderingPage() {
-  const { id } = Route.useParams(),
-    search = Route.useSearch();
-  return (
-    <AppShell>
-      <MeasuredRenderingWorkspace key={id} projectId={id} initialRoomId={search.roomId} />
-    </AppShell>
-  );
-}

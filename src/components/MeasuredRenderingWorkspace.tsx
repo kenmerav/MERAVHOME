@@ -66,7 +66,7 @@ export function MeasuredRenderingWorkspace({
   projectId: string;
   initialRoomId?: string;
   embedded?: boolean;
-  onOpenGallery?: () => void;
+  onOpenGallery?: (roomId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [roomId, setRoomId] = useState(initialRoomId || ""),
@@ -650,8 +650,12 @@ export function MeasuredRenderingWorkspace({
       )}
       <div className="my-7 flex flex-wrap justify-between items-end gap-4">
         <div>
-          <p className="eyebrow mb-2">MERAV STUDIO · {name}</p>
-          <h1 className="font-display text-5xl">Drawing + Spec Book</h1>
+          {!embedded && <p className="eyebrow mb-2">MERAV STUDIO · {name}</p>}
+          {embedded ? (
+            <h2 className="font-display text-4xl">Create a rendering</h2>
+          ) : (
+            <h1 className="font-display text-5xl">Rendering Studio</h1>
+          )}
           <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
             Build the measured view from your drawing, using Spec Book product dimensions. Then
             create the finished-room photograph.
@@ -895,7 +899,7 @@ export function MeasuredRenderingWorkspace({
           onRevise={(revisionNotes) =>
             photograph({ parentJobId: presentationJobId, revisionNotes })
           }
-          onOpenGallery={onOpenGallery}
+          onOpenGallery={onOpenGallery ? () => onOpenGallery(roomId) : undefined}
         />
       )}
       {review && (

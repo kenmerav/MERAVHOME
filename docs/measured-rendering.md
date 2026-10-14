@@ -1,8 +1,14 @@
 # Drawing + Spec Book — live Studio
 
-Studio team members with project access can open a project's Renderings page and choose
-**Drawing + Spec Book**, now embedded in Rendering Studio. The **SketchUp & saved elevations**
-tab preserves the prior queues, revisions, package imports and presentation-sheet controls.
+Studio team members with project access open **Rendering Studio** from their project. The
+drawing-to-image workspace is the primary workflow at `/projects/<id>/rendering-studio`, with
+adjustments, saving and presentation approval on the same page. The former Renderings and
+Measured Rendering URLs redirect here and preserve room selection. The project's duplicate
+Renderings shortcut and the former manual pack/export Studio setup page have been replaced.
+**Saved & imported renderings** below the creator preserves existing images, queues, revisions,
+package imports and presentation-sheet controls. Gallery contents mount only when opened;
+**View room renderings** opens that section and jumps to the saved image's room. External roles
+continue to use the gallery without gaining drawing interpretation or generation access.
 Choose the room and upload a dimensioned elevation image, with up to
 three supporting plan/elevation images. Original images upload directly to the existing private
 `rendering-studio-files` bucket using scoped signed upload tokens.
