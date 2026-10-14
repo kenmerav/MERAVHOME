@@ -95,6 +95,16 @@ describe("source-grounded product specifications", () => {
     expect(write.filters).toContainEqual(["eq", "product_url", url]);
     expect(write.filters).toContainEqual(["eq", "updated_at", "2026-10-14T20:00:00Z"]);
   });
+  it("fills catalog placeholders while retaining confirmed dimensions, finish, price and images", async () => {
+    mock.query.mockImplementation(q => q.op === "update" ? { error: null } : q.table === "material_items" ? { data: { id: item, room_id: null, color: "TBD", image_url: "https://cdn.test/manual.jpg" } } : { data: { id: product, name: "Sconce", price: "$100", dimensions: "TBD", finish: "Brushed Brass", image_url: "https://cdn.test/catalog.jpg" } });
+    expect((await handlers.PUT({ request: request("PUT", { project_id: project, rows: [{ material_item_id: item, existing_product_id: product, url, scraped: { price: "$200", image_url: "https://cdn.test/scraped.jpg", dimensions: "12 in", finish: "Black", color: "Brass" } }] }) })).status).toBe(200);
+    const writes = mock.query.mock.calls.map(([q]) => q).filter(q => q.op === "update");
+    const productPatch = writes.find(q => q.table === "products").write;
+    expect(productPatch.dimensions).toBe("12 in");
+    for (const field of ["price", "finish", "image_url"]) expect(productPatch).not.toHaveProperty(field);
+    const materialPatch = writes.find(q => q.table === "material_items").write;
+    expect(materialPatch.color).toBe("Brass"); expect(materialPatch).not.toHaveProperty("image_url");
+  });
   it("forces a fresh read for only the newly saved link even when its previous specs were complete", async () => {
     mock.query.mockResolvedValue({ data: [item, product].map(id => ({ id, category: "Lighting", product_url: url, color: "White", product: { id: product, price: "$100", finish: "White", dimensions: "12 in", image_url: "https://cdn.test/old.jpg" } })) });
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: "batch", data: {} })));

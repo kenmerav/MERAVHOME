@@ -17,6 +17,8 @@ import { isNominalFitRequirement } from "@/lib/materialCatalogFit";
 import { toast } from "sonner";
 import type { SavedCompletionIssue } from "@/lib/savedSpecCompletion";
 import { completionCatalogTemplate } from "@/lib/specCompletionCatalog";
+import { refreshCatalogSelectionIfNeeded } from "@/lib/catalogProductRefresh";
+import { inferMaterialCategory } from "@/lib/roomTemplates";
 
 async function catalogRequest(body: unknown) {
   const { data } = await supabase.auth.getSession();
@@ -69,6 +71,7 @@ export function MaterialCatalogSuggestions({
     mount: "any" as SinkMount,
   });
   const [saving, setSaving] = useState<string | null>(null);
+  const [saveProgress, setSaveProgress] = useState("");
   const [rechecking, setRechecking] = useState(false);
   const qc = useQueryClient();
   const searchLabel = completionIssue ? completionCatalogTemplate(label).label : label;
@@ -141,6 +144,7 @@ export function MaterialCatalogSuggestions({
   const add = async (candidate: CatalogSuggestion) => {
     if (saving) return;
     setSaving(candidate.product.id);
+    setSaveProgress("Saving catalog selection…");
     let productSaved = false;
     try {
       const result = await catalogRequest({
@@ -156,6 +160,8 @@ export function MaterialCatalogSuggestions({
         ...issueRequest,
       });
       productSaved = true;
+      const refreshWarning = await refreshCatalogSelectionIfNeeded({ projectId, itemId: result.item_id, product: candidate.product,
+        material: { item_label: label, category: inferMaterialCategory(label), color: candidate.product.finish }, onProgress: setSaveProgress });
       await onAdded();
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
@@ -163,8 +169,11 @@ export function MaterialCatalogSuggestions({
         qc.invalidateQueries({ queryKey: ["roomProducts", roomId] }),
         qc.invalidateQueries({ queryKey: ["spec-completion-review", projectId] }),
         qc.invalidateQueries({ queryKey: ["materialCatalogSuggestions"] }),
+        qc.invalidateQueries({ queryKey: ["catalog"] }),
+        qc.invalidateQueries({ queryKey: ["products"] }),
+        qc.invalidateQueries({ queryKey: ["product", candidate.product.id] }),
       ]);
-      if (result.warning) toast.warning(result.warning);
+      if (result.warning || refreshWarning) toast.warning(result.warning || refreshWarning);
       else toast.success(replace ? `${label} updated in Materials and the Spec Book.` : `${label} added to ${roomName}. Confirm its quantity in Materials.`);
       setOpen(false);
     } catch (error) {
@@ -174,6 +183,7 @@ export function MaterialCatalogSuggestions({
       else toast.error((error as Error).message);
     } finally {
       setSaving(null);
+      setSaveProgress("");
     }
   };
   return (
@@ -201,6 +211,7 @@ export function MaterialCatalogSuggestions({
         <p className="text-sm text-muted-foreground">
           Suggestions consider the latest plans, this room’s selections, and previous catalog use.
           {replace ? "Choosing one updates Materials and the Spec Book, keeps the quantity, and uses the catalog product’s saved details." : "Adding one keeps its saved catalog details; quantity will be TBD."}
+          {" "}Missing images, prices, dimensions and colors are filled automatically from its product link when available.
         </p>
         {plan && context && (
           <div role="status" className="border border-border bg-muted/20 p-3 text-sm space-y-2">
@@ -323,6 +334,7 @@ export function MaterialCatalogSuggestions({
             Finding catalog suggestions…
           </p>
         )}
+        {saving && <p role="status" className="text-sm text-muted-foreground">{saveProgress}</p>}
         {query.error && (
           <div role="alert">
             <p className="text-sm">{query.error.message}</p>
@@ -413,7 +425,7 @@ export function MaterialCatalogSuggestions({
                       onClick={() => add(candidate)}
                       className="block mt-3 bg-ink px-4 py-2 text-xs text-primary-foreground disabled:opacity-50"
                     >
-                      {saving === p.id ? "Saving…" : replace ? "Use this product" : "Add from Catalog"}
+                      {saving === p.id ? saveProgress.startsWith("Saving catalog") ? "Saving…" : "Getting product info…" : replace ? "Use this product" : "Add from Catalog"}
                     </button>
                   </div>
                 </div>

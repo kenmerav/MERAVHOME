@@ -11,6 +11,7 @@ import {
 import { cleanUuid } from "@/lib/ids";
 import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { authorizeCompletionProject } from "@/lib/specCompletion.server";
+import { hasCompletionValue } from "@/lib/specCompletion";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
 import { productPriceUnit, inferProductPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
@@ -115,7 +116,7 @@ function fillBlankProductFields(
   const patch: Record<string, unknown> = {};
   Object.entries(incoming).forEach(([key, value]) => {
     if (!hasValue(value)) return;
-    if (hasValue(existing?.[key])) return;
+    if (["image_url", "finish", "dimensions", "selected_size"].includes(key) ? hasCompletionValue(existing?.[key]) : hasValue(existing?.[key])) return;
     patch[key] = value;
   });
   return patch;
@@ -974,10 +975,10 @@ export const Route = createFileRoute("/api/scrape-materials")({
               if (savedPrice) pricedCount += 1;
               else if (!optionalPrice) priceMissingCount += 1;
               const scrapedColor = firstString(row.scraped.color, row.scraped.finish);
-              if (scrapedColor && !hasValue(matItem?.color)) {
+              if (scrapedColor && !hasCompletionValue(matItem?.color)) {
                 materialUpdate.color = scrapedColor;
               }
-              if (row.scraped.image_url && !hasValue(matItem?.image_url)) materialUpdate.image_url = row.scraped.image_url;
+              if (row.scraped.image_url && !hasCompletionValue(matItem?.image_url)) materialUpdate.image_url = row.scraped.image_url;
 
               const { data: linkedMaterial, error: materialUpdateError } = await supabaseAdmin
                 .from("material_items")

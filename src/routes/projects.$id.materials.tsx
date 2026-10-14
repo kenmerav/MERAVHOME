@@ -19,6 +19,7 @@ import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { MaterialDetailsEditor } from "@/components/MaterialDetailsEditor";
 import { MaterialCatalogSuggestions } from "@/components/MaterialCatalogSuggestions";
 import { saveAndScrapeMaterialLink } from "@/lib/materialProductLink";
+import { refreshCatalogSelectionIfNeeded } from "@/lib/catalogProductRefresh";
 import { formatPriceWithUnit, materialPriceUnit, inferProductPriceUnit } from "@/lib/productPriceUnit";
 import { ImportSelectionSheetDialog } from "@/components/ImportSelectionSheetDialog";
 import { db, type MaterialItem, type Product, type Room } from "@/lib/db";
@@ -1184,35 +1185,44 @@ function RoomMaterialsSection({
   };
 
   const attachCatalogProduct = async (item: MaterialItem, productId: string | null) => {
+    if (linkProgress[item.id]) return;
     const safeProductId = cleanUuid(productId);
     if (!isUuid(item.id) || !isUuid(room.id)) {
       toast.error("Could not link this product because the item ID is invalid.");
       return;
     }
     const product = safeProductId ? products.find((p) => p.id === safeProductId) : null;
-    await db.updateMaterialItem(item.id, {
-      product_id: product?.id ?? null,
-      product_url: product ? product.product_url : (item.product_url ?? null),
-      color: product?.finish || item.color || null,
-      scrape_status: product ? "scraped" : "pending",
-      scrape_error: null,
-      not_needed: false,
-    });
-
-    if (product) {
-      const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
-      const alreadyLinked = roomProducts.some((rp) => rp.product_id === product.id);
-      if (!alreadyLinked) {
-        await db.addRoomProduct({
-          room_id: room.id,
-          product_id: product.id,
-          is_key_selection: false,
-        });
+    if (productId && !product) return toast.error("Refresh the catalog before choosing this product.");
+    setLinkProgress(current => ({ ...current, [item.id]: "Saving catalog selection…" }));
+    let selectionSaved = false;
+    try {
+      const color = product && item.product_id === product.id && item.color ? item.color : product?.finish || item.color || null;
+      const { data: saved, error } = await supabase.from("material_items").update({
+        product_id: product?.id ?? null, product_url: product ? product.product_url : (item.product_url ?? null),
+        color, scrape_status: product ? "scraped" : "pending", scrape_error: null, not_needed: false,
+      }).eq("id", item.id).eq("project_id", projectId).eq("room_id", room.id).eq("updated_at", item.updated_at).select("id").maybeSingle();
+      if (error) throw error;
+      if (!saved) throw new Error("This material changed. Refresh before choosing a catalog product.");
+      selectionSaved = true;
+      if (product) {
+        const roomProducts = await db.listRoomProducts(room.id);
+        if (!roomProducts) throw new Error("Could not confirm the room connection.");
+        if (!roomProducts.some(rp => rp.product_id === product.id) &&
+          !await db.addRoomProduct({ room_id: room.id, product_id: product.id, is_key_selection: false }))
+          throw new Error("Could not save the room connection.");
+        const warning = await refreshCatalogSelectionIfNeeded({ projectId, itemId: item.id, product, material: { ...item, color },
+          onProgress: message => setLinkProgress(current => ({ ...current, [item.id]: message })) });
+        if (warning) toast.warning(warning);
+        else toast.success(`Added ${product.name} to ${item.item_label}`);
       }
-      toast.success(`Added ${product.name} to ${item.item_label}`);
+    } catch (error) {
+      if (selectionSaved) toast.warning("The catalog selection is saved. Refresh Materials to confirm its room connection and product details.");
+      else toast.error(error instanceof Error ? error.message : "Could not save the catalog selection.");
+    } finally {
+      await Promise.all([["materialItems", projectId], ["catalog"], ["products"], ["roomProducts", room.id], ["spec-completion-review", projectId], ["procurement"]]
+        .map(queryKey => qc.invalidateQueries({ queryKey })));
+      setLinkProgress(current => { const next = { ...current }; delete next[item.id]; return next; });
     }
-
-    invalidate();
   };
 
   return (
@@ -1442,6 +1452,7 @@ function RoomMaterialsSection({
                         item={it}
                         products={products}
                         onSelect={(productId) => attachCatalogProduct(it, productId)}
+                        disabled={!!linkProgress[it.id]}
                       />
                       <MaterialPhotoUpload item={it} projectId={projectId} />
                       <div className="mt-2 pl-3.5"><MaterialDetailsEditor item={it} /></div>
@@ -1856,6 +1867,7 @@ function CatalogProductPicker({
           <div className="text-sm text-muted-foreground">
             Choose a {category.toLowerCase()} product to attach to{" "}
             <span className="text-ink">{item.item_label}</span>.
+            {" "}Missing images, prices, dimensions and colors are filled automatically from its product link when available.
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
