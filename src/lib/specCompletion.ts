@@ -4,6 +4,7 @@ import { specQuantityUnit } from "@/lib/specQuantity";
 import { materialPriceUnit } from "@/lib/productPriceUnit";
 import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { inferMaterialCategory } from "@/lib/roomTemplates";
+import { sharedCompletionCoversMissing, sharedCompletionSelections, sharedCompletionQuantity } from "@/lib/specSharedMaterials";
 
 export type CompletionRoom = { id: string; name: string };
 export type CompletionField = "quantity" | "color" | "finish" | "dimensions" | "price" | "price_unit" | "product" | "link" | "missing_item";
@@ -12,6 +13,7 @@ export type CompletionFinding = {
   field: CompletionField; source: "details" | "plans"; message: string;
   current: string; suggested: string; page: number | null; sheet: string; evidence: string;
   dimension_scope?: "proposed_layout" | "product_specification";
+  shared_quantity_reviewed?: boolean;
 };
 export type SpecCompletionReport = {
   checked_at: string; item_count: number; findings: CompletionFinding[];
@@ -111,6 +113,7 @@ export function completionQuantity(item: MaterialItem) {
 export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[], rooms: CompletionRoom[], pages: number, targetedDimensions = false): CompletionFinding[] {
   const rows = Array.isArray(value) ? value : [];
   const selected = completionItems(items);
+  const sharedIds = new Set(sharedCompletionSelections(items, rooms).map(item => item.id));
   const results: CompletionFinding[] = [];
   const text = (value: unknown, max = 1200) => typeof value === "string" ? value.trim().slice(0, max) : "";
   for (const row of rows.slice(0, 1000)) {
@@ -122,6 +125,7 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
       const label = text(row.item_label, 180);
       if (!label || row.confirmed_missing !== true || row.item_id != null) continue;
       if (/\b(sink|basin|lavatory) drain\b/i.test(label)) continue;
+      if (sharedCompletionCoversMissing(items, rooms, row.room_id, label)) continue;
       const room = rooms.find(room => room.id === row.room_id)!;
       const canonicalLabel = /\b(?:towel|robe) hooks?\b/i.test(label) ? "Towel Hook" :
         /\b(?:lights?|lighting|sconces?|pendants?|chandeliers?|ceiling fans?)\b/i.test(label) ? "Lighting" :
@@ -140,13 +144,20 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
     const label = item.client_product_name || item.item_label;
     if (row.field === "quantity") {
       const unit = row.quantity_unit;
-      const qty = row.quantity;
+      let qty = row.quantity;
       if (!["count", "square_feet"].includes(unit) || typeof qty !== "number" || !Number.isFinite(qty) ||
         qty <= 0 || qty > 1e9 || (unit === "count" && !Number.isInteger(qty)) ||
         row.count_scope !== "exact_material" || (unit === "square_feet" && row.explicit_area !== true)) continue;
+      if (sharedIds.has(item.id)) {
+        qty = sharedCompletionQuantity(item, row, items, rooms);
+        if (qty == null) continue;
+      }
       if (!item.quantity_tbd && item.quantity === qty && specQuantityUnit(item) === unit) continue;
       results.push({ ...base, id: `plan:${item.id}:quantity`, item_id: item.id, item_label: label,
-        field: "quantity", message: "Quantity differs from the plans or needs confirmation.",
+        field: "quantity", message: sharedIds.has(item.id)
+          ? "Shared quantity differs from the plans after accounting for room-specific selections."
+          : "Quantity differs from the plans or needs confirmation.",
+        ...(sharedIds.has(item.id) ? { shared_quantity_reviewed: true } : {}),
         current: completionQuantity(item), suggested: `${qty}${unit === "square_feet" ? " sq ft" : " count"}` });
     } else if (["color", "finish", "dimensions", "price"].includes(row.field) && row.explicit_specification === true) {
       const field = row.field as "color" | "finish" | "dimensions" | "price";

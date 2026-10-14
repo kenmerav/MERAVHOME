@@ -107,6 +107,57 @@ it("reads current project data and latest PDF, saving the review without editing
   expect(state.rpc).toHaveBeenCalledWith("save_spec_completion_review", expect.objectContaining({ p_project_id: projectId }));
   expect(state.saved.report.plan_status).toBe('checked');
 });
+
+it("refreshes shared selections and supplies project-wide coverage with separately selected copies to the plan review", async () => {
+  const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
+  state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });
+  const product = { id: "caxton", name: "Kohler Bathroom Sink", price: "$200", price_unit: "unit", product_url: "https://retailer.test/caxton" };
+  state.items[0] = { ...state.items[0], item_label: "Sink", quantity: 1, product_id: "caxton", product };
+  state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7 });
+  expect(await (await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }))).json())
+    .toEqual({ material_item_ids: ["sink", "shared-sinks"] });
+  await checkSpecCompletion(request());
+  const body = JSON.parse(state.fetch.mock.calls[0][1].body);
+  const input = JSON.parse(body.input[0].content[0].text);
+  expect(input.shared_selections).toEqual([{ item_id: "shared-sinks", room_id: sharedRoom,
+    label: "bathroom sinks", scope: "project_default", room_selections: [{
+      item_id: "sink", room_id: roomId, quantity: 1, quantity_tbd: false, quantity_unit: "count", same_variant: true,
+    }] }]);
+  expect(body.instructions).toContain("five shared sinks, not seven shared plus those two");
+  expect(body.instructions).toContain("guest house/casita");
+});
+
+it("retires an old missing-sink finding covered by Materials Throughout without rerunning AI or discarding team decisions", async () => {
+  const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
+  state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });
+  const finding = { room_id: roomId, item_id: null, item_label: "Sink", field: "missing_item", source: "plans" };
+  state.saved = { report: { checked_at: "earlier", document: null }, source_signature: "old", issues: {
+    open: { key: "open", status: "open", finding },
+    completed: { key: "completed", status: "completed", finding },
+    dismissed: { key: "dismissed", status: "not_needed", finding },
+  } };
+  state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7,
+    category: "Plumbing", product_id: "caxton", product: { id: "caxton", name: "Kohler Bathroom Sink" } });
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(result.issues.map((issue: any) => issue.status)).toEqual(["completed", "not_needed"]);
+  expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
+});
+
+it("retires legacy shared quantity proposals without an allocation check while keeping reviewed proposals and team decisions", async () => {
+  const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
+  state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });
+  state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7,
+    category: "Plumbing", product_id: "caxton", product: { id: "caxton", name: "Kohler Bathroom Sink" } });
+  const finding = { room_id: sharedRoom, item_id: "shared-sinks", item_label: "bathroom sinks", field: "quantity", source: "plans" };
+  state.saved = { report: { checked_at: "earlier", document: null }, source_signature: "old", issues: {
+    legacy: { key: "legacy", status: "open", finding },
+    reviewed: { key: "reviewed", status: "open", finding: { ...finding, shared_quantity_reviewed: true } },
+    completed: { key: "completed", status: "completed", finding },
+  } };
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(result.issues.map((issue: any) => issue.key)).toEqual(["reviewed", "completed"]);
+  expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
+});
 it('returns a queued check promptly, resumes past five minutes, and saves results without another generation', async () => {
   state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === 'POST' ?
     Response.json({ id: 'resp_cortez_test', status: 'queued' }) : Response.json({ status: 'in_progress' }));
