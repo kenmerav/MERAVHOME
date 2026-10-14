@@ -27,6 +27,15 @@ it("imports included board selections with exact source references, image and va
   expect(result.state.pages[0].elements[0].materialItemId).toBe(itemId);
   expect(run(result.state, result.inserts).inserts).toHaveLength(0);
 });
+it.each([null, "Hardware", "Cabinetry & Hardware"])("sends cabinet hardware to Cabinetry from a board category of %s", materialCategory => {
+  const pull = { ...product, category: "Hardware", name: "Cabinet Pull", product_url: "https://vendor.example/cabinet-pull" };
+  const state = board([layer({ label: "Cabinet Pull", materialCategory, link: pull.product_url })]);
+  const result = planSpecBoardSync(project, state, [], [{id:room,name:"Materials Throughout"}], [pull], ()=>itemId);
+  expect(result.inserts[0].category).toBe("Cabinetry");
+  const saved = { ...result.inserts[0], category: "Cabinetry", quantity: 7 };
+  const again = planSpecBoardSync(project, result.state, [saved], [{id:room,name:"Materials Throughout"}], [pull], ()=>itemId);
+  expect(again.updates.some(u=>"category" in u.patch || "quantity" in u.patch)).toBe(false);
+});
 it("preserves deliberate removals and skips excluded, hidden and declined alternatives", () => {
   const result = run(board([layer({ materialExcludeFromMaterials: true, materialItemId: itemId })]), [material({ not_needed: true })]);
   expect(result.inserts).toEqual([]); expect(result.summary.added).toBe(0); expect(result.updates).toEqual([]);

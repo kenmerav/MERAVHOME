@@ -70,6 +70,8 @@ import {
   ALL_CATEGORIES,
   inferMaterialCategory,
   normalizeItemCategory,
+  productDisplayCategory,
+  selectionItemCategory,
   toProductCategory,
   type ItemCategory,
 } from "@/lib/roomTemplates";
@@ -405,6 +407,7 @@ const NARROW_BOARD_CATALOG_CATEGORIES = new Set<ItemCategory>([
   "Accessories",
   "Cabinetry",
   "Doors Base & Case",
+  "Hardware",
   "Tile & Stone",
   "Wall Coverings",
 ]);
@@ -1895,7 +1898,8 @@ function ProjectDesignBoardsPage() {
     const linkedProductUrl = linkedProduct?.product_url?.trim() || null;
     const productUrl = boardElementProductUrlForMaterialSync(element, linkedProduct);
     const inferredMaterialCategory = inferMaterialCategory(itemLabel, productUrl);
-    const materialCategory = element.materialCategory || inferredMaterialCategory;
+    const categoryProduct = linkedProduct && (!productUrl || productUrl === linkedProductUrl) ? linkedProduct : null;
+    const materialCategory = selectionItemCategory(element.materialCategory, itemLabel, productUrl, categoryProduct);
     let category: ProductCategory =
       linkedProduct?.category ||
       toProductCategory(element.materialCategory || inferredMaterialCategory);
@@ -6958,7 +6962,7 @@ function productToBoardElement(
     vendor: product.vendor,
     price: product.price,
     finish: product.finish,
-    materialCategory: product.category,
+    materialCategory: productDisplayCategory(product),
     materialFinish: product.finish,
     materialDimensions: product.dimensions,
     x,
