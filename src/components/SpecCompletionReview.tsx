@@ -64,7 +64,12 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       await savedQuery.refetch({ throwOnError: true }); setViewSaved(true);
       setReviewedSignature(currentSignature.current);
     }
-    catch (error) { setError(error instanceof Error ? error.message : "Could not check completion."); }
+    catch (error) {
+      setError(error instanceof Error ? error.message : "Could not check completion.");
+      // Earlier product batches can be saved even if a later batch fails.
+      await Promise.all([["materialItems", projectId], ["products"], ["catalog"], ["procurement"], ["roomProducts"]]
+        .map(queryKey => qc.invalidateQueries({ queryKey })));
+    }
     finally {
       lock.current = false; setChecking(false); setProgress("");
       // The pre-check may have added PDFs; refresh any open project document lists.
@@ -106,7 +111,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   };
   const saved = viewSaved ? savedQuery.data : null;
   const activeReport = saved?.report ?? report;
-  const details = activeReport?.findings ?? (checking ? [] : checkSpecDetails(items, rooms));
+  const details = activeReport?.findings ?? (checking || error ? [] : checkSpecDetails(items, rooms));
   const count = savedQuery.data ? completionIssueCounts(savedQuery.data.issues).open : 0;
   return <>
     {savedQuery.data && <button type="button" onClick={() => void openSaved()} disabled={checking || !!savingIssue}
