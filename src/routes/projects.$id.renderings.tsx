@@ -463,7 +463,7 @@ function ProjectRenderingsPage() {
             className={cn("py-3 text-sm border-b-2",workspace===value?"border-ink text-ink":"border-transparent text-muted-foreground")}
             onClick={()=>setWorkspace(value)}>{value==="studio"?"Drawing + Spec Book":"SketchUp & saved elevations"}</button>)}
         </div>}
-        {showStudio && <MeasuredRenderingWorkspace key={id} projectId={id} embedded/>}
+        {showStudio && <MeasuredRenderingWorkspace key={id} projectId={id} embedded onOpenGallery={() => setWorkspace("sketchup")}/>}
         {!showStudio && <>
         {/* Progress strip */}
         <div className="border border-border bg-bone/40 p-5 mb-12">

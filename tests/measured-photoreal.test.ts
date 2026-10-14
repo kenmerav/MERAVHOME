@@ -29,6 +29,25 @@ const inputs = [
 ];
 afterEach(() => vi.unstubAllEnvs());
 describe("Measured view to photorealistic presentation", () => {
+  it("edits the previous finished image with the designer's exact notes within the same prompt budget", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-only");
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const prompt = String((init.body as FormData).get("prompt"));
+      expect(prompt).toContain("EDIT THE PREVIOUS FINISHED IMAGE");
+      expect(prompt).toContain("DESIGNER ADJUSTMENTS:\nMake the wood warmer.");
+      expect(prompt).toContain("does not update the saved measurements or Spec Book");
+      expect(prompt.length).toBeLessThanOrEqual(MEASURED_IMAGE_PROMPT_LIMIT);
+      return Response.json({ data: [{ b64_json: "Yw==" }] });
+    });
+    await generateMeasuredPhotoreal(
+      elevation,
+      review,
+      inputs,
+      fetcher as typeof fetch,
+      "Make the wood warmer.",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("fits a dense tile elevation without dropping positions, finishes, product identity, or unresolved checks", () => {
     const elements = Array.from({ length: 250 }, (_, i) => ({
       id: `tile-${i}`,
@@ -75,6 +94,15 @@ describe("Measured view to photorealistic presentation", () => {
     expect(prompt).toContain("IVOIRE-2X6");
     expect(prompt).toContain("[250 repeated instances]");
     expect(prompt).toContain("no labels, annotations or watermark");
+    const revision = measuredPhotorealPrompt(
+      elevation,
+      dense,
+      ["Previous image", "Measured camera", "Drawing"],
+      "Make the wood warmer. Keep every tile course.",
+    );
+    expect(revision.length).toBeLessThanOrEqual(MEASURED_IMAGE_PROMPT_LIMIT);
+    expect(revision).toContain("Make the wood warmer. Keep every tile course.");
+    expect(revision).toContain("[250 repeated instances]");
     const compact = compactMeasuredRenderBrief(elevation, dense);
     const geometry = JSON.parse(
       compact.split("\n").find((line) => line.startsWith('{"products"'))!,

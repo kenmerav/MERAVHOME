@@ -15,6 +15,7 @@ export async function generateMeasuredPhotoreal(
   review: RenderReview,
   inputs: PhotorealInput[],
   fetcher: typeof fetch = fetch,
+  revisionNotes?: string,
 ) {
   if (!process.env.OPENAI_API_KEY)
     throw new Error("Photorealistic rendering needs the server's OpenAI connection.");
@@ -30,6 +31,7 @@ export async function generateMeasuredPhotoreal(
     elevation,
     review,
     inputs.map((input) => input.role),
+    revisionNotes,
   );
   const model = process.env.OPENAI_MEASURED_PHOTOREAL_MODEL || "gpt-image-2.5-sunburst";
   const form = new FormData();

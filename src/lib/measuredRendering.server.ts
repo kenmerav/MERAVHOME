@@ -28,6 +28,7 @@ import {
   writeStored,
   listRecords,
   loadScene,
+  loadFinishedPhoto,
   publicScene,
   signedAsset,
   readAsset,
@@ -37,6 +38,7 @@ import {
   type CloudJob,
   type CloudScene,
 } from "./measuredCloud.server";
+import { saveMeasuredRoomRendering } from "./measuredRoomRendering.server";
 
 export async function measuredApi(request: Request) {
   try {
@@ -81,6 +83,16 @@ export async function measuredApi(request: Request) {
       const scenes = await listRecords<CloudScene>(projectId, roomId, "scenes");
       const selected = id ? await loadScene(projectId, roomId, id) : scenes[0];
       const jobs = await listRecords<CloudJob>(projectId, roomId, "jobs");
+      const photoIds = jobs.filter((j) => j.kind === "photoreal").map((j) => j.id);
+      const savedPhotos = photoIds.length
+        ? await supabaseAdmin
+            .from("room_images")
+            .select("id,caption,review_status,is_approved")
+            .eq("room_id", roomId)
+            .eq("kind", "rendering")
+            .in("id", photoIds)
+        : { data: [], error: null };
+      if (savedPhotos.error) throw savedPhotos.error;
       return privateJson({
         projectName: context.projectName,
         rooms: context.rooms,
@@ -99,6 +111,11 @@ export async function measuredApi(request: Request) {
               sourceCitation: j.sourceCitation,
               error: j.error,
               sceneId: j.sceneId,
+              sceneName: scenes.find((s) => s.id === j.sceneId)?.elevation.name,
+              parentJobId: j.parentJobId,
+              revisionNotes: j.revisionNotes,
+              revisionNumber: j.revisionNumber || 1,
+              savedRendering: savedPhotos.data?.find((p) => p.id === j.id) || null,
               imageUrl: j.imagePath ? await signedAsset(projectId, roomId, j.imagePath) : null,
             })),
         ),
@@ -107,6 +124,16 @@ export async function measuredApi(request: Request) {
     }
     if (!roomId) throw new ProjectAccessError("Choose a room.", 400);
     const body = (await boundedJson(request, 1024 * 1024)) as any;
+    if (body.action === "save-rendering") {
+      const result = await saveMeasuredRoomRendering(
+        projectId,
+        roomId,
+        scopedId.parse(body.jobId),
+        z.string().trim().min(1).max(200).parse(body.caption),
+        z.boolean().parse(body.approve),
+      );
+      return privateJson(result);
+    }
     if (body.action === "index-drawings") {
       const { index, created } = await claimConstructionIndex(
         projectId,
@@ -183,7 +210,13 @@ export async function measuredApi(request: Request) {
       const id = scopedId.parse(body.operationId);
       const path = jobPath(projectId, roomId, id),
         existing = await readStored<CloudJob>(path);
-      if (existing) return privateJson({ jobId: id, status: existing.status, createdAt: existing.createdAt, updatedAt: existing.updatedAt });
+      if (existing)
+        return privateJson({
+          jobId: id,
+          status: existing.status,
+          createdAt: existing.createdAt,
+          updatedAt: existing.updatedAt,
+        });
       const now = new Date().toISOString();
       let job: CloudJob = {
         version: 1,
@@ -222,9 +255,22 @@ export async function measuredApi(request: Request) {
         for (const p of supportPaths) imageMime(await readAsset(projectId, roomId, p));
         job = { ...job, sourcePath, supportPaths, items: context.items };
       } else {
-        const scene = await loadScene(projectId, roomId, scopedId.parse(body.sceneId));
-        await validateDrawingCitation(projectId,context.rooms,scene.sourceCitation);
-        for(const citation of scene.supportCitations || [])await validateDrawingCitation(projectId,context.rooms,citation);
+        const parent = body.parentJobId
+          ? await loadFinishedPhoto(projectId, roomId, scopedId.parse(body.parentJobId))
+          : undefined;
+        const revisionNotes = parent
+          ? z.string().trim().min(1).max(4000).parse(body.revisionNotes)
+          : undefined;
+        if (!parent && body.revisionNotes)
+          throw new ProjectAccessError("Choose an image to adjust first.", 400);
+        const scene = await loadScene(
+          projectId,
+          roomId,
+          parent?.sceneId || scopedId.parse(body.sceneId),
+        );
+        await validateDrawingCitation(projectId, context.rooms, scene.sourceCitation);
+        for (const citation of scene.supportCitations || [])
+          await validateDrawingCitation(projectId, context.rooms, citation);
         if (!scene.basePath)
           throw new ProjectAccessError("Save the measured camera view first.", 400);
         if (scene.signature !== sceneSignature(scene.elevation, context.items))
@@ -232,14 +278,26 @@ export async function measuredApi(request: Request) {
             "Spec Book changed. Rebuild and save the camera before generating this image.",
             409,
           );
-        job = { ...job, sceneId: scene.id };
+        job = {
+          ...job,
+          sceneId: scene.id,
+          sourceCitation: scene.sourceCitation,
+          parentJobId: parent?.id,
+          revisionNotes,
+          revisionNumber: parent ? (parent.revisionNumber || 1) + 1 : 1,
+        };
       }
       try {
         await writeStored(path, job);
       } catch (error) {
         if (/already exists|duplicate/i.test(String((error as any)?.message))) {
           const saved = await readStored<CloudJob>(path);
-          return privateJson({ jobId: id, status: saved?.status || "queued", createdAt: saved?.createdAt, updatedAt: saved?.updatedAt });
+          return privateJson({
+            jobId: id,
+            status: saved?.status || "queued",
+            createdAt: saved?.createdAt,
+            updatedAt: saved?.updatedAt,
+          });
         }
         throw error;
       }
@@ -254,7 +312,10 @@ export async function measuredApi(request: Request) {
         );
         throw new ProjectAccessError("Could not start the rendering worker.", 503);
       }
-      return privateJson({ jobId: id, status: "queued", createdAt: job.createdAt, updatedAt: job.updatedAt }, 202);
+      return privateJson(
+        { jobId: id, status: "queued", createdAt: job.createdAt, updatedAt: job.updatedAt },
+        202,
+      );
     }
     throw new ProjectAccessError("Unknown rendering action.", 400);
   } catch (error) {

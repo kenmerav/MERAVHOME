@@ -37,6 +37,23 @@ The photorealistic action uses that saved camera, the drawing, optional quality 
 original product photos. It preserves the measured scene separately for comparison. The result
 is a presentation draft requiring design review: image generation can alter precise geometry.
 
+Completed images expose **Save to room renderings** with a name and a separate, unchecked
+approval option. Saving copies the original PNG into the existing `room-images` bucket and
+creates a normal `room_images` record; it does not call AI. Drafts remain drafts until reviewed.
+Explicitly approved saves enter the existing presentation flow. Each generated job has one
+stable gallery ID and asset path, so repeated saves recover interruptions without duplicating
+records or overwriting later gallery edits. Private source drawings and camera files stay private.
+
+**Make adjustments** accepts up to 4,000 characters and creates a new paid image version using
+the selected finished image first, then its pinned camera, drawing and product references.
+It does not read the full PDF again. The server derives the camera from the selected parent job;
+unrelated selected scenes cannot be substituted. A changed Spec Book requires a fresh camera.
+Version numbers, parent IDs and requested notes persist with jobs, and notes are shown in history.
+Original images and approvals are preserved. Each adjusted version can be saved separately;
+gallery revision links are retained when its parent has also been saved. Visual adjustments do
+not mutate measurements or product selections. Uncertain start results must be checked before
+another adjustment can be sent; paid generation still has no automatic retries.
+
 ## Shared persistence and jobs
 
 Scenes and job manifests are JSON objects in the existing private bucket under

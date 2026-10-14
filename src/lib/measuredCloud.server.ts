@@ -76,13 +76,18 @@ export async function signedAsset(projectId: string, roomId: string, path: strin
   if (error) throw error;
   return data.signedUrl;
 }
-export async function readAsset(projectId: string, roomId: string, path: string) {
+export async function readAsset(
+  projectId: string,
+  roomId: string,
+  path: string,
+  limit = 15 * 1024 * 1024,
+) {
   scopedAsset(projectId, roomId, path);
   const { data, error } = await store().download(path);
   if (error) throw error;
   const bytes = Buffer.from(await data.arrayBuffer());
-  if (!bytes.length || bytes.length > 15 * 1024 * 1024)
-    throw new ProjectAccessError("Keep references under 15 MB.", 413);
+  if (!bytes.length || bytes.length > limit)
+    throw new ProjectAccessError(`Keep images under ${limit / (1024 * 1024)} MB.`, 413);
   return bytes;
 }
 export function imageMime(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" {
@@ -213,6 +218,9 @@ export type CloudJob = {
   model?: string;
   prompt?: string;
   missingReferences?: string[];
+  parentJobId?: string;
+  revisionNotes?: string;
+  revisionNumber?: number;
 };
 export const scenePath = (projectId: string, roomId: string, id: string) =>
   `${scopePath(projectId, roomId)}/scenes/${scopedId.parse(id)}.json`;
@@ -223,6 +231,15 @@ export async function loadScene(projectId: string, roomId: string, id: string) {
   if (!scene || scene.projectId !== projectId || scene.roomId !== roomId)
     throw new ProjectAccessError("Saved scene not found.", 404);
   return scene;
+}
+export async function loadFinishedPhoto(projectId: string, roomId: string, id: string) {
+  const job = await readStored<CloudJob>(jobPath(projectId, roomId, id));
+  if (!job || job.id !== id || job.projectId !== projectId || job.roomId !== roomId)
+    throw new ProjectAccessError("This image does not belong to this project and room.", 404);
+  if (job.kind !== "photoreal" || job.status !== "complete" || !job.imagePath || !job.sceneId)
+    throw new ProjectAccessError("Choose a completed photorealistic image first.", 409);
+  scopedAsset(projectId, roomId, job.imagePath);
+  return job;
 }
 export async function listRecords<T>(projectId: string, roomId: string, folder: "scenes" | "jobs") {
   const prefix = `${scopePath(projectId, roomId)}/${folder}`;
@@ -459,6 +476,19 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
     }));
     const review = reconcileElevation(scene.elevation, scene.items, modelProofs),
       inputs: PhotorealInput[] = [];
+    if (job.parentJobId) {
+      const parent = await loadFinishedPhoto(projectId, roomId, job.parentJobId);
+      if (parent.sceneId !== scene.id)
+        throw new Error("The revision's saved camera does not match its original image.");
+      const bytes = await readAsset(projectId, roomId, parent.imagePath!, 20 * 1024 * 1024);
+      const mime = imageMime(bytes);
+      inputs.push({
+        name: "previous-rendering.png",
+        mime,
+        bytes,
+        role: "Previous finished image to edit. Apply only the requested adjustments and preserve all other appearance, framing, products and details.",
+      });
+    }
     for (const [asset, role] of [
       [
         scene.basePath,
@@ -520,7 +550,13 @@ export async function processCloudJob(projectId: string, roomId: string, id: str
     for (const item of visible.slice(referenceResults.length))
       missing.push(`${item.label}: photo exceeds sixteen-reference limit`);
     const generationReview = { ...review, issues: [...review.issues, ...missing] },
-      result = await generateMeasuredPhotoreal(scene.elevation, generationReview, inputs);
+      result = await generateMeasuredPhotoreal(
+        scene.elevation,
+        generationReview,
+        inputs,
+        fetch,
+        job.revisionNotes,
+      );
     const imagePath = `${scopePath(projectId, roomId)}/assets/${job.id}.png`;
     const { error } = await store().upload(imagePath, result.bytes, {
       contentType: "image/png",

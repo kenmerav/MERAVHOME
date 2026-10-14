@@ -15,6 +15,11 @@ import { inspectGlb } from "@/lib/measuredModelFile";
 import { ConstructionDrawingPicker } from "@/components/ConstructionDrawingPicker";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
 import { MeasuredRenderingProgress, type RenderingProgressJob } from "./MeasuredRenderingProgress";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  MeasuredRenderingImagePanel,
+  type SavedMeasuredRendering,
+} from "./MeasuredRenderingImagePanel";
 
 type Model = MeasuredProductModel & { path?: string };
 type Scene = {
@@ -43,19 +48,27 @@ type HistoryJob = {
   error?: string;
   imageUrl?: string;
   sceneId?: string;
+  sceneName?: string;
   updatedAt?: string;
   sourceCitation?: DrawingCitation;
+  parentJobId?: string;
+  revisionNotes?: string;
+  revisionNumber?: number;
+  savedRendering?: SavedMeasuredRendering | null;
 };
 type Capture = { image: string; camera: { type: string; position: number[]; target: number[] } };
 export function MeasuredRenderingWorkspace({
   projectId,
   initialRoomId,
   embedded = false,
+  onOpenGallery,
 }: {
   projectId: string;
   initialRoomId?: string;
   embedded?: boolean;
+  onOpenGallery?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [roomId, setRoomId] = useState(initialRoomId || ""),
     [rooms, setRooms] = useState<Array<{ id: string; name: string }>>([]),
     [name, setName] = useState("Project"),
@@ -78,6 +91,7 @@ export function MeasuredRenderingWorkspace({
     [jobId, setJobId] = useState(""),
     [jobKind, setJobKind] = useState(""),
     [presentation, setPresentation] = useState(""),
+    [presentationJobId, setPresentationJobId] = useState(""),
     [presentationNotes, setPresentationNotes] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryJob[]>([]),
     [scenes, setScenes] = useState<Array<{ id: string; name: string; createdAt: string }>>([]),
@@ -99,6 +113,7 @@ export function MeasuredRenderingWorkspace({
     () => (elevation ? reconcileElevation(elevation, items, models) : null),
     [elevation, items, models],
   );
+  const displayedJob = history.find((j) => j.id === presentationJobId);
   const query = `projectId=${encodeURIComponent(projectId)}${roomId ? "&roomId=" + encodeURIComponent(roomId) : ""}`;
   async function api(action?: Record<string, unknown>, extra = "") {
     const res = await fetch(`/api/measured-rendering?${query}${extra}`, {
@@ -108,7 +123,10 @@ export function MeasuredRenderingWorkspace({
       ...(action ? { body: JSON.stringify(action) } : {}),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not complete this request.");
+    if (!res.ok)
+      throw Object.assign(new Error(data.error || "Could not complete this request."), {
+        status: res.status,
+      });
     return data;
   }
   function applyScene(s: Scene | null) {
@@ -125,6 +143,7 @@ export function MeasuredRenderingWorkspace({
     setDirty(s?.changed || false);
     setSelectedSceneId(s?.id || "");
     setPresentation(s?.presentationUrl || "");
+    setPresentationJobId("");
     setPresentationNotes(s?.presentationNotes || []);
   }
   async function refresh(extra = "") {
@@ -243,6 +262,7 @@ export function MeasuredRenderingWorkspace({
         }
         if (data.imageUrl) {
           setPresentation(data.imageUrl);
+          setPresentationJobId(data.id);
           setPresentationNotes([
             "Generated from the saved measured camera and selected product photos. Compare fine geometry, materials and tile courses with the drawing before acceptance.",
           ]);
@@ -294,6 +314,7 @@ export function MeasuredRenderingWorkspace({
   function working() {
     setDirty(true);
     setPresentation("");
+    setPresentationJobId("");
     operation.current = null;
     setSavedViewNotice("");
     if (!jobId) {
@@ -450,8 +471,8 @@ export function MeasuredRenderingWorkspace({
       inFlight.current = false;
     }
   }
-  async function photograph() {
-    if (inFlight.current || !scene?.basePath || dirty) return;
+  async function photograph(revision?: { parentJobId: string; revisionNotes: string }) {
+    if (inFlight.current || (!revision && (!scene?.basePath || dirty))) return false;
     inFlight.current = true;
     setStartingRequest(true);
     const epoch = generation.current;
@@ -463,7 +484,7 @@ export function MeasuredRenderingWorkspace({
     setStatusError("");
     setError("");
     try {
-      const key = scene.id;
+      const key = revision ? JSON.stringify(revision) : scene!.id;
       if (operation.current?.kind !== "photoreal" || operation.current.key !== key)
         operation.current = { id: crypto.randomUUID(), kind: "photoreal", key };
       requestId = operation.current.id;
@@ -477,10 +498,11 @@ export function MeasuredRenderingWorkspace({
       });
       const data = await api({
         action: "photoreal",
-        sceneId: scene.id,
+        sceneId: revision ? undefined : scene!.id,
+        ...revision,
         operationId: operation.current.id,
       });
-      if (epoch !== generation.current || operation.current?.id !== requestId) return;
+      if (epoch !== generation.current || operation.current?.id !== requestId) return false;
       setJobId(data.jobId);
       setJobKind("photoreal");
       const job = {
@@ -490,18 +512,42 @@ export function MeasuredRenderingWorkspace({
         createdAt: data.createdAt || startedAt,
         updatedAt: data.updatedAt,
         sourceCitation,
+        parentJobId: revision?.parentJobId,
+        revisionNotes: revision?.revisionNotes,
+        revisionNumber: revision ? (displayedJob?.revisionNumber || 1) + 1 : 1,
       };
       setProgressJob(job);
       setHistory((old) => [job, ...old.filter((j) => j.id !== job.id)]);
+      return true;
     } catch (e) {
-      if (epoch !== generation.current || operation.current?.id !== requestId) return;
+      if (epoch !== generation.current || operation.current?.id !== requestId) return false;
       setError(e instanceof Error ? e.message : "Could not start rendering.");
       setBusy("");
-      setProgressJob((old) => (old ? { ...old, status: "unknown" } : null));
+      const rejected =
+        typeof (e as { status?: number })?.status === "number" &&
+        (e as { status: number }).status < 500;
+      setProgressJob((old) => (old ? { ...old, status: rejected ? "failed" : "unknown" } : null));
+      if (rejected) {
+        operation.current = null;
+        currentJob.current = "";
+      }
+      return false;
     } finally {
       inFlight.current = false;
       setStartingRequest(false);
     }
+  }
+  async function saveRendering(caption: string, approve: boolean) {
+    const epoch = generation.current,
+      id = presentationJobId;
+    if (!id) throw new Error("Choose a completed image first.");
+    const data = await api({ action: "save-rendering", jobId: id, caption, approve });
+    void queryClient.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
+    void queryClient.invalidateQueries({ queryKey: ["roomImages", roomId] });
+    if (epoch !== generation.current) return;
+    setHistory((old) =>
+      old.map((j) => (j.id === id ? { ...j, savedRendering: data.rendering } : j)),
+    );
   }
   async function importModel(item: SpecSelection, file?: File) {
     if (!file) return;
@@ -647,9 +693,9 @@ export function MeasuredRenderingWorkspace({
                   setBusy("");
                   setProgressJob(null);
                   setError("");
-                setCheckingStatus(false);
-                setStatusError("");
-                statusRequest.current = "";
+                  setCheckingStatus(false);
+                  setStatusError("");
+                  statusRequest.current = "";
                   operation.current = null;
                   setSavedViewNotice(
                     "The drawing read continues in the background. You are using your previous saved camera. Choose Follow job in saved rendering jobs to check the new result.",
@@ -834,28 +880,23 @@ export function MeasuredRenderingWorkspace({
         </div>
       )}
       {presentation && (
-        <section className="mb-8 border bg-white">
-          <div className="p-4 flex justify-between gap-4">
-            <div>
-              <h2 className="font-display text-3xl">Photorealistic presentation</h2>
-              <p className="text-xs mt-1 text-muted-foreground">
-                Selected-product references · Requires design review
-              </p>
-            </div>
-            <a href={presentation} target="_blank" rel="noreferrer" className="text-sm underline">
-              Open full image
-            </a>
-          </div>
-          <img
-            src={presentation}
-            alt="Photorealistic room presentation"
-            className="w-full max-h-[740px] object-contain"
-          />
-          <p className="p-4 text-xs text-muted-foreground">
-            {presentationNotes.join(" ")} The measured scene remains the dimension reference; image
-            generation can change fine geometry.
-          </p>
-        </section>
+        <MeasuredRenderingImagePanel
+          key={presentationJobId || presentation}
+          projectId={projectId}
+          imageUrl={presentation}
+          jobId={presentationJobId}
+          defaultName={`${rooms.find((r) => r.id === roomId)?.name || "Room"} · ${displayedJob?.sceneName || elevation?.name || "Rendering"} · v${displayedJob?.revisionNumber || 1}`}
+          notes={presentationNotes}
+          revisionNotes={displayedJob?.revisionNotes}
+          revisionNumber={displayedJob?.revisionNumber}
+          savedRendering={displayedJob?.savedRendering}
+          busy={!!busy || startingRequest || progressJob?.status === "unknown"}
+          onSave={saveRendering}
+          onRevise={(revisionNotes) =>
+            photograph({ parentJobId: presentationJobId, revisionNotes })
+          }
+          onOpenGallery={onOpenGallery}
+        />
       )}
       {review && (
         <section className="border p-4 bg-bone/40 mb-6">
@@ -1141,8 +1182,17 @@ export function MeasuredRenderingWorkspace({
                 <div>
                   <p>
                     {j.kind === "photoreal" ? "Photorealistic image" : "Drawing reading"} ·{" "}
+                    {j.kind === "photoreal" ? `Version ${j.revisionNumber || 1} · ` : ""}
                     {j.status} · {new Date(j.createdAt).toLocaleString()}
                   </p>
+                  {j.revisionNotes && (
+                    <p className="text-xs mt-2 whitespace-pre-wrap">Requested: {j.revisionNotes}</p>
+                  )}
+                  {j.savedRendering && (
+                    <p className="text-xs mt-1">
+                      Saved to room renderings · {j.savedRendering.review_status}
+                    </p>
+                  )}
                   {j.error && <p className="text-xs text-red-700 mt-1">{j.error}</p>}
                 </div>
                 {j.imageUrl && (
@@ -1150,6 +1200,7 @@ export function MeasuredRenderingWorkspace({
                     className="underline"
                     onClick={() => {
                       setPresentation(j.imageUrl!);
+                      setPresentationJobId(j.id);
                       setPresentationNotes([
                         "Saved presentation draft. Match this image to its saved camera version before review.",
                       ]);
