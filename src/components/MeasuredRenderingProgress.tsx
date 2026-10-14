@@ -26,6 +26,7 @@ export function MeasuredRenderingProgress({
   onCheck,
   onNext,
   nextLabel,
+  onUseSavedCamera,
 }: {
   job: RenderingProgressJob | null;
   busy: string;
@@ -37,6 +38,7 @@ export function MeasuredRenderingProgress({
   onCheck?: () => void;
   onNext?: () => void;
   nextLabel?: string;
+  onUseSavedCamera?: () => void;
 }) {
   const [now, setNow] = useState(Date.now);
   const pending = !!busy || (!!job && !["complete", "failed"].includes(job.status));
@@ -165,6 +167,15 @@ export function MeasuredRenderingProgress({
         {onNext && !pending && !failed && (
           <button type="button" onClick={onNext} className="bg-ink text-white px-4 py-2 text-sm">
             {nextLabel}
+          </button>
+        )}
+        {pending && onUseSavedCamera && (
+          <button
+            type="button"
+            onClick={onUseSavedCamera}
+            className="border border-stone-400 px-4 py-2 text-sm"
+          >
+            Use previous saved camera
           </button>
         )}
         {onCheck && (

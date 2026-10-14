@@ -87,6 +87,7 @@ export function MeasuredRenderingWorkspace({
     [lastCheckedAt, setLastCheckedAt] = useState(""),
     [checkingStatus, setCheckingStatus] = useState(false),
     [startingRequest, setStartingRequest] = useState(false),
+    [savedViewNotice, setSavedViewNotice] = useState(""),
     [statusError, setStatusError] = useState("");
   const statusRequest = useRef("");
   const currentJob = useRef("");
@@ -177,6 +178,7 @@ export function MeasuredRenderingWorkspace({
     setJobId("");
     currentJob.current = "";
     setProgressJob(null);
+    setSavedViewNotice("");
     setStatusError("");
     setCheckingStatus(false);
     setLastCheckedAt("");
@@ -293,6 +295,7 @@ export function MeasuredRenderingWorkspace({
     setDirty(true);
     setPresentation("");
     operation.current = null;
+    setSavedViewNotice("");
     if (!jobId) {
       setProgressJob(null);
       currentJob.current = "";
@@ -636,7 +639,30 @@ export function MeasuredRenderingWorkspace({
           nextLabel={
             scene?.basePath && !dirty ? "Create photorealistic image" : "Build & save camera view"
           }
+          onUseSavedCamera={
+            jobId && progressJob?.kind === "interpret" && scene?.basePath && !startingRequest
+              ? () => {
+                  setJobId("");
+                  currentJob.current = "";
+                  setBusy("");
+                  setProgressJob(null);
+                  setError("");
+                setCheckingStatus(false);
+                setStatusError("");
+                statusRequest.current = "";
+                  operation.current = null;
+                  setSavedViewNotice(
+                    "The drawing read continues in the background. You are using your previous saved camera. Choose Follow job in saved rendering jobs to check the new result.",
+                  );
+                }
+              : undefined
+          }
         />
+      )}
+      {savedViewNotice && (
+        <p role="status" className="mb-6 border p-4 text-sm">
+          {savedViewNotice}
+        </p>
       )}
       <div className="flex flex-wrap gap-4 items-end mb-6">
         <label className="text-sm">
@@ -680,7 +706,15 @@ export function MeasuredRenderingWorkspace({
           />
         </label>
         <button
-          disabled={!sourcePath || !!busy || startingRequest}
+          disabled={
+            !sourcePath ||
+            !!busy ||
+            startingRequest ||
+            (!!savedViewNotice &&
+              history.some(
+                (j) => j.kind === "interpret" && ["queued", "processing"].includes(j.status),
+              ))
+          }
           onClick={() => void readDrawing()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
@@ -1129,6 +1163,7 @@ export function MeasuredRenderingWorkspace({
                     className="underline"
                     onClick={() => {
                       currentJob.current = j.id;
+                      setSavedViewNotice("");
                       setJobId(j.id);
                       setJobKind(j.kind);
                       setBusy(j.kind);

@@ -49,6 +49,10 @@ it("labels an older preview while a new drawing is processing", () => {
   );
   expect(html).toContain("previous saved view");
 });
+it("lets staff use a saved camera while the new drawing continues in the background", () => {
+  const html = renderToStaticMarkup(createElement(MeasuredRenderingProgress, { ...props, previousView: true, onUseSavedCamera: vi.fn() }));
+  expect(html).toContain("Use previous saved camera"); expect(html).toContain("continues in the background");
+});
 it("offers the next step only when the drawing has completed", () => {
   const ready = {
     ...props,
