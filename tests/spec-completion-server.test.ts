@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assig
   documents: [] as any[], rooms: [] as any[], items: [] as any[], board: null as any,
   reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any, writes: [] as any[], writeMisses: 0 }));
 const boardSync = vi.hoisted(() => vi.fn());
+const workerStart = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/specCompletionBackground.server", () => ({ startCompletionSaveWorker: workerStart }));
+vi.mock("workflow", () => ({ sleep: vi.fn(async () => undefined) }));
 vi.mock("@/lib/specBoardSync.server", () => ({ syncSpecBoardForStaff: boardSync }));
 vi.mock("@/lib/constructionUploads.server", () => ({ refreshConstructionUploads: state.refresh }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
@@ -44,7 +47,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
 } }));
 import { checkSpecCompletion } from "@/lib/specCompletion.server";
 import { savedSpecCompletionRequest } from "@/lib/savedSpecCompletionApi.server";
-import { completionSourceSignature } from "@/lib/savedSpecCompletion.server";
+import { completionSourceSignature, pollCompletionSave, failCompletionSave } from "@/lib/savedSpecCompletion.server";
+import { saveSpecCompletionInBackground } from "@/workflows/specCompletionSave";
 const request = (body: any = { project_id: projectId }, token = true) => new Request("https://studio.test/api/check-spec-completion", {
   method: "POST", headers: { ...(token ? { Authorization: "Bearer TEST_ONLY_TOKEN" } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
@@ -73,6 +77,7 @@ it("rejects unknown preparation actions", async () => {
 beforeEach(() => {
   boardSync.mockResolvedValue({ updated_at: null, summary: { imported: 0, updated: 0, added: 0, issues: [] } });
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true; state.project = true; state.dataError = false;
+  workerStart.mockResolvedValue('wrun_test_worker');
   state.storageError = null; state.saved = null; state.writes = []; state.writeMisses = 0;
   state.rpc.mockImplementation(async (name: string, args: any) => {
     if (name === 'save_spec_completion_review') state.saved = { report: structuredClone(args.p_report),
@@ -179,6 +184,62 @@ it('returns a queued check promptly, resumes past five minutes, and saves result
   const finished = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
   expect(finished.report.plan_status).toBe('checked'); expect(finished.issues.some((issue: any) => issue.finding.suggested === '2 count')).toBe(true);
   expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(1);
+  vi.restoreAllMocks();
+});
+it('finishes and persists an AI plan review without any browser polling', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  const started = await (await checkSpecCompletion(request())).json();
+  expect(workerStart).toHaveBeenCalledWith(projectId, started.plan_job.request_id);
+  expect(started.plan_job.worker_run_id).toBe('wrun_test_worker');
+  state.fetch.mockImplementation(async () => Response.json({ status: 'completed', output_text: '{"findings":[]}' }));
+  expect(await saveSpecCompletionInBackground(projectId, started.plan_job.request_id)).toBe('checked');
+  expect(state.saved.report.plan_status).toBe('checked');
+  expect(state.rpc).toHaveBeenCalledTimes(1);
+  expect(state.writes.every(row => !('quantity' in row.patch))).toBe(true);
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(1);
+});
+it('does not start paid AI if durable saving could not be queued', async () => {
+  workerStart.mockRejectedValueOnce(new Error('Queue unavailable'));
+  const result = await (await checkSpecCompletion(request())).json();
+  expect(result.plan_status).toBe('unavailable');
+  expect(result.plan_message).toContain('no AI plan check');
+  expect(state.fetch).not.toHaveBeenCalled();
+  expect(state.download).not.toHaveBeenCalled();
+});
+it('does not let an old collector poll or fail a replacement review', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  const started = await (await checkSpecCompletion(request())).json();
+  state.saved.report.plan_job.request_id = '1342d7ee-2f95-41c9-9ae3-cc0a2ab9e1cf';
+  const reads = state.fetch.mock.calls.length;
+  const writes = state.writes.length;
+  expect(await pollCompletionSave(projectId, started.plan_job.request_id)).toBe('replaced');
+  await failCompletionSave(projectId, started.plan_job.request_id);
+  expect(state.fetch).toHaveBeenCalledTimes(reads);
+  expect(state.writes).toHaveLength(writes);
+  expect(state.saved.report.plan_status).toBe('checking');
+});
+it('reattaches a saved pending review once without refreshing sources or starting AI', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  await checkSpecCompletion(request());
+  delete state.saved.report.plan_job.worker_run_id;
+  state.saved.report.plan_job.response_id = null;
+  workerStart.mockClear();
+  const paidCalls = state.fetch.mock.calls.length;
+  const documentRefreshes = state.refresh.mock.calls.length;
+  await savedSpecCompletionRequest(request({project_id: projectId, action: 'load'}));
+  await savedSpecCompletionRequest(request({project_id: projectId, action: 'load'}));
+  expect(workerStart).toHaveBeenCalledTimes(1);
+  expect(state.saved.report.plan_job.worker_run_id).toBe('wrun_test_worker');
+  expect(state.fetch).toHaveBeenCalledTimes(paidCalls);
+  expect(state.refresh).toHaveBeenCalledTimes(documentRefreshes);
+});
+it('retires an overdue AI response without retrying generation', async () => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  const started = await (await checkSpecCompletion(request())).json();
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(started.checked_at) + 10 * 60_000);
+  state.fetch.mockImplementation(async () => Response.json({ status: 'in_progress' }));
+  expect(await pollCompletionSave(projectId, started.plan_job.request_id)).toBe('unavailable');
+  expect(state.saved.report.plan_message).toContain('No automatic retry');
   vi.restoreAllMocks();
 });
 it('preserves staff decisions when a status save races the background result', async () => {

@@ -7,13 +7,14 @@ import { checkSpecDetails, cleanCompletionPlanFindings, completionItems, allowsM
 import type { MaterialItem } from "@/lib/db";
 import { PDFDocument } from "pdf-lib";
 import { fetchSpecReview, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
-import { assertCompletionStorage, saveCompletionReview, readSavedCompletionReview, updateActiveCompletionReview, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
+import { assertCompletionStorage, saveCompletionReview, readSavedCompletionReview, updateActiveCompletionReview, attachCompletionSaveWorker, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
 import { completionOutput } from "@/lib/specCompletionOutput";
 import { randomUUID } from "node:crypto";
 import { refreshConstructionUploads } from "@/lib/constructionUploads.server";
 import { sharedCompletionContext } from "@/lib/specSharedMaterials";
 import { syncSpecBoardForStaff } from "@/lib/specBoardSync.server";
 import { SpecBoardSyncConflict, specBoardSelectionEvidence } from "@/lib/specBoardSync";
+import { startCompletionSaveWorker } from "@/lib/specCompletionBackground.server";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -124,8 +125,17 @@ export async function checkSpecCompletion(request: Request) {
   // Confirm saving is available before starting any paid AI work.
   await assertCompletionStorage(projectId);
   const existing = await readSavedCompletionReview(projectId);
-  if (existing?.report.plan_status === "checking") return json(body.action === "prepare"
-    ? { material_item_ids: [], pending_report: existing.report } : existing.report);
+  if (existing?.report.plan_status === "checking") {
+    const pending = existing.report;
+    if (pending.plan_job && !pending.plan_job.worker_run_id) {
+      pending.plan_job.worker_run_id = await startCompletionSaveWorker(projectId, pending.plan_job.request_id);
+      await attachCompletionSaveWorker(projectId, pending.plan_job.request_id, pending.plan_job.worker_run_id);
+      // The collector uses the saved request identity; its run ID is diagnostic.
+      // A browser retry can reattach an older pending job without another AI call.
+    }
+    return json(body.action === "prepare"
+      ? { material_item_ids: [], pending_report: pending } : pending);
+  }
   let boardSync;
   try { boardSync = await syncSpecBoardForStaff(projectId, userId, body.action === "prepare", body.expected_board_updated_at); }
   catch (error) { if (error instanceof SpecBoardSyncConflict) return json({ error: error.message }, 409); throw error; }
@@ -186,14 +196,19 @@ export async function checkSpecCompletion(request: Request) {
     report.plan_message = refresh.message;
   } else if (document) {
     report.plan_status = "checking";
-    report.plan_message = "Selection details are saved. Plans are being reviewed. You can close this panel; keep Materials or the Spec Book open until the plan results are saved.";
+    report.plan_message = "Selection details are saved. The plan review will finish and save in the background. You can close Studio and open Saved completion review later.";
     report.plan_job = { request_id: randomUUID(), response_id: null, pages: null, started_at: report.checked_at };
     try { await saveCompletionReview(projectId, userId, report, items, rooms, boardResult.data?.board_state); }
     catch (error) { if (error instanceof CompletionReviewConflict) return json({ error: error.message }, 409); throw error; }
     let conflict = false;
+    let workerStarted = false;
     try {
       const active = await readSavedCompletionReview(projectId);
       if (active?.report.plan_job?.request_id !== report.plan_job.request_id) return json(active?.report ?? report);
+      // Confirm durable collection is queued BEFORE starting paid generation.
+      report.plan_job.worker_run_id = await startCompletionSaveWorker(projectId, report.plan_job.request_id);
+      workerStarted = true;
+      await updateActiveCompletionReview(projectId, report, items, rooms, boardResult.data?.board_state);
       const planFindings = await analyzeSpecCompletion(document, projectId, items, rooms, undefined, true);
       // A long scan must not present corrections against selections or plans that changed meanwhile.
       const [freshItems, freshRooms, freshBoard, freshDocument] = await Promise.all([
@@ -222,7 +237,8 @@ export async function checkSpecCompletion(request: Request) {
     } catch (error) {
       conflict = error instanceof CompletionReviewConflict;
       report.plan_status = "unavailable";
-      report.plan_message = conflict ? (error as Error).message : error instanceof CreditsUnavailable ?
+      report.plan_message = conflict ? (error as Error).message : !workerStarted ?
+        "Selection details are saved. The background plan review could not start, so no AI plan check was launched. Please try again." : error instanceof CreditsUnavailable ?
         "Missing-detail checks are complete. Plan comparison needs AI credits; quantities and missing items have not been verified against the drawings." :
         error instanceof SpecReviewCostError ? `Missing-detail checks are complete. ${error.message} Plan quantities and missing items have not been verified.` :
         "Missing-detail checks are complete. Plan comparison is unavailable; quantities and missing items have not been verified against the drawings.";

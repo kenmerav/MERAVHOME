@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { cleanUuid } from "@/lib/ids";
 import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
@@ -139,7 +140,13 @@ async function finishPendingReview(projectId: string, saved: any, items: Materia
     catch { return saved; }
     if (!response.ok && response.status !== 404) return saved;
     const value = await response.json().catch(() => null);
-    if (response.ok && ["queued", "in_progress"].includes(value?.status)) return saved;
+    if (response.ok && ["queued", "in_progress"].includes(value?.status)) {
+      if (Date.now() - Date.parse(job.started_at) < 9 * 60_000) return saved;
+      report.plan_status = "unavailable";
+      report.plan_message = "The plan review did not finish within its collection window. Selection details are saved. No automatic retry or new AI charge was made.";
+      try { return await updateActiveCompletionReview(projectId, report, items, rooms, boardState); }
+      catch (error) { if (error instanceof CompletionReviewConflict) return saved; throw error; }
+    }
     try {
       if (!response.ok || !Number.isInteger(job.pages) || job.pages <= 0) throw new Error("Expired review");
       report.findings.push(...cleanCompletionPlanFindings(completionOutput(value), items, rooms, job.pages));
@@ -163,12 +170,13 @@ async function projectRows(table: string, select: string, projectId: string) {
   }
 }
 
-export async function readSavedCompletionReview(projectId: string): Promise<SavedSpecCompletionReview | null> {
+export async function readSavedCompletionReview(projectId: string, expectedRequestId?: string): Promise<SavedSpecCompletionReview | null> {
   const { data: stored, error } = await admin.from("spec_completion_reviews").select("report,issues,source_signature,updated_at")
     .eq("project_id", projectId).maybeSingle();
   if (error) completionStorageError(error);
   let saved = stored;
   if (!saved?.report?.checked_at) return null;
+  if (expectedRequestId && saved.report.plan_job?.request_id !== expectedRequestId) return null;
   const [rawItems, rooms, board, document] = await Promise.all([
     projectRows("material_items", "*,product:products(*)", projectId), projectRows("rooms", "id,name", projectId),
     admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),
@@ -206,6 +214,43 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
     return !(["price", "price_unit"].includes(finding.field) && item && isCountertopMaterial(item));
   }) }, issues,
     stale: saved.source_signature !== completionSourceSignature(items, rooms, currentDocument, board.data?.board_state) };
+}
+
+// Only project/job IDs and status values enter durable workflow logs. Polling
+// collects the existing AI response and never starts another generation.
+export async function pollCompletionSave(projectId: string, requestId: string) {
+  if (!cleanUuid(projectId) || !cleanUuid(requestId)) throw new Error("Invalid completion job.");
+  const saved = await readSavedCompletionReview(projectId, requestId);
+  return saved?.report.plan_status ?? "replaced";
+}
+
+async function updateCompletionWorker(projectId: string, requestId: string, runId?: string) {
+  if (!cleanUuid(projectId) || !cleanUuid(requestId)) throw new Error("Invalid completion job.");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: current, error } = await admin.from("spec_completion_reviews").select("report,updated_at")
+      .eq("project_id", projectId).maybeSingle();
+    if (error) completionStorageError(error);
+    if (!current || current.report?.plan_job?.request_id !== requestId || current.report.plan_status !== "checking") return;
+    const report: SpecCompletionReport = runId
+      ? { ...current.report, plan_job: { ...current.report.plan_job, worker_run_id: runId } }
+      : { ...current.report, plan_status: "unavailable", plan_message: "The background plan review could not finish saving. Selection details and issue decisions are kept. No automatic AI retry or new charge was made." };
+    const updatedAt = new Date(Math.max(Date.now(), (Date.parse(current.updated_at) || 0) + 1)).toISOString();
+    const { data, error: writeError } = await admin.from("spec_completion_reviews")
+      .update({ report, updated_at: updatedAt }).eq("project_id", projectId).eq("updated_at", current.updated_at)
+      .select("project_id").maybeSingle();
+    if (writeError) completionStorageError(writeError);
+    if (data) return;
+  }
+  throw new CompletionReviewConflict("A newer review changed during background saving.");
+}
+
+export async function attachCompletionSaveWorker(projectId: string, requestId: string, runId: string) {
+  if (!/^wrun_[a-zA-Z0-9_-]{1,200}$/.test(runId)) throw new Error("Invalid background worker.");
+  await updateCompletionWorker(projectId, requestId, runId);
+}
+
+export async function failCompletionSave(projectId: string, requestId: string) {
+  await updateCompletionWorker(projectId, requestId);
 }
 
 export async function setCompletionIssueStatus(projectId: string, userId: string, key: string, status: CompletionIssueStatus, expected: string | null) {

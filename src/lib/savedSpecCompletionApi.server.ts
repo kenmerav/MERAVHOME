@@ -1,8 +1,9 @@
 import { authorizeCompletionProject } from "@/lib/specCompletion.server";
 import { cleanUuid } from "@/lib/ids";
 import { isCompletionIssueStatus } from "@/lib/savedSpecCompletion";
-import { readSavedCompletionReview, setCompletionIssueStatus, CompletionStorageUnavailable, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
+import { readSavedCompletionReview, setCompletionIssueStatus, attachCompletionSaveWorker, CompletionStorageUnavailable, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
 import { saveCompletionDetailForStaff, CompletionDetailInputError } from "@/lib/specCompletionEdit.server";
+import { startCompletionSaveWorker } from "@/lib/specCompletionBackground.server";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 export async function savedSpecCompletionRequest(request: Request) {
@@ -32,7 +33,16 @@ export async function savedSpecCompletionRequest(request: Request) {
       if (!cleanUuid(userId)) throw new Error("Invalid staff session");
       await setCompletionIssueStatus(projectId, userId, body.issue_key, body.status, body.expected_updated_at);
     }
-    return json(await readSavedCompletionReview(projectId));
+    const saved = await readSavedCompletionReview(projectId);
+    const job = saved?.report.plan_job;
+    // Resume an already-paid pending check from an older deployment. Staff
+    // access was checked above; no PDF refresh, scraping or AI generation runs.
+    if (body.action === "load" && saved?.report.plan_status === "checking" && job && !job.worker_run_id) {
+      const runId = await startCompletionSaveWorker(projectId, job.request_id);
+      await attachCompletionSaveWorker(projectId, job.request_id, runId);
+      job.worker_run_id = runId;
+    }
+    return json(saved);
   } catch (error) {
     if (error instanceof CompletionStorageUnavailable) return json({ error: error.message }, 503);
     if (error instanceof CompletionReviewConflict) return json({ error: error.message }, 409);
