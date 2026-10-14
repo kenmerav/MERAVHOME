@@ -284,6 +284,19 @@ it('keeps saved details when a temporary background response expires', async () 
   const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
   expect(result.report.plan_status).toBe('unavailable'); expect(result.issues).toHaveLength(5);
 });
+it.each(['credit_balance_exhausted', 'insufficient_quota'])('saves the actual %s error from a background response without restarting AI', async code => {
+  state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' }));
+  const started = await (await checkSpecCompletion(request())).json();
+  const issues = structuredClone(state.saved.issues);
+  const generationCount = state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST').length;
+  state.fetch.mockImplementation(async () => Response.json({ status: 'failed', error: { code } }));
+  expect(await pollCompletionSave(projectId, started.plan_job.request_id)).toBe('unavailable');
+  expect(state.saved.report.plan_failure_code).toBe(code);
+  expect(state.saved.report.plan_message).toContain('OpenAI reported no available API credits');
+  expect(state.saved.report.plan_message).toContain('plan quantities and missing items have not been verified');
+  expect(state.saved.issues).toEqual(issues);
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(generationCount);
+});
 it("refreshes only the authorized project before selecting the PDF and persists freshness evidence", async () => {
   state.refresh.mockImplementation(async () => {
     expect(state.reads.some(row => row.table === "project_documents")).toBe(false);
@@ -436,6 +449,9 @@ it("still completes data-gap checks when plans are absent, credits are exhausted
   let result = await (await checkSpecCompletion(request())).json();
   expect(result.plan_status).toBe("unavailable"); expect(result.plan_message).toContain("needs AI credits");
   expect(result.findings).toHaveLength(5); expect(result.findings.every((row: any) => row.source === "details")).toBe(true);
+  state.fetch.mockResolvedValue(Response.json({ status: "failed", error: { code: "credit_balance_exhausted" } }));
+  result = await (await checkSpecCompletion(request())).json();
+  expect(result.plan_status).toBe("unavailable"); expect(result.plan_message).toContain("needs AI credits");
   state.fetch.mockResolvedValue(Response.json({ status: "incomplete", output_text: "{}" }));
   result = await (await checkSpecCompletion(request())).json(); expect(result.plan_status).toBe("unavailable");
   state.documents = []; result = await (await checkSpecCompletion(request())).json();

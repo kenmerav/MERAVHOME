@@ -147,7 +147,11 @@ async function finishPendingReview(projectId: string, saved: any, items: Materia
       try { return await updateActiveCompletionReview(projectId, report, items, rooms, boardState); }
       catch (error) { if (error instanceof CompletionReviewConflict) return saved; throw error; }
     }
-    try {
+    if (["credit_balance_exhausted", "insufficient_quota"].includes(value?.error?.code)) {
+      report.plan_status = "unavailable";
+      report.plan_failure_code = value.error.code;
+      report.plan_message = "OpenAI reported no available API credits for Studio. Selection details and issue decisions are saved, but plan quantities and missing items have not been verified. Add credits to the OpenAI account used by Studio, then run a new check. No automatic retry or new AI charge was made.";
+    } else try {
       if (!response.ok || !Number.isInteger(job.pages) || job.pages <= 0) throw new Error("Expired review");
       report.findings.push(...cleanCompletionPlanFindings(completionOutput(value), items, rooms, job.pages));
       report.plan_status = "checked";

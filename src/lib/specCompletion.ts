@@ -23,6 +23,7 @@ export type SpecCompletionReport = {
   plan_status: "checked" | "no_document" | "unavailable" | "checking";
   document: { id: string; title: string; updated_at: string } | null;
   plan_message: string;
+  plan_failure_code?: "credit_balance_exhausted" | "insufficient_quota";
   document_refresh?: { status: "checked" | "incomplete" | "unavailable"; checked_at: string; uploaded: number; message: string };
   plan_job?: { request_id: string; response_id: string | null; pages: number | null; started_at: string; worker_run_id?: string };
 };

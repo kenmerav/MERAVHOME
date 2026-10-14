@@ -85,6 +85,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
     throw new Error("Plan review failed");
   }
   const result = await response.json();
+  if (["credit_balance_exhausted", "insufficient_quota"].includes(result?.error?.code)) throw new CreditsUnavailable();
   if (background && ["queued", "in_progress"].includes(result.status) && /^resp_[a-zA-Z0-9_-]{1,200}$/.test(result.id))
     return { response_id: result.id, pages };
   return cleanCompletionPlanFindings(completionOutput(result), items, rooms, pages, !!dimensionItemId);
