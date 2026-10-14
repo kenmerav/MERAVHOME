@@ -236,6 +236,17 @@ async function scene() {
   });
 }
 describe("Shared measured rendering boundary and persistence", () => {
+  it("saves an incomplete result privately and reports failure without another generation",async()=>{
+    const response=await measuredApi(request({action:"interpret",operationId:"99999999-9999-4999-8999-999999999999",sourcePath:source}));
+    const {jobId}=await response.json();
+    fake.interpret.mockResolvedValueOnce({responseId:"resp_saved",elevation:undefined,model:"gpt-6.1-sol"});
+    await processCloudJob(project,room,jobId);
+    fake.retrieve.mockResolvedValueOnce(Response.json({status:"incomplete",incomplete_details:{reason:"max_output_tokens"},output:[],model:"gpt-6.1-sol"}));
+    expect(await collectCloudInterpretation(project,room,jobId)).toBe("failed");
+    expect((await readStored<CloudJob>(jobPath(project,room,jobId)))?.error).toContain("response limit");
+    expect(await readStored(`${scopePath(project,room)}/jobs/${jobId}-response.json`)).toMatchObject({status:"incomplete"});
+    expect(fake.interpret).toHaveBeenCalledTimes(1);
+  });
   it("collects a slow drawing response without sending another paid interpretation",async()=>{
     const response=await measuredApi(request({action:"interpret",operationId:"99999999-9999-4999-8999-999999999999",sourcePath:source}));
     const {jobId}=await response.json();

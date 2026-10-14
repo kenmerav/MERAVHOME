@@ -56,7 +56,9 @@ operation IDs do not dispatch another worker. Paid steps have zero automatic ret
 are saved as failed jobs, without fallback to another model. Interrupted jobs remain visible for
 manual inspection before another attempt. Each job pins its sources and Spec Book snapshot.
 
-`OPENAI_MEASURED_RENDERING_MODEL` defaults to `gpt-6-astra` with high reasoning.
+`OPENAI_MEASURED_RENDERING_MODEL` defaults to `gpt-6.1-sol` with high reasoning and the existing
+Spec-review token cost guard. A custom override is honored separately. Its scene contract lists
+all supported kinds/fronts/inference axes and requires unknown element depths to remain flagged.
 `OPENAI_MEASURED_PHOTOREAL_MODEL` defaults to `gpt-image-2.5-sunburst`, maximum quality.
 Existing `OPENAI_API_KEY` is server-only. These optional overrides are not changed by deployment.
 API billing credits are separate from this feature and must be available for new generation.

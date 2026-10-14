@@ -601,6 +601,39 @@ export async function collectCloudInterpretation(projectId: string, roomId: stri
     body = await response.json();
   if (!response.ok) throw Error(body.error?.message || "Could not retrieve drawing reading.");
   if (["queued", "in_progress"].includes(body.status)) return "processing";
-  if (body.status !== "completed") throw Error("The drawing service could not complete this view.");
-  return saveInterpretation(job, parseMeasuredInterpretation(body));
+  await writeStored(
+    `${scopePath(projectId, roomId)}/jobs/${job.id}-response.json`,
+    {
+      status: body.status,
+      model: body.model,
+      output: body.output,
+      usage: body.usage,
+      incomplete_details: body.incomplete_details,
+      error: body.error,
+    },
+    true,
+  );
+  try {
+    if (body.status !== "completed")
+      throw Error(
+        body.status === "incomplete"
+          ? "Drawing reading reached its response limit. Use a smaller view crop."
+          : body.error?.message || "The drawing service could not complete this view.",
+      );
+    return await saveInterpretation(job, parseMeasuredInterpretation(body));
+  } catch (error) {
+    console.error("Measured drawing result", {
+      status: body.status,
+      incomplete_details: body.incomplete_details,
+      error: body.error,
+      model: body.model,
+    });
+    await failCloudJob(
+      projectId,
+      roomId,
+      id,
+      error instanceof Error ? error.message : "The measured scene could not be validated.",
+    );
+    return "failed";
+  }
 }
