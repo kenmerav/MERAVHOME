@@ -4,6 +4,8 @@ import { specQuantityUnit } from "@/lib/specQuantity";
 import { materialPriceUnit } from "@/lib/productPriceUnit";
 import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { inferMaterialCategory } from "@/lib/roomTemplates";
+import { sharedCompletionCoversMissing, sharedCompletionSelections, sharedCompletionQuantity } from "@/lib/specSharedMaterials";
+import { isCountertopMaterial } from "@/lib/countertopPricing";
 
 export type CompletionRoom = { id: string; name: string };
 export type CompletionField = "quantity" | "color" | "finish" | "dimensions" | "price" | "price_unit" | "product" | "link" | "missing_item";
@@ -12,8 +14,10 @@ export type CompletionFinding = {
   field: CompletionField; source: "details" | "plans"; message: string;
   current: string; suggested: string; page: number | null; sheet: string; evidence: string;
   dimension_scope?: "proposed_layout" | "product_specification";
+  shared_quantity_reviewed?: boolean;
 };
 export type SpecCompletionReport = {
+  board_refresh?: import("@/lib/specBoardSync").SpecBoardSyncSummary;
   catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
   checked_at: string; item_count: number; findings: CompletionFinding[];
   plan_status: "checked" | "no_document" | "unavailable" | "checking";
@@ -49,11 +53,12 @@ export function needsCompletionDimensions(item: MaterialItem) {
 }
 
 export function allowsMissingMaterialPrice(item: MaterialItem) {
+  if (isCountertopMaterial(item)) return true;
   const label = `${item.item_label || ""} ${item.product?.name || ""}`;
   // Cabinet hardware remains a priced product even when grouped with cabinetry.
   if (/\b(?:knobs?|pulls?|handles?|hinges?|hardware)\b/i.test(label)) return false;
-  if (/^(?:Countertops|Paint|Cabinetry|Cabinetry & Hardware)$/i.test(item.category || "")) return true;
-  if (/^(?:Countertops|Paint)$/i.test(item.product?.category || "")) return true;
+  if (/^(?:Paint|Cabinetry|Cabinetry & Hardware)$/i.test(item.category || "")) return true;
+  if (/^Paint$/i.test(item.product?.category || "")) return true;
   if (/\b(?:faucets?|sinks?|toilets?|mirrors?|lamps?|sconces?|pendants?|chandeliers?|stools?|chairs?|tables?|dispensers?)\b/i.test(label)) return false;
   try {
     const path = new URL(item.product_url || item.product?.product_url || "").pathname;
@@ -67,12 +72,14 @@ const exactCompletionPrice = (item: MaterialItem) =>
   /^\$?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?$/.test(item.product?.price?.trim() || "");
 
 export function needsCompletionPrice(item: MaterialItem) {
+  if (isCountertopMaterial(item)) return false;
   const price = item.product?.price?.trim() || "";
   const missing = !hasCompletionValue(price) || /^(?:call|contact|request|ask).*(?:price|pricing|quote)|^quote(?: required| pending| upon request)?$/i.test(price);
   return !(missing && allowsMissingMaterialPrice(item)) && !exactCompletionPrice(item);
 }
 
 export function needsCompletionPriceUnit(item: MaterialItem) {
+  if (isCountertopMaterial(item)) return false;
   return exactCompletionPrice(item) && !materialPriceUnit(item);
 }
 
@@ -112,6 +119,7 @@ export function completionQuantity(item: MaterialItem) {
 export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[], rooms: CompletionRoom[], pages: number, targetedDimensions = false): CompletionFinding[] {
   const rows = Array.isArray(value) ? value : [];
   const selected = completionItems(items);
+  const sharedIds = new Set(sharedCompletionSelections(items, rooms).map(item => item.id));
   const results: CompletionFinding[] = [];
   const text = (value: unknown, max = 1200) => typeof value === "string" ? value.trim().slice(0, max) : "";
   for (const row of rows.slice(0, 1000)) {
@@ -123,6 +131,7 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
       const label = text(row.item_label, 180);
       if (!label || row.confirmed_missing !== true || row.item_id != null) continue;
       if (/\b(sink|basin|lavatory) drain\b/i.test(label)) continue;
+      if (sharedCompletionCoversMissing(items, rooms, row.room_id, label)) continue;
       const room = rooms.find(room => room.id === row.room_id)!;
       const canonicalLabel = /\b(?:towel|robe) hooks?\b/i.test(label) ? "Towel Hook" :
         /\b(?:lights?|lighting|sconces?|pendants?|chandeliers?|ceiling fans?)\b/i.test(label) ? "Lighting" :
@@ -141,13 +150,20 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
     const label = item.client_product_name || item.item_label;
     if (row.field === "quantity") {
       const unit = row.quantity_unit;
-      const qty = row.quantity;
+      let qty = row.quantity;
       if (!["count", "square_feet"].includes(unit) || typeof qty !== "number" || !Number.isFinite(qty) ||
         qty <= 0 || qty > 1e9 || (unit === "count" && !Number.isInteger(qty)) ||
         row.count_scope !== "exact_material" || (unit === "square_feet" && row.explicit_area !== true)) continue;
+      if (sharedIds.has(item.id)) {
+        qty = sharedCompletionQuantity(item, row, items, rooms);
+        if (qty == null) continue;
+      }
       if (!item.quantity_tbd && item.quantity === qty && specQuantityUnit(item) === unit) continue;
       results.push({ ...base, id: `plan:${item.id}:quantity`, item_id: item.id, item_label: label,
-        field: "quantity", message: "Quantity differs from the plans or needs confirmation.",
+        field: "quantity", message: sharedIds.has(item.id)
+          ? "Shared quantity differs from the plans after accounting for room-specific selections."
+          : "Quantity differs from the plans or needs confirmation.",
+        ...(sharedIds.has(item.id) ? { shared_quantity_reviewed: true } : {}),
         current: completionQuantity(item), suggested: `${qty}${unit === "square_feet" ? " sq ft" : " count"}` });
     } else if (["color", "finish", "dimensions", "price"].includes(row.field) && row.explicit_specification === true) {
       const field = row.field as "color" | "finish" | "dimensions" | "price";
@@ -158,6 +174,7 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
         !["proposed_layout", "product_specification"].includes(row.dimension_scope) || row.conflicting_dimensions !== false)) continue;
       if (field === "dimensions" && !targetedDimensions && !hasCompletionValue(current) && !needsCompletionDimensions(item)) continue;
       if (field === "price") {
+        if (isCountertopMaterial(item)) continue;
         if (!/^\$?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?$/.test(suggested) || !["unit", "sq_ft"].includes(row.price_unit) || row.currency !== "USD") continue;
         if (hasCompletionValue(current) && Number(current.replace(/[$,\s]/g, "")) === Number(suggested.replace(/[$,\s]/g, "")) && item.product?.price_unit === row.price_unit) continue;
         suggested = `${suggested} / ${row.price_unit === "sq_ft" ? "sq ft" : "unit"}`;

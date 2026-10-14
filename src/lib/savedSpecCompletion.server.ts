@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
 import { cleanCompletionPlanFindings, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
 import { retrieveSpecReview } from "@/lib/specReviewAI.server";
+import { sharedCompletionCoversMissing, sharedCompletionSelections } from "@/lib/specSharedMaterials";
 import { completionOutput } from "@/lib/specCompletionOutput";
 import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { linkedBoardImage } from "@/lib/boardColorSuggestion";
@@ -34,6 +36,8 @@ export function completionSourceSignature(items: MaterialItem[], rooms: Completi
     .map(item => [item.id, item.product?.size_options ?? null, item.product?.selected_size ?? null])
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   if (sizes.length) sources.push(sizes);
+  const boardEvidence = specBoardSelectionEvidence(boardState);
+  if (boardEvidence) sources.push(boardEvidence);
   return hash(sources);
 }
 
@@ -180,7 +184,14 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
   const currentDocument = latest ? { id: latest.id, title: latest.title, updated_at: latest.updated_at } : null;
   saved = await finishPendingReview(projectId, saved, items, rooms, currentDocument, board.data?.board_state);
   const byItem = new Map(items.map(item => [item.id, item]));
+  const sharedIds = new Set(sharedCompletionSelections(items, rooms).map(item => item.id));
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
+    const pricingItem = byItem.get(issue.finding.item_id ?? "");
+    if (issue.status === "open" && ["price", "price_unit"].includes(issue.finding.field) && pricingItem && isCountertopMaterial(pricingItem)) return false;
+    if (issue.status === "open" && issue.finding.source === "plans" && issue.finding.field === "missing_item" &&
+      sharedCompletionCoversMissing(items, rooms, issue.finding.room_id, issue.finding.item_label)) return false;
+    if (issue.status === "open" && issue.finding.source === "plans" && issue.finding.field === "quantity" &&
+      sharedIds.has(issue.finding.item_id ?? "") && issue.finding.shared_quantity_reviewed !== true) return false;
     // Preserve decisions/history while retiring resolved detail checks without
     // requiring another paid plan scan.
     if (issue.status !== "open" || issue.finding.source !== "details") return true;
@@ -190,7 +201,10 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
     if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);
     return true;
   });
-  return { report: saved.report, issues,
+  return { report: { ...saved.report, findings: saved.report.findings?.filter((finding: any) => {
+    const item = byItem.get(finding.item_id ?? "");
+    return !(["price", "price_unit"].includes(finding.field) && item && isCountertopMaterial(item));
+  }) }, issues,
     stale: saved.source_signature !== completionSourceSignature(items, rooms, currentDocument, board.data?.board_state) };
 }
 
@@ -218,3 +232,4 @@ export async function saveCompletionSuggestion(projectId: string, item: Material
   if (saveError) completionStorageError(saveError);
   if (!savedSuggestion) throw new CompletionReviewConflict("The saved issue changed during the suggestion.");
 }
+import { specBoardSelectionEvidence } from "@/lib/specBoardSync";

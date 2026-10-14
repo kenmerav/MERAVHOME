@@ -28,7 +28,7 @@ it("saves product prices and refreshes the screen before starting completion, el
     const body = JSON.parse(String(options.body));
     expect((options.headers as any).Authorization).toBe("Bearer TEST_ONLY");
     if (url === "/api/check-spec-completion" && body.action === "prepare") {
-      order.push("prepare"); return Response.json({ material_item_ids: [itemId] });
+      order.push("prepare"); return Response.json({ material_item_ids: [itemId], board_updated_at: "saved-board-revision", board_refresh: { imported: 1, updated: 2, added: 1, issues: [] } });
     }
     if (url === "/api/scrape-materials" && options.method === "POST") {
       order.push("scrape"); expect(body.material_item_ids).toEqual([itemId]);
@@ -38,18 +38,20 @@ it("saves product prices and refreshes the screen before starting completion, el
       order.push("save-start"); await saving; item.product.price = "$87.90"; order.push("save-finished");
       return Response.json({ ok: true, price_missing_count: 0 });
     }
-    order.push("review"); expect(body).toEqual({ project_id: project });
+    order.push("review"); expect(body).toEqual({ project_id: project, expected_board_updated_at: "saved-board-revision" });
     const findings = checkSpecDetails([item], [{ id: "bath", name: "Bathroom" }]);
     expect(findings.some(f => f.field === "price")).toBe(false);
     return Response.json({ ...report, findings });
   });
   vi.stubGlobal("fetch", request);
-  const check = fetchSpecCompletion(project, { onProductsRefreshed: async summary => {
+  const check = fetchSpecCompletion(project, { onBoardRefreshed: async summary => {
+    expect(summary.imported).toBe(1); order.push("board-synced");
+  }, onProductsRefreshed: async summary => {
     expect(summary).toEqual({ saved: 1, failed: 0, priceMissing: 0 }); order.push("refresh-screen");
   } });
-  await vi.waitFor(() => expect(order).toEqual(["prepare", "scrape", "save-start"]));
+  await vi.waitFor(() => expect(order).toEqual(["prepare", "board-synced", "scrape", "save-start"]));
   finishSave(); await check;
-  expect(order).toEqual(["prepare", "scrape", "save-start", "save-finished", "refresh-screen", "review"]);
+  expect(order).toEqual(["prepare", "board-synced", "scrape", "save-start", "save-finished", "refresh-screen", "review"]);
 });
 
 it("does not scrape or start a paid review when project preparation denies access", async () => {

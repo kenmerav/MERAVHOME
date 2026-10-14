@@ -9,6 +9,7 @@ import {
   selectedSkuPriceFromHtml,
 } from "@/lib/productPricing";
 import { cleanUuid } from "@/lib/ids";
+import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
 import { productPriceUnit, inferProductPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
@@ -948,17 +949,18 @@ export const Route = createFileRoute("/api/scrape-materials")({
 
             if (productId) {
               const range = firstPrice(row.scraped.price);
+              const optionalPrice = isCountertopMaterial({ ...matItem, product_url: row.url, product: payload });
               const priceReview =
                 range && !exactProductPrice(range)
                   ? `Retailer price range ${range}. Select the exact size/finish before assigning a price.`
                   : "No reliable price found. Use the Studio extension to fill or verify this price.";
               const materialUpdate: Record<string, unknown> = {
                 product_id: productId,
-                scrape_status: savedPrice ? "scraped" : "price_missing",
-                scrape_error: savedPrice ? null : priceReview,
+                scrape_status: savedPrice || optionalPrice ? "scraped" : "price_missing",
+                scrape_error: savedPrice || optionalPrice ? null : priceReview,
               };
               if (savedPrice) pricedCount += 1;
-              else priceMissingCount += 1;
+              else if (!optionalPrice) priceMissingCount += 1;
               const scrapedColor = firstString(row.scraped.color);
               if (scrapedColor && !hasValue(matItem?.color)) {
                 materialUpdate.color = scrapedColor;

@@ -5,6 +5,8 @@ const userId = "4204f2d1-e10c-4d98-a01b-350cf7d8cafe";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true, project: true,
   documents: [] as any[], rooms: [] as any[], items: [] as any[], board: null as any,
   reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any, writes: [] as any[], writeMisses: 0 }));
+const boardSync = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/specBoardSync.server", () => ({ syncSpecBoardForStaff: boardSync }));
 vi.mock("@/lib/constructionUploads.server", () => ({ refreshConstructionUploads: state.refresh }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
@@ -53,7 +55,7 @@ it("prepares only active current selections without refreshing PDFs, saving find
     { ...state.items[0], id: "stale", source_board_id: projectId, source_board_page_id: "p", source_board_element_id: "deleted" },
     { ...state.items[0], id: "wrong-room", room_id: "former" });
   const response = await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }));
-  expect(await response.json()).toEqual({ material_item_ids: ["sink"] });
+  expect(await response.json()).toMatchObject({ material_item_ids: ["sink"], board_updated_at: null, board_refresh: { issues: [] } });
   expect(state.refresh).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled(); expect(state.saved).toBeNull();
 });
 
@@ -69,6 +71,7 @@ it("rejects unknown preparation actions", async () => {
   expect(state.refresh).not.toHaveBeenCalled();
 });
 beforeEach(() => {
+  boardSync.mockResolvedValue({ updated_at: null, summary: { imported: 0, updated: 0, added: 0, issues: [] } });
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true; state.project = true; state.dataError = false;
   state.storageError = null; state.saved = null; state.writes = []; state.writeMisses = 0;
   state.rpc.mockImplementation(async (name: string, args: any) => {
@@ -106,6 +109,57 @@ it("reads current project data and latest PDF, saving the review without editing
   expect(body.input[0].content[1]).toMatchObject({ type: "input_file", detail: "high" });
   expect(state.rpc).toHaveBeenCalledWith("save_spec_completion_review", expect.objectContaining({ p_project_id: projectId }));
   expect(state.saved.report.plan_status).toBe('checked');
+});
+
+it("refreshes shared selections and supplies project-wide coverage with separately selected copies to the plan review", async () => {
+  const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
+  state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });
+  const product = { id: "caxton", name: "Kohler Bathroom Sink", price: "$200", price_unit: "unit", product_url: "https://retailer.test/caxton" };
+  state.items[0] = { ...state.items[0], item_label: "Sink", quantity: 1, product_id: "caxton", product };
+  state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7 });
+  expect(await (await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }))).json())
+    .toMatchObject({ material_item_ids: ["sink", "shared-sinks"], board_refresh: { issues: [] } });
+  await checkSpecCompletion(request());
+  const body = JSON.parse(state.fetch.mock.calls[0][1].body);
+  const input = JSON.parse(body.input[0].content[0].text);
+  expect(input.shared_selections).toEqual([{ item_id: "shared-sinks", room_id: sharedRoom,
+    label: "bathroom sinks", scope: "project_default", room_selections: [{
+      item_id: "sink", room_id: roomId, quantity: 1, quantity_tbd: false, quantity_unit: "count", same_variant: true,
+    }] }]);
+  expect(body.instructions).toContain("five shared sinks, not seven shared plus those two");
+  expect(body.instructions).toContain("guest house/casita");
+});
+
+it("retires an old missing-sink finding covered by Materials Throughout without rerunning AI or discarding team decisions", async () => {
+  const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
+  state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });
+  const finding = { room_id: roomId, item_id: null, item_label: "Sink", field: "missing_item", source: "plans" };
+  state.saved = { report: { checked_at: "earlier", document: null }, source_signature: "old", issues: {
+    open: { key: "open", status: "open", finding },
+    completed: { key: "completed", status: "completed", finding },
+    dismissed: { key: "dismissed", status: "not_needed", finding },
+  } };
+  state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7,
+    category: "Plumbing", product_id: "caxton", product: { id: "caxton", name: "Kohler Bathroom Sink" } });
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(result.issues.map((issue: any) => issue.status)).toEqual(["completed", "not_needed"]);
+  expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
+});
+
+it("retires legacy shared quantity proposals without an allocation check while keeping reviewed proposals and team decisions", async () => {
+  const sharedRoom = "699dc873-61fa-4f6d-8baf-7aa330f0103a";
+  state.rooms.push({ id: sharedRoom, name: "Materials Throughout" });
+  state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7,
+    category: "Plumbing", product_id: "caxton", product: { id: "caxton", name: "Kohler Bathroom Sink" } });
+  const finding = { room_id: sharedRoom, item_id: "shared-sinks", item_label: "bathroom sinks", field: "quantity", source: "plans" };
+  state.saved = { report: { checked_at: "earlier", document: null }, source_signature: "old", issues: {
+    legacy: { key: "legacy", status: "open", finding },
+    reviewed: { key: "reviewed", status: "open", finding: { ...finding, shared_quantity_reviewed: true } },
+    completed: { key: "completed", status: "completed", finding },
+  } };
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(result.issues.map((issue: any) => issue.key)).toEqual(["reviewed", "completed"]);
+  expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
 });
 it('returns a queued check promptly, resumes past five minutes, and saves results without another generation', async () => {
   state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === 'POST' ?
@@ -216,6 +270,19 @@ it("retires old blanket dimension flags from open results while retaining team d
   result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
   expect(result.issues).toHaveLength(3); expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled();
 });
+it("removes saved countertop price and price-basis warnings from both detail and plan checks, preserving completed history", async () => {
+  state.items.push({ ...state.items[0], id: "counter", item_label: "Countertop", category: "Countertops", product: { name: "Quartz slab", price: "$50-$60", price_unit: null } });
+  const finding = (source: string, field: string) => ({ item_id: "counter", room_id: roomId, field, source });
+  state.saved = { report: { checked_at: "earlier", document: null, findings: [finding("details", "price"), finding("plans", "price")] }, source_signature: "old", issues: {
+    detail: { key: "detail", status: "open", finding: finding("details", "price") },
+    basis: { key: "basis", status: "open", finding: finding("details", "price_unit") },
+    plan: { key: "plan", status: "open", finding: finding("plans", "price") },
+    completed: { key: "completed", status: "completed", finding: finding("plans", "price") },
+  } };
+  const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(result.issues.map((issue: any) => issue.key)).toEqual(["completed"]); expect(result.report.findings).toEqual([]);
+  expect(state.saved.issues.plan.status).toBe("open"); expect(state.rpc).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled();
+});
 it("recognizes current saved results and detects later material edits without an AI call", async () => {
   const doc = { id: state.documents[0].id, title: state.documents[0].title, updated_at: state.documents[0].updated_at };
   state.saved = { report: { checked_at: "earlier", document: doc }, source_signature: completionSourceSignature(state.items, state.rooms, doc), issues: {} };
@@ -275,6 +342,7 @@ it("requires active auth and limits employees to assigned projects", async () =>
   expect((await checkSpecCompletion(request())).status).toBe(403);
   state.profile = { role: "employee", is_active: true, can_view_all_projects: false }; state.assigned = false;
   expect((await checkSpecCompletion(request())).status).toBe(403);
+  expect(boardSync).not.toHaveBeenCalled();
 });
 it("does not accept caller-provided selections, arbitrary PDF URLs or document IDs", async () => {
   for (const extra of [{ items: [] }, { file_url: "https://evil.test" }, { document_id: "older" }])
