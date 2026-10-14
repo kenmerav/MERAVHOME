@@ -14,6 +14,8 @@ import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Product, MaterialItem } from "@/lib/db";
+import { loadCatalogFitContext } from "@/lib/materialCatalogFit.server";
+import { assessCatalogFit, roomCoordinationSources } from "@/lib/materialCatalogFit";
 
 const admin: SupabaseClient = supabaseAdmin;
 type CatalogHistory = {
@@ -50,6 +52,9 @@ export async function materialCatalogRequest(request: Request) {
     "existing_item_id",
     "expected_updated_at",
     "criteria",
+    "context_key",
+    "refresh_plan",
+    "expected_product_updated_at",
   ]);
   if (access instanceof Response) return access;
   const { projectId, body } = access;
@@ -71,6 +76,8 @@ export async function materialCatalogRequest(request: Request) {
   if (!room) return json({ error: "This room is not in the project." }, 404);
   const template = templateForRoomName(room.name, true).find((item) => item.label === body.label);
   if (!template) return json({ error: "Choose an item from this room’s missing-items list." }, 400);
+  if (body.refresh_plan !== undefined && typeof body.refresh_plan !== "boolean")
+    return json({ error: "Choose a valid plan review action." }, 400);
   if (body.action === "list") {
     const criteria = body.criteria ?? {};
     if (
@@ -89,6 +96,7 @@ export async function materialCatalogRequest(request: Request) {
         !["any", "wall", "undermount", "vessel", "drop_in"].includes(criteria.mount))
     )
       return json({ error: "Enter valid catalog filters." }, 400);
+    const context = await loadCatalogFitContext(projectId, room, true, body.refresh_plan === true);
     const [products, history, roomHistory] = await Promise.all([
       allRows<Product>("products", "*"),
       allRows<CatalogHistory>(
@@ -115,21 +123,42 @@ export async function materialCatalogRequest(request: Request) {
           room_name: row.room.name,
         });
     }
+    const candidates = rankCatalogSuggestions(
+      products,
+      uses,
+      projectId,
+      room.name,
+      template.label,
+      template.category,
+      criteria,
+      products.length,
+    ).map((candidate) => ({
+      ...candidate,
+      fit: assessCatalogFit(candidate.product, template.label, context.items, context.plan),
+    }));
+    const fits = candidates.filter((candidate) => candidate.fit.status !== "conflict");
+    fits.sort(
+      (a, b) =>
+        Number(b.fit.status === "matches_recorded_requirements") -
+          Number(a.fit.status === "matches_recorded_requirements") ||
+        Number(b.fit.finish_match) - Number(a.fit.finish_match) ||
+        Number(b.used_here) - Number(a.used_here) ||
+        b.project_count - a.project_count,
+    );
     return json({
-      suggestions: rankCatalogSuggestions(
-        products,
-        uses,
-        projectId,
-        room.name,
-        template.label,
-        template.category,
-        criteria,
-      ),
+      suggestions: fits.slice(0, 12),
+      context_key: context.contextKey,
+      context: {
+        plan: context.plan,
+        related: roomCoordinationSources(template.label, context.items),
+        excluded_conflicts: candidates.length - fits.length,
+      },
     });
   }
   const productId = cleanUuid(body.product_id);
   if (!productId || (body.existing_item_id != null && !cleanUuid(body.existing_item_id)))
     return json({ error: "Choose a catalog product." }, 400);
+  const context = await loadCatalogFitContext(projectId, room, false);
   const [
     { data: product, error: productError },
     { data: items, error: itemsError },
@@ -146,6 +175,27 @@ export async function materialCatalogRequest(request: Request) {
   if (productError || itemsError || boardError) throw productError || itemsError || boardError;
   if (!product || !catalogProductMatches(product, template.label, template.category, room.name))
     return json({ error: "Choose a matching catalog product." }, 400);
+  if (body.expected_product_updated_at !== product.updated_at)
+    return json(
+      { error: "This catalog product changed. Refresh the suggestions before adding it." },
+      409,
+    );
+  if (body.context_key !== context.contextKey || context.plan.status === "checking")
+    return json(
+      {
+        error:
+          "The room selections or plans changed, or the plan check is still running. Refresh the catalog suggestions before adding.",
+      },
+      409,
+    );
+  if (assessCatalogFit(product, template.label, context.items, context.plan).status === "conflict")
+    return json(
+      {
+        error:
+          "This catalog product conflicts with the current construction requirements. Choose another product.",
+      },
+      409,
+    );
   const currentItems = (items ?? []) as MaterialItem[];
   const stale = new Set(staleSpecBookMaterialIds(projectId, currentItems, board?.board_state));
   const selected = currentItems.find(

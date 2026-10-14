@@ -14,6 +14,7 @@ export type CompletionFinding = {
   dimension_scope?: "proposed_layout" | "product_specification";
 };
 export type SpecCompletionReport = {
+  catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
   checked_at: string; item_count: number; findings: CompletionFinding[];
   plan_status: "checked" | "no_document" | "unavailable" | "checking";
   document: { id: string; title: string; updated_at: string } | null;

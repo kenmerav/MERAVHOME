@@ -10,6 +10,7 @@ export type CatalogUse = { product_id: string; project_id: string; room_name: st
 export type SinkMount = "any" | "wall" | "undermount" | "vessel" | "drop_in";
 export type CatalogCriteria = { search?: string; width?: number | null; mount?: SinkMount };
 export type CatalogSuggestion = {
+  fit?: import("@/lib/materialCatalogFit").CatalogFitAssessment;
   product: Product;
   project_count: number;
   used_here: boolean;
@@ -36,9 +37,15 @@ function inchNumber(text: string) {
 // Only labelled overall widths count. Bowl/cutout widths and unlabeled dimensions
 // cannot establish whether a sink matches the design requirement.
 export function catalogWidth(dimensions: string | null | undefined) {
-  if (!dimensions || /\b(?:bowl|basin|cutout|cut out)\s+width\b/i.test(dimensions)) return null;
+  if (!dimensions) return null;
   const text = dimensions.replace(/\\"/g, '"');
+  const explicitOverall = text.match(
+    /\boverall\s+width\s*[:=]?\s*(\d+(?:\.\d+)?(?:\s*[- ]\s*\d+\/\d+)?)\s*(inches|inch|in\b|mm\b|cm\b|["″])/i,
+  );
+  if (!explicitOverall && /\b(?:bowl|basin|cutout|cut out)\s+width\b/i.test(dimensions))
+    return null;
   const match =
+    explicitOverall ??
     text.match(
       /\b(?:overall\s+)?width\s*[:=]?\s*(\d+(?:\.\d+)?(?:\s*[- ]\s*\d+\/\d+)?)\s*(inches|inch|in\b|mm\b|cm\b|["″])/i,
     ) ??
@@ -105,6 +112,7 @@ export function rankCatalogSuggestions(
   label: string,
   category: string,
   criteria: CatalogCriteria = {},
+  limit = 12,
 ) {
   const isSink = /\bsinks?\b/.test(normalizeMaterialSuggestionLabel(label));
   const mount = criteria.mount === "any" || !criteria.mount ? sinkMount(label) : criteria.mount;
@@ -162,7 +170,7 @@ export function rankCatalogSuggestions(
         b.project_count - a.project_count ||
         a.product.name.localeCompare(b.product.name),
     )
-    .slice(0, 12);
+    .slice(0, limit);
 }
 
 export function untouchedCatalogPlaceholder(item: Partial<MaterialItem>) {

@@ -75,6 +75,9 @@ export async function assertCompletionStorage(projectId: string) {
 }
 
 export async function saveCompletionReview(projectId: string, userId: string, report: SpecCompletionReport, items: MaterialItem[], rooms: CompletionRoom[], boardState?: unknown) {
+  const { data: previous, error: cacheError } = await admin.from("spec_completion_reviews").select("report").eq("project_id", projectId).maybeSingle();
+  if (cacheError) completionStorageError(cacheError);
+  if (previous?.report?.catalog_fit_checks) report = { ...report, catalog_fit_checks: previous.report.catalog_fit_checks };
   const { error } = await admin.rpc("save_spec_completion_review", {
     p_project_id: projectId, p_user_id: userId, p_report: report,
     p_source_signature: completionSourceSignature(items, rooms, report.document, boardState),
@@ -105,7 +108,8 @@ export async function updateActiveCompletionReview(projectId: string, report: Sp
       throw new CompletionReviewConflict("A newer completion check replaced this job. Open the saved review.");
     if (current.report.plan_status !== "checking") return current;
     const issues = mergeCompletionRecords(current.issues ?? {}, completionIssueRecords(report, items, rooms, boardState), report.document);
-    const { data, error: writeError } = await admin.from("spec_completion_reviews").update({ report, issues, updated_at: new Date().toISOString() })
+    const preservedReport = { ...report, ...(current.report.catalog_fit_checks ? { catalog_fit_checks: current.report.catalog_fit_checks } : {}) };
+    const { data, error: writeError } = await admin.from("spec_completion_reviews").update({ report: preservedReport, issues, updated_at: new Date().toISOString() })
       .eq("project_id", projectId).eq("updated_at", current.updated_at).select("report,issues,source_signature,updated_at").maybeSingle();
     if (writeError) completionStorageError(writeError);
     if (data) return data;
@@ -160,7 +164,7 @@ export async function readSavedCompletionReview(projectId: string): Promise<Save
     .eq("project_id", projectId).maybeSingle();
   if (error) completionStorageError(error);
   let saved = stored;
-  if (!saved?.report) return null;
+  if (!saved?.report?.checked_at) return null;
   const [rawItems, rooms, board, document] = await Promise.all([
     projectRows("material_items", "*,product:products(*)", projectId), projectRows("rooms", "id,name", projectId),
     admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),

@@ -93,14 +93,9 @@ it.each([
 ])("reads only labelled overall widths: %s", (value, expected) => {
   expect(catalogWidth(value as string)).toBeCloseTo(expected as number);
 });
-it.each([
-  "Basin Width: 16 in; Overall Width: 20 in",
-  "Cutout width: 20 in",
-  "20 x 18",
-  "Standard",
-  "Height: 20 in",
-])("does not claim a fit from uncertain dimension text: %s", (text) =>
-  expect(catalogWidth(text)).toBeNull(),
+it.each(["Basin Width: 16 in", "Cutout width: 20 in", "20 x 18", "Standard", "Height: 20 in"])(
+  "does not claim a fit from uncertain dimension text: %s",
+  (text) => expect(catalogWidth(text)).toBeNull(),
 );
 it("supports a catalog search and still labels unverified sink fit", () => {
   const results = rankCatalogSuggestions(
