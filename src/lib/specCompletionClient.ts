@@ -47,7 +47,7 @@ export async function fetchSpecCompletion(projectId: string, options: {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("Sign in to check completion.");
   const headers = { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" };
-  options.onProgress?.("Syncing the full design board and Materials…");
+  options.onProgress?.("Sending the full design board to Materials…");
   const preparedResponse = await fetch("/api/check-spec-completion", {
     method: "POST", headers, body: JSON.stringify({ project_id: projectId, action: "prepare" }),
   });
@@ -60,7 +60,7 @@ export async function fetchSpecCompletion(projectId: string, options: {
     authorization: headers.Authorization, onProgress: options.onProgress,
   });
   await options.onProductsRefreshed?.(summary);
-  options.onProgress?.("Updating board product details and checking construction PDFs…");
+  options.onProgress?.("Checking construction PDFs and Spec Book…");
   const response = await fetch("/api/check-spec-completion", {
     method: "POST", headers,
     body: JSON.stringify({ project_id: projectId, ...(prepared.board_updated_at !== undefined

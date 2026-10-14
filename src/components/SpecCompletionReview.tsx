@@ -52,7 +52,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
     if (lock.current || pending) return;
     lock.current = true;
     setOpen(true); setChecking(true); setError(""); setReport(null); setViewSaved(false);
-    setProgress("Syncing the full design board…"); setProductRefresh(null); setBoardRefresh(null);
+    setProgress("Sending the full design board to Materials…"); setProductRefresh(null); setBoardRefresh(null);
     setReviewedSignature(signature);
     try {
       setReport(await fetchSpecCompletion(projectId, {
@@ -126,7 +126,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
     {savedQuery.data && <button type="button" onClick={() => void openSaved()} disabled={checking || !!savingIssue}
       className="inline-flex items-center gap-2 border px-5 py-2.5 text-sm print:hidden disabled:opacity-60">Saved completion review · {count} open</button>}
     <button type="button" onClick={() => void run()} disabled={busy}
-      title="Sync the design board and Materials, refresh product information and construction PDFs, then check completeness"
+      title="Send the full design board to Materials, scrape pricing, dimensions and color, then run the spec check"
       className="inline-flex items-center gap-2 border border-ink px-5 py-2.5 text-sm text-ink disabled:opacity-60 print:hidden">
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
       {busy ? progress || "Checking Spec Book…" : "Check Spec Book for Completion"}
@@ -136,11 +136,11 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-6 sm:p-8">
         <DialogHeader>
           <DialogTitle className="font-display text-3xl">Spec Book completion review</DialogTitle>
-          <DialogDescription>Sync the full design board and Materials, refresh product info and construction PDFs, then check the Spec Book. New Materials selections appear on Material updates pages without rearranging your board.</DialogDescription>
+          <DialogDescription>Send the full design board to Materials and the Spec Book, scrape pricing, dimensions and color, then run the spec check.</DialogDescription>
         </DialogHeader>
         {productRefresh && <p className="text-xs text-muted-foreground">Product info refreshed: {productRefresh.saved} saved{productRefresh.failed ? `; ${productRefresh.failed} products could not be refreshed and were reviewed using their saved details` : ""}.</p>}
         {(boardRefresh || activeReport?.board_refresh) && <div className="text-xs text-muted-foreground">
-          <p>{(boardRefresh || activeReport?.board_refresh)?.status === "not_present" ? "No saved design board is attached." : `Design board ${boardIssues.length ? "sync needs review" : "synced"}${boardRefresh?.imported ? ` · ${boardRefresh.imported} new selections added to Materials` : ""}${boardRefresh?.added ? ` · ${boardRefresh.added} selections added to Material updates pages` : ""}.`}</p>
+          <p>{(boardRefresh || activeReport?.board_refresh)?.status === "not_present" ? "No saved design board is attached." : `Full board sent to Materials${boardRefresh?.imported ? ` · ${boardRefresh.imported} selections added` : ""}${boardRefresh?.updated ? ` · ${boardRefresh.updated} selections updated` : ""}.`}</p>
           {!!boardIssues.length && <details className="mt-2" open>
             <summary className="cursor-pointer text-amber-800">{boardIssues.length} board items still need review</summary>
             <ul className="mt-2 max-h-32 overflow-auto space-y-1">{boardIssues.map((issue, index) =>
@@ -154,7 +154,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
           itemCount={activeReport?.item_count ?? completionItems(items).length} checking={busy || (viewSaved && savedQuery.isFetching && !saved)}
           planStatus={activeReport?.plan_status} document={activeReport?.document ?? null}
           checkedAt={activeReport?.checked_at}
-          message={error || progress || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Syncing the design board, refreshing product info, then checking construction PDFs and selections…")}
+          message={error || progress || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Sending the full board to Materials, scraping product info, then running the spec check…")}
           documentRefresh={activeReport?.document_refresh}
           stale={!checking && (!!saved?.stale || reviewedSignature !== signature)} />
         <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4">

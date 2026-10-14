@@ -35,18 +35,33 @@ export async function syncSpecBoardForStaff(projectId: string, userId: string, i
   }
   const plan = planSpecBoardSync(projectId, board.board_state, items, rooms, products, randomUUID, importSelections);
   let updatedAt = board.updated_at;
-  if (plan.changed) {
+  const saveBoard = async (state: unknown) => {
+    const { data, error } = await admin.from("design_boards").update({ board_state: state, updated_by: userId })
+      .eq("project_id", projectId).eq("updated_at", updatedAt).select("updated_at").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new SpecBoardSyncConflict("The design board changed while sending to Materials. Run the check again after its latest changes are saved.");
+    updatedAt = data.updated_at;
+  };
+  if (plan.changed || plan.updates.length || plan.inserts.length) {
     const currentItems = await rows("material_items", "*,product:products(*)", projectId);
     if (JSON.stringify(currentItems) !== JSON.stringify(items))
       throw new SpecBoardSyncConflict("Materials changed while syncing the board. Run the check again after the latest changes are saved.");
-    // The existing board store has no field-patch RPC. Apply stable-ID edits to
-    // a fresh snapshot and compare-and-swap. Its database trigger archives the
-    // previous version. A stale editor cannot be overwritten by this preflight.
-    const { data, error } = await admin.from("design_boards").update({ board_state: plan.state, updated_by: userId })
-      .eq("project_id", projectId).eq("updated_at", board.updated_at).select("updated_at").maybeSingle();
-    if (error) throw error;
-    if (!data) throw new SpecBoardSyncConflict("The design board changed while syncing. Run the check again after its latest changes are saved.");
-    updatedAt = data.updated_at;
+    const fresh = await admin.from("design_boards").select("updated_at").eq("project_id", projectId).maybeSingle();
+    if (fresh.error) throw fresh.error;
+    if (fresh.data?.updated_at !== updatedAt) throw new SpecBoardSyncConflict("The design board changed before sending to Materials. Run the check again.");
+    // Save source IDs for retry, but leave the prior send snapshot in place
+    // until every material write succeeds. A failed save must not consume edits.
+    const referencesOnly = structuredClone(plan.state);
+    for (const page of referencesOnly.pages) {
+      const oldPage = board.board_state.pages.find((saved: any) => saved.id === page.id);
+      for (const key of ["materialsSyncSnapshot", "materialsSyncFingerprint", "materialsSyncedAt"]) {
+        if (oldPage?.[key] !== undefined) page[key] = oldPage[key];
+        else delete page[key];
+      }
+    }
+    // No narrower board write API exists. Keep stable IDs and CAS the fresh
+    // snapshot; the existing trigger preserves recoverable board versions.
+    if (JSON.stringify(referencesOnly) !== JSON.stringify(board.board_state)) await saveBoard(referencesOnly);
   }
   if (plan.inserts.length) {
     // Board references are saved first. On interruption the same saved IDs are
@@ -58,6 +73,14 @@ export async function syncSpecBoardForStaff(projectId: string, userId: string, i
     if (records.some(item => !verified.some(row => row.id === item.id && row.source_board_page_id === item.source_board_page_id && row.source_board_element_id === item.source_board_element_id)))
       throw new SpecBoardSyncConflict("A board material reference could not be confirmed for this project. Open the board and retry.");
   }
+  for (const update of plan.updates) {
+    const { data, error } = await admin.from("material_items").update(update.patch)
+      .eq("project_id", projectId).eq("id", update.item.id).eq("updated_at", update.item.updated_at)
+      .select("id").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new SpecBoardSyncConflict("A material changed while the board was being sent. Run the check again to finish with current selections.");
+  }
+  if (plan.changed) await saveBoard(plan.state);
   // Do not begin scraping from a board that was edited during material writes.
   const fresh = await admin.from("design_boards").select("updated_at").eq("project_id", projectId).maybeSingle();
   if (fresh.error) throw fresh.error;

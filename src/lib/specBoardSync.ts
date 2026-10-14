@@ -1,10 +1,10 @@
 import type { MaterialItem, Product } from "@/lib/db";
 import type { CompletionRoom } from "@/lib/specCompletion";
-import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { materialImageUrl } from "@/lib/materialImages";
 import { inferMaterialCategory } from "@/lib/roomTemplates";
 import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { cleanUuid } from "@/lib/ids";
+import { createBoardMaterialsSnapshot, boardMaterialsFingerprint } from "@/lib/boardMaterialsSnapshot";
 
 type Layer = Record<string, any> & { id: string; type: string };
 type Page = Record<string, any> & { id: string; elements: Layer[] };
@@ -14,6 +14,7 @@ export type SpecBoardSyncSummary = {
   imported: number; updated: number; added: number;
   issues: Array<{ page: string; label: string; message: string }>;
 };
+export type SpecBoardMaterialUpdate = { item: MaterialItem; patch: Partial<MaterialItem> };
 export class SpecBoardSyncConflict extends Error {}
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const normalize = (value: unknown) => text(value).toLowerCase().replace(/\bbathrooms?\b/g, "bath").replace(/[^a-z0-9]+/g, " ").trim();
@@ -34,62 +35,69 @@ function validateBoard(value: unknown): asserts value is State {
   }
 }
 
-// Materials owns existing selections. A full-board preflight adds unsent board
-// selections without replaying old board quantities over staff's corrections.
-// Conflicting variants need review, rather than silently choosing either one.
+// One way: send the included full board to Materials. Existing board snapshots
+// distinguish new board edits from unchanged values that staff corrected in
+// Materials. Never replay old quantities, erase ordering history or add pages.
 export function planSpecBoardSync(projectId: string, board: unknown, items: MaterialItem[], rooms: CompletionRoom[], products: Product[], makeId: () => string, importSelections = true) {
   validateBoard(board);
   const state: State = structuredClone(board);
   const summary: SpecBoardSyncSummary = { status: "synced", imported: 0, updated: 0, added: 0, issues: [] };
   const inserts: MaterialItem[] = [];
+  const updates: SpecBoardMaterialUpdate[] = [];
   const scoped = items.filter(item => item.project_id === projectId);
   const byId = new Map(scoped.map(item => [item.id, item]));
   const byProduct = new Map(products.map(product => [product.id, product]));
-  const covered = new Set<string>();
-  const importedReferences = new Map<string, Array<{ page: Page; layer: Layer }>>();
+  const references = new Map<string, Array<{ page: Page; layer: Layer; changedQuantity: boolean; newLayer: boolean }>>();
   const roomById = new Map(rooms.map(room => [room.id, room]));
   const issue = (page: Page, layer: Layer, message: string) => summary.issues.push({ page: text(page.title) || "Design board", label: roomDesignBoardDisplayLabel(layer) || "Unlabeled image", message });
-  const resolveRoom = (page: Page, layer: Layer) => {
-    const assigned = layer.materialRoomId || page.roomId;
-    if (assigned) return roomById.get(assigned);
-    // Do not guess when a title could refer to more than one room.
-    const matches = rooms.filter(room => normalize(page.title) === normalize(room.name));
-    return matches.length === 1 ? matches[0] : undefined;
+  const patchFor = (item: MaterialItem) => {
+    let update = updates.find(update => update.item.id === item.id);
+    if (!update) { update = { item, patch: {} }; updates.push(update); }
+    return update.patch;
   };
-  const sourceMatches = (item: MaterialItem, page: Page, layer: Layer) => item.source_board_id === projectId && item.source_board_page_id === page.id && item.source_board_element_id === layer.id;
   for (const page of state.pages) {
+    let pageComplete = true;
     for (const layer of page.elements) {
-      if (layer.type !== "image") continue;
-      const linked = byId.get(layer.materialItemId) || scoped.find(item => sourceMatches(item, page, layer));
-      if (linked) covered.add(linked.id);
-      // Excluded visual references never turn back into purchases.
-      if (layer.materialExcludeFromMaterials || page.hidden || page.roomApprovalStatus === "declined") continue;
-      const room = resolveRoom(page, layer);
-      if (!room) { issue(page, layer, "Assign this board item to a room."); continue; }
-      let item = linked;
-      const product = byProduct.get(layer.productId);
-      const link = layer.materialLinkCleared ? "" : text(layer.link) || product?.product_url || "";
+      if (layer.type !== "image" || layer.materialExcludeFromMaterials || page.hidden || page.roomApprovalStatus === "declined") continue;
+      const baseline = page.materialsSyncSnapshot?.materialImages?.find((saved: any) => saved.id === layer.id);
+      const currentSnapshot = createBoardMaterialsSnapshot({ ...page, elements: [layer] }).materialImages[0];
+      const changed = (key: string) => !!baseline && JSON.stringify(baseline[key] ?? null) !== JSON.stringify(currentSnapshot[key] ?? null);
+      const assigned = page.roomId && layer.materialItemId && layer.materialRoomId && page.roomId !== layer.materialRoomId
+        ? page.roomId : layer.materialRoomId || page.roomId;
+      const matchedRooms = rooms.filter(room => normalize(page.title) === normalize(room.name));
+      const room = assigned ? roomById.get(assigned) : matchedRooms.length === 1 ? matchedRooms[0] : undefined;
+      if (!room) { issue(page, layer, "Assign this board item to a room."); pageComplete = false; continue; }
+      let item = byId.get(layer.materialItemId) || scoped.find(candidate => candidate.source_board_id === projectId && candidate.source_board_page_id === page.id && candidate.source_board_element_id === layer.id);
+      // A copied image assigned to a new room must not move the original row.
+      if (item?.room_id !== room.id) item = undefined;
+      if (item?.not_needed) continue; // Preserve an explicit staff removal.
+      const linkedProduct = byProduct.get(layer.productId);
+      const link = layer.materialLinkCleared ? "" : text(layer.link) || linkedProduct?.product_url || "";
+      const product = linkedProduct && (!link || !linkedProduct.product_url || url(linkedProduct.product_url) === url(link)) ? linkedProduct : undefined;
       const label = roomDesignBoardDisplayLabel(layer);
       const finish = text(layer.materialFinish) || text(layer.finish) || product?.finish || "";
-      if (item && item.room_id !== room.id) {
-        issue(page, layer, "The board item and material are assigned to different rooms. Confirm the selection."); continue;
-      }
       if (!item) {
         const matches = [...scoped, ...inserts].filter(candidate => candidate.room_id === room.id &&
           normalize(candidate.item_label) === normalize(label) &&
-          ((layer.productId && candidate.product_id === layer.productId) || (link && url(candidate.product_url) === url(link))) &&
+          ((link && url(candidate.product_url) === url(link)) || (!link && product && candidate.product_id === product.id)) &&
           normalize(candidate.color || candidate.product?.finish) === normalize(finish) &&
           (!layer.materialDimensions || normalize(candidate.product?.dimensions) === normalize(layer.materialDimensions)) &&
           (!layer.src || !materialImageUrl(candidate) || materialImageUrl(candidate) === layer.src));
-        if (matches.length > 1) { issue(page, layer, "Multiple material selections match this board item. Confirm which to use."); continue; }
+        if (matches.length > 1) { issue(page, layer, "Multiple material selections match this board item. Confirm which to use."); pageComplete = false; continue; }
         item = matches[0];
       }
+      if (item?.not_needed) continue;
+      const variantChanged = !!(item && ((link && item.product_url && url(link) !== url(item.product_url)) ||
+        (product && item.product_id && product.id !== item.product_id &&
+          (!link || !item.product_url || (product.finish && normalize(product.finish) !== normalize(item.product?.finish))))));
+      if (item && variantChanged && (item.ordered || item.received || item.installed)) {
+        issue(page, layer, "This board product differs from an ordered material. Confirm the replacement before updating it."); pageComplete = false; continue;
+      }
+      if (!label) { issue(page, layer, "Add a product label before including this image in Materials."); pageComplete = false; continue; }
+      if (!item && !importSelections) { issue(page, layer, "This board selection changed during the refresh. Run the check again to include it."); pageComplete = false; continue; }
       if (!item) {
-        if (!importSelections) { issue(page, layer, "This board selection changed during the refresh. Run the check again to include it."); continue; }
-        if (!label) { issue(page, layer, "Add a product label before including this image in Materials."); continue; }
-        if (!link && !product && !layer.materialInfoSkipApproved && !layer.materialInfoNotNeeded) {
-          issue(page, layer, "Add a product link, or approve this item without one on the design board."); continue;
-        }
+        // Include labeled selections even without a retailer link. The detail
+        // check can then flag missing information in the actual Spec Book.
         const id = cleanUuid(layer.materialItemId) || makeId();
         const quantity = typeof layer.materialQuantity === "number" && layer.materialQuantity > 0 ? layer.materialQuantity : null;
         item = {
@@ -104,85 +112,69 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
           scrape_status: "pending", scrape_error: null,
         } as MaterialItem;
         inserts.push(item); byId.set(item.id, item); summary.imported++;
+      } else if (importSelections) {
+        const patch = patchFor(item);
+        if (variantChanged || changed("link") || changed("materialLinkCleared")) {
+          patch.product_url = link || null;
+          // A changed URL must not retain the old variant's catalog ID/pricing.
+          if (variantChanged) patch.product_id = product?.id || null;
+          patch.scrape_status = "pending"; patch.scrape_error = null;
+        }
+        if (changed("label")) {
+          patch.item_label = label; patch.client_product_name = `${room.name} ${label}`;
+        }
+        if (finish && (variantChanged || changed("materialFinish") || changed("finish") || !item.color)) patch.color = finish;
+        if (layer.materialCategory && (changed("materialCategory") || !item.category)) patch.category = layer.materialCategory;
+        if (changed("notes") || (!item.notes && text(layer.notes))) patch.notes = text(layer.notes) || null;
+        if (usableImage(layer.src) && (variantChanged || changed("src") || !item.image_url)) patch.image_url = layer.src;
+        // Preserve quantity basis, ordering and manual notes/categories that
+        // have not actually changed on the board since its last send.
       }
-      covered.add(item.id);
-      if (inserts.includes(item)) importedReferences.set(item.id, [...(importedReferences.get(item.id) || []), { page, layer }]);
-      if (item.not_needed) {
-        layer.materialExcludeFromMaterials = true; summary.updated++; continue;
+      references.set(item.id, [...(references.get(item.id) || []), { page, layer, changedQuantity: changed("materialQuantity"), newLayer: !!page.materialsSyncSnapshot && !baseline }]);
+      if (importSelections) Object.assign(layer, { materialItemId: item.id, materialRoomId: room.id });
+      if (!link && !product && !item.product_id) issue(page, layer, "This selection has no product link. Add one in Materials to scrape its product information.");
+    }
+    if (importSelections && pageComplete && !page.hidden && page.roomApprovalStatus !== "declined") {
+      const snapshot = createBoardMaterialsSnapshot(page);
+      if (JSON.stringify(page.materialsSyncSnapshot) !== JSON.stringify(snapshot)) {
+        page.materialsSyncSnapshot = snapshot;
+        page.materialsSyncFingerprint = boardMaterialsFingerprint(snapshot);
+        page.materialsSyncedAt = new Date().toISOString();
       }
-      const itemLink = item.product_url || "";
-      // An explicit variant change on the board is evidence to review, not a
-      // license to overwrite an already selected/ordered material.
-      if ((layer.productId && item.product_id && layer.productId !== item.product_id) ||
-          (link && itemLink && url(link) !== url(itemLink))) {
-        issue(page, layer, "The board and Materials have different product selections. Confirm the intended product."); continue;
-      }
-      const before = JSON.stringify(layer);
-      Object.assign(layer, {
-        materialItemId: item.id, materialRoomId: item.room_id, productId: item.product_id,
-        productName: item.product?.name || layer.productName || item.item_label,
-        vendor: item.product?.vendor || layer.vendor || null,
-        price: item.product?.price || layer.price || null,
-        finish: item.color || item.product?.finish || layer.finish || null,
-        materialFinish: item.color || item.product?.finish || layer.materialFinish || layer.finish || null,
-        materialDimensions: item.product?.dimensions || layer.materialDimensions || null,
-        materialCategory: item.category, materialQuantity: item.quantity,
-        link: itemLink, materialLinkCleared: !itemLink,
-      });
-      // Keep the board's cutout, crop, position, labels and notes. A catalog
-      // image refresh must never replace a deliberately edited board image.
-      if (!layer.src && materialImageUrl(item)) layer.src = materialImageUrl(item);
-      if (JSON.stringify(layer) !== before) summary.updated++;
     }
   }
-  // Repeated copies on one page are discrete instances. References on other
-  // pages for the same room do not multiply the purchasing quantity.
-  for (const item of inserts) {
-    const references = importedReferences.get(item.id) || [];
+  for (const [id, refs] of references) {
+    const item = byId.get(id)!;
+    const isNew = inserts.includes(item);
     const perPage = new Map<string, Layer[]>();
-    for (const ref of references) perPage.set(ref.page.id, [...(perPage.get(ref.page.id) || []), ref.layer]);
-    const counts = [...perPage.values()].map(layers => layers.length > 1 ? layers.length : item.quantity);
-    if (counts.every(count => count != null)) {
-      item.quantity = Math.max(...counts as number[]); item.quantity_tbd = false;
-      for (const ref of references) ref.layer.materialQuantity = item.quantity;
-    }
+    for (const ref of refs) perPage.set(ref.page.id, [...(perPage.get(ref.page.id) || []), ref.layer]);
+    const newSamePageCopy = refs.some(ref => ref.newLayer &&
+      (perPage.get(ref.page.id)?.length || 0) > 1);
+    if (!isNew && (!importSelections || (!newSamePageCopy && !refs.some(ref => ref.changedQuantity)))) continue;
+    const counts = [...perPage.values()].map(layers => layers.length > 1 ? layers.length
+      : typeof layers[0].materialQuantity === "number" && layers[0].materialQuantity > 0 ? layers[0].materialQuantity : null);
+    const quantity = counts.every(count => count != null) ? Math.max(...counts as number[]) : null;
+    if (isNew) { item.quantity = quantity; item.quantity_tbd = quantity === null; }
+    else Object.assign(patchFor(item), { quantity, quantity_tbd: quantity === null });
   }
-  // New selections made in Materials appear on clearly named review pages.
-  // Do not rearrange the designer's existing pages to squeeze them in.
-  for (const item of scoped.filter(materialVisibleInProcurement)) {
-    if (covered.has(item.id)) continue;
-    const room = roomById.get(item.room_id);
-    if (!room) continue;
-    // Deleted source layers stay deleted; spec filtering already handles them.
-    if (item.source_board_id === projectId && item.source_board_element_id) continue;
-    const src = usableImage(materialImageUrl(item));
-    if (!src) {
-      summary.issues.push({ page: room.name, label: item.item_label, message: "This selected material needs an image before it can be added to the design board." }); continue;
-    }
-    const pageId = `spec-material-updates:${room.id}:${Math.floor(state.pages.filter(p => p.specMaterialUpdatesRoomId === room.id).reduce((sum, p) => sum + p.elements.length, 0) / 8)}`;
-    let page = state.pages.find(p => p.id === pageId);
-    if (!page) {
-      page = { id: pageId, title: `${room.name} — Material updates`, roomId: room.id, specMaterialUpdatesRoomId: room.id, elements: [] };
-      state.pages.push(page);
-    }
-    const index = page.elements.length;
-    page.elements.push({ id: `spec-material:${item.id}`, type: "image", src,
-      x: 40 + (index % 4) * 340, y: 70 + Math.floor(index / 4) * 390, width: 260, height: 230, zIndex: index + 1,
-      label: item.item_label, materialItemId: item.id, materialRoomId: item.room_id,
-      productId: item.product_id, productName: item.product?.name || item.item_label,
-      vendor: item.product?.vendor || null, price: item.product?.price || null,
-      link: item.product_url || "", materialLinkCleared: !item.product_url,
-      finish: item.color || item.product?.finish || null, materialFinish: item.color || item.product?.finish || null,
-      materialCategory: item.category, materialQuantity: item.quantity, materialDimensions: item.product?.dimensions || null,
-      notes: item.notes || "", visible: true, rotation: 0,
-    });
-    covered.add(item.id); summary.added++;
+  // Excluded or deleted board-sourced selections leave the active Spec Book
+  // through recoverable removal. Manually added Materials remain untouched.
+  const activeLayers = new Set(state.pages.flatMap(page => page.hidden || page.roomApprovalStatus === "declined" ? []
+    : page.elements.filter(layer => layer.type === "image" && !layer.materialExcludeFromMaterials).map(layer => `${page.id}:${layer.id}`)));
+  const linkedActive = new Set(state.pages.flatMap(page => page.hidden || page.roomApprovalStatus === "declined" ? []
+    : page.elements.filter(layer => layer.type === "image" && !layer.materialExcludeFromMaterials).map(layer => layer.materialItemId)));
+  if (importSelections) for (const item of scoped) {
+    if (!item.not_needed && item.source_board_id === projectId && item.source_board_element_id &&
+        !activeLayers.has(`${item.source_board_page_id}:${item.source_board_element_id}`) && !linkedActive.has(item.id)) patchFor(item).not_needed = true;
   }
-  return { state, inserts, summary, changed: JSON.stringify(state) !== JSON.stringify(board) };
+  const changedUpdates = updates.map(update => ({ ...update, patch: Object.fromEntries(Object.entries(update.patch)
+    .filter(([key, value]) => JSON.stringify((update.item as any)[key] ?? null) !== JSON.stringify(value))) }))
+    .filter(update => Object.keys(update.patch).length);
+  summary.updated = changedUpdates.length;
+  return { state, inserts, updates: changedUpdates, summary, changed: JSON.stringify(state) !== JSON.stringify(board) };
 }
 
-// Compare selection evidence, rather than canvas geometry or comments. This
-// also catches newly added board items while a long plan review is running.
+// Compare selection evidence, rather than canvas geometry or comments.
 export function specBoardSelectionEvidence(board: unknown) {
   const state = board as State | null;
   if (!Array.isArray(state?.pages)) return null;

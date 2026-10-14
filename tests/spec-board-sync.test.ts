@@ -10,89 +10,107 @@ const layer = (patch: any = {}) => ({ id: "sink-layer", type: "image", label: "b
 const board = (layers: any[] = [layer()], patch: any = {}) => ({ pages: [{ id: "shared", title: "Materials Throughout", roomId: room, elements: layers }], comments: [{ text: "Keep comment" }], presentationSlideOrder: ["shared"], customFutureSetting: 123, ...patch });
 const run = (state: any, items: any[] = [], importSelections = true) => planSpecBoardSync(project, state, items, [{ id: room, name: "Materials Throughout" }], [product], () => itemId, importSelections);
 
-it("refreshes shared quantity seven without reapplying the stale board quantity or altering layout, crop, notes, image and presentation settings", () => {
+it("sends the board one way without adding Materials selections or replacing board details", () => {
   const state = board([layer({ materialItemId: itemId, src: "https://board.example/cutout.png" })]);
   const result = run(state, [material()]);
   expect(result.inserts).toEqual([]);
-  expect(result.state.pages[0].elements[0]).toMatchObject({ materialQuantity: 7, price: "$100", materialDimensions: "20 in", x: 410, y: 220, imageCropZoom: 2, src: "https://board.example/cutout.png", notes: "Designer note" });
+  expect(result.state.pages).toHaveLength(1);
+  expect(result.state.pages[0].elements[0]).toEqual(state.pages[0].elements[0]);
   expect(result.state.comments).toEqual(state.comments); expect(result.state.customFutureSetting).toBe(123);
-  expect(state.pages[0].elements[0].materialQuantity).toBe(1);
+  expect(result.updates.some(u => "quantity" in u.patch)).toBe(false);
   expect(run(result.state, [material()]).changed).toBe(false);
 });
-it("imports all ready board selections and keeps source IDs, exact image, variant link and missing quantity for review", () => {
-  const state = board([layer({ materialQuantity: null })]);
-  const result = run(state);
+it("imports included board selections with exact source references, image and variant URL", () => {
+  const result = run(board([layer({ materialQuantity: null })]));
   expect(result.inserts).toHaveLength(1);
   expect(result.inserts[0]).toMatchObject({ id: itemId, project_id: project, source_board_page_id: "shared", source_board_element_id: "sink-layer", image_url: product.image_url, product_url: product.product_url, quantity: null, quantity_tbd: true });
   expect(result.state.pages[0].elements[0].materialItemId).toBe(itemId);
   expect(run(result.state, result.inserts).inserts).toHaveLength(0);
 });
-it("does not revive excluded or removed entries or import hidden and declined alternatives", () => {
-  const state = board([layer({ materialExcludeFromMaterials: true, materialItemId: itemId })]);
-  const result = run(state, [material({ not_needed: true })]);
-  expect(result.changed).toBe(false); expect(result.inserts).toEqual([]); expect(result.summary.added).toBe(0);
+it("preserves deliberate removals and skips excluded, hidden and declined alternatives", () => {
+  const result = run(board([layer({ materialExcludeFromMaterials: true, materialItemId: itemId })]), [material({ not_needed: true })]);
+  expect(result.inserts).toEqual([]); expect(result.summary.added).toBe(0); expect(result.updates).toEqual([]);
   const hidden: any = board(); hidden.pages[0].hidden = true;
   expect(run(hidden).inserts).toEqual([]);
   const declined: any = board(); declined.pages[0].roomApprovalStatus = "declined";
   expect(run(declined).inserts).toEqual([]);
-  expect(run(board([layer({ materialItemId: itemId })]), [material({ not_needed: true })]).state.pages[0].elements[0].materialExcludeFromMaterials).toBe(true);
+  expect(run(board([layer({ materialItemId: itemId })]), [material({ not_needed: true })]).updates).toEqual([]);
 });
-it("adds manual Materials selections on review pages without rearranging existing pages, and never adds them twice", () => {
+it("keeps manual Materials selections even if they have no image and never creates Material updates pages", () => {
   const original = board([]);
-  const result = run(original, [material()]);
-  expect(result.summary.added).toBe(1); expect(result.state.pages[0]).toEqual(original.pages[0]);
-  expect(result.state.pages[1]).toMatchObject({ title: "Materials Throughout — Material updates", roomId: room });
-  expect(result.state.pages[1].elements[0]).toMatchObject({ materialItemId: itemId, materialQuantity: 7 });
-  expect(run(result.state, [material()]).summary.added).toBe(0);
+  const result = run(original, [material({ product: { ...product, image_url: null } })]);
+  expect(result.summary.added).toBe(0); expect(result.state.pages).toHaveLength(1);
+  expect(result.state.pages[0].elements).toEqual([]); expect(result.updates).toEqual([]);
 });
-it("flags differing exact product variants instead of overwriting Materials or replacing the board choice", () => {
+it("sends a changed board variant to its material before the scrape and clears an old unrelated catalog link", () => {
   const state = board([layer({ materialItemId: itemId, link: "https://vendor.example/sink?uid=2" })]);
   const result = run(state, [material()]);
-  expect(result.summary.issues[0].message).toContain("different product selections");
-  expect(result.state.pages[0].elements[0].link).toContain("uid=2"); expect(result.inserts).toEqual([]);
+  expect(result.summary.issues).toEqual([]);
+  expect(result.updates[0].patch).toMatchObject({ product_url: "https://vendor.example/sink?uid=2", product_id: null, scrape_status: "pending" });
+  expect(result.state.pages[0].elements[0].link).toContain("uid=2");
 });
-it("flags ambiguous rooms, missing labels and unapproved missing links instead of silently claiming a complete board", () => {
+it("flags an ordered product replacement instead of erasing its history", () => {
+  const result = run(board([layer({ materialItemId: itemId, link: "https://vendor.example/sink?uid=2" })]), [material({ ordered: true })]);
+  expect(result.summary.issues[0].message).toContain("ordered material");
+  expect(result.updates).toEqual([]);
+});
+it("imports labeled items without a retailer link so their missing details can be checked in the actual Spec Book", () => {
+  const result = run(board([layer({ productId: null, link: "" })]));
+  expect(result.inserts[0].product_url).toBeNull();
+  expect(result.summary.issues[0].message).toContain("no product link");
   expect(run(board([layer({ materialRoomId: "wrong" })])).summary.issues[0].message).toContain("room");
   expect(run(board([layer({ label: "", productName: "" })])).summary.issues[0].message).toContain("label");
-  expect(run(board([layer({ productId: null, link: "" })])).summary.issues[0].message).toContain("link");
-  const approved = run(board([layer({ productId: null, link: "", materialInfoSkipApproved: true })]));
-  expect(approved.inserts[0].product_url).toBeNull();
 });
-it("preserves an intentionally cleared material link and flags new board selections after scraping rather than adding unscripted products", () => {
-  const cleared = run(board([layer({ materialItemId: itemId })]), [material({ product_url: null })]);
-  expect(cleared.state.pages[0].elements[0]).toMatchObject({ link: "", materialLinkCleared: true });
+it("uses the prior send snapshot to apply new board edits while preserving unchanged Materials corrections", () => {
+  const state: any = board([layer({ materialItemId: itemId })]);
+  const first = run(state, [material({ notes: "Manual note", image_url: product.image_url })]);
+  const next: any = structuredClone(first.state);
+  next.pages[0].elements[0].materialQuantity = 9;
+  next.pages[0].elements[0].materialFinish = "Black";
+  const result = run(next, [material({ notes: "Manual note", image_url: product.image_url })]);
+  expect(result.updates[0].patch).toMatchObject({ quantity: 9, color: "Black" });
+  expect(result.updates[0].patch.notes).toBeUndefined(); expect(result.updates[0].patch.quantity_unit).toBeUndefined();
+  expect(result.state.pages[0].elements[0].materialQuantity).toBe(9);
+});
+it("keeps quantity seven when a shared board quantity has not changed since the last send", () => {
+  const first = run(board([layer({ materialItemId: itemId })]), [material()]);
+  expect(run(first.state, [material()]).updates.some(u => "quantity" in u.patch)).toBe(false);
+});
+it("includes a newly duplicated board fixture in its room count before scraping", () => {
+  const first = run(board([layer({ materialItemId: itemId })]), [material({ quantity: 1 })]);
+  first.state.pages[0].elements.push(layer({ id: "new-copy", materialItemId: itemId }));
+  const result = run(first.state, [material({ quantity: 1 })]);
+  expect(result.updates[0].patch.quantity).toBe(2);
+});
+it("does no reverse update after scraping and flags an unsent late selection", () => {
+  const sent = run(board(), []);
+  const result = run(sent.state, [{ ...sent.inserts[0], product: { ...product, price: "$500" } }], false);
+  expect(result.changed).toBe(false); expect(result.updates).toEqual([]);
+  expect(result.state.pages[0].elements[0].price).toBeUndefined();
   expect(run(board(), [], false).summary.issues[0].message).toContain("changed during the refresh");
-  expect(run(board(), [], false).inserts).toEqual([]);
 });
-it("rejects malformed board snapshots and never imports selections from another project's Materials", () => {
+it("rejects malformed boards and cannot overwrite another project's material", () => {
   expect(() => run({ pages: [{ id: "p", elements: null }] })).toThrow("invalid pages");
   expect(() => run(board([layer(), layer()]))).toThrow("invalid item references");
-  const other = material({ project_id: "another" });
-  expect(run(board([layer({ materialItemId: itemId })]), [other]).inserts).toHaveLength(1);
+  expect(run(board([layer({ materialItemId: itemId })]), [material({ project_id: "another" })]).inserts).toHaveLength(1);
 });
-it("keeps deleted board selections deleted and reports missing material images for manual follow-up", () => {
-  const deleted = material({ source_board_id: project, source_board_element_id: "gone" });
-  expect(run(board([]), [deleted]).summary.added).toBe(0);
-  const noImage = material({ product: { ...product, image_url: null }, image_url: null });
-  const result = run(board([]), [noImage]);
-  expect(result.summary.added).toBe(0); expect(result.summary.issues[0].message).toContain("needs an image");
+it("soft removes stale board selections and retains independent manual Materials", () => {
+  const deleted = material({ source_board_id: project, source_board_page_id: "shared", source_board_element_id: "gone" });
+  const result = run(board([]), [deleted]);
+  expect(result.updates[0].patch).toEqual({ not_needed: true });
+  expect(run(board([]), [material()]).updates).toEqual([]);
 });
-it("counts repeated new products on the same page, and treats repeated pages as references", () => {
+it("counts repeated new products on one page without multiplying references on other pages", () => {
   const repeated: any = board([layer(), layer({ id: "second" })]);
   repeated.pages.push({ ...repeated.pages[0], id: "other-page", elements: [layer({ id: "other-reference" })] });
   const result = run(repeated);
   expect(result.inserts).toHaveLength(1); expect(result.inserts[0].quantity).toBe(2);
-  expect(result.state.pages.flatMap(p => p.elements).every(l => l.materialQuantity === 2)).toBe(true);
+  expect(result.state.pages.flatMap(p => p.elements).every(l => l.materialQuantity === 1)).toBe(true);
 });
-it("invalidates plan evidence for new board selections but permits harmless canvas rearrangement", () => {
+it("invalidates plan evidence for a changed board selection but allows harmless canvas rearrangement", () => {
   const original = board(); const moved = structuredClone(original);
   moved.pages[0].elements[0].x = 800;
   expect(specBoardSelectionEvidence(moved)).toEqual(specBoardSelectionEvidence(original));
   moved.pages[0].elements[0].link += "&variant=changed";
   expect(specBoardSelectionEvidence(moved)).not.toEqual(specBoardSelectionEvidence(original));
-});
-it("keeps confirmed board details when the catalog has no replacement value", () => {
-  const item = material({ product: { ...product, price: null, finish: null, dimensions: null } });
-  const result = run(board([layer({ materialItemId: itemId, price: "$120", materialFinish: "White", finish: "White", materialDimensions: "22 in" })]), [item]);
-  expect(result.state.pages[0].elements[0]).toMatchObject({ price: "$120", materialFinish: "White", materialDimensions: "22 in" });
 });
