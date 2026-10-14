@@ -220,6 +220,15 @@ it("salvages drawing evidence from a stale selection check without paying to res
   expect(generations).toHaveLength(2);
   expect(JSON.parse(generations[1][1].body).input[0].content.every((part: any) => part.type === "input_text")).toBe(true);
 });
+it("rejects a queued comparison when the PDF path changes even without a revision timestamp change", async () => {
+  state.fetch.mockImplementation(async () => Response.json({ status: "queued", id: "resp_replaced_path" }));
+  await checkSpecCompletion(request());
+  state.documents[0].file_url = state.documents[0].file_url.replace("latest.pdf", "replacement.pdf");
+  const count = state.fetch.mock.calls.length;
+  const loaded = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
+  expect(loaded.report.plan_status).toBe("unavailable"); expect(loaded.stale).toBe(true);
+  expect(state.fetch).toHaveBeenCalledTimes(count);
+});
 it("reads current project data and latest PDF, saving the review without editing any selections", async () => {
   const result = await (await checkSpecCompletion(request())).json();
   expect(result.plan_status).toBe("checked"); expect(result.item_count).toBe(1);

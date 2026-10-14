@@ -233,12 +233,13 @@ export async function checkSpecCompletion(request: Request) {
         readProjectRows("material_items", "*,product:products(*)", projectId),
         readProjectRows("rooms", "id,name", projectId),
         admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),
-        admin.from("project_documents").select("id,updated_at").eq("project_id", projectId)
+        admin.from("project_documents").select("id,title,updated_at,file_url,file_size").eq("project_id", projectId)
           .eq("document_type", "Construction Doc").is("superseded_by_document_id", null)
           .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1),
       ]);
       if (freshBoard.error || freshDocument.error) throw new Error("Could not confirm current selections");
       if (freshDocument.data?.[0]?.id !== document.id || freshDocument.data?.[0]?.updated_at !== document.updated_at ||
+        freshDocument.data?.[0]?.file_url !== document.file_url || freshDocument.data?.[0]?.file_size !== document.file_size || freshDocument.data?.[0]?.title !== document.title ||
         JSON.stringify(rawItems) !== JSON.stringify(freshItems) || JSON.stringify(rooms) !== JSON.stringify(freshRooms) ||
         JSON.stringify(specBoardSelectionEvidence(boardResult.data?.board_state)) !== JSON.stringify(specBoardSelectionEvidence(freshBoard.data?.board_state)) ||
         JSON.stringify([...staleIds].sort()) !== JSON.stringify(staleSpecBookMaterialIds(projectId, freshItems, freshBoard.data?.board_state).sort()))

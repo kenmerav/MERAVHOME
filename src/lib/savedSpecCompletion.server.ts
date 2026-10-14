@@ -11,7 +11,7 @@ import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
 import { linkedBoardImage } from "@/lib/boardColorSuggestion";
 import type { MaterialItem } from "@/lib/db";
 import type { SavedCompletionIssue, SavedSpecCompletionReview, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
-import { groundedSavedCompletion } from "./specDrawingEvidence.server";
+import { groundedSavedCompletion, drawingEvidenceKey } from "./specDrawingEvidence.server";
 import { publicSpecCompletionReport } from "./specCompletion";
 
 const admin = supabaseAdmin as any;
@@ -143,11 +143,11 @@ export async function updateActiveCompletionReview(projectId: string, report: Sp
   throw new CompletionReviewConflict("The saved review changed. Open it again for the latest results.");
 }
 
-async function finishPendingReview(projectId: string, saved: any, items: MaterialItem[], rooms: CompletionRoom[], document: SpecCompletionReport["document"], boardState?: unknown) {
+async function finishPendingReview(projectId: string, saved: any, items: MaterialItem[], rooms: CompletionRoom[], document: SpecCompletionReport["document"], boardState?: unknown, drawingChanged = false) {
   const job = saved.report.plan_job;
   if (saved.report.plan_status !== "checking" || !job) return saved;
   const report: SpecCompletionReport = { ...saved.report, findings: [...saved.report.findings] };
-  const stale = saved.source_signature !== completionSourceSignature(items, rooms, document, boardState);
+  const stale = drawingChanged || saved.source_signature !== completionSourceSignature(items, rooms, document, boardState);
   if (stale) {
     report.plan_status = "unavailable";
     report.plan_message = "Selections or construction documents changed while the plans were reviewed. Plan suggestions were not applied. The saved detail findings remain available.";
@@ -215,7 +215,7 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
   const [rawItems, rooms, board, document] = await Promise.all([
     projectRows("material_items", "*,product:products(*)", projectId), projectRows("rooms", "id,name", projectId),
     admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),
-    admin.from("project_documents").select("id,title,updated_at").eq("project_id", projectId)
+    admin.from("project_documents").select("id,title,updated_at,file_url,file_size").eq("project_id", projectId)
       .eq("document_type", "Construction Doc").is("superseded_by_document_id", null)
       .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1),
   ]);
@@ -225,7 +225,9 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
   const items = rawItems.filter(item => !stale.has(item.id) && roomIds.has(item.room_id));
   const latest = document.data?.[0];
   const currentDocument = latest ? { id: latest.id, title: latest.title, updated_at: latest.updated_at } : null;
-  saved = await finishPendingReview(projectId, saved, items, rooms, currentDocument, board.data?.board_state);
+  const drawingChanged = !!saved.report.plan_job?.evidence_key &&
+    (!latest || saved.report.plan_job.evidence_key !== drawingEvidenceKey(projectId, latest, rooms));
+  saved = await finishPendingReview(projectId, saved, items, rooms, currentDocument, board.data?.board_state, drawingChanged);
   const byItem = new Map(items.map(item => [item.id, item]));
   const sharedIds = new Set(sharedCompletionSelections(items, rooms).map(item => item.id));
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
@@ -248,7 +250,7 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
     const item = byItem.get(finding.item_id ?? "");
     return !(["price", "price_unit"].includes(finding.field) && item && isCountertopMaterial(item));
   }) }, issues,
-    stale: saved.source_signature !== completionSourceSignature(items, rooms, currentDocument, board.data?.board_state) };
+    stale: drawingChanged || saved.source_signature !== completionSourceSignature(items, rooms, currentDocument, board.data?.board_state) };
 }
 
 // Only project/job IDs and status values enter durable workflow logs. Polling
