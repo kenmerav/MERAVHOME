@@ -3,9 +3,11 @@ const fake = vi.hoisted(() => ({
   files: new Map<string, Uint8Array>(),
   images: new Map<string, any>(),
   saveError: false,
+  authEmail: "ken@meravinteriors.com",
   profile: {
     id: "11111111-1111-4111-8111-111111111111",
     role: "Admin",
+    email: "ken@meravinteriors.com",
     is_active: true,
     is_owner: true,
     can_view_all_projects: true,
@@ -25,7 +27,7 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
     auth: {
       getUser: vi.fn(async (token: string) =>
         token === "test-token"
-          ? { data: { user: { id: fake.profile.id } }, error: null }
+          ? { data: { user: { id: fake.profile.id, email: fake.authEmail } }, error: null }
           : { data: { user: null }, error: new Error("invalid") },
       ),
     },
@@ -234,9 +236,11 @@ beforeEach(() => {
   fake.files.clear();
   fake.images.clear();
   fake.saveError = false;
+  fake.authEmail = "ken@meravinteriors.com";
   fake.files.set(source, png);
   fake.files.set(base, png);
   fake.profile.role = "Admin";
+  fake.profile.email = "ken@meravinteriors.com";
   fake.profile.is_active = true;
   fake.profile.can_view_all_projects = true;
   fake.start.mockClear();
@@ -278,6 +282,41 @@ async function finishedPhoto() {
   fake.files.set(`${scopePath(project, room)}/assets/${originalPhoto}.png`, png);
   return saved;
 }
+describe("Rendering Studio private development access", () => {
+  it("rejects other active admins and employees for reads and writes before starting work", async () => {
+    for (const role of ["Admin", "Employee"]) {
+      fake.profile.role = role;
+      fake.authEmail = "katie@meravinteriors.com";
+      // Even a profile claiming Ken's email must not override verified Auth identity.
+      fake.profile.email = "ken@meravinteriors.com";
+      for (const body of [
+        undefined,
+        { action: "index-drawings", documentId: selection },
+        { action: "save-rendering", jobId: originalPhoto, caption: "Private", approve: false },
+      ]) {
+        const response = await measuredApi(request(body));
+        expect(response.status).toBe(403);
+        expect((await response.json()).error).toContain("only to Ken");
+      }
+    }
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.files.size).toBe(2);
+    expect(fake.images.size).toBe(0);
+  });
+  it("requires a verified email, an active account and a valid session", async () => {
+    fake.authEmail = "";
+    expect((await measuredApi(request())).status).toBe(403);
+    fake.authEmail = "ken@meravinteriors.com";
+    fake.profile.is_active = false;
+    expect((await measuredApi(request())).status).toBe(403);
+    expect((await measuredApi(request(undefined, false))).status).toBe(401);
+  });
+  it("keeps Ken's authorized room access working", async () => {
+    expect((await measuredApi(request())).status).toBe(200);
+  });
+});
+
 describe("Save finished images and make requested adjustments", () => {
   it("saves original bytes as a draft without a paid call and reopens its saved gallery status", async () => {
     await finishedPhoto();

@@ -23,6 +23,7 @@ import {
 import { retrieveSpecReview } from "./specReviewAI.server";
 import { generateMeasuredPhotoreal, type PhotorealInput } from "./measuredPhotoreal.server";
 import { drawingCitationSchema, type DrawingCitation } from "./constructionDrawingViews";
+import { canUseRenderingStudio } from "./permissions";
 
 export const MEASURED_BUCKET = "rendering-studio-files";
 export const scopedId = z
@@ -109,6 +110,9 @@ export function imageMime(bytes: Uint8Array): "image/png" | "image/jpeg" | "imag
 const inline = (bytes: Buffer) => `data:${imageMime(bytes)};base64,${bytes.toString("base64")}`;
 export async function measuredContext(request: Request, projectId: string, roomId?: string) {
   const actor = await requireProjectAccess(request, projectId, undefined, true);
+  // Bind access to the verified Auth identity, never a caller's editable profile email.
+  if (!canUseRenderingStudio({ ...actor.profile, email: actor.user.email || "" }))
+    throw new ProjectAccessError("Rendering Studio is temporarily available only to Ken.");
   const { data: rooms, error: roomError } = await supabaseAdmin
     .from("rooms")
     .select("id,name")
