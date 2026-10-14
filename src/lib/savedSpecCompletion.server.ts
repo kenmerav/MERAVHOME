@@ -35,6 +35,8 @@ export function completionSourceSignature(items: MaterialItem[], rooms: Completi
     .map(item => [item.id, item.product?.size_options ?? null, item.product?.selected_size ?? null])
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   if (sizes.length) sources.push(sizes);
+  const boardEvidence = specBoardSelectionEvidence(boardState);
+  if (boardEvidence) sources.push(boardEvidence);
   return hash(sources);
 }
 
@@ -224,3 +226,4 @@ export async function saveCompletionSuggestion(projectId: string, item: Material
   if (saveError) completionStorageError(saveError);
   if (!savedSuggestion) throw new CompletionReviewConflict("The saved issue changed during the suggestion.");
 }
+import { specBoardSelectionEvidence } from "@/lib/specBoardSync";

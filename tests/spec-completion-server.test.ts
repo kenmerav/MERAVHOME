@@ -5,6 +5,8 @@ const userId = "4204f2d1-e10c-4d98-a01b-350cf7d8cafe";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true, project: true,
   documents: [] as any[], rooms: [] as any[], items: [] as any[], board: null as any,
   reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any, writes: [] as any[], writeMisses: 0 }));
+const boardSync = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/specBoardSync.server", () => ({ syncSpecBoardForStaff: boardSync }));
 vi.mock("@/lib/constructionUploads.server", () => ({ refreshConstructionUploads: state.refresh }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
@@ -53,7 +55,7 @@ it("prepares only active current selections without refreshing PDFs, saving find
     { ...state.items[0], id: "stale", source_board_id: projectId, source_board_page_id: "p", source_board_element_id: "deleted" },
     { ...state.items[0], id: "wrong-room", room_id: "former" });
   const response = await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }));
-  expect(await response.json()).toEqual({ material_item_ids: ["sink"] });
+  expect(await response.json()).toMatchObject({ material_item_ids: ["sink"], board_updated_at: null, board_refresh: { issues: [] } });
   expect(state.refresh).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled(); expect(state.saved).toBeNull();
 });
 
@@ -69,6 +71,7 @@ it("rejects unknown preparation actions", async () => {
   expect(state.refresh).not.toHaveBeenCalled();
 });
 beforeEach(() => {
+  boardSync.mockResolvedValue({ updated_at: null, summary: { imported: 0, updated: 0, added: 0, issues: [] } });
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true; state.project = true; state.dataError = false;
   state.storageError = null; state.saved = null; state.writes = []; state.writeMisses = 0;
   state.rpc.mockImplementation(async (name: string, args: any) => {
@@ -115,7 +118,7 @@ it("refreshes shared selections and supplies project-wide coverage with separate
   state.items[0] = { ...state.items[0], item_label: "Sink", quantity: 1, product_id: "caxton", product };
   state.items.push({ ...state.items[0], id: "shared-sinks", room_id: sharedRoom, item_label: "bathroom sinks", quantity: 7 });
   expect(await (await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }))).json())
-    .toEqual({ material_item_ids: ["sink", "shared-sinks"] });
+    .toMatchObject({ material_item_ids: ["sink", "shared-sinks"], board_refresh: { issues: [] } });
   await checkSpecCompletion(request());
   const body = JSON.parse(state.fetch.mock.calls[0][1].body);
   const input = JSON.parse(body.input[0].content[0].text);
@@ -326,6 +329,7 @@ it("requires active auth and limits employees to assigned projects", async () =>
   expect((await checkSpecCompletion(request())).status).toBe(403);
   state.profile = { role: "employee", is_active: true, can_view_all_projects: false }; state.assigned = false;
   expect((await checkSpecCompletion(request())).status).toBe(403);
+  expect(boardSync).not.toHaveBeenCalled();
 });
 it("does not accept caller-provided selections, arbitrary PDF URLs or document IDs", async () => {
   for (const extra of [{ items: [] }, { file_url: "https://evil.test" }, { document_id: "older" }])

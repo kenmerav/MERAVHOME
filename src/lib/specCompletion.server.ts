@@ -12,6 +12,8 @@ import { completionOutput } from "@/lib/specCompletionOutput";
 import { randomUUID } from "node:crypto";
 import { refreshConstructionUploads } from "@/lib/constructionUploads.server";
 import { sharedCompletionContext } from "@/lib/specSharedMaterials";
+import { syncSpecBoardForStaff } from "@/lib/specBoardSync.server";
+import { SpecBoardSyncConflict, specBoardSelectionEvidence } from "@/lib/specBoardSync";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -112,15 +114,21 @@ export async function authorizeCompletionProject(request: Request, allowedKeys =
 }
 
 export async function checkSpecCompletion(request: Request) {
-  const access = await authorizeCompletionProject(request, ["project_id", "action"]);
+  const access = await authorizeCompletionProject(request, ["project_id", "action", "expected_board_updated_at"]);
   if (access instanceof Response) return access;
   const { projectId, userId, body } = access;
   if (body.action !== undefined && body.action !== "prepare") return json({ error: "Choose a valid completion action." }, 400);
+  if (body.expected_board_updated_at !== undefined && body.expected_board_updated_at !== null &&
+      (typeof body.expected_board_updated_at !== "string" || body.expected_board_updated_at.length > 80))
+    return json({ error: "Choose a valid board revision." }, 400);
   // Confirm saving is available before starting any paid AI work.
   await assertCompletionStorage(projectId);
   const existing = await readSavedCompletionReview(projectId);
   if (existing?.report.plan_status === "checking") return json(body.action === "prepare"
     ? { material_item_ids: [], pending_report: existing.report } : existing.report);
+  let boardSync;
+  try { boardSync = await syncSpecBoardForStaff(projectId, userId, body.action === "prepare", body.expected_board_updated_at); }
+  catch (error) { if (error instanceof SpecBoardSyncConflict) return json({ error: error.message }, 409); throw error; }
   if (body.action === "prepare") {
     const [items, rooms, board] = await Promise.all([
       readProjectRows("material_items", "*,product:products(*)", projectId),
@@ -130,7 +138,8 @@ export async function checkSpecCompletion(request: Request) {
     if (board.error) throw board.error;
     const staleIds = new Set(staleSpecBookMaterialIds(projectId, items, board.data?.board_state));
     const roomIds = new Set(rooms.map(room => room.id));
-    return json({ material_item_ids: completionItems(items).filter(item => roomIds.has(item.room_id) && !staleIds.has(item.id)).map(item => item.id) });
+    return json({ material_item_ids: completionItems(items).filter(item => roomIds.has(item.room_id) && !staleIds.has(item.id)).map(item => item.id),
+      board_updated_at: boardSync.updated_at, board_refresh: boardSync.summary });
   }
   // Refresh only this authorized project's PDFs before choosing the document.
   // Filing uses no AI. Leave time for the existing paid plan review.
@@ -152,18 +161,21 @@ export async function checkSpecCompletion(request: Request) {
   const [rawItems, rooms, boardResult, documentResult] = await Promise.all([
     readProjectRows("material_items", "*,product:products(*)", projectId),
     readProjectRows("rooms", "id,name", projectId),
-    admin.from("design_boards").select("board_state").eq("project_id", projectId).maybeSingle(),
+    admin.from("design_boards").select("board_state,updated_at").eq("project_id", projectId).maybeSingle(),
     admin.from("project_documents").select("id,title,file_url,file_size,updated_at").eq("project_id", projectId)
       .eq("document_type", "Construction Doc").is("superseded_by_document_id", null)
       .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1),
   ]);
   if (boardResult.error) throw boardResult.error;
+  if (boardSync.updated_at !== (boardResult.data?.updated_at || null))
+    return json({ error: "The design board changed during document refresh. Run the check again to include its latest selections." }, 409);
   if (documentResult.error) throw documentResult.error;
   const staleIds = new Set(staleSpecBookMaterialIds(projectId, rawItems, boardResult.data?.board_state));
   const roomIds = new Set(rooms.map(room => room.id));
   const items = rawItems.filter(item => !staleIds.has(item.id) && roomIds.has(item.room_id));
   const document: PlanDocument | undefined = documentResult.data?.[0];
   const report: SpecCompletionReport = { checked_at: new Date().toISOString(),
+    board_refresh: boardSync.summary,
     document_refresh: refresh,
     item_count: completionItems(items).length, findings: checkSpecDetails(items, rooms),
     plan_status: "no_document", document: document ? { id: document.id, title: document.title, updated_at: document.updated_at } : null,
@@ -195,6 +207,7 @@ export async function checkSpecCompletion(request: Request) {
       if (freshBoard.error || freshDocument.error) throw new Error("Could not confirm current selections");
       if (freshDocument.data?.[0]?.id !== document.id || freshDocument.data?.[0]?.updated_at !== document.updated_at ||
         JSON.stringify(rawItems) !== JSON.stringify(freshItems) || JSON.stringify(rooms) !== JSON.stringify(freshRooms) ||
+        JSON.stringify(specBoardSelectionEvidence(boardResult.data?.board_state)) !== JSON.stringify(specBoardSelectionEvidence(freshBoard.data?.board_state)) ||
         JSON.stringify([...staleIds].sort()) !== JSON.stringify(staleSpecBookMaterialIds(projectId, freshItems, freshBoard.data?.board_state).sort()))
         throw new CompletionReviewConflict("Selections or construction documents changed during the check. Check again for current results.");
       if (!Array.isArray(planFindings)) {
