@@ -2,6 +2,7 @@
 // Each item has a `category` used to group products visually on the presentation page.
 
 import { PRODUCT_CATEGORIES, type ProductCategory } from "@/lib/productCategories";
+import { isCountertopMaterial } from "@/lib/countertopPricing";
 
 export type ItemTemplate = { label: string; category: string };
 export { PRODUCT_CATEGORIES } from "@/lib/productCategories";
@@ -43,8 +44,10 @@ export type ItemCategory = (typeof ALL_CATEGORIES)[number];
 export function normalizeItemCategory(value: string | null | undefined): ItemCategory | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-  if (trimmed === "Cabinetry & Hardware") return "Cabinetry";
-  if ((ALL_CATEGORIES as readonly string[]).includes(trimmed)) return trimmed as ItemCategory;
+  if (/^Cabinetry\s*&\s*Hardware$/i.test(trimmed)) return "Cabinetry";
+  if (/^Doors,\s*Base,\s*Case$/i.test(trimmed)) return "Doors Base & Case";
+  const canonical = ALL_CATEGORIES.find(category => category.toLowerCase() === trimmed.toLowerCase());
+  if (canonical) return canonical;
   return null;
 }
 
@@ -59,6 +62,8 @@ type ProductCategoryShape = {
 export function toProductCategory(c: string | null | undefined): ProductCategory {
   if (!c) return "Decor";
   if ((PRODUCT_CATEGORIES as readonly string[]).includes(c)) return c as ProductCategory;
+  const normalized = normalizeItemCategory(c) ?? c;
+  if ((PRODUCT_CATEGORIES as readonly string[]).includes(normalized)) return normalized as ProductCategory;
   const map: Record<string, ProductCategory> = {
     "Tile & Stone": "Tile",
     Countertop: "Countertops",
@@ -73,7 +78,7 @@ export function toProductCategory(c: string | null | undefined): ProductCategory
     Sconce: "Lighting",
     Pendant: "Lighting",
   };
-  return map[c] ?? "Decor";
+  return map[normalized] ?? "Decor";
 }
 
 export function productDisplayCategory(product: ProductCategoryShape): ItemCategory {
@@ -81,9 +86,13 @@ export function productDisplayCategory(product: ProductCategoryShape): ItemCateg
   if (product.category === "Countertops") return "Countertops";
   if (product.category === "Hardware") {
     const nameCategory = inferMaterialCategory(product.name, product.product_url);
-    if (nameCategory === "Doors Base & Case") return nameCategory;
-    if (["Base & Case", "Door Hardware", "Door Hinges"].includes(product.subcategory ?? "")) {
+    if (nameCategory === "Doors Base & Case" || nameCategory === "Cabinetry") return nameCategory;
+    const subtype = normalizeItemCategory(product.subcategory);
+    if (subtype === "Doors Base & Case" || ["Base & Case", "Door Hardware", "Door Hinges"].includes(product.subcategory ?? "")) {
       return "Doors Base & Case";
+    }
+    if (subtype === "Cabinetry" || /^(?:Cabinet(?: Pulls| Knobs| Hinges| Latches)|Appliance Pulls)$/i.test(product.subcategory ?? "")) {
+      return "Cabinetry";
     }
   }
   const normalizedCategory = normalizeItemCategory(product.category);
@@ -93,8 +102,22 @@ export function productDisplayCategory(product: ProductCategoryShape): ItemCateg
     `${product.name ?? ""} ${product.subcategory ?? ""}`,
     product.product_url,
   );
-  if (product.category === "Decor" && inferred === "Other") return "Accessories";
+  if (product.category === "Decor" && inferred === "Other") return product.subcategory === "Other" ? "Other" : "Accessories";
   return inferred;
+}
+
+export function selectionItemCategory(
+  category: string | null | undefined,
+  label: string | null | undefined,
+  productUrl?: string | null,
+  product?: ProductCategoryShape | null,
+): ItemCategory {
+  const explicit = normalizeItemCategory(category);
+  const inferred = inferMaterialCategory(`${label ?? ""} ${product?.name ?? ""}`, productUrl || product?.product_url);
+  // Older board/catalog entries called all purchased hardware "Hardware".
+  if (explicit === "Hardware" && inferred === "Cabinetry") return "Cabinetry";
+  if (explicit) return explicit;
+  return product ? productDisplayCategory(product) : inferred;
 }
 
 export function productMatchesItemCategory(
@@ -151,6 +174,13 @@ export function inferMaterialCategory(
     return "Accent Mirrors";
   }
 
+  if (isCountertopMaterial({ item_label: label, product_url: productUrl })) return "Countertops";
+
+  // Fixture names can include a material ("Tile-In Shower Drain"), and light
+  // placements can mention plumbing ("over sink light"). Keep their type.
+  if (/\b(faucets?|drains?|valves?|bathtubs?|tub filler|pot filler)\b/.test(text)) return "Plumbing";
+  if (/\b(sconces?|pendants?|chandeliers?|ceiling fan|sink light|window light)\b/.test(text)) return "Lighting";
+
   if (
     /\b(tile|tiles|zellige|backsplash|mosaic|stone tile|floor tile|wall tile|shower wall)\b/.test(
       text,
@@ -160,13 +190,27 @@ export function inferMaterialCategory(
   }
 
   if (
-    /\b(cabinetry finish|cabinet finish|cabinet finishes|cabinet color|cabinet paint)\b/.test(text)
+    /\b(?:cabinetry|cabinet) (?:finish|finishes|color|paint)\b/.test(text)
   ) {
     return "Cabinetry";
   }
 
+  if (/\bshower door\b/.test(text) && /\b(handles?|pulls?|hinges?|knobs?)\b/.test(text)) {
+    return "Hardware";
+  }
+
+  if (/\b(cabinets?|cabinetry|cupboards?|drawers?|appliance)\b/.test(text) &&
+    /\b(knobs?|pulls?|handles?|hinges?|latch(?:es)?|catches?|slides?|hardware)\b/.test(text)) {
+    return "Cabinetry";
+  }
+
+  if (/\b(doors?|passage|privacy|dummy|deadbolt|handleset|lockset)\b/.test(text) &&
+    /\b(knobs?|pulls?|handles?|hinges?|latch(?:es)?|locks?|levers?|hardware|deadbolt|handleset|lockset)\b/.test(text)) {
+    return "Doors Base & Case";
+  }
+
   if (
-    /\b(cabinet knob|cabinet knobs|cabinet pull|cabinet pulls|knob|knobs|pull|pulls|latch|latches|appliance pull|robe hook|coat hook|towel hook|hook|hooks|toilet paper holder|paper holder|tp holder|hand towel holder|towel holder|towel ring|towel bar)\b/.test(
+    /\b(robe hook|coat hook|towel hook|hook|hooks|toilet paper holder|paper holder|tp holder|hand towel holder|towel holder|towel ring|towel bar)\b/.test(
       text,
     )
   ) {
@@ -179,6 +223,10 @@ export function inferMaterialCategory(
     )
   ) {
     return "Plumbing";
+  }
+
+  if (/\b(paint|limewash|lime wash|wall finish|ceiling finish|stain|roman clay)\b/.test(text)) {
+    return "Paint";
   }
 
   if (
@@ -213,21 +261,15 @@ export function inferMaterialCategory(
     return "Countertops";
   }
 
-  if (
-    /\b(paint|limewash|lime wash|wall paint|wall finish|ceiling paint|ceiling finish|trim paint|cabinet paint|stain)\b/.test(
-      text,
-    )
-  ) {
-    return "Paint";
-  }
-
   if (/\b(floor|flooring|wood floor|carpet|rug)\b/.test(text)) {
     return "Flooring";
   }
 
-  if (/\b(cabinet|cabinetry|hardware)\b/.test(text)) {
+  if (/\b(cabinet|cabinetry|knobs?|pulls?|latch(?:es)?)\b/.test(text)) {
     return "Cabinetry";
   }
+
+  if (/\bhardware\b/.test(text)) return "Hardware";
 
   if (
     /\b(chair|table|sofa|sectional|ottoman|stool|bench|bed|nightstand|dresser|desk|console|sideboard|cabinet)\b/.test(

@@ -57,7 +57,7 @@ export function allowsMissingMaterialPrice(item: MaterialItem) {
   if (isCountertopMaterial(item)) return true;
   const label = `${item.item_label || ""} ${item.product?.name || ""}`;
   // Cabinet hardware remains a priced product even when grouped with cabinetry.
-  if (/\b(?:knobs?|pulls?|handles?|hinges?|hardware)\b/i.test(label)) return false;
+  if (/\b(?:knobs?|pulls?|handles?|hinges?|latch(?:es)?|catches?|slides?|hardware)\b/i.test(label)) return false;
   if (/^(?:Paint|Cabinetry|Cabinetry & Hardware)$/i.test(item.category || "")) return true;
   if (/^Paint$/i.test(item.product?.category || "")) return true;
   if (/\b(?:faucets?|sinks?|toilets?|mirrors?|lamps?|sconces?|pendants?|chandeliers?|stools?|chairs?|tables?|dispensers?)\b/i.test(label)) return false;

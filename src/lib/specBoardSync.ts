@@ -1,7 +1,7 @@
 import type { MaterialItem, Product } from "@/lib/db";
 import type { CompletionRoom } from "@/lib/specCompletion";
 import { materialImageUrl } from "@/lib/materialImages";
-import { inferMaterialCategory } from "@/lib/roomTemplates";
+import { selectionItemCategory } from "@/lib/roomTemplates";
 import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { cleanUuid } from "@/lib/ids";
 import { createBoardMaterialsSnapshot, boardMaterialsFingerprint } from "@/lib/boardMaterialsSnapshot";
@@ -102,7 +102,7 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
         const quantity = typeof layer.materialQuantity === "number" && layer.materialQuantity > 0 ? layer.materialQuantity : null;
         item = {
           id, project_id: projectId, room_id: room.id, item_label: label,
-          client_product_name: `${room.name} ${label}`, category: layer.materialCategory || product?.category || inferMaterialCategory(label, link) || "Other",
+          client_product_name: `${room.name} ${label}`, category: selectionItemCategory(layer.materialCategory, label, link, product),
           is_required: false, sort_order: Math.max(0, ...scoped.filter(row => row.room_id === room.id).map(row => row.sort_order), ...inserts.filter(row => row.room_id === room.id).map(row => row.sort_order)) + 1,
           product_id: product?.id || null, product: product || null, product_url: link || null,
           image_url: usableImage(layer.src) || usableImage(layer.backgroundRemovedUrl) || product?.image_url || null,
@@ -124,7 +124,7 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
           patch.item_label = label; patch.client_product_name = `${room.name} ${label}`;
         }
         if (finish && (variantChanged || changed("materialFinish") || changed("finish") || !item.color)) patch.color = finish;
-        if (layer.materialCategory && (changed("materialCategory") || !item.category)) patch.category = layer.materialCategory;
+        if (layer.materialCategory && (changed("materialCategory") || !item.category)) patch.category = selectionItemCategory(layer.materialCategory, label, link, product);
         if (changed("notes") || (!item.notes && text(layer.notes))) patch.notes = text(layer.notes) || null;
         if (usableImage(layer.src) && (variantChanged || changed("src") || !item.image_url)) patch.image_url = layer.src;
         // Preserve quantity basis, ordering and manual notes/categories that

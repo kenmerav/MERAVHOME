@@ -53,7 +53,7 @@ it.each([
   }
 });
 it("still requires prices for cabinet hardware and ordinary purchased items while countertop ranges are optional", () => {
-  for (const [category, label] of [["Cabinetry", "Cabinet knob"], ["Plumbing", "Faucet"], ["Lighting", "Painted metal lamp"]]) {
+  for (const [category, label] of [["Cabinetry", "Cabinet knob"], ["Cabinetry", "Cupboard latch"], ["Cabinetry", "Drawer slide"], ["Plumbing", "Faucet"], ["Lighting", "Painted metal lamp"]]) {
     const material = item({ category, item_label: label });
     material.product = { ...material.product, name: label, price: null } as MaterialItem["product"];
     expect(needsCompletionPrice(material)).toBe(true);
