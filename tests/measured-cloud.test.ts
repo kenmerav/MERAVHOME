@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { measuredLayoutKey } from "../src/lib/measuredSpatial";
+import { CODEX_BATCH_CHECKS } from "../src/lib/codexRenderingBatch";
 const fake = vi.hoisted(() => ({
   files: new Map<string, Uint8Array>(),
   images: new Map<string, any>(),
   saveError: false,
   authEmail: "ken@meravinteriors.com",
+  productDimensions: '20" W x 30" H x 1.5" D',
   profile: {
     id: "11111111-1111-4111-8111-111111111111",
     role: "Admin",
@@ -87,7 +89,7 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
                         product_url: "https://example.com/mirror",
                         product: {
                           name: "Selected mirror",
-                          dimensions: '20" W x 30" H x 1.5" D',
+                          dimensions: fake.productDimensions,
                           finish: "Polished Nickel",
                           image_url: "https://example.com/mirror.png",
                           product_url: "https://example.com/mirror",
@@ -232,12 +234,185 @@ const request = (body?: unknown, auth = true) =>
     headers: auth ? { Authorization: "Bearer test-token", "Content-Type": "application/json" } : {},
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+const batchRequest = (body?: unknown, auth = true) =>
+  new Request(`https://studio.test/api/measured-rendering?projectId=${project}&codexBatch=1`, {
+    method: body ? "POST" : "GET",
+    headers: auth ? { Authorization: "Bearer test-token", "Content-Type": "application/json" } : {},
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+const batchId = "99999999-9999-4999-8999-999999999999";
+function batchSelection() {
+  const doc = {
+    id: "88888888-8888-4888-8888-888888888888",
+    title: "Project drawings",
+    updated_at: "2026-10-14T12:00:00Z",
+    file_size: 1000,
+    file_url: `https://storage.test/storage/v1/object/public/project-files/${project}/construction-docs/source.pdf`,
+  };
+  return {
+    action: "add",
+    id: batchId,
+    roomId: room,
+    name: "Bath vanity",
+    sourcePath: source,
+    notes: "Do not invent missing dimensions.",
+    citation: {
+      documentId: doc.id,
+      documentTitle: doc.title,
+      sourceKey: constructionViewsKey(project, doc, [{ id: room, name: "Primary Bathroom" }]),
+      viewId: "manual-page-16",
+      title: "Primary bath",
+      sheet: "ID2.8",
+      page: 16,
+      bounds: { left: 0, top: 0, right: 1, bottom: 1 },
+    },
+  };
+}
+function batchReport(fingerprint: string) {
+  return {
+    itemId: batchId,
+    fingerprint,
+    provider: "codex-subscription",
+    status: "review",
+    attempts: 1,
+    summary: "Draft retains layout; depth and product finish need review.",
+    checks: CODEX_BATCH_CHECKS.map((category) => ({
+      category,
+      outcome: "unknown",
+      evidence: "ID2.8 page16 reviewed; depth remains unverified.",
+    })),
+    sourcePages: [
+      {
+        documentId: "88888888-8888-4888-8888-888888888888",
+        page: 16,
+        reason: "Selected vanity elevation",
+      },
+    ],
+    uncertainties: ["Depth has no written dimension."],
+  };
+}
+describe("Codex subscription batch pilot", () => {
+  it("saves, prepares full source context and imports results without a paid read or image workflow", async () => {
+    const added = await measuredApi(batchRequest(batchSelection()));
+    expect(added.status).toBe(201);
+    const item = (await added.json()).item;
+    expect(item.items[0].dimensions).toBe(fake.productDimensions);
+    expect((await measuredApi(batchRequest(batchSelection()))).status).toBe(200);
+    const prepared = await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }));
+    expect(prepared.status).toBe(200);
+    const pack = await prepared.json();
+    expect(pack.documents).toHaveLength(1);
+    expect(pack.documents[0].url).toContain("construction-docs/source.pdf");
+    expect(pack.items[0].fingerprint).toBe(item.fingerprint);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    const rows = (await (await measuredApi(batchRequest())).json()).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].result.report.status).toBe("review");
+    expect(rows[0].result.imageUrl).toContain("assets");
+    expect((await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))).status).toBe(
+      409,
+    );
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.interpret).not.toHaveBeenCalled();
+    expect(fake.images.size).toBe(0);
+  });
+  it("blocks other users, absent authentication and foreign-room assets", async () => {
+    expect((await measuredApi(batchRequest(undefined, false))).status).toBe(401);
+    fake.authEmail = "katie@meravinteriors.com";
+    expect((await measuredApi(batchRequest(batchSelection()))).status).toBe(403);
+    fake.authEmail = "ken@meravinteriors.com";
+    expect(
+      (
+        await measuredApi(
+          batchRequest({ ...batchSelection(), sourcePath: source.replace(room, product) }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(fake.files.size).toBe(2);
+  });
+  it("rejects changed drawings/specs, missing checks, mismatched snapshots and unreviewed images", async () => {
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            ...batchSelection(),
+            citation: { ...batchSelection().citation, sourceKey: "0".repeat(64) },
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport("0".repeat(64)),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: { ...batchReport(item.fingerprint), checks: [] },
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (await measuredApi(batchRequest({ action: "result", report: batchReport(item.fingerprint) })))
+        .status,
+    ).toBe(400);
+    fake.productDimensions = "Different product dimensions";
+    expect((await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))).status).toBe(
+      409,
+    );
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(409);
+  });
+  it("records blocked views without an image and retains removed selection data", async () => {
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    const report = { ...batchReport(item.fingerprint), status: "blocked", attempts: 0 };
+    expect((await measuredApi(batchRequest({ action: "result", report }))).status).toBe(200);
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect((await measuredApi(batchRequest({ action: "remove", id: batchId }))).status).toBe(200);
+    expect((await (await measuredApi(batchRequest())).json()).rows).toEqual([]);
+    expect(fake.files.has(`${project}/codex-render-batch/${batchId}.json`)).toBe(true);
+  });
+});
 beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "https://storage.test");
   fake.files.clear();
   fake.images.clear();
   fake.saveError = false;
   fake.authEmail = "ken@meravinteriors.com";
+  fake.productDimensions = '20" W x 30" H x 1.5" D';
   fake.files.set(source, png);
   fake.files.set(base, png);
   fake.profile.role = "Admin";

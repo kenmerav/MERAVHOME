@@ -51,6 +51,10 @@ export async function measuredApi(request: Request) {
     const roomValue = url.searchParams.get("roomId"),
       roomId = roomValue ? scopedId.parse(roomValue) : undefined;
     const context = await measuredContext(request, projectId, roomId);
+    if (url.searchParams.has("codexBatch")) {
+      const { codexBatchApi } = await import("./codexRenderingBatch.server");
+      return codexBatchApi(request, projectId);
+    }
     if (request.method === "GET") {
       if (!roomId)
         return privateJson({ projectName: context.projectName, rooms: context.rooms, items: [] });

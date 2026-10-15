@@ -45,11 +45,13 @@ export function ConstructionDrawingPicker({
   roomId,
   disabled: suppliedDisabled,
   onChoose,
+  batchMode = false,
 }: {
   projectId: string;
   roomId: string;
   disabled: boolean;
   onChoose: (blob: Blob, citation: DrawingCitation, kind: "source" | "support") => Promise<void>;
+  batchMode?: boolean;
 }) {
   const [data, setData] = useState<DrawingData>({ documents: [] }),
     [documentId, setDocumentId] = useState("");
@@ -399,23 +401,25 @@ export function ConstructionDrawingPicker({
                 ))}
               </select>
             </label>
-            <button
-              className="bg-ink text-white px-4 py-3 text-sm disabled:opacity-40"
-              disabled={
-                disabled ||
-                indexing ||
-                !documentId ||
-                data.status === "complete" ||
-                data.status === "failed"
-              }
-              onClick={() => void scan()}
-            >
-              {indexing
-                ? "Finding room views…"
-                : data.status === "complete"
-                  ? "Room views saved"
-                  : "Find room views in this document"}
-            </button>
+            {!batchMode && (
+              <button
+                className="bg-ink text-white px-4 py-3 text-sm disabled:opacity-40"
+                disabled={
+                  disabled ||
+                  indexing ||
+                  !documentId ||
+                  data.status === "complete" ||
+                  data.status === "failed"
+                }
+                onClick={() => void scan()}
+              >
+                {indexing
+                  ? "Finding room views…"
+                  : data.status === "complete"
+                    ? "Room views saved"
+                    : "Find room views in this document"}
+              </button>
+            )}
             {data.document && (
               <a
                 href={data.document.url}
@@ -721,21 +725,23 @@ export function ConstructionDrawingPicker({
                   className="bg-ink text-white px-4 py-3 text-sm disabled:opacity-40"
                   onClick={() => void choose("source")}
                 >
-                  Work on this view
+                  {batchMode ? "Add view to Codex batch" : "Work on this view"}
                 </button>
-                <button
-                  disabled={
-                    disabled ||
-                    editingCrop ||
-                    loading ||
-                    !preview ||
-                    !drawingBoundsSchema.safeParse(bounds).success
-                  }
-                  className="border px-4 py-3 text-sm disabled:opacity-40"
-                  onClick={() => void choose("support")}
-                >
-                  Add as supporting view
-                </button>
+                {!batchMode && (
+                  <button
+                    disabled={
+                      disabled ||
+                      editingCrop ||
+                      loading ||
+                      !preview ||
+                      !drawingBoundsSchema.safeParse(bounds).success
+                    }
+                    className="border px-4 py-3 text-sm disabled:opacity-40"
+                    onClick={() => void choose("support")}
+                  >
+                    Add as supporting view
+                  </button>
+                )}
               </div>
             </div>
           </div>

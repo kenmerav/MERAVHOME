@@ -59,6 +59,7 @@ import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
 import { MeasuredRenderingWorkspace } from "@/components/MeasuredRenderingWorkspace";
+import { CodexRenderingBatch } from "@/components/CodexRenderingBatch";
 import { isStudioTeamRole } from "@/lib/permissions";
 import { ImportRenderingPdfDialog } from "@/components/ImportRenderingPdfDialog";
 import { ImportRenderingPackageDialog } from "@/components/ImportRenderingPackageDialog";
@@ -131,6 +132,7 @@ export function ProjectRenderingStudio({
     queryFn: () => db.getCurrentUserProfile(),
   });
   const canUseStudio = profile?.is_active === true && isStudioTeamRole(profile.role);
+  const [renderingMethod, setRenderingMethod] = useState<"codex" | "api">("codex");
   const [galleryOpen, setGalleryOpen] = useState(initialGalleryOpen);
   const galleryVisible = galleryOpen || (profile !== undefined && !canUseStudio);
   const [galleryRoomId, setGalleryRoomId] = useState("");
@@ -516,6 +518,27 @@ export function ProjectRenderingStudio({
         </div>
 
         {canUseStudio && (
+          <div className="flex flex-wrap gap-3 mb-6" aria-label="Rendering method">
+            <button
+              className="border px-4 py-2"
+              aria-pressed={renderingMethod === "codex"}
+              onClick={() => setRenderingMethod("codex")}
+            >
+              Codex batch · subscription
+            </button>
+            <button
+              className="border px-4 py-2"
+              aria-pressed={renderingMethod === "api"}
+              onClick={() => setRenderingMethod("api")}
+            >
+              Single view · paid API
+            </button>
+          </div>
+        )}
+        {canUseStudio && renderingMethod === "codex" && (
+          <CodexRenderingBatch projectId={id} initialRoomId={initialRoomId} />
+        )}
+        {canUseStudio && renderingMethod === "api" && (
           <MeasuredRenderingWorkspace
             key={`${id}:${initialRoomId || ""}`}
             projectId={id}
