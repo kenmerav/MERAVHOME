@@ -278,6 +278,7 @@ function batchSelection() {
   };
 }
 function batchReport(fingerprint: string) {
+  const savedLayout = fake.files.get(`${project}/codex-render-batch/${batchId}-layout.json`);
   return {
     itemId: batchId,
     fingerprint,
@@ -298,6 +299,18 @@ function batchReport(fingerprint: string) {
       },
     ],
     uncertainties: ["Depth has no written dimension."],
+    geometryReview: {
+      fingerprint: savedLayout
+        ? JSON.parse(new TextDecoder().decode(savedLayout)).fingerprint
+        : "0".repeat(64),
+      comparisons: ["depth", "orientation", "openings", "enclosure", "occlusion"].map(
+        (category) => ({
+          category,
+          outcome: "pass",
+          evidence: "Compared generated image to the checked source-linked envelope model.",
+        }),
+      ),
+    },
     boardReview: {
       fingerprint: createHash("sha256").update("[]").digest("hex"),
       pageIds: [] as string[],
@@ -309,11 +322,124 @@ function batchReport(fingerprint: string) {
     },
   };
 }
+async function saveBatchLayout(fingerprint: string) {
+  const evidence = {
+    basis: "drawing",
+    documentId: "88888888-8888-4888-8888-888888888888",
+    page: 16,
+    note: "Written fixture dimensions and installation location in test source.",
+  };
+  const layout = {
+    version: 1,
+    units: "inches",
+    itemId: batchId,
+    itemFingerprint: fingerprint,
+    extent: { width: 100, height: 121, depth: 80 },
+    objects: [
+      {
+        id: "vanity",
+        name: "Vanity",
+        kind: "cabinet",
+        x: 0,
+        y: 0,
+        z: 0,
+        width: 42,
+        height: 36,
+        depth: 24,
+        quarterTurns: 0,
+        specId: null,
+        evidence: {
+          width: evidence,
+          height: evidence,
+          depth: evidence,
+          position: evidence,
+          orientation: evidence,
+        },
+      },
+    ],
+    sourcePages: [{ documentId: evidence.documentId, page: 16 }],
+    notes: [],
+  };
+  const response = await measuredApi(batchRequest({ action: "layout", layout }));
+  expect(response.status).toBe(200);
+  const saved = await response.json();
+  expect(saved.layout.ready).toBe(true);
+  return saved.layout;
+}
 describe("Codex subscription batch pilot", () => {
+  it("persists blocked layout findings, rejects stale model reports, and locks completed geometry", async () => {
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    const first = await saveBatchLayout(item.fingerprint);
+    const oldReport = batchReport(item.fingerprint);
+    const changed = structuredClone(first.layout);
+    changed.objects[0].depth = 25;
+    const second = await (
+      await measuredApi(batchRequest({ action: "layout", layout: changed }))
+    ).json();
+    expect(second.layout.fingerprint).not.toBe(first.fingerprint);
+    expect(
+      fake.files.has(`${project}/codex-render-batch/${batchId}-layout-${first.fingerprint}.json`),
+    ).toBe(true);
+    const stale = await measuredApi(
+      batchRequest({ action: "result", report: oldReport, imagePath: source }),
+    );
+    expect(stale.status).toBe(400);
+    expect((await stale.json()).error).toContain("stale");
+    changed.objects[0].evidence.depth = {
+      basis: "assumption",
+      note: "Depth is missing, do not guess it.",
+    };
+    const blocked = await (
+      await measuredApi(batchRequest({ action: "layout", layout: changed }))
+    ).json();
+    expect(blocked.layout.ready).toBe(false);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (await measuredApi(batchRequest({ action: "layout", layout: first.layout }, false))).status,
+    ).toBe(401);
+    fake.authEmail = "katie@meravinteriors.com";
+    expect(
+      (await measuredApi(batchRequest({ action: "layout", layout: first.layout }))).status,
+    ).toBe(403);
+    fake.authEmail = "ken@meravinteriors.com";
+    await saveBatchLayout(item.fingerprint);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await measuredApi(batchRequest({ action: "layout", layout: first.layout }))).status,
+    ).toBe(409);
+    expect(fake.generate).not.toHaveBeenCalled();
+  });
   it("saves, prepares full source context and imports results without a paid read or image workflow", async () => {
     const added = await measuredApi(batchRequest(batchSelection()));
     expect(added.status).toBe(201);
     const item = (await added.json()).item;
+    expect(item.geometryRequired).toBe(true);
+    const missingLayout = await measuredApi(
+      batchRequest({ action: "result", report: batchReport(item.fingerprint), imagePath: source }),
+    );
+    expect(missingLayout.status).toBe(400);
+    expect((await missingLayout.json()).error).toContain("Save a layout");
+    await saveBatchLayout(item.fingerprint);
     expect(item.items[0].dimensions).toBe(fake.productDimensions);
     expect((await measuredApi(batchRequest(batchSelection()))).status).toBe(200);
     const prepared = await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }));
@@ -322,6 +448,7 @@ describe("Codex subscription batch pilot", () => {
     expect(pack.documents).toHaveLength(1);
     expect(pack.documents[0].url).toContain("construction-docs/source.pdf");
     expect(pack.items[0].fingerprint).toBe(item.fingerprint);
+    expect(pack.items[0].layout.ready).toBe(true);
     expect(
       (
         await measuredApi(
@@ -448,6 +575,7 @@ describe("Codex subscription batch pilot", () => {
     ).json();
     expect(pack.designBoards[0].elements[0].label).toBe("floor tile pattern");
     expect(pack.items[0].boardPageIds).toEqual(["bath-board"]);
+    await saveBatchLayout(item.fingerprint);
     expect(
       (
         await measuredApi(
