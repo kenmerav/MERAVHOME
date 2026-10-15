@@ -319,7 +319,10 @@ document.getElementById("quantityInput").addEventListener("change", async (event
   const roomId = document.getElementById("roomSelect").value;
   const itemId = document.getElementById("requiredItemSelect").value;
   if (!roomId || !itemId) return;
-  const quantity = Math.max(0.01, Number(event.target.value) || 1);
+  let quantity;
+  try { quantity = parseMeravQuantity(event.target.value); }
+  catch (error) { event.target.setCustomValidity(error.message); event.target.reportValidity(); return; }
+  event.target.setCustomValidity("");
   event.target.value = String(quantity);
   const quantityByItem = {
     ...(settings.quantityByItem || {}),
@@ -348,7 +351,9 @@ document.getElementById("send").addEventListener("click", async () => {
   const roomName =
     document.getElementById("roomSelect").selectedOptions?.[0]?.textContent?.trim() || "";
   const requiredItemKey = document.getElementById("requiredItemSelect").value;
-  const quantity = Number(document.getElementById("quantityInput").value) || 1;
+  let quantity;
+  try { quantity = parseMeravQuantity(document.getElementById("quantityInput").value); }
+  catch (error) { setStatus(error.message, true); return; }
   const colorFinish = document.getElementById("colorFinishInput").value.trim();
   const status = document.getElementById("status");
   if (!projectId) {
@@ -654,7 +659,9 @@ function renderRoomSelect(rooms, selectedRoomId) {
   empty.value = "";
   empty.textContent = rooms.length ? "Choose a room" : "No rooms available";
   select.appendChild(empty);
-  rooms.forEach((room) => {
+  [...rooms].sort((left, right) =>
+    left.name.localeCompare(right.name, "en", { sensitivity: "base", numeric: true }),
+  ).forEach((room) => {
     const option = document.createElement("option");
     option.value = room.id;
     option.textContent = room.name;
@@ -670,7 +677,9 @@ function renderRequiredItems(items, selectedItemId) {
   empty.value = "";
   empty.textContent = items.length ? "Choose a product type" : "No product types available";
   select.appendChild(empty);
-  items.forEach((item) => {
+  [...items].sort((left, right) =>
+    left.label.localeCompare(right.label, "en", { sensitivity: "base", numeric: true }),
+  ).forEach((item) => {
     const option = document.createElement("option");
     option.value = item.id;
     option.textContent = item.filled
@@ -684,7 +693,8 @@ function renderRequiredItems(items, selectedItemId) {
 function restoreQuantity(roomId, itemId) {
   const item = roomDesignData?.items?.find((candidate) => candidate.id === itemId);
   const remembered = settings.quantityByItem?.[`${roomId}:${itemId}`];
-  document.getElementById("quantityInput").value = String(remembered || item?.quantity || 1);
+  document.getElementById("quantityInput").value = String(remembered !== undefined ? remembered : item?.quantity === null ? "TBD" : item?.quantity ?? 1);
+  document.getElementById("quantityInput").setCustomValidity("");
 }
 
 function hideAddProductType() {

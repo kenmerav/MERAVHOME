@@ -15,7 +15,7 @@ export type RoomDesignSelection = {
   imageUrl?: string;
   originalImageUrl?: string;
   group?: string;
-  quantity?: number;
+  quantity?: number | null;
   quantityUnit?: string;
   wastePercent?: number;
   notes?: string;
@@ -33,7 +33,7 @@ export type RoomDesignLink = {
   category: string;
   url: string;
   group: string;
-  quantity: number;
+  quantity: number | null;
   notes: string;
   productId?: string;
   catalogProductName?: string;
@@ -272,7 +272,7 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     price: string;
     sku: string;
     dimensions: string;
-    quantity: number;
+    quantity: number | null;
   };
 }) {
   const target = state.links.find((link) => link.id === itemKey);
@@ -389,7 +389,7 @@ export function normalizeRoomDesignWorkflowState(
             category,
             url: string(item.url),
             group: string(item.group) || "Architecture / Other",
-            quantity: positiveNumber(item.quantity, 1),
+            quantity: item.quantity === null ? null : positiveNumber(item.quantity, 1),
             notes: string(item.notes),
             productId: optionalString(item.productId),
             catalogProductName: optionalString(item.catalogProductName),
@@ -423,7 +423,7 @@ export function normalizeRoomDesignWorkflowState(
             imageUrl: optionalString(item.imageUrl),
             originalImageUrl: optionalString(item.originalImageUrl),
             group: optionalString(item.group),
-            quantity: positiveNumber(item.quantity, 1),
+            quantity: item.quantity === null ? null : positiveNumber(item.quantity, 1),
             quantityUnit: optionalString(item.quantityUnit),
             wastePercent:
               typeof item.wastePercent === "number" && Number.isFinite(item.wastePercent)
@@ -745,7 +745,7 @@ export function mergeRoomDesignSelectionsIntoBoard({
           materialItemId: null,
           materialRoomId: roomId,
           materialCategory: selection.category,
-          materialQuantity: positiveNumber(selection.quantity, 1),
+          materialQuantity: selection.quantity === null ? null : positiveNumber(selection.quantity, 1),
           materialFinish: selection.finish || null,
           materialDimensions: selection.dimensions || null,
           materialInfoNotNeeded: false,

@@ -48,6 +48,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RoomDesignQuantityInput } from "@/components/RoomDesignQuantityInput";
+import { roomDesignQuantityLabel } from "@/lib/roomDesignQuantity";
 import { Label } from "@/components/ui/label";
 import { removeProductImageBackground } from "@/lib/backgroundRemovalClient";
 import {
@@ -167,6 +169,7 @@ function selectionQuantityUnit(selection: DemoSelection) {
 }
 
 function selectionOrderQuantity(selection: DemoSelection) {
+  if (selection.quantity === null) return null;
   const quantity = selection.quantity ?? 1;
   const unit = selectionQuantityUnit(selection);
   if (!quantityUnitUsesWaste(unit)) return quantity;
@@ -185,7 +188,7 @@ type DemoSelection = {
   swatch: string;
   url?: string;
   group?: BoardGroup;
-  quantity?: number;
+  quantity?: number | null;
   quantityUnit?: QuantityUnit;
   wastePercent?: number;
   notes?: string;
@@ -206,7 +209,7 @@ type DemoLink = {
   category: string;
   url: string;
   group: BoardGroup;
-  quantity: number;
+  quantity: number | null;
   notes: string;
   productId?: string;
   catalogProductName?: string;
@@ -956,7 +959,7 @@ function RoomDesignWorkflow({
         url: item.product_url || item.product?.product_url || undefined,
         imageUrl: item.image_url || item.product?.image_url || undefined,
         group: classifyBoardGroup(item.item_label),
-        quantity: item.quantity || 1,
+        quantity: item.quantity_tbd || item.quantity === null ? null : item.quantity ?? 1,
         quantityUnit: defaultQuantityUnit(item.item_label),
         notes: item.notes || undefined,
         price: item.product?.price || undefined,
@@ -2234,17 +2237,15 @@ function StartStep(props: {
                     </div>
                   )}
                 </div>
-                <Input
+                <RoomDesignQuantityInput
                   aria-label={`${item.category} quantity`}
-                  type="number"
-                  min={1}
                   value={item.quantity}
                   disabled={props.gathering}
-                  onChange={(event) =>
+                  onValueChange={(quantity) =>
                     props.onLinks(
                       props.links.map((link) =>
                         link.id === item.id
-                          ? { ...link, quantity: Number(event.target.value) || 1 }
+                          ? { ...link, quantity }
                           : link,
                       ),
                     )
@@ -3443,7 +3444,7 @@ function BoardStep({
                     {selection.category}
                   </div>
                   <div className="mt-1 text-[8px] text-stone-500">
-                    Qty {selection.quantity ?? 1} {selectionQuantityUnit(selection)}
+                    Qty {roomDesignQuantityLabel(selection.quantity)} {selectionQuantityUnit(selection)}
                   </div>
                 </button>
               ))}
@@ -3617,7 +3618,7 @@ function StudioCutoutBoard({
                   {selection.category}
                 </div>
                 <div className="mt-0.5 text-[5px] text-stone-500 sm:text-[6px]">
-                  Qty {selection.quantity ?? 1} {selectionQuantityUnit(selection)}
+                  Qty {roomDesignQuantityLabel(selection.quantity)} {selectionQuantityUnit(selection)}
                 </div>
               </div>
             </button>
@@ -4336,11 +4337,11 @@ function MaterialsStep({
                     <td className="px-3 py-2 text-muted-foreground">
                       {selection.sku || selection.finish || "Needs review"}
                     </td>
-                    <td className="px-3 py-2">{selection.quantity || 1}</td>
+                    <td className="px-3 py-2">{roomDesignQuantityLabel(selection.quantity)}</td>
                     <td className="px-3 py-2">{selectionQuantityUnit(selection)}</td>
                     <td className="px-3 py-2 text-muted-foreground">
                       {quantityUnitUsesWaste(selectionQuantityUnit(selection))
-                        ? `${selection.wastePercent ?? defaultWastePercent(selection.category)}% / ${selectionOrderQuantity(selection)}`
+                        ? `${selection.wastePercent ?? defaultWastePercent(selection.category)}% / ${roomDesignQuantityLabel(selectionOrderQuantity(selection))}`
                         : "—"}
                     </td>
                   </tr>
@@ -4446,10 +4447,10 @@ function QuantityEditor({
   compact?: boolean;
 }) {
   const unit = selection.quantityUnit ?? defaultQuantityUnit(selection.category);
-  const quantity = selection.quantity ?? 1;
+  const quantity = selection.quantity === null ? null : selection.quantity ?? 1;
   const wastePercent = selection.wastePercent ?? defaultWastePercent(selection.category);
   const showWaste = quantityUnitUsesWaste(unit);
-  const orderQuantity = showWaste
+  const orderQuantity = quantity === null ? null : showWaste
     ? Math.round(quantity * (1 + wastePercent / 100) * 100) / 100
     : quantity;
 
@@ -4458,15 +4459,12 @@ function QuantityEditor({
       <div className="flex flex-wrap items-end gap-2">
         <label className="block text-[9px] font-medium uppercase tracking-[.12em] text-muted-foreground">
           Qty
-          <input
+          <RoomDesignQuantityInput
             aria-label={`${selection.category} quantity`}
-            type="number"
-            min={1}
-            step={unit === "each" || unit === "pair" || unit === "set" ? 1 : 0.1}
             value={quantity}
-            onChange={(event) =>
+            onValueChange={(quantity) =>
               onUpdate(selection.id, {
-                quantity: Math.max(1, Number(event.target.value) || 1),
+                quantity,
               })
             }
             className={cn(
@@ -4524,7 +4522,7 @@ function QuantityEditor({
       </div>
       {!compact && showWaste && (
         <div className="mt-2 text-xs text-muted-foreground">
-          Order quantity with waste: {orderQuantity} {unit}
+          Order quantity with waste: {roomDesignQuantityLabel(orderQuantity)} {unit}
         </div>
       )}
     </div>
@@ -4563,8 +4561,8 @@ function SelectionRow({ selection, action }: { selection: DemoSelection; action:
         </div>
         <div className="mt-1 text-sm text-muted-foreground">
           {selection.productName} · {selection.vendor} · {selection.finish}
-          {selection.quantity
-            ? ` · Qty ${selection.quantity} ${selection.quantityUnit ?? defaultQuantityUnit(selection.category)}`
+          {selection.quantity !== undefined
+            ? ` · Qty ${roomDesignQuantityLabel(selection.quantity)} ${selection.quantityUnit ?? defaultQuantityUnit(selection.category)}`
             : ""}
           {quantityUnitUsesWaste(selection.quantityUnit ?? defaultQuantityUnit(selection.category))
             ? ` · ${selection.wastePercent ?? defaultWastePercent(selection.category)}% waste`

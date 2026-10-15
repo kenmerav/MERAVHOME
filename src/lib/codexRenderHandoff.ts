@@ -7,7 +7,7 @@ export type CodexRenderSelection = {
   state: string;
   url?: string;
   group?: string;
-  quantity?: number;
+  quantity?: number | null;
   notes?: string;
 };
 
@@ -129,7 +129,7 @@ export function buildCodexRenderHandoffMarkdown(handoff: CodexRenderHandoff) {
             selection.finish ? `Finish: ${selection.finish}` : "",
             selection.url ? `Product URL: ${selection.url}` : "",
             selection.group ? `Board group: ${selection.group}` : "",
-            selection.quantity ? `Quantity: ${selection.quantity}` : "",
+            selection.quantity === null ? "Quantity: TBD" : selection.quantity ? `Quantity: ${selection.quantity}` : "",
             `Selection state: ${selection.state}`,
             `Source: ${selection.source}`,
             selection.notes ? `Designer notes: ${selection.notes}` : "",

@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
+import { parseRoomDesignQuantity } from "@/lib/roomDesignQuantity";
 import { extensionImportDestination } from "@/lib/extensionDestination";
 import { normalizeExtensionBoardState, type ExtensionBoardState } from "@/lib/extensionBoardState";
 import {
@@ -57,7 +58,7 @@ type ExtensionProductPayload = {
   roomId?: string;
   roomName?: string;
   requiredItemKey?: string;
-  quantity?: number;
+  quantity?: number | "TBD" | null;
   sourcePageUrl?: string;
   imageUrl?: string;
   imageDataUrl?: string;
@@ -508,12 +509,9 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const roomId = cleanText(payload.roomId);
           const roomName = cleanText(payload.roomName);
           const requiredItemKey = cleanText(payload.requiredItemKey);
-          const quantity =
-            typeof payload.quantity === "number" &&
-            Number.isFinite(payload.quantity) &&
-            payload.quantity > 0
-              ? Math.round(payload.quantity * 100) / 100
-              : 1;
+          let quantity: number | null;
+          try { quantity = parseRoomDesignQuantity(payload.quantity); }
+          catch { return json({ error: "Enter a positive quantity or TBD." }, 400); }
           const sourcePageUrl = normalizeUrl(payload.sourcePageUrl);
           const imageUrl = normalizeUrl(payload.imageUrl);
           const imageData = parseImageDataUrl(payload.imageDataUrl);

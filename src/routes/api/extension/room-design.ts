@@ -239,7 +239,7 @@ export const Route = createFileRoute("/api/extension/room-design")({
               label: item.category,
               filled: Boolean(selection && selection.state !== "draft"),
               productName: selection?.productName || item.catalogProductName || "",
-              quantity: selection?.quantity || item.quantity || 1,
+              quantity: selection?.quantity !== undefined ? selection.quantity : item.quantity,
             };
           });
 

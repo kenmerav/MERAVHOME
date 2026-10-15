@@ -1,3 +1,4 @@
+importScripts("quantity.js");
 const IMAGE_MENU_ID = "send-image-to-merav-studio";
 const PAGE_MENU_ID = "send-page-to-merav-studio";
 const DEFAULT_STUDIO_URL = "https://studio.meravinteriors.com";
@@ -137,7 +138,7 @@ async function sendImageToStudio(info, tab, overrides = {}) {
   const roomName = overrides.roomName || roomNameByProject[projectId] || "";
   const requiredItemKey = overrides.requiredItemKey || settings.itemByRoom?.[roomId] || "";
   const storedQuantity = settings.quantityByItem?.[`${roomId}:${requiredItemKey}`];
-  const quantity = Number(overrides.quantity || storedQuantity || 1);
+  const quantity = parseMeravQuantity(overrides.quantity ?? storedQuantity ?? 1);
   const colorFinish = String(overrides.colorFinish || "").trim();
   const extensionToken = settings.extensionToken;
 
@@ -167,7 +168,7 @@ async function sendImageToStudio(info, tab, overrides = {}) {
     roomId,
     roomName,
     requiredItemKey,
-    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+    quantity: destination === "room_design" ? quantity : 1,
     imageUrl: pageExtraction.imageUrl || info.srcUrl,
     sourcePageUrl: pageExtraction.sourcePageUrl || info.pageUrl || tab.url,
   };
