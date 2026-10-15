@@ -26,6 +26,14 @@ export const elevationSchema = z
     width: positive,
     height: positive,
     depth: positive.nullable(),
+    layoutEstimate: z
+      .object({
+        basis: z.literal("scaled-plan"),
+        source: z.string().trim().min(10).max(2000),
+        acceptedAt: z.string().datetime(),
+        geometry: z.string().min(2).max(120000),
+      })
+      .optional(),
     elements: z
       .array(
         z.object({

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { measuredLayoutIssues, measuredSpatialNotes } from "../src/lib/measuredSpatial";
+import {
+  hasAcceptedScaledLayout,
+  measuredLayoutKey,
+  measuredLayoutIssues,
+  measuredSpatialNotes,
+} from "../src/lib/measuredSpatial";
 import {
   elevationSchema,
   measuredRenderBrief,
@@ -39,6 +44,48 @@ const island: MeasuredElevation = {
   ],
 };
 describe("freestanding layout and source architecture", () => {
+  it("retains uncertainty while allowing an explicitly accepted scaled draft, including after storage parsing", () => {
+    const source = structuredClone(island);
+    source.elements[0].depth = 78;
+    source.layoutEstimate = {
+      basis: "scaled-plan",
+      source: "ID0.1 scaled depth 78 inches; placement remains illustrative.",
+      acceptedAt: new Date().toISOString(),
+      geometry: measuredLayoutKey(source),
+    };
+    const saved = elevationSchema.parse(JSON.parse(JSON.stringify(source)));
+    expect(hasAcceptedScaledLayout(saved)).toBe(true);
+    expect(measuredLayoutIssues(saved)).toEqual([]);
+    expect(saved.elements[0].inferredAxes).toEqual(["position", "depth"]);
+    expect(saved.questions).toEqual(island.questions);
+    expect(reconcileElevation(saved, []).ready).toBe(false);
+    expect(
+      measuredPhotorealPrompt(saved, reconcileElevation(saved, []), ["Camera", "Drawing"]),
+    ).toContain("DESIGNER-ACCEPTED SCALED-PLAN DRAFT, NOT VERIFIED CONSTRUCTION DIMENSIONS");
+    saved.elements[0].depth = 80;
+    expect(hasAcceptedScaledLayout(saved)).toBe(false);
+    expect(measuredLayoutIssues(saved)).toHaveLength(1);
+  });
+  it("invalidates acceptance when surrounding architecture moves", () => {
+    const source = structuredClone(island);
+    source.elements.push({
+      ...source.elements[0],
+      id: "wall",
+      name: "Surrounding wall",
+      installation: "built-in",
+    });
+    source.layoutEstimate = {
+      basis: "scaled-plan",
+      source: "ID0.1 scaled layout accepted for a draft.",
+      acceptedAt: new Date().toISOString(),
+      geometry: measuredLayoutKey(source),
+    };
+    source.elements.reverse();
+    expect(hasAcceptedScaledLayout(source)).toBe(true);
+    source.elements[0].z += 1;
+    expect(hasAcceptedScaledLayout(source)).toBe(false);
+    expect(measuredLayoutIssues(source)).toHaveLength(1);
+  });
   it("blocks the reported elevation-only island even though it has numeric placeholder depths", () => {
     const issues = measuredLayoutIssues(island);
     expect(issues).toHaveLength(1);

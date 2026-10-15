@@ -12,7 +12,13 @@ import {
   type SpecSelection,
 } from "@/lib/measuredRendering";
 import { inspectGlb } from "@/lib/measuredModelFile";
-import { measuredLayoutIssues, measuredSpatialNotes } from "@/lib/measuredSpatial";
+import {
+  measuredLayoutIssues,
+  measuredSpatialNotes,
+  measuredLayoutKey,
+  hasAcceptedScaledLayout,
+} from "@/lib/measuredSpatial";
+import { MeasuredLayoutEstimateApproval } from "./MeasuredLayoutEstimateApproval";
 import { ConstructionDrawingPicker } from "@/components/ConstructionDrawingPicker";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
 import { MeasuredRenderingProgress, type RenderingProgressJob } from "./MeasuredRenderingProgress";
@@ -115,6 +121,7 @@ export function MeasuredRenderingWorkspace({
     [elevation, items, models],
   );
   const displayedJob = history.find((j) => j.id === presentationJobId);
+  const scaledLayoutAccepted = !!elevation && hasAcceptedScaledLayout(elevation);
   const layoutIssues = useMemo(
     () => (elevation ? measuredLayoutIssues(elevation) : []),
     [elevation],
@@ -817,6 +824,44 @@ export function MeasuredRenderingWorkspace({
             You can browse the PDF and add the plan with “Add as supporting view.” The elevation
             preview can still be saved.
           </p>
+          <MeasuredLayoutEstimateApproval
+            disabled={!!busy || startingRequest}
+            onAccept={(source) => {
+              if (!elevation) return;
+              setElevation({
+                ...elevation,
+                layoutEstimate: {
+                  basis: "scaled-plan",
+                  source,
+                  acceptedAt: new Date().toISOString(),
+                  geometry: measuredLayoutKey(elevation),
+                },
+              });
+              working();
+            }}
+          />
+        </section>
+      )}
+      {scaledLayoutAccepted && elevation && (
+        <section
+          role="status"
+          aria-label="Accepted scaled-plan draft"
+          className="border border-amber-300 bg-amber-50 p-4 mb-6 text-sm"
+        >
+          <strong>Scaled-plan rendering draft — layout is not field verified</strong>
+          <p className="mt-2">{elevation.layoutEstimate!.source}</p>
+          <p className="mt-2">Changes to the entered layout require another review.</p>
+          <button
+            type="button"
+            disabled={!!busy}
+            className="underline mt-2"
+            onClick={() => {
+              setElevation({ ...elevation, layoutEstimate: undefined });
+              working();
+            }}
+          >
+            Require confirmed layout dimensions
+          </button>
         </section>
       )}
       {roomId && (
@@ -923,7 +968,7 @@ export function MeasuredRenderingWorkspace({
           projectId={projectId}
           imageUrl={presentation}
           jobId={presentationJobId}
-          defaultName={`${rooms.find((r) => r.id === roomId)?.name || "Room"} · ${displayedJob?.sceneName || elevation?.name || "Rendering"} · v${displayedJob?.revisionNumber || 1}`}
+          defaultName={`${rooms.find((r) => r.id === roomId)?.name || "Room"} · ${displayedJob?.sceneName || elevation?.name || "Rendering"} · v${displayedJob?.revisionNumber || 1}${scaledLayoutAccepted ? " · Scaled-plan draft" : ""}`}
           notes={presentationNotes}
           revisionNotes={displayedJob?.revisionNotes}
           revisionNumber={displayedJob?.revisionNumber}

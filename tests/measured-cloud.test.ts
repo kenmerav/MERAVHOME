@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { measuredLayoutKey } from "../src/lib/measuredSpatial";
 const fake = vi.hoisted(() => ({
   files: new Map<string, Uint8Array>(),
   images: new Map<string, any>(),
@@ -860,6 +861,38 @@ describe("Shared measured rendering boundary and persistence", () => {
     expect((await readStored<CloudJob>(jobPath(project, room, id)))?.error).toContain(
       "Island layout is unverified",
     );
+  });
+  it("preserves accepted scaled draft provenance through saving, queueing and generation", async () => {
+    const sourceElevation = structuredClone(elevation);
+    sourceElevation.elements[0] = {
+      ...sourceElevation.elements[0],
+      name: "Island cabinet",
+      kind: "cabinet",
+      specId: null,
+      inferredAxes: ["position", "depth"],
+    };
+    sourceElevation.layoutEstimate = {
+      basis: "scaled-plan",
+      source: "ID0.1 scaled depth 78 inches; approximate placement accepted for draft.",
+      acceptedAt: new Date().toISOString(),
+      geometry: measuredLayoutKey(sourceElevation),
+    };
+    const saved = await saveCloudScene(project, room, fake.profile.id, [item], {
+      elevation: sourceElevation,
+      sourcePath: source,
+      basePath: base,
+      models: [],
+      camera: { type: "elevation", position: [50, 50, 500], target: [50, 46, 0] },
+    });
+    const id = "99999999-9999-4999-8999-999999999999";
+    const response = await measuredApi(
+      request({ action: "photoreal", operationId: id, sceneId: saved.id }),
+    );
+    expect(response.status).toBe(202);
+    expect(await processCloudJob(project, room, id)).toBe("complete");
+    const generatedElevation = fake.generate.mock.calls[0][0];
+    expect(generatedElevation.layoutEstimate).toEqual(sourceElevation.layoutEstimate);
+    expect(generatedElevation.elements[0].inferredAxes).toEqual(["position", "depth"]);
   });
   it("records exhausted credits as failed without retrying a paid step", async () => {
     const saved = await scene();

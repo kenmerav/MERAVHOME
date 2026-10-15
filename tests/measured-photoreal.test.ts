@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { measuredLayoutKey } from "../src/lib/measuredSpatial";
 import {
   measuredPhotorealPrompt,
   compactMeasuredRenderBrief,
@@ -84,7 +85,14 @@ describe("Measured view to photorealistic presentation", () => {
     expect(measuredRenderBrief(elevation, dense).length).toBeGreaterThan(
       MEASURED_IMAGE_PROMPT_LIMIT,
     );
-    const prompt = measuredPhotorealPrompt(elevation, dense, [
+    const draft = structuredClone(elevation);
+    draft.layoutEstimate = {
+      basis: "scaled-plan",
+      source: "ID0.1 scaled depth 78 inches, accepted as an approximate draft.",
+      acceptedAt: new Date().toISOString(),
+      geometry: measuredLayoutKey(draft),
+    };
+    const prompt = measuredPhotorealPrompt(draft, dense, [
       "Measured camera",
       "Drawing",
       "Exact Ivoire tile photo",
@@ -93,6 +101,8 @@ describe("Measured view to photorealistic presentation", () => {
     expect(prompt).toContain("Ivoire glaze");
     expect(prompt).toContain("IVOIRE-2X6");
     expect(prompt).toContain("[250 repeated instances]");
+    expect(prompt).toContain("SCALED-PLAN DRAFT, NOT VERIFIED CONSTRUCTION DIMENSIONS");
+    expect(prompt).toContain("ID0.1 scaled depth 78 inches");
     expect(prompt).toContain("no labels, annotations or watermark");
     const revision = measuredPhotorealPrompt(
       elevation,
