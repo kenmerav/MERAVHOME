@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   measuredContext,
@@ -21,6 +22,7 @@ import {
 import { constructionDocuments, validateDrawingCitation } from "./constructionDrawingViews.server";
 import { projectDocumentStoragePath } from "./constructionDocumentPath.server";
 import { safeImageBuffer } from "./measuredImage.server";
+import { codexBoardPages, type CodexBoardPage } from "./codexRenderingBoards";
 import {
   codexBatchItemSchema,
   codexBatchSelectionSchema,
@@ -36,6 +38,22 @@ const resultPath = (projectId: string, id: string) =>
   itemPath(projectId, id).replace(/\.json$/, "-result.json");
 const removedPath = (projectId: string, id: string) =>
   itemPath(projectId, id).replace(/\.json$/, "-removed.json");
+const boardPath = (projectId: string, id: string) =>
+  itemPath(projectId, id).replace(/\.json$/, "-boards.json");
+async function boardsFor(
+  projectId: string,
+  roomIds: string[],
+  rooms: Array<{ id: string; name: string }>,
+) {
+  // This existing table is not yet represented in the generated database types.
+  const { data, error } = await (supabaseAdmin as unknown as SupabaseClient)
+    .from("design_boards")
+    .select("board_state")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (error) throw error;
+  return codexBoardPages(data?.board_state, roomIds, rooms);
+}
 export function codexBatchFingerprint(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -77,6 +95,30 @@ export async function codexBatchApi(request: Request, projectId: string) {
     const ctx = await measuredContext(request, projectId);
     const url = new URL(request.url);
     if (request.method === "GET") {
+      if (url.searchParams.has("boardImage")) {
+        const item = await load(projectId, scopedId.parse(url.searchParams.get("item")));
+        if (await readStored(removedPath(projectId, item.id)))
+          throw new ProjectAccessError("This view was removed.", 409);
+        const snapshot = await readStored<{ pages: CodexBoardPage[] }>(
+          boardPath(projectId, item.id),
+        );
+        const page = snapshot?.pages.find((p) => p.id === url.searchParams.get("boardPage"));
+        const element = page?.elements.find(
+          (e) => e.id === url.searchParams.get("boardImage") && e.type === "image",
+        );
+        if (!element || typeof element.src !== "string")
+          throw new ProjectAccessError("Board image is not in this authorized handoff.", 404);
+        const image = await safeImageBuffer(element.src);
+        if (image.buffer.length > 8 * 1024 * 1024)
+          throw new ProjectAccessError("Board image exceeds the 8 MB handoff limit.", 413);
+        return new Response(new Uint8Array(image.buffer), {
+          headers: {
+            "Content-Type": image.contentType,
+            "Cache-Control": "no-store",
+            Vary: "Authorization",
+          },
+        });
+      }
       // Product references are selected from a frozen, authorized batch item, never an arbitrary URL.
       if (url.searchParams.has("product")) {
         const item = await load(projectId, scopedId.parse(url.searchParams.get("item")));
@@ -203,7 +245,36 @@ export async function codexBatchApi(request: Request, projectId: string) {
         if (signed.error) throw signed.error;
         refs.push({ id, title: doc.title, url: signed.data.signedUrl });
       }
-      return privateJson({ items, documents: refs, projectName: ctx.projectName, projectId });
+      const boardPages = await boardsFor(
+        projectId,
+        items.map((i) => i.roomId),
+        ctx.rooms,
+      );
+      const preparedItems = [];
+      for (const item of items) {
+        const pages = codexBoardPages({ pages: boardPages }, [item.roomId], ctx.rooms);
+        const fingerprint = codexBatchFingerprint(pages);
+        const existing = await readStored<{ fingerprint: string }>(boardPath(projectId, item.id));
+        if (existing && existing.fingerprint !== fingerprint)
+          throw new ProjectAccessError(
+            `${item.name}: Design board changed. Add a fresh selection.`,
+            409,
+          );
+        if (!existing) await writeStored(boardPath(projectId, item.id), { fingerprint, pages });
+        preparedItems.push({
+          ...item,
+          boardFingerprint: fingerprint,
+          boardPageIds: pages.map((p) => p.id),
+        });
+      }
+      return privateJson({
+        items: preparedItems,
+        documents: refs,
+        designBoards: boardPages,
+        designBoardUrl: `https://studio.meravinteriors.com/projects/${projectId}/design-board-presentation`,
+        projectName: ctx.projectName,
+        projectId,
+      });
     }
     if (body.action === "result") {
       const report = codexBatchReportSchema.parse(body.report);
@@ -213,6 +284,33 @@ export async function codexBatchApi(request: Request, projectId: string) {
       if (await readStored(removedPath(projectId, item.id)))
         throw new ProjectAccessError("This view was removed.", 409);
       await current(request, item);
+      const boardSnapshot = await readStored<{ fingerprint: string; pages: CodexBoardPage[] }>(
+        boardPath(projectId, item.id),
+      );
+      if (boardSnapshot) {
+        const pages = await boardsFor(projectId, [item.roomId], ctx.rooms);
+        if (codexBatchFingerprint(pages) !== boardSnapshot.fingerprint)
+          throw new ProjectAccessError(
+            `${item.name}: Design board changed after handoff. Add a fresh selection.`,
+            409,
+          );
+        if (
+          !report.boardReview ||
+          !report.enclosureReview ||
+          report.boardReview.fingerprint !== boardSnapshot.fingerprint ||
+          JSON.stringify([...report.boardReview.pageIds].sort()) !==
+            JSON.stringify(boardSnapshot.pages.map((p) => p.id).sort())
+        )
+          throw new ProjectAccessError(
+            "Review the frozen design boards and shower enclosure before importing.",
+            400,
+          );
+        if (report.status === "review" && report.enclosureReview.status === "blocked")
+          throw new ProjectAccessError(
+            "An unresolved enclosure must remain blocked, not a reviewed image.",
+            400,
+          );
+      }
       const documentsForReview = await constructionDocuments(projectId);
       if (
         !report.sourcePages.some(

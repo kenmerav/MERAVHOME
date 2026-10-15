@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { measuredLayoutKey } from "../src/lib/measuredSpatial";
 import { CODEX_BATCH_CHECKS } from "../src/lib/codexRenderingBatch";
+import { createHash } from "node:crypto";
 const fake = vi.hoisted(() => ({
   files: new Map<string, Uint8Array>(),
   images: new Map<string, any>(),
   saveError: false,
   authEmail: "ken@meravinteriors.com",
   productDimensions: '20" W x 30" H x 1.5" D',
+  boardState: { pages: [] } as { pages: any[] },
   profile: {
     id: "11111111-1111-4111-8111-111111111111",
     role: "Admin",
@@ -58,47 +60,54 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
                     project_id: "22222222-2222-4222-8222-222222222222",
                   },
                 ]
-              : table === "project_documents"
+              : table === "design_boards"
                 ? [
                     {
-                      id: "88888888-8888-4888-8888-888888888888",
                       project_id: "22222222-2222-4222-8222-222222222222",
-                      document_type: "Construction Doc",
-                      title: "Project drawings",
-                      updated_at: "2026-10-14T12:00:00Z",
-                      file_size: 1000,
-                      file_url:
-                        "https://storage.test/storage/v1/object/public/project-files/22222222-2222-4222-8222-222222222222/construction-docs/source.pdf",
+                      board_state: fake.boardState,
                     },
                   ]
-                : table === "material_items"
+                : table === "project_documents"
                   ? [
                       {
-                        id: "44444444-4444-4444-8444-444444444444",
-                        room_id: "33333333-3333-4333-8333-333333333333",
+                        id: "88888888-8888-4888-8888-888888888888",
                         project_id: "22222222-2222-4222-8222-222222222222",
-                        item_label: "Mirror",
-                        category: "Mirrors",
-                        cad_label: null,
-                        quantity: "3",
-                        color: "Polished Nickel",
-                        notes: null,
-                        product_id: "55555555-5555-4555-8555-555555555555",
-                        not_needed: false,
-                        image_url: "https://example.com/mirror.png",
-                        product_url: "https://example.com/mirror",
-                        product: {
-                          name: "Selected mirror",
-                          dimensions: fake.productDimensions,
-                          finish: "Polished Nickel",
-                          image_url: "https://example.com/mirror.png",
-                          product_url: "https://example.com/mirror",
-                        },
+                        document_type: "Construction Doc",
+                        title: "Project drawings",
+                        updated_at: "2026-10-14T12:00:00Z",
+                        file_size: 1000,
+                        file_url:
+                          "https://storage.test/storage/v1/object/public/project-files/22222222-2222-4222-8222-222222222222/construction-docs/source.pdf",
                       },
                     ]
-                  : table === "room_images"
-                    ? [...fake.images.values()]
-                    : [];
+                  : table === "material_items"
+                    ? [
+                        {
+                          id: "44444444-4444-4444-8444-444444444444",
+                          room_id: "33333333-3333-4333-8333-333333333333",
+                          project_id: "22222222-2222-4222-8222-222222222222",
+                          item_label: "Mirror",
+                          category: "Mirrors",
+                          cad_label: null,
+                          quantity: "3",
+                          color: "Polished Nickel",
+                          notes: null,
+                          product_id: "55555555-5555-4555-8555-555555555555",
+                          not_needed: false,
+                          image_url: "https://example.com/mirror.png",
+                          product_url: "https://example.com/mirror",
+                          product: {
+                            name: "Selected mirror",
+                            dimensions: fake.productDimensions,
+                            finish: "Polished Nickel",
+                            image_url: "https://example.com/mirror.png",
+                            product_url: "https://example.com/mirror",
+                          },
+                        },
+                      ]
+                    : table === "room_images"
+                      ? [...fake.images.values()]
+                      : [];
       const result = () => ({
         data: rows().filter((r: any) => filters.every(([k, v]) => r[k] === v)),
         error: null,
@@ -289,6 +298,15 @@ function batchReport(fingerprint: string) {
       },
     ],
     uncertainties: ["Depth has no written dimension."],
+    boardReview: {
+      fingerprint: createHash("sha256").update("[]").digest("hex"),
+      pageIds: [] as string[],
+      findings: "No room design board was available in this test handoff.",
+    },
+    enclosureReview: {
+      status: "not-applicable",
+      evidence: "Selected camera is limited to the vanity and excludes the shower.",
+    },
   };
 }
 describe("Codex subscription batch pilot", () => {
@@ -405,6 +423,129 @@ describe("Codex subscription batch pilot", () => {
     expect((await (await measuredApi(batchRequest())).json()).rows).toEqual([]);
     expect(fake.files.has(`${project}/codex-render-batch/${batchId}.json`)).toBe(true);
   });
+  it("includes pattern references excluded from Materials and requires board/enclosure review", async () => {
+    fake.boardState = {
+      pages: [
+        {
+          id: "bath-board",
+          title: "Primary Bathroom",
+          roomId: room,
+          elements: [
+            {
+              id: "floor-pattern",
+              type: "image",
+              src: "https://example.com/floor.png",
+              label: "floor tile pattern",
+              materialExcludeFromMaterials: true,
+            },
+          ],
+        },
+      ],
+    };
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    const pack = await (
+      await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))
+    ).json();
+    expect(pack.designBoards[0].elements[0].label).toBe("floor tile pattern");
+    expect(pack.items[0].boardPageIds).toEqual(["bath-board"]);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    const url = `https://studio.test/api/measured-rendering?projectId=${project}&codexBatch=1&item=${batchId}&boardPage=bath-board&boardImage=floor-pattern`;
+    expect(
+      (await measuredApi(new Request(url, { headers: { Authorization: "Bearer test-token" } })))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await measuredApi(
+          new Request(url.replace("floor-pattern", "foreign-image"), {
+            headers: { Authorization: "Bearer test-token" },
+          }),
+        )
+      ).status,
+    ).toBe(404);
+    const report = {
+      ...batchReport(item.fingerprint),
+      boardReview: {
+        fingerprint: pack.items[0].boardFingerprint,
+        pageIds: ["bath-board"],
+        findings: "Floor pattern compared to the original board image.",
+      },
+    };
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: { ...report, enclosureReview: undefined },
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: {
+              ...report,
+              enclosureReview: {
+                status: "blocked",
+                evidence: "No safe enclosure layout could be established.",
+              },
+            },
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (await measuredApi(batchRequest({ action: "result", report, imagePath: source }))).status,
+    ).toBe(200);
+    expect(fake.generate).not.toHaveBeenCalled();
+  });
+  it("rejects a board changed after handoff without altering the original board", async () => {
+    fake.boardState = {
+      pages: [
+        {
+          id: "bath-board",
+          title: "Primary Bathroom",
+          roomId: room,
+          elements: [{ id: "note", type: "text", text: "Herringbone floor" }],
+        },
+      ],
+    };
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    const pack = await (
+      await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))
+    ).json();
+    expect(fake.boardState.pages[0].elements[0].text).toBe("Herringbone floor");
+    fake.boardState.pages[0].elements[0].text = "Basketweave floor";
+    expect((await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))).status).toBe(
+      409,
+    );
+    const report = {
+      ...batchReport(item.fingerprint),
+      boardReview: {
+        fingerprint: pack.items[0].boardFingerprint,
+        pageIds: ["bath-board"],
+        findings: "Reviewed original herringbone floor note.",
+      },
+    };
+    expect(
+      (await measuredApi(batchRequest({ action: "result", report, imagePath: source }))).status,
+    ).toBe(409);
+  });
 });
 beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "https://storage.test");
@@ -413,6 +554,7 @@ beforeEach(() => {
   fake.saveError = false;
   fake.authEmail = "ken@meravinteriors.com";
   fake.productDimensions = '20" W x 30" H x 1.5" D';
+  fake.boardState = { pages: [] };
   fake.files.set(source, png);
   fake.files.set(base, png);
   fake.profile.role = "Admin";
