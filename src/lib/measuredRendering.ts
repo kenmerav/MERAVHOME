@@ -26,6 +26,14 @@ export const elevationSchema = z
     width: positive,
     height: positive,
     depth: positive.nullable(),
+    layoutEstimate: z
+      .object({
+        basis: z.literal("scaled-plan"),
+        source: z.string().trim().min(10).max(2000),
+        acceptedAt: z.string().datetime(),
+        geometry: z.string().min(2).max(120000),
+      })
+      .optional(),
     elements: z
       .array(
         z.object({
@@ -45,6 +53,9 @@ export const elevationSchema = z
             "niche",
             "hardware",
           ]),
+          installation: z
+            .enum(["freestanding", "wall-mounted", "ceiling-mounted", "built-in"])
+            .optional(),
           x: z.number().finite(),
           y: z.number().finite(),
           z: z.number().finite(),
@@ -219,10 +230,10 @@ export function measuredRenderBrief(elevation: MeasuredElevation, review: Render
   return [
     "MEASURED RENDER — INCHES",
     "Drawing controls architecture and installation centres. Spec Book controls product envelope dimensions and finish. Do not borrow products from another room.",
-    `Source: ${elevation.source}. Elevation: ${elevation.width} × ${elevation.height} inches.`,
+    `Source: ${elevation.source}. Elevation: ${elevation.width} × ${elevation.height} inches. Room depth: ${elevation.depth ?? "unspecified"}. z is the object's depth centre, positive toward the viewer; it is not a wall attachment.`,
     ...review.elements.map(
       (e) =>
-        `${e.name}: x centre ${e.x}, bottom ${e.y}, width ${e.width}, height ${e.height}, depth ${e.depth}. Product: ${e.selection?.name || "not assigned"}. Finish: ${e.selection?.finish || "not confirmed"}. SKU: ${e.selection?.sku || "not supplied"}.`,
+        `${e.name}: x centre ${e.x}, bottom ${e.y}, z centre ${e.z}, width ${e.width}, height ${e.height}, depth ${e.depth}. Installation: ${e.installation || "unspecified"}. Unverified axes: ${e.inferredAxes.join(", ") || "none"}. Product: ${e.selection?.name || "not assigned"}. Finish: ${e.selection?.finish || "not confirmed"}. SKU: ${e.selection?.sku || "not supplied"}.`,
     ),
     "UNRESOLVED",
     ...review.issues,

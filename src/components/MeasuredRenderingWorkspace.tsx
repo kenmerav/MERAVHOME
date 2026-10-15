@@ -12,8 +12,21 @@ import {
   type SpecSelection,
 } from "@/lib/measuredRendering";
 import { inspectGlb } from "@/lib/measuredModelFile";
+import {
+  measuredLayoutIssues,
+  measuredSpatialNotes,
+  measuredLayoutKey,
+  hasAcceptedScaledLayout,
+} from "@/lib/measuredSpatial";
+import { MeasuredLayoutEstimateApproval } from "./MeasuredLayoutEstimateApproval";
 import { ConstructionDrawingPicker } from "@/components/ConstructionDrawingPicker";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
+import { MeasuredRenderingProgress, type RenderingProgressJob } from "./MeasuredRenderingProgress";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  MeasuredRenderingImagePanel,
+  type SavedMeasuredRendering,
+} from "./MeasuredRenderingImagePanel";
 
 type Model = MeasuredProductModel & { path?: string };
 type Scene = {
@@ -42,17 +55,27 @@ type HistoryJob = {
   error?: string;
   imageUrl?: string;
   sceneId?: string;
+  sceneName?: string;
+  updatedAt?: string;
+  sourceCitation?: DrawingCitation;
+  parentJobId?: string;
+  revisionNotes?: string;
+  revisionNumber?: number;
+  savedRendering?: SavedMeasuredRendering | null;
 };
 type Capture = { image: string; camera: { type: string; position: number[]; target: number[] } };
 export function MeasuredRenderingWorkspace({
   projectId,
   initialRoomId,
   embedded = false,
+  onOpenGallery,
 }: {
   projectId: string;
   initialRoomId?: string;
   embedded?: boolean;
+  onOpenGallery?: (roomId: string) => void;
 }) {
+  const queryClient = useQueryClient();
   const [roomId, setRoomId] = useState(initialRoomId || ""),
     [rooms, setRooms] = useState<Array<{ id: string; name: string }>>([]),
     [name, setName] = useState("Project"),
@@ -75,10 +98,20 @@ export function MeasuredRenderingWorkspace({
     [jobId, setJobId] = useState(""),
     [jobKind, setJobKind] = useState(""),
     [presentation, setPresentation] = useState(""),
+    [presentationJobId, setPresentationJobId] = useState(""),
     [presentationNotes, setPresentationNotes] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryJob[]>([]),
     [scenes, setScenes] = useState<Array<{ id: string; name: string; createdAt: string }>>([]),
     [selectedSceneId, setSelectedSceneId] = useState("");
+  const [progressJob, setProgressJob] = useState<RenderingProgressJob | null>(null),
+    [activityStartedAt, setActivityStartedAt] = useState(""),
+    [lastCheckedAt, setLastCheckedAt] = useState(""),
+    [checkingStatus, setCheckingStatus] = useState(false),
+    [startingRequest, setStartingRequest] = useState(false),
+    [savedViewNotice, setSavedViewNotice] = useState(""),
+    [statusError, setStatusError] = useState("");
+  const statusRequest = useRef("");
+  const currentJob = useRef("");
   const capture = useRef<(() => Capture) | null>(null),
     generation = useRef(0),
     inFlight = useRef(false),
@@ -87,15 +120,29 @@ export function MeasuredRenderingWorkspace({
     () => (elevation ? reconcileElevation(elevation, items, models) : null),
     [elevation, items, models],
   );
+  const displayedJob = history.find((j) => j.id === presentationJobId);
+  const scaledLayoutAccepted = !!elevation && hasAcceptedScaledLayout(elevation);
+  const layoutIssues = useMemo(
+    () => (elevation ? measuredLayoutIssues(elevation) : []),
+    [elevation],
+  );
+  const spatialNotes = useMemo(
+    () => (elevation ? measuredSpatialNotes(elevation) : []),
+    [elevation],
+  );
   const query = `projectId=${encodeURIComponent(projectId)}${roomId ? "&roomId=" + encodeURIComponent(roomId) : ""}`;
   async function api(action?: Record<string, unknown>, extra = "") {
     const res = await fetch(`/api/measured-rendering?${query}${extra}`, {
       method: action ? "POST" : "GET",
       headers: await studioHeaders(),
+      signal: AbortSignal.timeout(action ? 60000 : 30000),
       ...(action ? { body: JSON.stringify(action) } : {}),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not complete this request.");
+    if (!res.ok)
+      throw Object.assign(new Error(data.error || "Could not complete this request."), {
+        status: res.status,
+      });
     return data;
   }
   function applyScene(s: Scene | null) {
@@ -112,6 +159,7 @@ export function MeasuredRenderingWorkspace({
     setDirty(s?.changed || false);
     setSelectedSceneId(s?.id || "");
     setPresentation(s?.presentationUrl || "");
+    setPresentationJobId("");
     setPresentationNotes(s?.presentationNotes || []);
   }
   async function refresh(extra = "") {
@@ -124,9 +172,12 @@ export function MeasuredRenderingWorkspace({
       (j: HistoryJob) => j.status === "queued" || j.status === "processing",
     );
     if (active) {
+      currentJob.current = active.id;
       setJobId(active.id);
       setJobKind(active.kind);
       setBusy(active.kind);
+      setProgressJob(active);
+      setLastCheckedAt(new Date().toISOString());
     }
   }
   useEffect(() => {
@@ -160,6 +211,14 @@ export function MeasuredRenderingWorkspace({
     setError("");
     setBusy("loading");
     setJobId("");
+    currentJob.current = "";
+    setProgressJob(null);
+    setSavedViewNotice("");
+    setStatusError("");
+    setCheckingStatus(false);
+    setLastCheckedAt("");
+    statusRequest.current = "";
+    setActivityStartedAt(new Date().toISOString());
     applyScene(null);
     api()
       .then((data) => {
@@ -173,8 +232,11 @@ export function MeasuredRenderingWorkspace({
         );
         setBusy(active?.kind || "");
         if (active) {
+          currentJob.current = active.id;
           setJobId(active.id);
           setJobKind(active.kind);
+          setProgressJob(active);
+          setLastCheckedAt(new Date().toISOString());
         }
       })
       .catch((e) => {
@@ -187,56 +249,73 @@ export function MeasuredRenderingWorkspace({
       generation.current++;
     };
   }, [roomId, projectId]);
+  async function checkJobStatus(id = jobId || operation.current?.id || progressJob?.id) {
+    if (!id || currentJob.current !== id) return;
+    const key = `${query}:${id}`,
+      epoch = generation.current;
+    if (statusRequest.current === key) return;
+    statusRequest.current = key;
+    setCheckingStatus(true);
+    try {
+      const data = await api(undefined, `&job=${encodeURIComponent(id)}`);
+      if (epoch !== generation.current || currentJob.current !== id) return;
+      setProgressJob(data);
+      setLastCheckedAt(new Date().toISOString());
+      setStatusError("");
+      setHistory((old) =>
+        old.map((j) =>
+          j.id === id
+            ? { ...j, status: data.status, updatedAt: data.updatedAt, error: data.error }
+            : j,
+        ),
+      );
+      if (data.status === "complete") {
+        setJobId("");
+        setBusy("");
+        operation.current = null;
+        if (data.scene) {
+          applyScene(data.scene);
+        }
+        if (data.imageUrl) {
+          setPresentation(data.imageUrl);
+          setPresentationJobId(data.id);
+          setPresentationNotes([
+            "Generated from the saved measured camera and selected product photos. Compare fine geometry, materials and tile courses with the drawing before acceptance.",
+          ]);
+        }
+        const list = await api();
+        if (epoch === generation.current && currentJob.current === id) {
+          setHistory(list.jobs || []);
+          setScenes(list.scenes || []);
+        }
+      } else if (data.status === "failed") {
+        setError(data.error || "Rendering could not finish.");
+        setJobId("");
+        setBusy("");
+        operation.current = null;
+      } else {
+        setJobId(id);
+        setJobKind(data.kind);
+        setBusy(data.kind);
+      }
+    } catch (e) {
+      if (epoch === generation.current && currentJob.current === id) {
+        setStatusError(
+          "Could not update the saved status. Check again or reopen this room. No new read or image was started.",
+        );
+      }
+    } finally {
+      if (statusRequest.current === key) {
+        statusRequest.current = "";
+        if (epoch === generation.current && currentJob.current === id) setCheckingStatus(false);
+      }
+    }
+  }
   useEffect(() => {
     if (!jobId) return;
-    let active = true;
-    let polling = false;
-    const timer = setInterval(async () => {
-      if (polling) return;
-      polling = true;
-      try {
-        const data = await api(undefined, `&job=${jobId}`);
-        if (!active) return;
-        if (data.status === "complete") {
-          setJobId("");
-          setBusy("");
-          operation.current = null;
-          if (data.scene) {
-            applyScene(data.scene);
-          }
-          if (data.imageUrl) {
-            setPresentation(data.imageUrl);
-            setPresentationNotes([
-              "Generated from the saved measured camera and selected product photos. Compare fine geometry, materials and tile courses with the drawing before acceptance.",
-            ]);
-          }
-          const list = await api();
-          if (active) {
-            setHistory(list.jobs || []);
-            setScenes(list.scenes || []);
-          }
-        } else if (data.status === "failed") {
-          setError(data.error || "Rendering could not finish.");
-          setJobId("");
-          setBusy("");
-          operation.current = null;
-        } else if (Date.now() - new Date(data.createdAt).getTime() > 15 * 60 * 1000) {
-          setError(
-            "This job is taking longer than expected. Its saved status remains in history; reopen it before starting another attempt.",
-          );
-          setBusy("");
-        }
-      } catch (e) {
-        if (active) {
-          setError(e instanceof Error ? e.message : "Could not read job status.");
-          setBusy("");
-        }
-      } finally {
-        polling = false;
-      }
-    }, 2500);
+    void checkJobStatus(jobId);
+    const timer = setInterval(() => void checkJobStatus(jobId), 2500);
     return () => {
-      active = false;
       clearInterval(timer);
     };
   }, [jobId, query]);
@@ -251,7 +330,13 @@ export function MeasuredRenderingWorkspace({
   function working() {
     setDirty(true);
     setPresentation("");
+    setPresentationJobId("");
     operation.current = null;
+    setSavedViewNotice("");
+    if (!jobId) {
+      setProgressJob(null);
+      currentJob.current = "";
+    }
   }
   async function chooseImage(files: File[], kind: "source" | "support" | "quality") {
     if (!files.length) return;
@@ -266,6 +351,7 @@ export function MeasuredRenderingWorkspace({
       return;
     }
     setBusy("upload");
+    setActivityStartedAt(new Date().toISOString());
     setError("");
     try {
       const paths = await Promise.all(files.map((f) => upload(f)));
@@ -295,12 +381,28 @@ export function MeasuredRenderingWorkspace({
   async function readDrawing() {
     if (inFlight.current || !sourcePath) return;
     inFlight.current = true;
+    setStartingRequest(true);
+    const epoch = generation.current;
+    let requestId = "";
     setBusy("interpret");
+    const startedAt = new Date().toISOString();
+    setActivityStartedAt(startedAt);
+    setLastCheckedAt("");
+    setStatusError("");
     setError("");
     try {
       const key = JSON.stringify([sourcePath, supportPaths]);
       if (operation.current?.kind !== "interpret" || operation.current.key !== key)
         operation.current = { id: crypto.randomUUID(), kind: "interpret", key };
+      requestId = operation.current.id;
+      currentJob.current = requestId;
+      setProgressJob({
+        id: operation.current.id,
+        kind: "interpret",
+        status: "starting",
+        createdAt: startedAt,
+        sourceCitation,
+      });
       const data = await api({
         action: "interpret",
         operationId: operation.current.id,
@@ -309,13 +411,27 @@ export function MeasuredRenderingWorkspace({
         sourceCitation,
         supportCitations,
       });
+      if (epoch !== generation.current || operation.current?.id !== requestId) return;
       setJobId(data.jobId);
       setJobKind("interpret");
+      const job = {
+        id: data.jobId,
+        kind: "interpret",
+        status: data.status,
+        createdAt: data.createdAt || startedAt,
+        updatedAt: data.updatedAt,
+        sourceCitation,
+      };
+      setProgressJob(job);
+      setHistory((old) => [job, ...old.filter((j) => j.id !== job.id)]);
     } catch (e) {
+      if (epoch !== generation.current || operation.current?.id !== requestId) return;
       setError(e instanceof Error ? e.message : "Could not start drawing reading.");
       setBusy("");
+      setProgressJob((old) => (old ? { ...old, status: "unknown" } : null));
     } finally {
       inFlight.current = false;
+      setStartingRequest(false);
     }
   }
   async function saveCamera() {
@@ -360,6 +476,7 @@ export function MeasuredRenderingWorkspace({
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy("camera");
+    setActivityStartedAt(new Date().toISOString());
     setError("");
     try {
       await saveCamera();
@@ -370,28 +487,87 @@ export function MeasuredRenderingWorkspace({
       inFlight.current = false;
     }
   }
-  async function photograph() {
-    if (inFlight.current || !scene?.basePath || dirty) return;
+  async function photograph(revision?: { parentJobId: string; revisionNotes: string }) {
+    if (layoutIssues.length) {
+      setError(layoutIssues.join(" "));
+      return false;
+    }
+    if (inFlight.current || (!revision && (!scene?.basePath || dirty))) return false;
     inFlight.current = true;
+    setStartingRequest(true);
+    const epoch = generation.current;
+    let requestId = "";
     setBusy("photoreal");
+    const startedAt = new Date().toISOString();
+    setActivityStartedAt(startedAt);
+    setLastCheckedAt("");
+    setStatusError("");
     setError("");
     try {
-      const key = scene.id;
+      const key = revision ? JSON.stringify(revision) : scene!.id;
       if (operation.current?.kind !== "photoreal" || operation.current.key !== key)
         operation.current = { id: crypto.randomUUID(), kind: "photoreal", key };
+      requestId = operation.current.id;
+      currentJob.current = requestId;
+      setProgressJob({
+        id: operation.current.id,
+        kind: "photoreal",
+        status: "starting",
+        createdAt: startedAt,
+        sourceCitation,
+      });
       const data = await api({
         action: "photoreal",
-        sceneId: scene.id,
+        sceneId: revision ? undefined : scene!.id,
+        ...revision,
         operationId: operation.current.id,
       });
+      if (epoch !== generation.current || operation.current?.id !== requestId) return false;
       setJobId(data.jobId);
       setJobKind("photoreal");
+      const job = {
+        id: data.jobId,
+        kind: "photoreal",
+        status: data.status,
+        createdAt: data.createdAt || startedAt,
+        updatedAt: data.updatedAt,
+        sourceCitation,
+        parentJobId: revision?.parentJobId,
+        revisionNotes: revision?.revisionNotes,
+        revisionNumber: revision ? (displayedJob?.revisionNumber || 1) + 1 : 1,
+      };
+      setProgressJob(job);
+      setHistory((old) => [job, ...old.filter((j) => j.id !== job.id)]);
+      return true;
     } catch (e) {
+      if (epoch !== generation.current || operation.current?.id !== requestId) return false;
       setError(e instanceof Error ? e.message : "Could not start rendering.");
       setBusy("");
+      const rejected =
+        typeof (e as { status?: number })?.status === "number" &&
+        (e as { status: number }).status < 500;
+      setProgressJob((old) => (old ? { ...old, status: rejected ? "failed" : "unknown" } : null));
+      if (rejected) {
+        operation.current = null;
+        currentJob.current = "";
+      }
+      return false;
     } finally {
       inFlight.current = false;
+      setStartingRequest(false);
     }
+  }
+  async function saveRendering(caption: string, approve: boolean) {
+    const epoch = generation.current,
+      id = presentationJobId;
+    if (!id) throw new Error("Choose a completed image first.");
+    const data = await api({ action: "save-rendering", jobId: id, caption, approve });
+    void queryClient.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
+    void queryClient.invalidateQueries({ queryKey: ["roomImages", roomId] });
+    if (epoch !== generation.current) return;
+    setHistory((old) =>
+      old.map((j) => (j.id === id ? { ...j, savedRendering: data.rendering } : j)),
+    );
   }
   async function importModel(item: SpecSelection, file?: File) {
     if (!file) return;
@@ -459,6 +635,7 @@ export function MeasuredRenderingWorkspace({
     if (kind === "support" && supportPaths.length >= 3)
       throw Error("Use at most three supporting views.");
     setBusy("upload");
+    setActivityStartedAt(new Date().toISOString());
     setError("");
     try {
       const path = await upload(blob, "image/png");
@@ -493,8 +670,12 @@ export function MeasuredRenderingWorkspace({
       )}
       <div className="my-7 flex flex-wrap justify-between items-end gap-4">
         <div>
-          <p className="eyebrow mb-2">MERAV STUDIO · {name}</p>
-          <h1 className="font-display text-5xl">Drawing + Spec Book</h1>
+          {!embedded && <p className="eyebrow mb-2">MERAV STUDIO · {name}</p>}
+          {embedded ? (
+            <h2 className="font-display text-4xl">Create a rendering</h2>
+          ) : (
+            <h1 className="font-display text-5xl">Rendering Studio</h1>
+          )}
           <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
             Build the measured view from your drawing, using Spec Book product dimensions. Then
             create the finished-room photograph.
@@ -504,6 +685,56 @@ export function MeasuredRenderingWorkspace({
           {review ? `${review.changes.length} product dimension updates` : "Choose a room"}
         </p>
       </div>
+      {(busy || progressJob) && (
+        <MeasuredRenderingProgress
+          job={progressJob}
+          busy={busy}
+          startedAt={activityStartedAt}
+          lastCheckedAt={lastCheckedAt}
+          checking={checkingStatus}
+          statusError={statusError}
+          previousView={!!scene}
+          onCheck={progressJob ? () => void checkJobStatus(progressJob.id) : undefined}
+          onNext={
+            elevation &&
+            !busy &&
+            !startingRequest &&
+            (!(scene?.basePath && !dirty) || layoutIssues.length === 0) &&
+            progressJob?.status === "complete" &&
+            progressJob.kind === "interpret"
+              ? scene?.basePath && !dirty
+                ? () => void photograph()
+                : () => void buildCamera()
+              : undefined
+          }
+          nextLabel={
+            scene?.basePath && !dirty ? "Create photorealistic image" : "Build & save camera view"
+          }
+          onUseSavedCamera={
+            jobId && progressJob?.kind === "interpret" && scene?.basePath && !startingRequest
+              ? () => {
+                  setJobId("");
+                  currentJob.current = "";
+                  setBusy("");
+                  setProgressJob(null);
+                  setError("");
+                  setCheckingStatus(false);
+                  setStatusError("");
+                  statusRequest.current = "";
+                  operation.current = null;
+                  setSavedViewNotice(
+                    "The drawing read continues in the background. You are using your previous saved camera. Choose Follow job in saved rendering jobs to check the new result.",
+                  );
+                }
+              : undefined
+          }
+        />
+      )}
+      {savedViewNotice && (
+        <p role="status" className="mb-6 border p-4 text-sm">
+          {savedViewNotice}
+        </p>
+      )}
       <div className="flex flex-wrap gap-4 items-end mb-6">
         <label className="text-sm">
           Room
@@ -511,7 +742,7 @@ export function MeasuredRenderingWorkspace({
             aria-label="Room"
             className="block mt-1 border p-2 min-w-48"
             value={roomId}
-            disabled={!!busy}
+            disabled={startingRequest || ["loading", "camera", "upload"].includes(busy)}
             onChange={(e) => setRoomId(e.target.value)}
           >
             <option value="">Choose room</option>
@@ -546,27 +777,93 @@ export function MeasuredRenderingWorkspace({
           />
         </label>
         <button
-          disabled={!sourcePath || !!busy}
+          disabled={
+            !sourcePath ||
+            !!busy ||
+            startingRequest ||
+            (!!savedViewNotice &&
+              history.some(
+                (j) => j.kind === "interpret" && ["queued", "processing"].includes(j.status),
+              ))
+          }
           onClick={() => void readDrawing()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
           Read drawing & match specs
         </button>
         <button
-          disabled={!elevation || !!busy}
+          disabled={!elevation || !!busy || startingRequest}
           onClick={() => void buildCamera()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
           1. Build & save camera view
         </button>
         <button
-          disabled={!scene?.basePath || dirty || !!busy}
+          disabled={
+            !scene?.basePath || dirty || !!busy || startingRequest || layoutIssues.length > 0
+          }
           onClick={() => void photograph()}
           className="bg-ink text-white px-5 py-3 text-sm disabled:opacity-40"
         >
           2. Create photorealistic image
         </button>
       </div>
+      {layoutIssues.length > 0 && (
+        <section
+          role="status"
+          aria-label="Layout confirmation needed"
+          className="border border-amber-300 bg-amber-50 p-4 mt-4 mb-6 text-sm"
+        >
+          <strong>Confirm island / freestanding layout before creating an image</strong>
+          {layoutIssues.map((issue) => (
+            <p key={issue} className="mt-2">
+              {issue}
+            </p>
+          ))}
+          <p className="mt-2">
+            You can browse the PDF and add the plan with “Add as supporting view.” The elevation
+            preview can still be saved.
+          </p>
+          <MeasuredLayoutEstimateApproval
+            disabled={!!busy || startingRequest}
+            onAccept={(source) => {
+              if (!elevation) return;
+              setElevation({
+                ...elevation,
+                layoutEstimate: {
+                  basis: "scaled-plan",
+                  source,
+                  acceptedAt: new Date().toISOString(),
+                  geometry: measuredLayoutKey(elevation),
+                },
+              });
+              working();
+            }}
+          />
+        </section>
+      )}
+      {scaledLayoutAccepted && elevation && (
+        <section
+          role="status"
+          aria-label="Accepted scaled-plan draft"
+          className="border border-amber-300 bg-amber-50 p-4 mb-6 text-sm"
+        >
+          <strong>Scaled-plan rendering draft — layout is not field verified</strong>
+          <p className="mt-2">{elevation.layoutEstimate!.source}</p>
+          <p className="mt-2">Changes to the entered layout require another review.</p>
+          <button
+            type="button"
+            disabled={!!busy}
+            className="underline mt-2"
+            onClick={() => {
+              setElevation({ ...elevation, layoutEstimate: undefined });
+              working();
+            }}
+          >
+            Require confirmed layout dimensions
+          </button>
+        </section>
+      )}
       {roomId && (
         <ConstructionDrawingPicker
           projectId={projectId}
@@ -638,6 +935,7 @@ export function MeasuredRenderingWorkspace({
                   .finally(() => setBusy(""));
               }}
             >
+              {!selectedSceneId && <option value="">New selected view — not saved yet</option>}
               {scenes.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} · {new Date(s.createdAt).toLocaleString()}
@@ -659,46 +957,39 @@ export function MeasuredRenderingWorkspace({
           photograph.
         </p>
       )}
-      {busy && (
-        <p role="status" className="mb-4 text-sm">
-          {busy === "interpret"
-            ? "Reading the drawing and matching products…"
-            : busy === "photoreal"
-              ? "Creating the photograph. You can reopen its saved job later."
-              : busy === "camera"
-                ? "Saving the measured camera and sources…"
-                : busy === "upload"
-                  ? "Uploading original references…"
-                  : "Loading saved project data…"}
-        </p>
-      )}
       {error && (
         <div role="alert" className="border border-red-200 bg-red-50 p-4 mb-6 text-sm">
           {error}
         </div>
       )}
       {presentation && (
-        <section className="mb-8 border bg-white">
-          <div className="p-4 flex justify-between gap-4">
-            <div>
-              <h2 className="font-display text-3xl">Photorealistic presentation</h2>
-              <p className="text-xs mt-1 text-muted-foreground">
-                Selected-product references · Requires design review
-              </p>
-            </div>
-            <a href={presentation} target="_blank" rel="noreferrer" className="text-sm underline">
-              Open full image
-            </a>
-          </div>
-          <img
-            src={presentation}
-            alt="Photorealistic room presentation"
-            className="w-full max-h-[740px] object-contain"
-          />
-          <p className="p-4 text-xs text-muted-foreground">
-            {presentationNotes.join(" ")} The measured scene remains the dimension reference; image
-            generation can change fine geometry.
-          </p>
+        <MeasuredRenderingImagePanel
+          key={presentationJobId || presentation}
+          projectId={projectId}
+          imageUrl={presentation}
+          jobId={presentationJobId}
+          defaultName={`${rooms.find((r) => r.id === roomId)?.name || "Room"} · ${displayedJob?.sceneName || elevation?.name || "Rendering"} · v${displayedJob?.revisionNumber || 1}${scaledLayoutAccepted ? " · Scaled-plan draft" : ""}`}
+          notes={presentationNotes}
+          revisionNotes={displayedJob?.revisionNotes}
+          revisionNumber={displayedJob?.revisionNumber}
+          savedRendering={displayedJob?.savedRendering}
+          busy={!!busy || startingRequest || progressJob?.status === "unknown"}
+          revisionBlockedReason={layoutIssues.length ? layoutIssues.join(" ") : undefined}
+          onSave={saveRendering}
+          onRevise={(revisionNotes) =>
+            photograph({ parentJobId: presentationJobId, revisionNotes })
+          }
+          onOpenGallery={onOpenGallery ? () => onOpenGallery(roomId) : undefined}
+        />
+      )}
+      {spatialNotes.length > 0 && (
+        <section className="border p-4 mb-6 text-sm" aria-label="Drawing layout notes">
+          <strong>Drawing layout notes</strong>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            {spatialNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
         </section>
       )}
       {review && (
@@ -985,8 +1276,17 @@ export function MeasuredRenderingWorkspace({
                 <div>
                   <p>
                     {j.kind === "photoreal" ? "Photorealistic image" : "Drawing reading"} ·{" "}
+                    {j.kind === "photoreal" ? `Version ${j.revisionNumber || 1} · ` : ""}
                     {j.status} · {new Date(j.createdAt).toLocaleString()}
                   </p>
+                  {j.revisionNotes && (
+                    <p className="text-xs mt-2 whitespace-pre-wrap">Requested: {j.revisionNotes}</p>
+                  )}
+                  {j.savedRendering && (
+                    <p className="text-xs mt-1">
+                      Saved to room renderings · {j.savedRendering.review_status}
+                    </p>
+                  )}
                   {j.error && <p className="text-xs text-red-700 mt-1">{j.error}</p>}
                 </div>
                 {j.imageUrl && (
@@ -994,6 +1294,7 @@ export function MeasuredRenderingWorkspace({
                     className="underline"
                     onClick={() => {
                       setPresentation(j.imageUrl!);
+                      setPresentationJobId(j.id);
                       setPresentationNotes([
                         "Saved presentation draft. Match this image to its saved camera version before review.",
                       ]);
@@ -1006,9 +1307,14 @@ export function MeasuredRenderingWorkspace({
                   <button
                     className="underline"
                     onClick={() => {
+                      currentJob.current = j.id;
+                      setSavedViewNotice("");
                       setJobId(j.id);
                       setJobKind(j.kind);
                       setBusy(j.kind);
+                      setProgressJob(j);
+                      setStatusError("");
+                      void checkJobStatus(j.id);
                     }}
                   >
                     Follow job

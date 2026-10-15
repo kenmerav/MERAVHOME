@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { measuredLayoutKey } from "../src/lib/measuredSpatial";
+import { CODEX_BATCH_CHECKS } from "../src/lib/codexRenderingBatch";
 const fake = vi.hoisted(() => ({
   files: new Map<string, Uint8Array>(),
+  images: new Map<string, any>(),
+  saveError: false,
+  authEmail: "ken@meravinteriors.com",
+  productDimensions: '20" W x 30" H x 1.5" D',
   profile: {
     id: "11111111-1111-4111-8111-111111111111",
     role: "Admin",
+    email: "ken@meravinteriors.com",
     is_active: true,
     is_owner: true,
     can_view_all_projects: true,
@@ -11,7 +18,7 @@ const fake = vi.hoisted(() => ({
   start: vi.fn(async () => ({ runId: "test-run" })),
   generate: vi.fn(),
   interpret: vi.fn(),
-  retrieve:vi.fn(),
+  retrieve: vi.fn(),
 }));
 const project = "22222222-2222-4222-8222-222222222222",
   room = "33333333-3333-4333-8333-333333333333",
@@ -23,7 +30,7 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
     auth: {
       getUser: vi.fn(async (token: string) =>
         token === "test-token"
-          ? { data: { user: { id: fake.profile.id } }, error: null }
+          ? { data: { user: { id: fake.profile.id, email: fake.authEmail } }, error: null }
           : { data: { user: null }, error: new Error("invalid") },
       ),
     },
@@ -82,19 +89,27 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
                         product_url: "https://example.com/mirror",
                         product: {
                           name: "Selected mirror",
-                          dimensions: '20" W x 30" H x 1.5" D',
+                          dimensions: fake.productDimensions,
                           finish: "Polished Nickel",
                           image_url: "https://example.com/mirror.png",
                           product_url: "https://example.com/mirror",
                         },
                       },
                     ]
-                  : [];
+                  : table === "room_images"
+                    ? [...fake.images.values()]
+                    : [];
       const result = () => ({
         data: rows().filter((r: any) => filters.every(([k, v]) => r[k] === v)),
         error: null,
       });
       builder.maybeSingle = async () => ({ ...result(), data: result().data[0] || null });
+      builder.single = builder.maybeSingle;
+      builder.upsert = async (row: any) => {
+        if (fake.saveError) return { error: new Error("Save interrupted") };
+        if (!fake.images.has(row.id)) fake.images.set(row.id, row);
+        return { data: null, error: null };
+      };
       builder.then = (resolve: any) => Promise.resolve(result()).then(resolve);
       return builder;
     },
@@ -113,6 +128,9 @@ vi.mock("../src/integrations/supabase/client.server", () => ({
         createSignedUrl: async (path: string) => ({
           data: { signedUrl: "https://storage.test/" + path },
           error: null,
+        }),
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: "https://storage.test/public/" + path },
         }),
         createSignedUploadUrl: async (path: string) => ({
           data: { path, token: "signed-test-token" },
@@ -140,9 +158,16 @@ vi.mock("../src/lib/measuredPhotoreal.server", () => ({
 }));
 vi.mock("../src/lib/measuredInterpret.server", () => ({
   interpretMeasuredElevation: fake.interpret,
-  parseMeasuredInterpretation:(body:any)=>({elevation:body.elevation,usage:body.usage,model:body.model}),
+  parseMeasuredInterpretation: (body: any) => ({
+    elevation: body.elevation,
+    usage: body.usage,
+    model: body.model,
+  }),
 }));
-vi.mock("../src/lib/specReviewAI.server",()=>({retrieveSpecReview:fake.retrieve,fetchSpecReview:vi.fn()}));
+vi.mock("../src/lib/specReviewAI.server", () => ({
+  retrieveSpecReview: fake.retrieve,
+  fetchSpecReview: vi.fn(),
+}));
 import { measuredApi } from "../src/lib/measuredRendering.server";
 import {
   scopedAsset,
@@ -158,6 +183,7 @@ import {
 } from "../src/lib/measuredCloud.server";
 import { specSelectionSchema, type MeasuredElevation } from "../src/lib/measuredRendering";
 import { runMeasuredRenderingStep } from "../src/workflows/measuredRendering";
+import { constructionViewsKey } from "../src/lib/constructionDrawingViews.server";
 const item = specSelectionSchema.parse({
   id: selection,
   label: "Mirror",
@@ -208,12 +234,189 @@ const request = (body?: unknown, auth = true) =>
     headers: auth ? { Authorization: "Bearer test-token", "Content-Type": "application/json" } : {},
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+const batchRequest = (body?: unknown, auth = true) =>
+  new Request(`https://studio.test/api/measured-rendering?projectId=${project}&codexBatch=1`, {
+    method: body ? "POST" : "GET",
+    headers: auth ? { Authorization: "Bearer test-token", "Content-Type": "application/json" } : {},
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+const batchId = "99999999-9999-4999-8999-999999999999";
+function batchSelection() {
+  const doc = {
+    id: "88888888-8888-4888-8888-888888888888",
+    title: "Project drawings",
+    updated_at: "2026-10-14T12:00:00Z",
+    file_size: 1000,
+    file_url: `https://storage.test/storage/v1/object/public/project-files/${project}/construction-docs/source.pdf`,
+  };
+  return {
+    action: "add",
+    id: batchId,
+    roomId: room,
+    name: "Bath vanity",
+    sourcePath: source,
+    notes: "Do not invent missing dimensions.",
+    citation: {
+      documentId: doc.id,
+      documentTitle: doc.title,
+      sourceKey: constructionViewsKey(project, doc, [{ id: room, name: "Primary Bathroom" }]),
+      viewId: "manual-page-16",
+      title: "Primary bath",
+      sheet: "ID2.8",
+      page: 16,
+      bounds: { left: 0, top: 0, right: 1, bottom: 1 },
+    },
+  };
+}
+function batchReport(fingerprint: string) {
+  return {
+    itemId: batchId,
+    fingerprint,
+    provider: "codex-subscription",
+    status: "review",
+    attempts: 1,
+    summary: "Draft retains layout; depth and product finish need review.",
+    checks: CODEX_BATCH_CHECKS.map((category) => ({
+      category,
+      outcome: "unknown",
+      evidence: "ID2.8 page16 reviewed; depth remains unverified.",
+    })),
+    sourcePages: [
+      {
+        documentId: "88888888-8888-4888-8888-888888888888",
+        page: 16,
+        reason: "Selected vanity elevation",
+      },
+    ],
+    uncertainties: ["Depth has no written dimension."],
+  };
+}
+describe("Codex subscription batch pilot", () => {
+  it("saves, prepares full source context and imports results without a paid read or image workflow", async () => {
+    const added = await measuredApi(batchRequest(batchSelection()));
+    expect(added.status).toBe(201);
+    const item = (await added.json()).item;
+    expect(item.items[0].dimensions).toBe(fake.productDimensions);
+    expect((await measuredApi(batchRequest(batchSelection()))).status).toBe(200);
+    const prepared = await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }));
+    expect(prepared.status).toBe(200);
+    const pack = await prepared.json();
+    expect(pack.documents).toHaveLength(1);
+    expect(pack.documents[0].url).toContain("construction-docs/source.pdf");
+    expect(pack.items[0].fingerprint).toBe(item.fingerprint);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    const rows = (await (await measuredApi(batchRequest())).json()).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].result.report.status).toBe("review");
+    expect(rows[0].result.imageUrl).toContain("assets");
+    expect((await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))).status).toBe(
+      409,
+    );
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.interpret).not.toHaveBeenCalled();
+    expect(fake.images.size).toBe(0);
+  });
+  it("blocks other users, absent authentication and foreign-room assets", async () => {
+    expect((await measuredApi(batchRequest(undefined, false))).status).toBe(401);
+    fake.authEmail = "katie@meravinteriors.com";
+    expect((await measuredApi(batchRequest(batchSelection()))).status).toBe(403);
+    fake.authEmail = "ken@meravinteriors.com";
+    expect(
+      (
+        await measuredApi(
+          batchRequest({ ...batchSelection(), sourcePath: source.replace(room, product) }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(fake.files.size).toBe(2);
+  });
+  it("rejects changed drawings/specs, missing checks, mismatched snapshots and unreviewed images", async () => {
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            ...batchSelection(),
+            citation: { ...batchSelection().citation, sourceKey: "0".repeat(64) },
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport("0".repeat(64)),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: { ...batchReport(item.fingerprint), checks: [] },
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (await measuredApi(batchRequest({ action: "result", report: batchReport(item.fingerprint) })))
+        .status,
+    ).toBe(400);
+    fake.productDimensions = "Different product dimensions";
+    expect((await measuredApi(batchRequest({ action: "prepare", ids: [batchId] }))).status).toBe(
+      409,
+    );
+    expect(
+      (
+        await measuredApi(
+          batchRequest({
+            action: "result",
+            report: batchReport(item.fingerprint),
+            imagePath: source,
+          }),
+        )
+      ).status,
+    ).toBe(409);
+  });
+  it("records blocked views without an image and retains removed selection data", async () => {
+    const item = (await (await measuredApi(batchRequest(batchSelection()))).json()).item;
+    const report = { ...batchReport(item.fingerprint), status: "blocked", attempts: 0 };
+    expect((await measuredApi(batchRequest({ action: "result", report }))).status).toBe(200);
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect((await measuredApi(batchRequest({ action: "remove", id: batchId }))).status).toBe(200);
+    expect((await (await measuredApi(batchRequest())).json()).rows).toEqual([]);
+    expect(fake.files.has(`${project}/codex-render-batch/${batchId}.json`)).toBe(true);
+  });
+});
 beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "https://storage.test");
   fake.files.clear();
+  fake.images.clear();
+  fake.saveError = false;
+  fake.authEmail = "ken@meravinteriors.com";
+  fake.productDimensions = '20" W x 30" H x 1.5" D';
   fake.files.set(source, png);
   fake.files.set(base, png);
   fake.profile.role = "Admin";
+  fake.profile.email = "ken@meravinteriors.com";
   fake.profile.is_active = true;
   fake.profile.can_view_all_projects = true;
   fake.start.mockClear();
@@ -235,20 +438,440 @@ async function scene() {
     camera: { type: "elevation", position: [50, 50, 500], target: [50, 46, 0] },
   });
 }
+const originalPhoto = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const revisedPhoto = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+async function finishedPhoto() {
+  const saved = await scene();
+  await writeStored(jobPath(project, room, originalPhoto), {
+    version: 1,
+    id: originalPhoto,
+    projectId: project,
+    roomId: room,
+    createdBy: fake.profile.id,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    kind: "photoreal",
+    status: "complete",
+    sceneId: saved.id,
+    imagePath: `${scopePath(project, room)}/assets/${originalPhoto}.png`,
+  });
+  fake.files.set(`${scopePath(project, room)}/assets/${originalPhoto}.png`, png);
+  return saved;
+}
+describe("Rendering Studio private development access", () => {
+  it("rejects other active admins and employees for reads and writes before starting work", async () => {
+    for (const role of ["Admin", "Employee"]) {
+      fake.profile.role = role;
+      fake.authEmail = "katie@meravinteriors.com";
+      // Even a profile claiming Ken's email must not override verified Auth identity.
+      fake.profile.email = "ken@meravinteriors.com";
+      for (const body of [
+        undefined,
+        { action: "index-drawings", documentId: selection },
+        { action: "save-rendering", jobId: originalPhoto, caption: "Private", approve: false },
+      ]) {
+        const response = await measuredApi(request(body));
+        expect(response.status).toBe(403);
+        expect((await response.json()).error).toContain("only to Ken");
+      }
+    }
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.files.size).toBe(2);
+    expect(fake.images.size).toBe(0);
+  });
+  it("requires a verified email, an active account and a valid session", async () => {
+    fake.authEmail = "";
+    expect((await measuredApi(request())).status).toBe(403);
+    fake.authEmail = "ken@meravinteriors.com";
+    fake.profile.is_active = false;
+    expect((await measuredApi(request())).status).toBe(403);
+    expect((await measuredApi(request(undefined, false))).status).toBe(401);
+  });
+  it("keeps Ken's authorized room access working", async () => {
+    expect((await measuredApi(request())).status).toBe(200);
+  });
+});
+
+describe("Save finished images and make requested adjustments", () => {
+  it("saves original bytes as a draft without a paid call and reopens its saved gallery status", async () => {
+    await finishedPhoto();
+    const response = await measuredApi(
+      request({
+        action: "save-rendering",
+        jobId: originalPhoto,
+        caption: "Vanity view",
+        approve: false,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(fake.images.get(originalPhoto)).toMatchObject({
+      id: originalPhoto,
+      room_id: room,
+      caption: "Vanity view",
+      status: "complete",
+      is_approved: false,
+      review_status: "draft",
+    });
+    expect(fake.files.get(`${room}/rendering/measured-${originalPhoto}.png`)).toEqual(png);
+    const reopened = await (await measuredApi(request())).json();
+    expect(reopened.jobs.find((j: any) => j.id === originalPhoto).savedRendering.caption).toBe(
+      "Vanity view",
+    );
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.interpret).not.toHaveBeenCalled();
+  });
+  it("requires explicit approval for presentations and cannot overwrite approval or rename on retry", async () => {
+    await finishedPhoto();
+    const body = {
+      action: "save-rendering",
+      jobId: originalPhoto,
+      caption: "Approved vanity",
+      approve: true,
+    };
+    await Promise.all([measuredApi(request(body)), measuredApi(request(body))]);
+    expect(fake.images.size).toBe(1);
+    expect(fake.images.get(originalPhoto)).toMatchObject({
+      is_approved: true,
+      review_status: "approved",
+      presentation_visible: true,
+    });
+    const edited = {
+      ...fake.images.get(originalPhoto),
+      caption: "Manual edit",
+      is_approved: false,
+      review_status: "draft",
+    };
+    fake.images.set(originalPhoto, edited);
+    const retry = await (await measuredApi(request(body))).json();
+    expect(retry.alreadySaved).toBe(true);
+    expect(fake.images.get(originalPhoto)).toEqual(edited);
+  });
+  it("recovers if uploading succeeded but the gallery save failed", async () => {
+    await finishedPhoto();
+    fake.saveError = true;
+    const body = {
+      action: "save-rendering",
+      jobId: originalPhoto,
+      caption: "Vanity",
+      approve: false,
+    };
+    expect((await measuredApi(request(body))).status).toBe(500);
+    fake.saveError = false;
+    expect((await measuredApi(request(body))).status).toBe(200);
+    expect(fake.images.size).toBe(1);
+    expect(fake.generate).not.toHaveBeenCalled();
+  });
+  it("rejects unauthorized saves and revision requests", async () => {
+    const save = {
+      action: "save-rendering",
+      jobId: originalPhoto,
+      caption: "Vanity",
+      approve: true,
+    };
+    expect((await measuredApi(request(save, false))).status).toBe(401);
+    fake.profile.role = "Client";
+    expect((await measuredApi(request(save))).status).toBe(403);
+    expect(
+      (
+        await measuredApi(
+          request({
+            action: "photoreal",
+            operationId: revisedPhoto,
+            parentJobId: originalPhoto,
+            revisionNotes: "Warm the wood",
+          }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(fake.images.size).toBe(0);
+    expect(fake.start).not.toHaveBeenCalled();
+  });
+  it("rejects missing, unfinished, or cross-room images before copying or revising", async () => {
+    await finishedPhoto();
+    const path = jobPath(project, room, originalPhoto);
+    const job = (await readStored<CloudJob>(path))!;
+    const save = {
+      action: "save-rendering",
+      jobId: originalPhoto,
+      caption: "Vanity",
+      approve: false,
+    };
+    await writeStored(path, { ...job, status: "failed" }, true);
+    expect((await measuredApi(request(save))).status).toBe(409);
+    await writeStored(path, { ...job, roomId: selection }, true);
+    expect((await measuredApi(request(save))).status).toBe(404);
+    await writeStored(path, { ...job, imagePath: job.imagePath!.replace(room, selection) }, true);
+    expect((await measuredApi(request(save))).status).toBe(403);
+    expect(fake.images.size).toBe(0);
+    expect(fake.start).not.toHaveBeenCalled();
+  });
+  it("pins revisions to the selected image's camera and saves requested notes and original bytes", async () => {
+    const saved = await finishedPhoto();
+    const body = {
+      action: "photoreal",
+      operationId: revisedPhoto,
+      parentJobId: originalPhoto,
+      sceneId: selection,
+      revisionNotes: "Make the wood warmer; keep everything else.",
+    };
+    expect((await measuredApi(request(body))).status).toBe(202);
+    expect((await measuredApi(request(body))).status).toBe(200);
+    expect(fake.start).toHaveBeenCalledTimes(1);
+    expect(await readStored(jobPath(project, room, revisedPhoto))).toMatchObject({
+      parentJobId: originalPhoto,
+      revisionNotes: body.revisionNotes,
+      revisionNumber: 2,
+      sceneId: saved.id,
+    });
+    expect(await processCloudJob(project, room, revisedPhoto)).toBe("complete");
+    expect(fake.generate).toHaveBeenCalledTimes(1);
+    const call = fake.generate.mock.calls[0];
+    expect(call[2][0]).toMatchObject({
+      bytes: Buffer.from(png),
+      role: expect.stringContaining("Previous finished image"),
+    });
+    expect(call[2][1].role).toContain("Measured 3D");
+    expect(call[2][2].role).toContain("Construction");
+    expect(call[4]).toBe(body.revisionNotes);
+    expect(fake.interpret).not.toHaveBeenCalled();
+    expect(await readStored(jobPath(project, room, originalPhoto))).toMatchObject({
+      status: "complete",
+    });
+    await measuredApi(
+      request({
+        action: "save-rendering",
+        jobId: originalPhoto,
+        caption: "Original",
+        approve: true,
+      }),
+    );
+    await measuredApi(
+      request({
+        action: "save-rendering",
+        jobId: revisedPhoto,
+        caption: "Warmer wood",
+        approve: false,
+      }),
+    );
+    expect(fake.images.get(revisedPhoto)).toMatchObject({
+      revision_parent_id: originalPhoto,
+      revision_number: 2,
+      revision_notes: body.revisionNotes,
+      is_approved: false,
+    });
+    expect(fake.images.get(originalPhoto).is_approved).toBe(true);
+  });
+  it("validates adjustment length and requires a completed previous image", async () => {
+    await finishedPhoto();
+    const body = { action: "photoreal", operationId: revisedPhoto, parentJobId: originalPhoto };
+    for (const revisionNotes of ["", " ", "x".repeat(4001)])
+      expect((await measuredApi(request({ ...body, revisionNotes }))).status).toBe(400);
+    expect(
+      (
+        await measuredApi(
+          request({ ...body, parentJobId: selection, revisionNotes: "Warm the wood" }),
+        )
+      ).status,
+    ).toBe(404);
+    expect(fake.start).not.toHaveBeenCalled();
+  });
+  it("blocks a revision when the selected image's saved Spec Book is stale", async () => {
+    const saved = await finishedPhoto();
+    await writeStored(
+      scenePath(project, room, saved.id),
+      { ...saved, signature: "old-spec" },
+      true,
+    );
+    expect(
+      (
+        await measuredApi(
+          request({
+            action: "photoreal",
+            operationId: revisedPhoto,
+            parentJobId: originalPhoto,
+            revisionNotes: "Warmer wood",
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    expect(fake.start).not.toHaveBeenCalled();
+  });
+});
 describe("Shared measured rendering boundary and persistence", () => {
-  it("collects a slow drawing response without sending another paid interpretation",async()=>{
-    const response=await measuredApi(request({action:"interpret",operationId:"99999999-9999-4999-8999-999999999999",sourcePath:source}));
-    const {jobId}=await response.json();
-    fake.interpret.mockResolvedValueOnce({responseId:"resp_saved",elevation:undefined,model:"gpt-6-astra"});
-    expect(await processCloudJob(project,room,jobId)).toBe("processing");
-    fake.retrieve.mockResolvedValueOnce(Response.json({status:"in_progress"}));
-    expect(await collectCloudInterpretation(project,room,jobId)).toBe("processing");
-    fake.retrieve.mockResolvedValueOnce(Response.json({status:"completed",elevation,usage:{},model:"gpt-6-astra"}));
-    expect(await collectCloudInterpretation(project,room,jobId)).toBe("complete");
+  it("returns all saved document views alongside room suggestions without rescanning the PDF", async () => {
+    const docId = "88888888-8888-4888-8888-888888888888";
+    const doc = {
+      id: docId,
+      title: "Project drawings",
+      updated_at: "2026-10-14T12:00:00Z",
+      file_size: 1000,
+      file_url: `https://storage.test/storage/v1/object/public/project-files/${project}/construction-docs/source.pdf`,
+    };
+    const key = constructionViewsKey(project, doc, [{ id: room, name: "Primary Bathroom" }]);
+    const views = [
+      {
+        id: "primary",
+        roomId: room,
+        page: 16,
+        sheet: "ID2.8",
+        title: "Primary bath",
+        kind: "elevation",
+        bounds: { left: 0, top: 0, right: 1, bottom: 1 },
+        evidence: "Written room label",
+      },
+      {
+        id: "shared",
+        roomId: null,
+        page: 31,
+        sheet: "ID9.1",
+        title: "Shared construction detail",
+        kind: "detail",
+        bounds: { left: 0, top: 0, right: 1, bottom: 1 },
+        evidence: "Shared detail",
+      },
+    ];
+    await writeStored(`${project}/measured/drawings/${key}.json`, {
+      key,
+      documentId: docId,
+      status: "complete",
+      pages: 31,
+      rooms: [{ id: room, name: "Primary Bathroom" }],
+      views,
+    });
+    const get = new Request(request().url + `&drawings=1&documentId=${docId}`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
+    const response = await measuredApi(get),
+      body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.pages).toBe(31);
+    expect(body.views.map((v: any) => v.id)).toEqual(["primary"]);
+    expect(body.allViews.map((v: any) => v.id)).toEqual(["primary", "shared"]);
+    expect(body.rooms).toEqual([{ id: room, name: "Primary Bathroom" }]);
+    const pageAreas = {
+      version: 1,
+      pages: 31,
+      labels: Array.from({ length: 31 }, (_, i) => ({
+        page: i + 1,
+        area: i === 15 ? "PRIMARY BATH" : null,
+      })),
+    };
+    const save = { action: "save-page-areas", documentId: docId, sourceKey: key, pageAreas };
+    expect((await measuredApi(request(save))).status).toBe(200);
+    expect((await (await measuredApi(get)).json()).pageAreas).toEqual(pageAreas);
+    expect((await measuredApi(request({ ...save, sourceKey: "f".repeat(64) }))).status).toBe(409);
+    expect((await measuredApi(request({ ...save, documentId: selection }))).status).toBe(404);
+    expect(
+      (
+        await measuredApi(
+          request({
+            ...save,
+            pageAreas: { ...pageAreas, pages: 30, labels: pageAreas.labels.slice(0, 30) },
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    const retry = await (
+      await measuredApi(
+        request({
+          ...save,
+          pageAreas: {
+            ...pageAreas,
+            labels: pageAreas.labels.map((l) => ({ ...l, area: "A different guess" })),
+          },
+        }),
+      )
+    ).json();
+    expect(retry.pageAreas).toEqual(pageAreas);
+    expect((await measuredApi(request(save, false))).status).toBe(401);
+    fake.profile.role = "Client";
+    expect((await measuredApi(request(save))).status).toBe(403);
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect(fake.interpret).not.toHaveBeenCalled();
+  });
+  it("returns the saved start time and status without launching another drawing read", async () => {
+    const body = {
+      action: "interpret",
+      operationId: "99999999-9999-4999-8999-999999999999",
+      sourcePath: source,
+    };
+    const created = await (await measuredApi(request(body))).json();
+    const repeated = await (await measuredApi(request(body))).json();
+    expect(repeated.createdAt).toBe(created.createdAt);
+    expect(fake.start).toHaveBeenCalledTimes(1);
+    const get = new Request(request().url + `&job=${created.jobId}`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
+    const status = await (await measuredApi(get)).json();
+    expect(status).toMatchObject({
+      status: "queued",
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+    });
+    expect(fake.start).toHaveBeenCalledTimes(1);
+    expect(fake.interpret).not.toHaveBeenCalled();
+    expect(fake.generate).not.toHaveBeenCalled();
+  });
+  it("saves an incomplete result privately and reports failure without another generation", async () => {
+    const response = await measuredApi(
+      request({
+        action: "interpret",
+        operationId: "99999999-9999-4999-8999-999999999999",
+        sourcePath: source,
+      }),
+    );
+    const { jobId } = await response.json();
+    fake.interpret.mockResolvedValueOnce({
+      responseId: "resp_saved",
+      elevation: undefined,
+      model: "gpt-6.1-sol",
+    });
+    await processCloudJob(project, room, jobId);
+    fake.retrieve.mockResolvedValueOnce(
+      Response.json({
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [],
+        model: "gpt-6.1-sol",
+      }),
+    );
+    expect(await collectCloudInterpretation(project, room, jobId)).toBe("failed");
+    expect((await readStored<CloudJob>(jobPath(project, room, jobId)))?.error).toContain(
+      "response limit",
+    );
+    expect(
+      await readStored(`${scopePath(project, room)}/jobs/${jobId}-response.json`),
+    ).toMatchObject({ status: "incomplete" });
     expect(fake.interpret).toHaveBeenCalledTimes(1);
-    const job=await readStored<CloudJob>(jobPath(project,room,jobId));
+  });
+  it("collects a slow drawing response without sending another paid interpretation", async () => {
+    const response = await measuredApi(
+      request({
+        action: "interpret",
+        operationId: "99999999-9999-4999-8999-999999999999",
+        sourcePath: source,
+      }),
+    );
+    const { jobId } = await response.json();
+    fake.interpret.mockResolvedValueOnce({
+      responseId: "resp_saved",
+      elevation: undefined,
+      model: "gpt-6-astra",
+    });
+    expect(await processCloudJob(project, room, jobId)).toBe("processing");
+    fake.retrieve.mockResolvedValueOnce(Response.json({ status: "in_progress" }));
+    expect(await collectCloudInterpretation(project, room, jobId)).toBe("processing");
+    fake.retrieve.mockResolvedValueOnce(
+      Response.json({ status: "completed", elevation, usage: {}, model: "gpt-6-astra" }),
+    );
+    expect(await collectCloudInterpretation(project, room, jobId)).toBe("complete");
+    expect(fake.interpret).toHaveBeenCalledTimes(1);
+    const job = await readStored<CloudJob>(jobPath(project, room, jobId));
     expect(job?.resultSceneId).toBe(jobId);
-    expect(await readStored(scenePath(project,room,jobId))).toMatchObject({sourcePath:source});
+    expect(await readStored(scenePath(project, room, jobId))).toMatchObject({ sourcePath: source });
   });
   it("shares one document view scan across repeated requests", async () => {
     const body = { action: "index-drawings", documentId: "88888888-8888-4888-8888-888888888888" };
@@ -352,6 +975,99 @@ describe("Shared measured rendering boundary and persistence", () => {
     expect((await readStored<CloudJob>(jobPath(project, room, id)))?.imagePath).toContain(
       id + ".png",
     );
+  });
+  it("blocks an elevation-only island before queueing an image or revision, including jobs queued before the fix", async () => {
+    const sourceElevation = structuredClone(elevation);
+    sourceElevation.elements[0] = {
+      ...sourceElevation.elements[0],
+      name: "Island cabinet",
+      kind: "cabinet",
+      specId: null,
+      inferredAxes: ["position", "depth"],
+    };
+    const saved = await saveCloudScene(project, room, fake.profile.id, [item], {
+      elevation: sourceElevation,
+      sourcePath: source,
+      basePath: base,
+      models: [],
+      camera: { type: "elevation", position: [50, 50, 500], target: [50, 46, 0] },
+    });
+    const id = "99999999-9999-4999-8999-999999999999";
+    const body = { action: "photoreal", operationId: id, sceneId: saved.id };
+    const response = await measuredApi(request(body));
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("Island layout is unverified");
+    expect(await readStored(jobPath(project, room, id))).toBeNull();
+    expect(fake.start).not.toHaveBeenCalled();
+    await writeStored(jobPath(project, room, originalPhoto), {
+      version: 1,
+      id: originalPhoto,
+      projectId: project,
+      roomId: room,
+      createdBy: fake.profile.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      kind: "photoreal",
+      status: "complete",
+      sceneId: saved.id,
+      imagePath: base,
+    });
+    expect(
+      (
+        await measuredApi(
+          request({ ...body, parentJobId: originalPhoto, revisionNotes: "Move it forward" }),
+        )
+      ).status,
+    ).toBe(409);
+    await writeStored(jobPath(project, room, id), {
+      version: 1,
+      id,
+      projectId: project,
+      roomId: room,
+      createdBy: fake.profile.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      kind: "photoreal",
+      status: "queued",
+      sceneId: saved.id,
+    });
+    expect(await processCloudJob(project, room, id)).toBe("failed");
+    expect(fake.generate).not.toHaveBeenCalled();
+    expect((await readStored<CloudJob>(jobPath(project, room, id)))?.error).toContain(
+      "Island layout is unverified",
+    );
+  });
+  it("preserves accepted scaled draft provenance through saving, queueing and generation", async () => {
+    const sourceElevation = structuredClone(elevation);
+    sourceElevation.elements[0] = {
+      ...sourceElevation.elements[0],
+      name: "Island cabinet",
+      kind: "cabinet",
+      specId: null,
+      inferredAxes: ["position", "depth"],
+    };
+    sourceElevation.layoutEstimate = {
+      basis: "scaled-plan",
+      source: "ID0.1 scaled depth 78 inches; approximate placement accepted for draft.",
+      acceptedAt: new Date().toISOString(),
+      geometry: measuredLayoutKey(sourceElevation),
+    };
+    const saved = await saveCloudScene(project, room, fake.profile.id, [item], {
+      elevation: sourceElevation,
+      sourcePath: source,
+      basePath: base,
+      models: [],
+      camera: { type: "elevation", position: [50, 50, 500], target: [50, 46, 0] },
+    });
+    const id = "99999999-9999-4999-8999-999999999999";
+    const response = await measuredApi(
+      request({ action: "photoreal", operationId: id, sceneId: saved.id }),
+    );
+    expect(response.status).toBe(202);
+    expect(await processCloudJob(project, room, id)).toBe("complete");
+    const generatedElevation = fake.generate.mock.calls[0][0];
+    expect(generatedElevation.layoutEstimate).toEqual(sourceElevation.layoutEstimate);
+    expect(generatedElevation.elements[0].inferredAxes).toEqual(["position", "depth"]);
   });
   it("records exhausted credits as failed without retrying a paid step", async () => {
     const saved = await scene();

@@ -1,8 +1,14 @@
 # Drawing + Spec Book — live Studio
 
-Studio team members with project access can open a project's Renderings page and choose
-**Drawing + Spec Book**, now embedded in Rendering Studio. The **SketchUp & saved elevations**
-tab preserves the prior queues, revisions, package imports and presentation-sheet controls.
+Studio team members with project access open **Rendering Studio** from their project. The
+drawing-to-image workspace is the primary workflow at `/projects/<id>/rendering-studio`, with
+adjustments, saving and presentation approval on the same page. The former Renderings and
+Measured Rendering URLs redirect here and preserve room selection. The project's duplicate
+Renderings shortcut and the former manual pack/export Studio setup page have been replaced.
+**Saved & imported renderings** below the creator preserves existing images, queues, revisions,
+package imports and presentation-sheet controls. Gallery contents mount only when opened;
+**View room renderings** opens that section and jumps to the saved image's room. External roles
+continue to use the gallery without gaining drawing interpretation or generation access.
 Choose the room and upload a dimensioned elevation image, with up to
 three supporting plan/elevation images. Original images upload directly to the existing private
 `rendering-studio-files` bucket using scoped signed upload tokens.
@@ -14,6 +20,26 @@ on a sheet stay separate. Unclear room associations are excluded from automatic 
 Select **Work on this view**, or add up to three other crops as supporting views. Crop edges are
 suggestions: review and adjust them to retain dimensions and exclude unrelated elevations.
 Manual PDF page/crop selection remains available without AI indexing.
+
+The construction picker always lists **All PDF pages** using the actual opened PDF's page count,
+not its subset of matched room views. It includes cover pages, shared details and unmatched pages.
+Page search uses physical page numbers and existing sheet/view/room labels; Previous/Next and a
+page dropdown span the entire document. Room suggestions remain optional shortcuts, with a
+separate **All indexed drawing views** list and per-page drawing choices. Cached index results
+are reused unchanged: opening/browsing pages never queues a paid scan. Only the selected page is
+rendered at full preview quality; superseded page renders are cancelled. Preview readiness is
+pinned to document revision, physical page and crop, so an old preview cannot be selected under
+a new page citation. Source images and citations continue through the same private save flow.
+
+Page labels use the literal printed **AREA** field, read with local browser OCR from the title
+block. The language engine/dictionary download is public; drawing pixels stay in the browser.
+OCR does not use OpenAI credits. Names remain as printed, including wrapped names and bathroom
+numbers. A missing/uncertain AREA keeps its physical page label instead of guessing from project
+room assignments. Page/sheet numbers remain visible and search includes the printed area name.
+Complete results (including null labels) persist in the existing private bucket as a separate
+`<source-key>-areas-v1.json` record. Project/room authorization, current source revision and
+page coverage are checked before saving. Later visits reuse this record; labels do not overwrite
+the room-view index, drawings or Spec Book. New document revisions get their own labels.
 
 Indices live privately under `<project-id>/measured/drawings/<source-key>.json` in the same bucket.
 Their key includes document identity, source path, revision metadata and current rooms; changed
@@ -37,6 +63,23 @@ The photorealistic action uses that saved camera, the drawing, optional quality 
 original product photos. It preserves the measured scene separately for comparison. The result
 is a presentation draft requiring design review: image generation can alter precise geometry.
 
+Completed images expose **Save to room renderings** with a name and a separate, unchecked
+approval option. Saving copies the original PNG into the existing `room-images` bucket and
+creates a normal `room_images` record; it does not call AI. Drafts remain drafts until reviewed.
+Explicitly approved saves enter the existing presentation flow. Each generated job has one
+stable gallery ID and asset path, so repeated saves recover interruptions without duplicating
+records or overwriting later gallery edits. Private source drawings and camera files stay private.
+
+**Make adjustments** accepts up to 4,000 characters and creates a new paid image version using
+the selected finished image first, then its pinned camera, drawing and product references.
+It does not read the full PDF again. The server derives the camera from the selected parent job;
+unrelated selected scenes cannot be substituted. A changed Spec Book requires a fresh camera.
+Version numbers, parent IDs and requested notes persist with jobs, and notes are shown in history.
+Original images and approvals are preserved. Each adjusted version can be saved separately;
+gallery revision links are retained when its parent has also been saved. Visual adjustments do
+not mutate measurements or product selections. Uncertain start results must be checked before
+another adjustment can be sent; paid generation still has no automatic retries.
+
 ## Shared persistence and jobs
 
 Scenes and job manifests are JSON objects in the existing private bucket under
@@ -56,7 +99,9 @@ operation IDs do not dispatch another worker. Paid steps have zero automatic ret
 are saved as failed jobs, without fallback to another model. Interrupted jobs remain visible for
 manual inspection before another attempt. Each job pins its sources and Spec Book snapshot.
 
-`OPENAI_MEASURED_RENDERING_MODEL` defaults to `gpt-6-astra` with high reasoning.
+`OPENAI_MEASURED_RENDERING_MODEL` defaults to `gpt-6.1-sol` with high reasoning and the existing
+Spec-review token cost guard. A custom override is honored separately. Its scene contract lists
+all supported kinds/fronts/inference axes and requires unknown element depths to remain flagged.
 `OPENAI_MEASURED_PHOTOREAL_MODEL` defaults to `gpt-image-2.5-sunburst`, maximum quality.
 Existing `OPENAI_API_KEY` is server-only. These optional overrides are not changed by deployment.
 API billing credits are separate from this feature and must be available for new generation.

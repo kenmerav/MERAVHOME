@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { measuredPhotorealPrompt } from "../src/lib/measuredPhotoreal";
+import { measuredLayoutKey } from "../src/lib/measuredSpatial";
+import {
+  measuredPhotorealPrompt,
+  compactMeasuredRenderBrief,
+  MEASURED_IMAGE_PROMPT_LIMIT,
+} from "../src/lib/measuredPhotoreal";
 import {
   generateMeasuredPhotoreal,
   inlinePhotorealInput,
 } from "../src/lib/measuredPhotoreal.server";
-import type { MeasuredElevation, RenderReview } from "../src/lib/measuredRendering";
+import {
+  measuredRenderBrief,
+  type MeasuredElevation,
+  type RenderReview,
+} from "../src/lib/measuredRendering";
 const elevation: MeasuredElevation = {
   name: "Room",
   source: "ID2.8",
@@ -21,6 +30,112 @@ const inputs = [
 ];
 afterEach(() => vi.unstubAllEnvs());
 describe("Measured view to photorealistic presentation", () => {
+  it("edits the previous finished image with the designer's exact notes within the same prompt budget", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-only");
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const prompt = String((init.body as FormData).get("prompt"));
+      expect(prompt).toContain("EDIT THE PREVIOUS FINISHED IMAGE");
+      expect(prompt).toContain("DESIGNER ADJUSTMENTS:\nMake the wood warmer.");
+      expect(prompt).toContain("does not update the saved measurements or Spec Book");
+      expect(prompt.length).toBeLessThanOrEqual(MEASURED_IMAGE_PROMPT_LIMIT);
+      return Response.json({ data: [{ b64_json: "Yw==" }] });
+    });
+    await generateMeasuredPhotoreal(
+      elevation,
+      review,
+      inputs,
+      fetcher as typeof fetch,
+      "Make the wood warmer.",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("fits a dense tile elevation without dropping positions, finishes, product identity, or unresolved checks", () => {
+    const elements = Array.from({ length: 250 }, (_, i) => ({
+      id: `tile-${i}`,
+      name: `Lower wall band Ivoire strip ${String(i + 1).padStart(2, "0")}`,
+      kind: "tile" as const,
+      x: 3 + (i % 25) * 6,
+      y: Math.floor(i / 25) * 6,
+      z: 0.375,
+      width: 6,
+      height: 2,
+      depth: 0.375,
+      specId: "tile-product",
+      color: "#faf5ed",
+      front: "solid" as const,
+      dimensionEvidence: "Written stripe course",
+      inferredAxes: ["depth" as const],
+      dimensionStatus: "Drawing / review",
+      appearanceStatus: "Product photo available",
+      selection: {
+        id: "tile-product",
+        name: "Selected Ivoire handmade ceramic strip tile",
+        finish: "Ivoire glaze",
+        sku: "IVOIRE-2X6",
+      } as any,
+    }));
+    const dense = {
+      ...review,
+      elements,
+      issues: elements.flatMap((e) => [
+        `${e.name}: confirm depth against the construction documents.`,
+        `${e.name}: procedural detail and material scale need designer verification.`,
+      ]),
+    };
+    expect(measuredRenderBrief(elevation, dense).length).toBeGreaterThan(
+      MEASURED_IMAGE_PROMPT_LIMIT,
+    );
+    const draft = structuredClone(elevation);
+    draft.layoutEstimate = {
+      basis: "scaled-plan",
+      source: "ID0.1 scaled depth 78 inches, accepted as an approximate draft.",
+      acceptedAt: new Date().toISOString(),
+      geometry: measuredLayoutKey(draft),
+    };
+    const prompt = measuredPhotorealPrompt(draft, dense, [
+      "Measured camera",
+      "Drawing",
+      "Exact Ivoire tile photo",
+    ]);
+    expect(prompt.length).toBeLessThanOrEqual(MEASURED_IMAGE_PROMPT_LIMIT);
+    expect(prompt).toContain("Ivoire glaze");
+    expect(prompt).toContain("IVOIRE-2X6");
+    expect(prompt).toContain("[250 repeated instances]");
+    expect(prompt).toContain("SCALED-PLAN DRAFT, NOT VERIFIED CONSTRUCTION DIMENSIONS");
+    expect(prompt).toContain("ID0.1 scaled depth 78 inches");
+    expect(prompt).toContain("no labels, annotations or watermark");
+    const revision = measuredPhotorealPrompt(
+      elevation,
+      dense,
+      ["Previous image", "Measured camera", "Drawing"],
+      "Make the wood warmer. Keep every tile course.",
+    );
+    expect(revision.length).toBeLessThanOrEqual(MEASURED_IMAGE_PROMPT_LIMIT);
+    expect(revision).toContain("Make the wood warmer. Keep every tile course.");
+    expect(revision).toContain("[250 repeated instances]");
+    const compact = compactMeasuredRenderBrief(elevation, dense);
+    const geometry = JSON.parse(
+      compact.split("\n").find((line) => line.startsWith('{"products"'))!,
+    );
+    expect(geometry.groups).toHaveLength(1);
+    expect(geometry.groups[0].positions_in).toEqual(elements.map((e) => [e.x, e.y, e.z]));
+    expect(geometry.groups[0].size_in).toEqual([6, 2, 0.375]);
+  });
+  it("rejects irreducibly long unique source notes before any image API call", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-only");
+    const fetcher = vi.fn();
+    const tooLarge = {
+      ...review,
+      issues: Array.from(
+        { length: 100 },
+        (_, i) => `Unique source requirement ${i}: ${"x".repeat(1900)}`,
+      ),
+    };
+    await expect(generateMeasuredPhotoreal(elevation, tooLarge, inputs, fetcher)).rejects.toThrow(
+      "no image request was sent",
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("maps each image role and preserves the measured source and unresolved checks", () => {
     const prompt = measuredPhotorealPrompt(elevation, review, [
       "Measured view",
@@ -41,6 +156,7 @@ describe("Measured view to photorealistic presentation", () => {
       expect(form.get("quality")).toBe("max");
       expect(form.get("model")).toBe("gpt-image-2.5-sunburst");
       expect(form.getAll("image[]")).toHaveLength(2);
+      expect(String(form.get("prompt")).length).toBeLessThanOrEqual(MEASURED_IMAGE_PROMPT_LIMIT);
       expect(await (form.getAll("image[]")[0] as Blob).text()).toBe("a");
       return Response.json({ data: [{ b64_json: "Yw==" }] });
     });
