@@ -12,6 +12,7 @@ import {
   type CodexBatchItem,
 } from "@/lib/codexRenderingBatch";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
+import { codexBoardSvg, type CodexBoardPage } from "@/lib/codexRenderingBoards";
 
 export function CodexRenderingBatch({
   projectId,
@@ -206,6 +207,48 @@ export function CodexRenderingBatch({
         }
         items.push({ ...item, sourceFile, productFiles });
       }
+      const boardPhotos = new Map<string, string>();
+      for (const row of prepared.items)
+        for (const product of row.items) {
+          const file = photos.get(product.id);
+          if (file && product.imageUrl) boardPhotos.set(product.imageUrl, file);
+        }
+      const designBoards = [];
+      for (const [index, page] of (prepared.designBoards as CodexBoardPage[]).entries()) {
+        const imageFiles: Record<string, string> = {};
+        const owner = prepared.items.find((i: any) => i.boardPageIds.includes(page.id));
+        for (const [imageIndex, element] of page.elements.entries()) {
+          if (element.type !== "image" || typeof element.src !== "string") continue;
+          if (!boardPhotos.has(element.src)) {
+            try {
+              const data = await bytes(
+                `${endpoint}&item=${owner.id}&boardPage=${encodeURIComponent(page.id)}&boardImage=${encodeURIComponent(String(element.id))}`,
+                await studioHeaders(),
+              );
+              const file = `boards/images/${index}-${imageIndex}.${codexReferenceExtension(data)}`;
+              files[file] = data;
+              boardPhotos.set(element.src, file);
+            } catch {
+              warnings.push(
+                `${page.title}: board image unavailable for ${element.label || element.id}. Pattern/design detail remains unverified.`,
+              );
+              boardPhotos.set(element.src, "");
+            }
+          }
+          const file = boardPhotos.get(element.src);
+          if (file) imageFiles[String(element.id)] = file;
+        }
+        const jsonFile = `boards/page-${index + 1}.json`,
+          overviewFile = `boards/page-${index + 1}.svg`;
+        files[jsonFile] = strToU8(JSON.stringify({ ...page, imageFiles }, null, 2));
+        files[overviewFile] = strToU8(codexBoardSvg(page, imageFiles));
+        designBoards.push({ ...page, imageFiles, jsonFile, overviewFile });
+      }
+      for (const item of prepared.items)
+        if (!designBoards.some((p) => p.roomId === item.roomId))
+          warnings.push(
+            `${item.name}: no visible matching room design board was found. Record this gap; do not claim board review is complete.`,
+          );
       const manifest = {
         version: 1,
         provider: "codex-subscription",
@@ -214,6 +257,13 @@ export function CodexRenderingBatch({
         preparedAt: new Date().toISOString(),
         maxAttemptsPerView: 2,
         documents,
+        designBoards,
+        designBoardUrl: prepared.designBoardUrl,
+        enclosureDefault: {
+          glass: "clear frameless",
+          hardware: "match room fixtures",
+          unspecifiedDetails: "presentation assumptions requiring confirmation",
+        },
         items,
         warnings,
       };
@@ -226,7 +276,7 @@ export function CodexRenderingBatch({
         count: items.length,
       });
       setNotice(
-        `Batch prepared: ${items.length} views. Download it using the link below, unzip it, attach START-HERE.txt in Codex with the folder location, and ask it to run the batch. Nothing has started rendering yet.${warnings.length ? ` ${warnings.length} product-photo issues are recorded for review.` : ""}`,
+        `Batch prepared: ${items.length} views and ${designBoards.length} design board pages. Download it using the link below, unzip it, attach START-HERE.txt in Codex with the folder location, and ask it to run the batch. Nothing has started rendering yet.${warnings.length ? ` ${warnings.length} reference issues are recorded for review.` : ""}`,
       );
     });
   }
@@ -288,6 +338,11 @@ export function CodexRenderingBatch({
         sequentially, checks all seven categories, tries at most one correction per view, and
         continues past blocked views. Keep the computer awake and Codex open.
       </p>
+      <p className="text-sm mt-2">
+        Each batch includes matching design boards, pattern images and notes. Show clear frameless
+        shower glass with hardware matching the room unless the sources specify another enclosure.
+        Unspecified glass details remain presentation assumptions for your review.
+      </p>
       <div className="mt-4 flex flex-wrap gap-4">
         <label className="text-sm">
           Room
@@ -336,8 +391,8 @@ export function CodexRenderingBatch({
         />
       </label>
       <p className="text-xs mt-2 mb-4">
-        Full source PDFs and frozen room Spec Book facts travel with each batch. No paid drawing
-        scan is required.{" "}
+        Full source PDFs, frozen Spec Book facts and design board references travel with each batch.
+        No paid drawing scan is required.{" "}
         <a className="underline" href={`/projects/${projectId}/construction-docs`}>
           Upload or manage construction docs
         </a>
@@ -495,6 +550,17 @@ export function CodexRenderingBatch({
                       </li>
                     ))}
                   </ul>
+                  {row.result.report.boardReview && (
+                    <p className="mt-2">
+                      <strong>Design boards:</strong> {row.result.report.boardReview.findings}
+                    </p>
+                  )}
+                  {row.result.report.enclosureReview && (
+                    <p className="mt-2">
+                      <strong>Shower enclosure: {row.result.report.enclosureReview.status}</strong>{" "}
+                      — {row.result.report.enclosureReview.evidence}
+                    </p>
+                  )}
                   <p className="mt-2">{row.result.report.uncertainties.join(" ")}</p>
                   <p className="text-xs mt-2">
                     {row.result.report.attempts} image attempt(s). AI review does not verify
