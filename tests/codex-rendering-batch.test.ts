@@ -1,10 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
+  codexReferenceExtension,
   CODEX_BATCH_INSTRUCTIONS,
   CODEX_BATCH_CHECKS,
   codexBatchReportSchema,
 } from "../src/lib/codexRenderingBatch";
 describe("subscription batch review contract", () => {
+  it("names original product bytes with their actual format and rejects non-images", () => {
+    expect(codexReferenceExtension(new Uint8Array([137, 80, 78, 71]))).toBe("png");
+    expect(codexReferenceExtension(new Uint8Array([255, 216, 255]))).toBe("jpg");
+    expect(() => codexReferenceExtension(new TextEncoder().encode("<html>"))).toThrow(
+      "not a supported image",
+    );
+  });
   const report = {
     itemId: "11111111-1111-4111-8111-111111111111",
     fingerprint: "a".repeat(64),

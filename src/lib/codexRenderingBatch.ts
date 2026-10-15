@@ -30,6 +30,14 @@ export const codexBatchItemSchema = codexBatchSelectionSchema.extend({
   contextKey: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export type CodexBatchItem = z.infer<typeof codexBatchItemSchema>;
+export function codexReferenceExtension(bytes: Uint8Array) {
+  if (bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71) return "png";
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "jpg";
+  const text = new TextDecoder().decode(bytes.slice(0, 12));
+  if (text.startsWith("RIFF") && text.slice(8) === "WEBP") return "webp";
+  if (text.startsWith("GIF87a") || text.startsWith("GIF89a")) return "gif";
+  throw Error("Reference is not a supported image.");
+}
 export const codexBatchReportSchema = z
   .object({
     itemId: z.string().uuid(),

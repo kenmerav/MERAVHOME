@@ -6,6 +6,7 @@ import { studioHeaders } from "@/lib/measuredRequest";
 import { supabase } from "@/integrations/supabase/client";
 import {
   CODEX_BATCH_INSTRUCTIONS,
+  codexReferenceExtension,
   codexBatchReportSchema,
   type CodexBatchRow,
   type CodexBatchItem,
@@ -30,6 +31,17 @@ export function CodexRenderingBatch({
     [notice, setNotice] = useState("");
   const active = useRef(false),
     refreshVersion = useRef(0);
+  const [preparedPackage, setPreparedPackage] = useState<{
+    url: string;
+    filename: string;
+    count: number;
+  } | null>(null);
+  useEffect(
+    () => () => {
+      if (preparedPackage) URL.revokeObjectURL(preparedPackage.url);
+    },
+    [preparedPackage],
+  );
   const endpoint = `/api/measured-rendering?projectId=${projectId}&codexBatch=1`;
   async function api(body?: unknown) {
     const response = await fetch(endpoint, {
@@ -176,11 +188,12 @@ export function CodexRenderingBatch({
         for (const product of row.items.filter((p) => p.imageUrl)) {
           if (!photos.has(product.id)) {
             try {
-              const file = `products/${product.id}.image`;
-              files[file] = await bytes(
+              const photo = await bytes(
                 `${endpoint}&item=${row.id}&product=${product.id}`,
                 await studioHeaders(),
               );
+              const file = `products/${product.id}.${codexReferenceExtension(photo)}`;
+              files[file] = photo;
               photos.set(product.id, file);
             } catch {
               warnings.push(
@@ -206,15 +219,14 @@ export function CodexRenderingBatch({
       };
       files["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
       const zip = zipSync(files, { level: 0 });
-      const blob = new Blob([zip], { type: "application/zip" }),
-        url = URL.createObjectURL(blob),
-        link = document.createElement("a");
-      link.href = url;
-      link.download = `MERAV-Codex-Batch-${new Date().toISOString().slice(0, 10)}.zip`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const blob = new Blob([zip], { type: "application/zip" });
+      setPreparedPackage({
+        url: URL.createObjectURL(blob),
+        filename: `MERAV-Codex-Batch-${Date.now()}.zip`,
+        count: items.length,
+      });
       setNotice(
-        `Batch downloaded: ${items.length} views. Unzip it, attach START-HERE.txt in Codex with the folder location, and ask it to run the batch. Nothing has started rendering yet.${warnings.length ? ` ${warnings.length} product-photo issues are recorded for review.` : ""}`,
+        `Batch prepared: ${items.length} views. Download it using the link below, unzip it, attach START-HERE.txt in Codex with the folder location, and ask it to run the batch. Nothing has started rendering yet.${warnings.length ? ` ${warnings.length} product-photo issues are recorded for review.` : ""}`,
       );
     });
   }
@@ -395,6 +407,15 @@ export function CodexRenderingBatch({
         <p role="status" className="border bg-bone/30 p-3 mt-3 whitespace-pre-wrap">
           {notice}
         </p>
+      )}
+      {preparedPackage && (
+        <a
+          href={preparedPackage.url}
+          download={preparedPackage.filename}
+          className="inline-block border border-ink px-4 py-3 mt-3"
+        >
+          Download prepared batch ({preparedPackage.count} views)
+        </a>
       )}
       {error && (
         <p role="alert" className="text-red-700 mt-3">
