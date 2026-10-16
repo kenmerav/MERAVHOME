@@ -38,7 +38,9 @@ export async function readDrawingRoomLabels(
   let parser: Awaited<ReturnType<typeof createDrawingPdfParser>> | undefined;
   let stopped = false,
     pagesRead = 0;
-  const deadline = Date.now() + 150_000;
+  // Reserve time for source/text preparation and the final save inside the
+  // 300-second workflow function, while allowing large drawing sets to finish.
+  const deadline = Date.now() + 210_000;
   try {
     const creating = createWorker("eng", 1, {
       cachePath,

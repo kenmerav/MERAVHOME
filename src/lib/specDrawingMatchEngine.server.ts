@@ -154,12 +154,18 @@ export async function prepareDrawingMatchScan(
             ...job!,
             roomLabels: labels,
             roomLabelPagesRead: pagesRead,
-            nativeMatches: drawingMatchesWithRoomFallback(
-              textPages,
-              job!.items,
-              nativeDrawingMatches(textPages, job!.items, labels),
-              labels,
-            ),
+            // Persist every page's progress, but avoid re-matching the entire
+            // project after every OCR sheet. Always publish a final full pass.
+            ...(pagesRead % 10 === 0
+              ? {
+                  nativeMatches: drawingMatchesWithRoomFallback(
+                    textPages,
+                    job!.items,
+                    nativeDrawingMatches(textPages, job!.items, labels),
+                    labels,
+                  ),
+                }
+              : {}),
           };
           await store.write(path(key, "job.json"), job);
         },
