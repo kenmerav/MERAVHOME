@@ -16,6 +16,8 @@ export default defineConfig({
       vercel: { functions: { maxDuration: 300 } },
       // Queue functions cannot use Nitro's copied absolute dependency symlinks.
       noExternals: ["tslib"],
+      // The OCR worker resolves its own JS/WASM files at runtime.
+      traceDeps: ["tesseract.js*", "tesseract.js-core*"],
       rollupConfig: {
         plugins: [{
           name: "preserve-workflow-step-registration",

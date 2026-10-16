@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AlertTriangle, ArrowLeft, Printer, ExternalLink, ChevronDown, ChevronUp, Download, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -37,6 +37,9 @@ import { materialImageUrl } from "@/lib/materialImages";
 import { setProjectMaterialRemoved } from "@/lib/specBookMaterialRemoval";
 import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
 import { SpecSpreadsheetTextValue, SpecSpreadsheetWrapContext } from "@/components/SpecSpreadsheetTextValue";
+import { SpecConstructionDrawingsView } from "@/components/SpecConstructionDrawingsView";
+import { SpecImageLoadingContext } from "@/components/SpecImageLoadingContext";
+import { buildSpecSpreadsheetRows, specPriceLabel as priceLabel, specProductHref as externalHref, type SpecSpreadsheetRow } from "@/lib/specBookRows";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
 import { SpecCompletionReview } from "@/components/SpecCompletionReview";
 import { formatSpecQuantity, specQuantityInput, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
@@ -51,33 +54,7 @@ export const Route = createFileRoute("/specbooks/$id")({
 // fall into a trailing "Other" group.
 type Section = { label: string; sources: string[] };
 type SpecJumpItem = { id: string; label: string };
-type SpecLayout = "book" | "spreadsheet";
-type SpecSpreadsheetRow = {
-  id: string;
-  productId: string;
-  roomId: string;
-  room: string;
-  category: string;
-  imageUrl: string;
-  itemLabel: string;
-  cadLabel: string;
-  clientProductName: string;
-  productName: string;
-  vendor: string;
-  finish: string;
-  color: string;
-  quantity: string;
-  quantityUnit: SpecQuantityUnit;
-  dimensions: string;
-  sku: string;
-  clientPrice: string;
-  priceUnit: ProductPriceUnit | null;
-  orderedBy: string;
-  ordered: string;
-  productUrl: string;
-  notes: string;
-  status: string;
-};
+type SpecLayout = "book" | "spreadsheet" | "drawings";
 type SpreadsheetColumnKey =
   | "image"
   | "room"
@@ -136,15 +113,6 @@ function NeedsReselectionBadge() {
   );
 }
 
-function externalHref(value?: string | null) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (!/\s/.test(trimmed) && /^[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(trimmed)) {
-    return `https://${trimmed}`;
-  }
-  return null;
-}
 
 const KITCHEN_SECTIONS: Section[] = [
   { label: "Lighting", sources: ["Lighting"] },
@@ -471,6 +439,12 @@ export function SpecBookDocument({
               >
                 Spreadsheet
               </button>
+              {!publicView && canViewProjectSurface(profile, project, "constructionDocs") && (
+                <button type="button" onClick={() => setLayout("drawings")}
+                  className={`border-l border-border px-4 py-2 ${layout === "drawings" ? "bg-ink text-primary-foreground" : "text-muted-foreground hover:text-ink"}`}>
+                  Construction Docs
+                </button>
+              )}
             </div>
             {layout === "book" && (
               <SpecJumpSelect
@@ -542,7 +516,10 @@ export function SpecBookDocument({
           <ProcurementCartBuilder project={project} rooms={rooms} items={items} />
         )}
 
-        {layout === "spreadsheet" ? (
+        {layout === "drawings" && !publicView ? (
+          <SpecConstructionDrawingsView projectId={id} projectName={project.name} items={items} rooms={rooms}
+            specRows={spreadsheetRows} visibility={{...visibility, hideInternalProductDetails: isSharedSpecView}} />
+        ) : layout === "spreadsheet" ? (
           <SpecSpreadsheetView
             projectId={id}
             projectName={project.name}
@@ -763,7 +740,7 @@ export function SpecBookDocument({
   );
 }
 
-function SpecSpreadsheetView({
+export function SpecSpreadsheetView({
   projectId,
   projectName,
   clientName,
@@ -909,7 +886,7 @@ function SpecSpreadsheetView({
           <p className="mt-1 text-sm text-muted-foreground print:text-[10px]">{clientName}</p>
         </div>
         <div className="flex items-end gap-4">
-          <div className="hidden w-28 border border-border bg-bone/35 p-2 print:block">
+          {qrCodeUrl && <div className="hidden w-28 border border-border bg-bone/35 p-2 print:block">
             <img
               src={qrCodeUrl}
               alt="QR code linking to the online spec book"
@@ -919,8 +896,8 @@ function SpecSpreadsheetView({
             <div className="mt-1 text-center text-[6px] uppercase tracking-[0.18em] text-muted-foreground">
               View Online
             </div>
-          </div>
-          <a
+          </div>}
+          {qrCodeUrl && <a
             href={specBookUrl}
             target="_blank"
             rel="noreferrer"
@@ -935,7 +912,7 @@ function SpecSpreadsheetView({
             <span className="mt-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
               View Online
             </span>
-          </a>
+          </a>}
           <div className="text-right text-xs uppercase tracking-[0.18em] text-muted-foreground print:text-[9px]">
             {today}
           </div>
@@ -1066,6 +1043,7 @@ function SpreadsheetTable({
   onSaveOrderedBy: (row: SpecSpreadsheetRow, value: string) => Promise<void>;
   onSaveOrdered: (row: SpecSpreadsheetRow, value: boolean) => Promise<void>;
 }) {
+  const imageLoading = useContext(SpecImageLoadingContext);
   return (
     <table className="w-full min-w-[1450px] border-collapse text-left text-xs print:min-w-0 print:text-[8px] print:leading-tight">
       <thead>
@@ -1099,6 +1077,7 @@ function SpreadsheetTable({
                 }
               >
                 {spreadsheetCellForColumn({
+                  imageLoading,
                   column,
                   row,
                   canEditProducts,
@@ -1121,6 +1100,7 @@ function SpreadsheetTable({
 }
 
 function spreadsheetCellForColumn({
+  imageLoading = "eager",
   column,
   row,
   canEditProducts,
@@ -1133,6 +1113,7 @@ function spreadsheetCellForColumn({
   onSaveOrderedBy,
   onSaveOrdered,
 }: {
+  imageLoading?: "eager" | "lazy";
   column: SpreadsheetColumnKey;
   row: SpecSpreadsheetRow;
   canEditProducts: boolean;
@@ -1161,7 +1142,7 @@ function spreadsheetCellForColumn({
             src={normalizeSupabaseImageUrl(row.imageUrl)}
             alt=""
             className="h-full w-full object-contain p-1"
-            loading="eager"
+            loading={imageLoading}
             data-spec-image="true"
           />
         </div>
@@ -1641,7 +1622,7 @@ function CategorySpec({
   );
 }
 
-function RoomSpec({
+export function RoomSpec({
   num,
   room,
   items,
@@ -1742,7 +1723,7 @@ type ProductForm = Pick<
   | "description"
 >;
 
-function SpecCard({
+export function SpecCard({
   item,
   room,
   projectId,
@@ -1764,6 +1745,7 @@ function SpecCard({
   hideInternalProductDetails: boolean;
 }) {
   const p = item.product;
+  const imageLoading = useContext(SpecImageLoadingContext);
   const productUrl = item.product_url || p?.product_url || "";
   const qc = useQueryClient();
   const saveQuantity = async (patch: SpecQuantityPatch) => {
@@ -1793,7 +1775,7 @@ function SpecCard({
             src={normalizeSupabaseImageUrl(imageUrl)}
             alt={p?.name ?? displayName}
             className="w-full h-full object-contain p-4 print:p-1.5"
-            loading="eager"
+            loading={imageLoading}
             data-spec-image="true"
           />
         ) : (
@@ -2189,13 +2171,6 @@ export function SpecProductEditDialog({
   );
 }
 
-function priceLabel(value: string | number | null | undefined) {
-  if (value == null || String(value).trim() === "") return null;
-  const cleaned = typeof value === "number" ? String(value) : value.trim().replace(/[$,\s]/g, "");
-  if (!/^\d+(\.\d+)?$/.test(cleaned) && !/^\.\d+$/.test(cleaned)) return null;
-  const amount = moneyValue(cleaned);
-  return Number.isFinite(amount) && amount >= 0 ? formatMoney(amount) : null;
-}
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -2212,52 +2187,6 @@ function actualProductName(item: MaterialItem, room: Room) {
   if (!actualName) return null;
   const clientName = clientProductName(item, room).trim();
   return actualName.toLocaleLowerCase() === clientName.toLocaleLowerCase() ? null : actualName;
-}
-
-function buildSpecSpreadsheetRows(
-  items: MaterialItem[],
-  rooms: Room[],
-  roomById: Map<string, Room>,
-): SpecSpreadsheetRow[] {
-  const roomOrder = new Map(rooms.map((room, index) => [room.id, index]));
-  return items
-    .filter((item) => !item.not_needed && item.product_id && item.product)
-    .slice()
-    .sort((a, b) => {
-      const roomDelta = (roomOrder.get(a.room_id) ?? 9999) - (roomOrder.get(b.room_id) ?? 9999);
-      if (roomDelta !== 0) return roomDelta;
-      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
-    })
-    .map((item) => {
-      const room = roomById.get(item.room_id);
-      const product = item.product;
-      return {
-        id: item.id,
-        productId: item.product_id ?? "",
-        roomId: item.room_id,
-        room: room?.name ?? "Unassigned",
-        category: normalizeItemCategory(item.category) ?? item.category ?? "",
-        imageUrl: materialImageUrl(item) ?? "",
-        itemLabel: item.item_label ?? "",
-        cadLabel: item.cad_label ?? "",
-        clientProductName: room ? clientProductName(item, room) : item.client_product_name || product?.name || "",
-        productName: product?.name ?? "",
-        vendor: product?.vendor ?? "",
-        finish: product?.finish ?? "",
-        color: item.color ?? "",
-        quantity: specQuantityInput(item),
-        quantityUnit: specQuantityUnit(item),
-        dimensions: product?.dimensions ?? "",
-        sku: product?.sku ?? "",
-        clientPrice: priceLabel(product?.price) ?? "",
-        priceUnit: materialPriceUnit(item),
-        orderedBy: item.ordered_by ?? "",
-        ordered: item.ordered ? "Yes" : "No",
-        productUrl: item.product_url || product?.product_url || "",
-        notes: item.notes ?? "",
-        status: materialNeedsReselection(item) ? "Needs re-selection" : "",
-      };
-    });
 }
 
 function groupSpreadsheetRows(rows: SpecSpreadsheetRow[], groupBy: "room" | "category") {

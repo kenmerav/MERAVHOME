@@ -13,7 +13,9 @@ const outputLimits: Record<ReviewKind, number> = { completion: 32000, dimensions
 // Full construction-document reviews at high reasoning can exceed two minutes.
 const reviewTimeouts: Record<ReviewKind, number> = { completion: 300000, dimensions: 240000, color: 120000 };
 
-export function reviewCostCeiling(inputTokens: number, kind: ReviewKind) {
+export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputLimit = outputLimits[kind]) {
+  if (!Number.isSafeInteger(outputLimit) || outputLimit < 1000 || outputLimit > 32000)
+    throw new SpecReviewCostError("Invalid AI response budget.");
   if (!Number.isSafeInteger(inputTokens) || inputTokens <= 0)
     throw new SpecReviewCostError("The AI review was stopped because its cost could not be confirmed. Try again later.");
   // Reserve extra input for schema/processing differences and a changed remote
@@ -27,11 +29,11 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind) {
   // max_output_tokens includes both reasoning and visible output tokens.
   // Integer arithmetic through the final cents rounding avoids floating-point
   // errors at the spending boundary (all rates are in tenths of dollars/M).
-  const costNumerator = (reservedInput * (longContext ? 50 : 25) + outputLimits[kind] * (longContext ? 150 : 100)) * 11;
+  const costNumerator = (reservedInput * (longContext ? 50 : 25) + outputLimit * (longContext ? 150 : 100)) * 11;
   const ceilingUsd = Math.ceil(costNumerator / 1000000) / 100;
   if (ceilingUsd > SPEC_REVIEW_MAX_USD)
     throw new SpecReviewCostError("The AI review was stopped before generation because its estimated cost exceeds $5. Use a smaller construction document. Missing-detail checks still work.");
-  return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimits[kind] };
+  return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimit };
 }
 
 export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false, fetcher:typeof fetch = fetch): Promise<Response> {

@@ -7,3 +7,7 @@ tmp/
 .env.*
 !.env.example
 .output/
+
+# Local construction-drawing concepts contain private supplied screenshots/PDFs.
+preview/
+output/

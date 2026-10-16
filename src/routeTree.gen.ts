@@ -73,6 +73,7 @@ import { Route as ApiSharedDesignBoardRouteImport } from './routes/api/shared-de
 import { Route as ApiSpecBookMaterialRouteImport } from './routes/api/spec-book-material'
 import { Route as ApiSpecBookSourceStatusRouteImport } from './routes/api/spec-book-source-status'
 import { Route as ApiSpecCompletionReviewRouteImport } from './routes/api/spec-completion-review'
+import { Route as ApiSpecDrawingMatchesRouteImport } from './routes/api/spec-drawing-matches'
 import { Route as ApiSpecOrderingRouteImport } from './routes/api/spec-ordering'
 import { Route as ApiStudioRemindersRouteImport } from './routes/api/studio-reminders'
 import { Route as ApiSuggestBoardColorRouteImport } from './routes/api/suggest-board-color'
@@ -457,6 +458,11 @@ const ApiSpecCompletionReviewRoute = ApiSpecCompletionReviewRouteImport.update({
   path: '/api/spec-completion-review',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpecDrawingMatchesRoute = ApiSpecDrawingMatchesRouteImport.update({
+  id: '/api/spec-drawing-matches',
+  path: '/api/spec-drawing-matches',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSpecOrderingRoute = ApiSpecOrderingRouteImport.update({
   id: '/api/spec-ordering',
   path: '/api/spec-ordering',
@@ -790,6 +796,7 @@ export interface FileRoutesByFullPath {
   '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
   '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/spec-drawing-matches': typeof ApiSpecDrawingMatchesRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
@@ -907,6 +914,7 @@ export interface FileRoutesByTo {
   '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
   '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/spec-drawing-matches': typeof ApiSpecDrawingMatchesRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
@@ -1025,6 +1033,7 @@ export interface FileRoutesById {
   '/api/spec-book-material': typeof ApiSpecBookMaterialRoute
   '/api/spec-book-source-status': typeof ApiSpecBookSourceStatusRoute
   '/api/spec-completion-review': typeof ApiSpecCompletionReviewRoute
+  '/api/spec-drawing-matches': typeof ApiSpecDrawingMatchesRoute
   '/api/spec-ordering': typeof ApiSpecOrderingRoute
   '/api/studio-reminders': typeof ApiStudioRemindersRoute
   '/api/suggest-board-color': typeof ApiSuggestBoardColorRoute
@@ -1144,6 +1153,7 @@ export interface FileRouteTypes {
     | '/api/spec-book-material'
     | '/api/spec-book-source-status'
     | '/api/spec-completion-review'
+    | '/api/spec-drawing-matches'
     | '/api/spec-ordering'
     | '/api/studio-reminders'
     | '/api/suggest-board-color'
@@ -1261,6 +1271,7 @@ export interface FileRouteTypes {
     | '/api/spec-book-material'
     | '/api/spec-book-source-status'
     | '/api/spec-completion-review'
+    | '/api/spec-drawing-matches'
     | '/api/spec-ordering'
     | '/api/studio-reminders'
     | '/api/suggest-board-color'
@@ -1378,6 +1389,7 @@ export interface FileRouteTypes {
     | '/api/spec-book-material'
     | '/api/spec-book-source-status'
     | '/api/spec-completion-review'
+    | '/api/spec-drawing-matches'
     | '/api/spec-ordering'
     | '/api/studio-reminders'
     | '/api/suggest-board-color'
@@ -1496,6 +1508,7 @@ export interface RootRouteChildren {
   ApiSpecBookMaterialRoute: typeof ApiSpecBookMaterialRoute
   ApiSpecBookSourceStatusRoute: typeof ApiSpecBookSourceStatusRoute
   ApiSpecCompletionReviewRoute: typeof ApiSpecCompletionReviewRoute
+  ApiSpecDrawingMatchesRoute: typeof ApiSpecDrawingMatchesRoute
   ApiSpecOrderingRoute: typeof ApiSpecOrderingRoute
   ApiStudioRemindersRoute: typeof ApiStudioRemindersRoute
   ApiSuggestBoardColorRoute: typeof ApiSuggestBoardColorRoute
@@ -1998,6 +2011,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSpecCompletionReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/spec-drawing-matches': {
+      id: '/api/spec-drawing-matches'
+      path: '/api/spec-drawing-matches'
+      fullPath: '/api/spec-drawing-matches'
+      preLoaderRoute: typeof ApiSpecDrawingMatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/spec-ordering': {
       id: '/api/spec-ordering'
       path: '/api/spec-ordering'
@@ -2436,6 +2456,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSpecBookMaterialRoute: ApiSpecBookMaterialRoute,
   ApiSpecBookSourceStatusRoute: ApiSpecBookSourceStatusRoute,
   ApiSpecCompletionReviewRoute: ApiSpecCompletionReviewRoute,
+  ApiSpecDrawingMatchesRoute: ApiSpecDrawingMatchesRoute,
   ApiSpecOrderingRoute: ApiSpecOrderingRoute,
   ApiStudioRemindersRoute: ApiStudioRemindersRoute,
   ApiSuggestBoardColorRoute: ApiSuggestBoardColorRoute,

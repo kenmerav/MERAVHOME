@@ -41,3 +41,8 @@ supabase/.temp/
 *.sw?
 .vercel
 /.swc
+
+# Private local drawing-validation inputs and generated results.
+/preview/construction-drawings/public/auto-match-*.json
+/preview/construction-drawings/public/bartow-current-construction.pdf
+/output/construction-drawings-*

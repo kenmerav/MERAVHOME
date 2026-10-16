@@ -21,6 +21,8 @@ vi.mock("@tanstack/react-query", () => ({
           contractor_can_view_spec_book: true,
         },
       };
+    // Completion reviews return an optional saved object, never a list.
+    if (queryKey[0] === "spec-completion-review") return { data: undefined, isPending: false };
     return { data: [], isPending: false };
   },
 }));
