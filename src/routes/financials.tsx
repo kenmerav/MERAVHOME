@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials } from "@/lib/permissions";
 import { formatMoney, procurementTotals } from "@/lib/money";
 import { financialInvoiceLedger } from "@/lib/financialInvoiceLedger";
+import { UnassignedPaidReceipts } from "@/components/UnassignedPaidReceipts";
 
 export const Route = createFileRoute("/financials")({
   head: () => ({ meta: [{ title: "Financials — MERAV Studio" }] }),
@@ -218,6 +219,8 @@ function FinancialsOverviewPage() {
             </div>
           ))}
         </div>
+
+        <UnassignedPaidReceipts invoices={invoices} projects={projects} />
 
         <div className="mobile-card-scroll border border-border">
           <table className="w-full text-sm">

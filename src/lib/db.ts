@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
-import { canViewProjectSurface, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
+import { canViewFinancials, canViewProjectSurface, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
+import { stripePaidReceipt } from "@/lib/stripePaidReceipts";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { validateSpecQuantityPatch, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/productCategories";
@@ -1332,6 +1333,30 @@ export const db = {
       .update({ project_id: projectId } as any)
       .eq("invoice_id", invoiceId);
     return invoice;
+  },
+  assignPaidStripeReceipt: async (invoiceId: string, projectId: string) => {
+    const profile = await db.getCurrentUserProfile();
+    if (!canViewFinancials(profile)) throw new Error("Only Ken and Katie can assign paid receipts.");
+    const { data: invoice, error: readError } = await supabase.from("financial_invoices")
+      .select("id,project_id,raw_text,paid_amount,balance_due").eq("id", invoiceId).single();
+    if (readError) throw readError;
+    if (!invoice || invoice.project_id || !stripePaidReceipt(invoice))
+      throw new Error("This paid receipt has already been assigned or needs review.");
+    const { data: project, error: projectError } = await supabase.from("projects").select("id").eq("id", projectId).single();
+    if (projectError || !project) throw new Error("Choose an available Studio project.");
+    const { data: assigned, error: assignError } = await supabase.from("financial_invoices")
+      .update({ project_id: projectId, client_visible: false } as any).eq("id", invoiceId)
+      .is("project_id", null).select("id").single();
+    if (assignError || !assigned) throw new Error("This receipt changed. Refresh Financials and try again.");
+    const { data: payments, error: paymentError } = await supabase.from("financial_invoice_payments")
+      .update({ project_id: projectId } as any).eq("invoice_id", invoiceId).select("id");
+    if (paymentError || !payments?.length) {
+      const rollback = await supabase.from("financial_invoices")
+        .update({ project_id: null, client_visible: false } as any).eq("id", invoiceId).eq("project_id", projectId);
+      if (rollback.error) throw new Error("Receipt assignment needs review. Refresh Financials before trying again.");
+      throw new Error("Could not assign the receipt. Refresh Financials and try again.");
+    }
+    return assigned;
   },
   updateFinancialPayment: async (id: string, patch: Partial<FinancialInvoicePayment>) => {
     const payment = (
