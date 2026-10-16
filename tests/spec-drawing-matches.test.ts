@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { PDFDocument } from "pdf-lib";
+vi.mock("@/lib/specDrawingRoomLabels.server", () => ({
+  readDrawingRoomLabels: async () => ({ labels: [], pagesRead: 0 }),
+}));
 vi.mock("@/lib/specDrawingText.server", () => ({
   extractDrawingPageText: async (_bytes: Uint8Array, pages: number) =>
     Array.from({ length: pages }, (_, i) => ({ page: i + 1, text: "" })),
@@ -377,6 +380,27 @@ describe("grounded item-to-drawing matches", () => {
       room: "Kitchen",
       roomSource: "page_ocr",
     });
+  });
+  it("reads visible room titles on outlined or scanned pages with no searchable words", () => {
+    const pages = [
+      { page: 1, text: "·\n·\n·" },
+      { page: 2, text: "" },
+      { page: 3, text: "ID2.1" },
+      { page: 4, text: "GENERAL NOTES\n" + "General construction information. ".repeat(10) },
+      { page: 5, text: "DEMOLITION PLAN" },
+    ];
+    expect(drawingRoomLabelPages(pages, [item], [])).toEqual([1, 2, 3]);
+    const labels = drawingRoomHeadings(2, [{ text: "BATH 2 ELEVATION", confidence: 96 }], [item], "page_ocr");
+    expect(drawingMatchesWithRoomFallback(pages, [item], [], labels)).toEqual([
+      expect.objectContaining({ itemId: item.id, page: 2, kind: "room", roomSource: "page_ocr" }),
+    ]);
+    for (const title of ["AS-BUILT PLAN", "DEMOLITION PLAN", "EXISTING FLOOR PLAN"])
+      expect(drawingRoomHeadings(2, [{text:title,confidence:95},{text:"BATH 2",confidence:96}], [item], "page_ocr")).toEqual([]);
+  });
+  it("recognizes Work Station when the drawing labels it WORKSTATION", () => {
+    const workstation = { ...item, room: "Work Station" };
+    expect(drawingRoomHeadings(33, [{text:"WORKSTATION",confidence:96}], [workstation], "page_ocr"))
+      .toEqual([expect.objectContaining({room:"Work Station",page:33})]);
   });
   it("reads a numbered bathroom from a visible room heading and records it on the matched sheet", () => {
     const labels = drawingRoomHeadings(

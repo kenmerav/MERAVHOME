@@ -1,6 +1,6 @@
 import { drawingNameEvidence } from "./specDrawingNameMatches";
 
-export const DRAWING_MATCH_VERSION = "spec-item-drawings-v10-room-fallback";
+export const DRAWING_MATCH_VERSION = "spec-item-drawings-v11-outlined-room-pages";
 export const DRAWING_MATCH_CHUNK_PAGES = 8;
 export type DrawingMatchItem = {
   id: string;
@@ -324,6 +324,7 @@ export function canonicalDrawingRoom(value: string) {
   };
   return value
     .toLowerCase()
+    .replace(/\bwork\s+station\b/g, "workstation")
     .replace(/bathrooms?/g, "bath")
     .replace(/\bbath(?=\d)/g, "bath ")
     .replace(/[^a-z0-9]+/g, " ")
@@ -349,6 +350,10 @@ export function drawingRoomHeadings(
   items: DrawingMatchItem[],
   source: DrawingRoomLabel["source"],
 ): DrawingRoomLabel[] {
+  // Image-only exports need the same exclusions as searchable PDFs. Inspect
+  // the visible sheet title before accepting any of its room labels.
+  if (lines.some((line) => /\b(?:as[ -]?built|existing|demo(?:lition)?)\s+(?:floor\s+)?(?:plan|elevations?)\b/i.test(line.text)))
+    return [];
   const rooms = [
     ...new Map(
       items
@@ -583,6 +588,9 @@ export function drawingRoomLabelPages(
       if (/\b(?:demo|demolition)\s+(?:floor\s+)?(?:plan|elevation)\b/i.test(page.text))
         return false;
       if (unresolved.has(page.page)) return true;
+      // Some exports draw every letter as a shape. No searchable drawing
+      // keywords can exist on these pages, so read their visible titles too.
+      if ((page.text.match(/[a-z0-9]/gi) || []).length < 40) return true;
       const headings = drawingRoomHeadings(
         page.page,
         page.text.split("\n").map((text) => ({ text, confidence: 100 })),
