@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { drawingCitationSchema } from "./constructionDrawingViews";
 import { specSelectionSchema } from "./measuredRendering";
+import { geometryReviewSchema, type SavedCodexLayout } from "./codexRenderingLayout";
 
 export const CODEX_BATCH_CHECKS = [
   "layout",
@@ -28,6 +29,7 @@ export const codexBatchItemSchema = codexBatchSelectionSchema.extend({
   items: z.array(specSelectionSchema),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   contextKey: z.string().regex(/^[a-f0-9]{64}$/),
+  geometryRequired: z.literal(true).optional(),
 });
 export type CodexBatchItem = z.infer<typeof codexBatchItemSchema>;
 export function codexReferenceExtension(bytes: Uint8Array) {
@@ -66,6 +68,7 @@ export const codexBatchReportSchema = z
       .min(1)
       .max(30),
     uncertainties: z.array(z.string().min(1).max(1000)).max(50),
+    geometryReview: geometryReviewSchema.optional(),
     boardReview: z
       .object({
         fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
@@ -89,6 +92,7 @@ export const codexBatchReportSchema = z
 export type CodexBatchReport = z.infer<typeof codexBatchReportSchema>;
 export type CodexBatchRow = CodexBatchItem & {
   sourceUrl: string;
+  layout?: SavedCodexLayout;
   removed?: boolean;
   result?: { report: CodexBatchReport; imagePath?: string; imageUrl?: string; createdAt: string };
 };
@@ -102,6 +106,7 @@ Read manifest.json. It contains the selected views in order, original constructi
 Process views sequentially. Maintain run-state.json after every step so a resumed run skips completed items. Never generate an item already represented in results.json unless the user requests another version. Start a timer for each item; record attempts. Limit each view to TWO total image calls (initial plus one targeted correction). A failure on one view must not prevent processing the next. No API fallback.
 
 BEFORE EACH IMAGE:
+Read LAYOUT-FIRST.txt. For every new geometryRequired item, build and import its measured layout BEFORE using image generation. Prepare the batch again to retrieve its saved layout fingerprint and deterministic plan/front/angled guides. Do not generate until layout.ready is true. Model geometry and source-linked preflight are a separate required step from visual image review.
 1. Inspect the selected crop and its FULL original sheet. Inspect the relevant floor plan, reflected ceiling plan, adjacent-room elevations, and details elsewhere in the full PDF. Read source pages locally; reuse cached page renders. Do not assume the crop establishes the room behind an opening.
 2. Write a source brief with cited document/page for every architectural fact. Check the camera sightline, room adjacency, openings versus walls, islands and circulation, visible cabinet count, ceiling shape, lighting and products. Written dimensions take precedence. Keep explicitly accepted scaled values labeled; never silently assume or certify dimensions. If a critical layout fact is missing/conflicting, mark the item blocked and continue. Noncritical unknowns must remain listed.
 3. Match the frozen Spec Book products and their supplied photos to visible objects; a room quantity is not necessarily the visible count. Missing photos or selections stay unknown; don't invent replacements.
@@ -113,6 +118,7 @@ Use the built-in image tool with the actual source crop, full sheet/context page
 
 Inspect the output against the source images, not just your own prompt. Complete all seven checks: layout, openings, dimensions, cabinets, ceiling, products, background. Cite pages and visible discrepancies. A clear error gets one targeted correction, then repeat ALL checks because edits can change other details. Do not mark dimensional precision verified from generated pixels. Passing AI checks is not client approval or construction verification.
 Also complete boardReview and enclosureReview. Compare tile pattern direction, coursing, borders and placement to the board images, not only product names. Glass must have visible evidence or an explicit reason it is outside the view/blocked. Drafting X and dashed swing lines are notation, not physical decorative cabinet braces.
+For geometryRequired items compare output depth, orientation, openings, enclosure and occlusion with the saved measured model. Include geometryReview with its fingerprint and five comparisons as specified in LAYOUT-FIRST.txt. A missing/stale/failed model or unresolved output depth/orientation/enclosure blocks review import. Generated pixels never earn a pass for dimensional verification. Keep legacy drafts unchanged.
 
 RETURN:
 Save each final PNG as ITEM_UUID.png and results.json with {"version":1,"projectId":"from manifest","results":[...]}.

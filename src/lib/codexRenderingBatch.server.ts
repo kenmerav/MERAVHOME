@@ -24,6 +24,12 @@ import { projectDocumentStoragePath } from "./constructionDocumentPath.server";
 import { safeImageBuffer } from "./measuredImage.server";
 import { codexBoardPages, type CodexBoardPage } from "./codexRenderingBoards";
 import {
+  codexLayoutSchema,
+  checkCodexLayout,
+  geometryImportProblem,
+  type SavedCodexLayout,
+} from "./codexRenderingLayout";
+import {
   codexBatchItemSchema,
   codexBatchSelectionSchema,
   codexBatchReportSchema,
@@ -40,6 +46,16 @@ const removedPath = (projectId: string, id: string) =>
   itemPath(projectId, id).replace(/\.json$/, "-removed.json");
 const boardPath = (projectId: string, id: string) =>
   itemPath(projectId, id).replace(/\.json$/, "-boards.json");
+const layoutPath = (projectId: string, id: string) =>
+  itemPath(projectId, id).replace(/\.json$/, "-layout.json");
+const layoutRevisionPath = (projectId: string, id: string, fingerprint: string) =>
+  itemPath(projectId, id).replace(
+    /\.json$/,
+    `-layout-${z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .parse(fingerprint)}.json`,
+  );
 async function boardsFor(
   projectId: string,
   roomIds: string[],
@@ -157,6 +173,16 @@ export async function codexBatchApi(request: Request, projectId: string) {
             );
             return {
               ...item,
+              layout:
+                (await readStored<SavedCodexLayout>(
+                  result?.report.geometryReview
+                    ? layoutRevisionPath(
+                        projectId,
+                        item.id,
+                        result.report.geometryReview.fingerprint,
+                      )
+                    : layoutPath(projectId, item.id),
+                )) || undefined,
               sourceUrl: await signedAsset(projectId, item.roomId, item.sourcePath),
               result: result
                 ? {
@@ -199,6 +225,7 @@ export async function codexBatchApi(request: Request, projectId: string) {
         projectId,
         roomName: room.rooms.find((r) => r.id === selection.roomId)!.name,
         createdAt: new Date().toISOString(),
+        geometryRequired: true,
       });
       await writeStored(itemPath(projectId, item.id), item);
       return privateJson({ item }, 201);
@@ -208,6 +235,36 @@ export async function codexBatchApi(request: Request, projectId: string) {
       if (!(await readStored(removedPath(projectId, item.id))))
         await writeStored(removedPath(projectId, item.id), { removedAt: new Date().toISOString() });
       return privateJson({ removed: true });
+    }
+    if (body.action === "layout") {
+      const layout = codexLayoutSchema.parse(body.layout);
+      const item = await load(projectId, layout.itemId);
+      if (
+        (await readStored(removedPath(projectId, item.id))) ||
+        (await readStored(resultPath(projectId, item.id)))
+      )
+        throw new ProjectAccessError(
+          "Keep completed/removed versions intact. Add a new selection to revise its layout.",
+          409,
+        );
+      await current(request, item);
+      const documents = await constructionDocuments(projectId);
+      const checked = checkCodexLayout(
+        layout,
+        item,
+        documents.map((d) => d.id),
+      );
+      const saved: SavedCodexLayout = {
+        layout,
+        fingerprint: codexBatchFingerprint(layout),
+        ...checked,
+        savedAt: new Date().toISOString(),
+      };
+      // Keep immutable revisions as well as the current pointer. No schema/bucket change.
+      const revisionPath = layoutRevisionPath(projectId, item.id, saved.fingerprint);
+      if (!(await readStored(revisionPath))) await writeStored(revisionPath, saved);
+      await writeStored(layoutPath(projectId, item.id), saved, true);
+      return privateJson({ layout: saved });
     }
     if (body.action === "prepare") {
       const ids = z.array(scopedId).min(1).max(20).parse(body.ids);
@@ -263,6 +320,7 @@ export async function codexBatchApi(request: Request, projectId: string) {
         if (!existing) await writeStored(boardPath(projectId, item.id), { fingerprint, pages });
         preparedItems.push({
           ...item,
+          layout: (await readStored<SavedCodexLayout>(layoutPath(projectId, item.id))) || undefined,
           boardFingerprint: fingerprint,
           boardPageIds: pages.map((p) => p.id),
         });
@@ -284,6 +342,17 @@ export async function codexBatchApi(request: Request, projectId: string) {
       if (await readStored(removedPath(projectId, item.id)))
         throw new ProjectAccessError("This view was removed.", 409);
       await current(request, item);
+      const layout = await readStored<SavedCodexLayout>(layoutPath(projectId, item.id));
+      if (layout) {
+        const checked = checkCodexLayout(
+          layout.layout,
+          item,
+          (await constructionDocuments(projectId)).map((d) => d.id),
+        );
+        layout.ready = checked.ready;
+        if (layout.fingerprint !== codexBatchFingerprint(layout.layout))
+          throw new ProjectAccessError("Layout fingerprint is invalid. Save a fresh layout.", 409);
+      }
       const boardSnapshot = await readStored<{ fingerprint: string; pages: CodexBoardPage[] }>(
         boardPath(projectId, item.id),
       );
@@ -322,6 +391,8 @@ export async function codexBatchApi(request: Request, projectId: string) {
           "Review must cite the selected sheet and the included construction document.",
           400,
         );
+      const geometryProblem = geometryImportProblem(item.geometryRequired, layout, report);
+      if (geometryProblem) throw new ProjectAccessError(geometryProblem, 400);
       const imagePath = body.imagePath
         ? scopedAsset(projectId, item.roomId, z.string().parse(body.imagePath))
         : undefined;

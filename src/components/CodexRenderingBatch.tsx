@@ -13,6 +13,9 @@ import {
 } from "@/lib/codexRenderingBatch";
 import type { DrawingCitation } from "@/lib/constructionDrawingViews";
 import { codexBoardSvg, type CodexBoardPage } from "@/lib/codexRenderingBoards";
+import { CodexLayoutPreview } from "./CodexLayoutPreview";
+import { codexLayoutSchema, geometryImportProblem } from "@/lib/codexRenderingLayout";
+import { CODEX_LAYOUT_INSTRUCTIONS } from "@/lib/codexRenderingLayoutInstructions";
 
 export function CodexRenderingBatch({
   projectId,
@@ -37,6 +40,7 @@ export function CodexRenderingBatch({
     filename: string;
     count: number;
   } | null>(null);
+  const [openLayouts, setOpenLayouts] = useState<Record<string, boolean>>({});
   useEffect(
     () => () => {
       if (preparedPackage) URL.revokeObjectURL(preparedPackage.url);
@@ -137,6 +141,7 @@ export function CodexRenderingBatch({
       const prepared = await api({ action: "prepare", ids: selected });
       const files: Record<string, Uint8Array> = {
         "START-HERE.txt": strToU8(CODEX_BATCH_INSTRUCTIONS),
+        "LAYOUT-FIRST.txt": strToU8(CODEX_LAYOUT_INSTRUCTIONS),
       };
       const warnings: string[] = [];
       let total = 0;
@@ -207,6 +212,37 @@ export function CodexRenderingBatch({
         }
         items.push({ ...item, sourceFile, productFiles });
       }
+      const { codexLayoutSvg } = await import("@/lib/codexLayoutModel");
+      for (const item of prepared.items as CodexBatchRow[]) {
+        if (!item.layout) continue;
+        files[`layouts/${item.id}.json`] = strToU8(JSON.stringify(item.layout, null, 2));
+        for (const view of ["plan", "front", "angled"] as const)
+          files[`layouts/${item.id}-${view}.svg`] = strToU8(
+            codexLayoutSvg(item.layout.layout, view),
+          );
+      }
+      files["layouts-template.json"] = strToU8(
+        JSON.stringify(
+          {
+            version: 1,
+            projectId,
+            layouts: prepared.items.map((item: CodexBatchRow) => ({
+              version: 1,
+              units: "inches",
+              itemId: item.id,
+              itemFingerprint: item.fingerprint,
+              extent: { width: 0, height: 0, depth: 0 },
+              objects: [],
+              sourcePages: [{ documentId: item.citation.documentId, page: item.citation.page }],
+              notes: [
+                "Template only: replace zero extents, include all visible major objects and cite each dimension/position/orientation. Do not generate until saved layout checks pass.",
+              ],
+            })),
+          },
+          null,
+          2,
+        ),
+      );
       const boardPhotos = new Map<string, string>();
       for (const row of prepared.items)
         for (const product of row.items) {
@@ -256,6 +292,7 @@ export function CodexRenderingBatch({
         projectName: prepared.projectName,
         preparedAt: new Date().toISOString(),
         maxAttemptsPerView: 2,
+        geometryPolicy: "layout-first-v1",
         documents,
         designBoards,
         designBoardUrl: prepared.designBoardUrl,
@@ -277,6 +314,40 @@ export function CodexRenderingBatch({
       });
       setNotice(
         `Batch prepared: ${items.length} views and ${designBoards.length} design board pages. Download it using the link below, unzip it, attach START-HERE.txt in Codex with the folder location, and ask it to run the batch. Nothing has started rendering yet.${warnings.length ? ` ${warnings.length} reference issues are recorded for review.` : ""}`,
+      );
+    });
+  }
+  async function importLayouts(files: File[]) {
+    await run("Checking and saving measured layouts", async () => {
+      const file = files.find((f) => f.name === "layouts.json");
+      if (!file || file.size > 256 * 1024) throw Error("Choose layouts.json under 256 KB.");
+      const payload = z
+        .object({
+          version: z.literal(1),
+          projectId: z.literal(projectId),
+          layouts: z.array(codexLayoutSchema).min(1).max(20),
+        })
+        .parse(JSON.parse(await file.text()));
+      if (new Set(payload.layouts.map((l) => l.itemId)).size !== payload.layouts.length)
+        throw Error("Include each layout once.");
+      for (const layout of payload.layouts) {
+        const row = rows.find((r) => r.id === layout.itemId);
+        if (!row || row.result || row.fingerprint !== layout.itemFingerprint)
+          throw Error(
+            "A layout does not match a pending view. Keep completed versions and add a new view to revise them.",
+          );
+      }
+      let ready = 0;
+      try {
+        for (const layout of payload.layouts) {
+          const saved = await api({ action: "layout", layout });
+          if (saved.layout.ready) ready++;
+        }
+      } finally {
+        await refresh();
+      }
+      setNotice(
+        `${ready} of ${payload.layouts.length} layouts passed the source and geometry checks. Correct blocked layouts before generating photos. Prepare the batch again to download the saved models and guides.`,
       );
     });
   }
@@ -304,6 +375,8 @@ export function CodexRenderingBatch({
         const item = rows.find((r) => r.id === report.itemId);
         if (!item || item.fingerprint !== report.fingerprint)
           throw Error("These results do not match this project's saved selections.");
+        const problem = geometryImportProblem(item.geometryRequired, item.layout || null, report);
+        if (problem) throw Error(problem);
         const image = byName.get(`${report.itemId}.png`);
         if (report.status === "review" && !image) throw Error(`Missing ${report.itemId}.png`);
         if (image && image.size > 15 * 1024 * 1024) throw Error("Keep each final PNG under 15 MB.");
@@ -342,6 +415,12 @@ export function CodexRenderingBatch({
         Each batch includes matching design boards, pattern images and notes. Show clear frameless
         shower glass with hardware matching the room unless the sources specify another enclosure.
         Unspecified glass details remain presentation assumptions for your review.
+      </p>
+      <p className="text-sm mt-2 border p-3">
+        Layout first: Codex builds and saves a source-linked 3D envelope model before generating a
+        photo. Depth, product sizes, overlap and tub glass placement are checked automatically.
+        Missing critical dimensions block the photo step. The finished image must also be compared
+        with the saved model; it remains a presentation draft.
       </p>
       <div className="mt-4 flex flex-wrap gap-4">
         <label className="text-sm">
@@ -430,6 +509,21 @@ export function CodexRenderingBatch({
           Prepare selected batch for Codex ({selected.length})
         </button>
         <label className="border p-3 text-sm">
+          Import measured layouts
+          <input
+            aria-label="Import measured layouts"
+            type="file"
+            accept=".json"
+            disabled={!!busy}
+            className="block mt-2 text-xs"
+            onChange={(e) => {
+              const files = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (files.length) void importLayouts(files);
+            }}
+          />
+        </label>
+        <label className="border p-3 text-sm">
           Import reviewed results
           <input
             aria-label="Import Codex batch results"
@@ -514,6 +608,31 @@ export function CodexRenderingBatch({
                   : "Draft — reviewed by Codex; needs your review"
                 : "Queued — awaiting Codex handoff"}
             </p>
+            {row.geometryRequired && !row.layout && (
+              <p className="text-sm mt-2">Awaiting measured layout — photo step blocked</p>
+            )}
+            {row.layout && (
+              <details
+                className="mt-3"
+                onToggle={(e) => {
+                  const open = e.currentTarget.open;
+                  setOpenLayouts((old) => ({ ...old, [row.id]: open }));
+                }}
+              >
+                <summary className="cursor-pointer text-sm">
+                  {row.layout.ready
+                    ? "Review measured layout and 3D model"
+                    : "Layout blocked — review missing dimensions or conflicts"}
+                </summary>
+                {openLayouts[row.id] && <CodexLayoutPreview saved={row.layout} />}
+              </details>
+            )}
+            {row.result && !row.layout && (
+              <p className="text-xs mt-2">
+                Earlier draft — no saved geometry check. Add a new selection to use the layout-first
+                process.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2 mt-3">
               <a href={row.sourceUrl} target="_blank" rel="noreferrer">
                 <img
@@ -554,6 +673,18 @@ export function CodexRenderingBatch({
                     <p className="mt-2">
                       <strong>Design boards:</strong> {row.result.report.boardReview.findings}
                     </p>
+                  )}
+                  {row.result.report.geometryReview && (
+                    <div className="mt-2">
+                      <strong>Image compared with saved model:</strong>
+                      <ul className="list-disc pl-4">
+                        {row.result.report.geometryReview.comparisons.map((c) => (
+                          <li key={c.category}>
+                            {c.category}: {c.outcome} — {c.evidence}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                   {row.result.report.enclosureReview && (
                     <p className="mt-2">
