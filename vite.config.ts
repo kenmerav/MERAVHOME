@@ -7,6 +7,8 @@ import tsConfigPaths from "vite-tsconfig-paths";
 import { workflow } from "workflow/vite";
 
 export default defineConfig({
+  ssr: { external: ["@napi-rs/canvas"] },
+  environments: { nitro: { resolve: { external: ["@napi-rs/canvas"] } } },
   plugins: [
     workflow(),
     tanstackStart({
@@ -17,7 +19,7 @@ export default defineConfig({
       // Queue functions cannot use Nitro's copied absolute dependency symlinks.
       noExternals: ["tslib"],
       // The OCR worker resolves its own JS/WASM files at runtime.
-      traceDeps: ["tesseract.js*", "tesseract.js-core*"],
+      traceDeps: ["tesseract.js*", "tesseract.js-core*", "@napi-rs/canvas*"],
       rollupConfig: {
         plugins: [{
           name: "preserve-workflow-step-registration",

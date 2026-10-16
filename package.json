@@ -7,6 +7,7 @@
     "cart:runner": "node scripts/cart-runner/server.mjs",
     "dev": "vite dev",
     "build": "vite build",
+    "postbuild": "node scripts/verify-drawing-runtime.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test": "vitest run",

@@ -1,6 +1,6 @@
 import { drawingNameEvidence } from "./specDrawingNameMatches";
 
-export const DRAWING_MATCH_VERSION = "spec-item-drawings-v8-room-fallback";
+export const DRAWING_MATCH_VERSION = "spec-item-drawings-v9-room-fallback";
 export const DRAWING_MATCH_CHUNK_PAGES = 8;
 export type DrawingMatchItem = {
   id: string;

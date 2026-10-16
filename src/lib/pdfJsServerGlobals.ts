@@ -1,8 +1,4 @@
-import { createRequire } from "node:module";
-
 let pdfJsGlobalsPromise: Promise<void> | null = null;
-
-type CanvasModule = typeof import("@napi-rs/canvas");
 
 export async function ensurePdfJsServerGlobals() {
   const globalScope = globalThis as typeof globalThis & {
@@ -14,11 +10,10 @@ export async function ensurePdfJsServerGlobals() {
 
   if (!pdfJsGlobalsPromise) {
     pdfJsGlobalsPromise = Promise.resolve()
-      .then(() => {
-        // Load the native canvas package at runtime so Nitro does not bundle its
-        // platform-specific binary into the server JavaScript.
-        const packageName = ["@napi-rs", "canvas"].join("/");
-        const canvas = createRequire(import.meta.url)(packageName) as CanvasModule;
+      .then(async () => {
+        // Keep a literal import so Nitro can trace the external native package
+        // and its platform binary into the deployed function.
+        const canvas = await import("@napi-rs/canvas");
         globalScope.DOMMatrix ??= canvas.DOMMatrix as unknown as typeof DOMMatrix;
         globalScope.ImageData ??= canvas.ImageData as unknown as typeof ImageData;
       })
