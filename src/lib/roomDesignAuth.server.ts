@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { UserProfile } from "@/lib/db";
-import { canManageStudio } from "@/lib/permissions";
+import { canUseRoomDesign } from "@/lib/permissions";
 
 function json(error: string, status: number) {
   return Response.json({ error }, { status });
@@ -21,11 +21,13 @@ export async function requireRoomDesignPilotAccess(
 
   const { data: profile } = await supabaseAdmin
     .from("user_profiles")
-    .select("id,email,role,is_active,is_owner")
+    .select("id,email,role,is_active,is_owner,can_view_all_projects")
     .eq("id", userData.user.id)
     .maybeSingle();
-  if (!canManageStudio(profile as UserProfile | null)) {
-    return { error: json("The Room Design pilot is currently limited to administrators.", 403) };
+  if (userData.user.is_anonymous || !canUseRoomDesign(profile as UserProfile | null)) {
+    return {
+      error: json("Room Design is available to active Studio designers and administrators.", 403),
+    };
   }
 
   const { data: flag, error: flagError } = await supabaseAdmin
@@ -40,6 +42,16 @@ export async function requireRoomDesignPilotAccess(
   }
 
   if (scope?.projectId) {
+    if (profile?.role === "Employee" && profile.can_view_all_projects === false) {
+      const { data: assignment, error } = await supabaseAdmin
+        .from("user_project_assignments" as any)
+        .select("project_id")
+        .eq("project_id", scope.projectId)
+        .eq("user_id", userData.user.id)
+        .maybeSingle();
+      if (error || !assignment)
+        return { error: json("This project is not assigned to your account.", 403) };
+    }
     const { data: enrollment } = await supabaseAdmin
       // Generated client types are updated only after the reviewed migration is applied.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

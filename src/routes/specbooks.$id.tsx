@@ -68,6 +68,8 @@ type SpreadsheetColumnKey =
   | "color"
   | "quantity"
   | "quantityUnit"
+  | "waste"
+  | "orderQuantity"
   | "dimensions"
   | "sku"
   | "clientPrice"
@@ -86,6 +88,8 @@ const SPREADSHEET_COLUMNS: Array<{ key: SpreadsheetColumnKey; label: string }> =
   { key: "clientProductName", label: "Client Product Name" },
   { key: "quantity", label: "Qty" },
   { key: "quantityUnit", label: "Unit" },
+  { key: "waste", label: "Waste allowance" },
+  { key: "orderQuantity", label: "Order quantity" },
   { key: "productName", label: "Product Name" },
   { key: "vendor", label: "Vendor" },
   { key: "finish", label: "Finish" },
@@ -1223,13 +1227,22 @@ function spreadsheetCellForColumn({
     case "quantityUnit":
       return (
         <SpecQuantityEditor
-          item={{ quantity: row.quantity === "TBD" || !row.quantity ? null : Number(row.quantity), quantity_tbd: row.quantity === "TBD", quantity_unit: row.quantityUnit }}
+          item={{
+            quantity: row.quantity === "TBD" || !row.quantity ? null : Number(row.quantity),
+            quantity_tbd: row.quantity === "TBD",
+            quantity_unit: row.quantityUnit,
+            waste_percent: row.wastePercent || 0,
+          }}
           label={row.itemLabel}
           display={column === "quantityUnit" ? "unit" : "quantity"}
           disabled={!canEditProducts}
           onSave={(patch) => onSaveQuantity(row, patch)}
         />
       );
+    case "waste":
+      return row.waste || "—";
+    case "orderQuantity":
+      return row.orderQuantity || "—";
     case "dimensions":
       return (
         <EditableSpecTextCell
@@ -2359,6 +2372,10 @@ function spreadsheetCellValue(row: SpecSpreadsheetRow, key: SpreadsheetColumnKey
       return specQuantityUnitLabel(row.quantityUnit);
     case "dimensions":
       return row.dimensions;
+    case "waste":
+      return row.waste || "";
+    case "orderQuantity":
+      return row.orderQuantity || "";
     case "sku":
       return row.sku;
     case "clientPrice":

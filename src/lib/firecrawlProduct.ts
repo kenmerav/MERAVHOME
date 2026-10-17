@@ -1,4 +1,5 @@
 import { inferVendorFromUrl } from "@/lib/vendorInference";
+import { cleanProductDetail } from "./productDetails";
 import {
   firstProductPrice,
   productPriceFromPage,
@@ -116,7 +117,9 @@ export function missingProductSpecifications(value: {
   color?: unknown;
   dimensions?: unknown;
 }) {
-  return (["finish", "color", "dimensions"] as const).filter((field) => !firstString(value[field]));
+  return (["finish", "color", "dimensions"] as const).filter(
+    (field) => !cleanProductDetail(value[field]),
+  );
 }
 
 export function normalizeFirecrawlProduct(
@@ -157,8 +160,12 @@ export function normalizeFirecrawlProduct(
       metadata["og:site_name"],
     ),
     sku: firstString(extracted.sku, extracted.model, extracted.model_number),
-    color: firstString(extracted.selected_color, extracted.color, extracted.colorway),
-    finish: firstString(extracted.selected_finish, extracted.finish, extracted.material_finish),
+    color: cleanProductDetail(
+      firstString(extracted.selected_color, extracted.color, extracted.colorway),
+    ),
+    finish: cleanProductDetail(
+      firstString(extracted.selected_finish, extracted.finish, extracted.material_finish),
+    ),
     dimensions: sizeOptions.length > 1 && !selectedSize ? "" : firstString(extracted.dimensions, extracted.dimension,
       /\d\s*(?:["″'′]|\b(?:in|inch(?:es)?|ft|feet|mm|cm|m)\b)/i.test(selectedSize) ? selectedSize : ""),
     size_options: sizeOptions,

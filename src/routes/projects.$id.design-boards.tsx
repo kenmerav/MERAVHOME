@@ -76,7 +76,7 @@ import {
   type ItemCategory,
 } from "@/lib/roomTemplates";
 import {
-  canManageStudio,
+  canUseRoomDesign,
   canDownloadDesignBoardPdf,
   canViewProjectSurface,
   isContractorRole,
@@ -117,6 +117,14 @@ function formatLastUpdated(value: string | null | undefined) {
   }).format(date);
 }
 
+import {
+  boardMaterialQuantity,
+  boardPageQuantity,
+  boardQuantityEdit,
+} from "@/lib/boardMaterialQuantity";
+import { selectionQuantityUnitFromSpec, specQuantityDatabasePatch } from "@/lib/specQuantity";
+import { cleanProductDetail } from "@/lib/productDetails";
+
 type BoardElementType = "image" | "text" | "shape";
 
 type BoardElement = {
@@ -154,11 +162,15 @@ type BoardElement = {
   productName?: string | null;
   vendor?: string | null;
   price?: string | null;
+  sku?: string | null;
   finish?: string | null;
   materialItemId?: string | null;
   materialRoomId?: string | null;
   materialCategory?: string | null;
   materialQuantity?: number | null;
+  materialQuantityTbd?: boolean;
+  materialQuantityUnit?: string;
+  materialWastePercent?: number;
   materialFinish?: string | null;
   materialDimensions?: string | null;
   materialInfoNotNeeded?: boolean;
@@ -186,6 +198,9 @@ type PageMaterialsSyncImageSnapshot = {
   materialRoomId: string | null;
   materialCategory: string | null;
   materialQuantity: number | null;
+  materialQuantityTbd?: boolean;
+  materialQuantityUnit?: string;
+  materialWastePercent?: number;
   materialFinish: string | null;
   materialDimensions: string | null;
   materialInfoNotNeeded: boolean;
@@ -310,7 +325,7 @@ type SendMaterialResult =
       materialItemId: string | null;
       productId: string | null;
       roomId: string;
-      quantity: number;
+      quantity: number | null;
     }
   | { status: "skipped" };
 
@@ -494,6 +509,9 @@ function createPageMaterialsSyncSnapshot(page: BoardPage): PageMaterialsSyncSnap
       materialRoomId: element.materialRoomId ?? null,
       materialCategory: element.materialCategory ?? null,
       materialQuantity: element.materialQuantity ?? null,
+      materialQuantityTbd: element.materialQuantityTbd === true,
+      materialQuantityUnit: element.materialQuantityUnit,
+      materialWastePercent: element.materialWastePercent || 0,
       materialFinish: element.materialFinish ?? null,
       materialDimensions: element.materialDimensions ?? null,
       materialInfoNotNeeded: element.materialInfoNotNeeded === true,
@@ -674,6 +692,7 @@ function inferredMaterialItemCategory(item: MaterialItem): ItemCategory {
 function ProjectDesignBoardsPage() {
   const { id } = Route.useParams();
   const { roomId: requestedRoomId } = Route.useSearch();
+  const openedRoomRef = useRef<string | undefined>(undefined);
   const queryClient = useQueryClient();
   const boardStripRef = useRef<HTMLDivElement | null>(null);
   const thumbnailStripRef = useRef<HTMLDivElement | null>(null);
@@ -1242,13 +1261,18 @@ function ProjectDesignBoardsPage() {
     ) => {
       const normalizedRemoteState = normalizeBoardState(remoteBoard.board_state);
       const currentSelectedPageId = boardStateRef.current.selectedPageId;
-      const remoteState = options?.preserveSelectedPage
-        ? preserveBoardSelectedPage(normalizedRemoteState, currentSelectedPageId)
-        : requestedRoomId
-          ? openBoardStateOnRoom(normalizedRemoteState, requestedRoomId)
-          : openBoardStateOnFirstPage(normalizedRemoteState);
+      const openRequestedRoom = requestedRoomId && openedRoomRef.current !== requestedRoomId;
+      const remoteState = openRequestedRoom
+        ? openBoardStateOnRoom(normalizedRemoteState, requestedRoomId)
+        : options?.preserveSelectedPage
+          ? preserveBoardSelectedPage(normalizedRemoteState, currentSelectedPageId)
+          : requestedRoomId
+            ? openBoardStateOnRoom(normalizedRemoteState, requestedRoomId)
+            : openBoardStateOnFirstPage(normalizedRemoteState);
       const remoteJson = JSON.stringify(prepareBoardStateForSave(remoteState));
       applyingRemoteRef.current = true;
+      if (requestedRoomId && remoteState.pages.some((page) => page.roomId === requestedRoomId))
+        openedRoomRef.current = requestedRoomId;
       boardStateRef.current = remoteState;
       lastGoodBoardStateRef.current = remoteState;
       setBoardState(remoteState);
@@ -1878,7 +1902,7 @@ function ProjectDesignBoardsPage() {
     element: BoardElement,
     page: BoardPage,
     sortOrderOverride?: number,
-    quantityOverride?: number,
+    quantityOverride?: number | null,
     options: { allowMissingInfo?: boolean } = {},
   ): Promise<SendMaterialResult> => {
     if (element.type !== "image") return { status: "skipped" };
@@ -1903,19 +1927,15 @@ function ProjectDesignBoardsPage() {
     let category: ProductCategory =
       linkedProduct?.category ||
       toProductCategory(element.materialCategory || inferredMaterialCategory);
-    const finish = element.materialFinish || element.finish || null;
+    const finish = cleanProductDetail(element.materialFinish || element.finish) || null;
     const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
     const vendor = inferVendorFromUrl(productUrl) || linkedProduct?.vendor || null;
     // Use the exact image currently visible on the board. If a user restores the
     // original before sending to materials, the catalog should follow that choice
     // instead of keeping an older background-removed cutout.
     const productImageUrl = element.src || element.backgroundRemovedUrl || null;
-    const quantity =
-      quantityOverride && quantityOverride > 0
-        ? quantityOverride
-        : element.materialQuantity && element.materialQuantity > 0
-          ? element.materialQuantity
-          : 1;
+    const quantityFields = boardMaterialQuantity(element, quantityOverride);
+    const quantity = quantityFields.quantity;
 
     const actualProductName = element.productName?.trim() || itemLabel;
     const linkedProductNameMatches =
@@ -1959,6 +1979,8 @@ function ProjectDesignBoardsPage() {
         image_url: productImageUrl,
         finish,
         dimensions,
+        sku: element.sku || null,
+        price: element.price || null,
       });
     } else {
       category = product.category || category;
@@ -2019,7 +2041,7 @@ function ProjectDesignBoardsPage() {
         ...materialItems.filter((item) => item.room_id === room.id).map((item) => item.sort_order),
       ) + 1;
     const finalMaterialCategory = existingMaterial?.category || materialCategory;
-    const materialPatch: Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product"> = {
+    const materialPatch = {
       room_id: room.id,
       project_id: id,
       item_label: itemLabel,
@@ -2029,7 +2051,7 @@ function ProjectDesignBoardsPage() {
       sort_order: sortOrder,
       cad_label: null,
       product_url: productUrl,
-      quantity,
+      ...specQuantityDatabasePatch(quantityFields),
       color: finish,
       image_url: productImageUrl,
       notes: element.notes || null,
@@ -2040,11 +2062,12 @@ function ProjectDesignBoardsPage() {
       source_board_element_id: element.id,
       scrape_status: "scraped",
       scrape_error: null,
-    };
+    } satisfies Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product">;
 
     let materialItem = existingMaterial ?? null;
     if (existingMaterialId) {
-      await db.updateMaterialItem(existingMaterialId, materialPatch);
+      const saved = await db.updateMaterialItem(existingMaterialId, materialPatch);
+      if (saved.error) throw saved.error;
       materialItem = {
         ...(existingMaterial ?? { id: existingMaterialId }),
         ...materialPatch,
@@ -2091,8 +2114,13 @@ function ProjectDesignBoardsPage() {
               materialLinkCleared: element.materialLinkCleared,
               materialItemId: materialItem?.id ?? element.materialItemId ?? null,
               materialRoomId: room.id,
-              materialCategory: finalMaterialCategory,
+              materialCategory: candidate.id.startsWith("room-design-v2:")
+                ? candidate.materialCategory
+                : finalMaterialCategory,
               materialQuantity: quantity,
+              materialQuantityTbd: quantityFields.quantity_tbd,
+              materialQuantityUnit: selectionQuantityUnitFromSpec(quantityFields.quantity_unit),
+              materialWastePercent: quantityFields.waste_percent,
               materialFinish: finish,
               materialDimensions: dimensions,
             }
@@ -2173,7 +2201,7 @@ function ProjectDesignBoardsPage() {
           page: BoardPage;
           primary: BoardElement;
           elements: Array<{ page: BoardPage; element: BoardElement }>;
-          quantity: number;
+          quantity: number | null;
           roomId: string;
         }
       >();
@@ -2211,9 +2239,10 @@ function ProjectDesignBoardsPage() {
             normalizeMaterialIdentityUrl(productUrl),
             normalizeMaterialIdentityText(finish),
             normalizeMaterialIdentityText(dimensions),
+            element.materialQuantityUnit || "each",
+            String(element.materialWastePercent || 0),
           ].join("::");
-          const quantity =
-            element.materialQuantity && element.materialQuantity > 0 ? element.materialQuantity : 1;
+          const quantity = boardPageQuantity([element]);
           const existing = groups.get(key);
           if (existing) {
             existing.elements.push({ page, element });
@@ -2237,11 +2266,11 @@ function ProjectDesignBoardsPage() {
           elementsByPage.set(page.id, [...(elementsByPage.get(page.id) ?? []), element]);
         }
         const pageQuantities = Array.from(elementsByPage.values()).map((pageElements) => {
-          if (pageElements.length > 1) return pageElements.length;
-          const quantity = pageElements[0]?.materialQuantity;
-          return quantity && quantity > 0 ? quantity : 1;
+          return boardPageQuantity(pageElements);
         });
-        group.quantity = Math.max(1, ...pageQuantities);
+        group.quantity = pageQuantities.includes(null)
+          ? null
+          : Math.max(...(pageQuantities as number[]));
         const primaryMaterialId =
           group.primary.materialItemId ||
           group.elements.find(({ element }) => element.materialItemId)?.element.materialItemId ||
@@ -3621,7 +3650,7 @@ function ProjectDesignBoardsPage() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {project.design_workflow_version === "room_design_v2" &&
-                  canManageStudio(profile) &&
+                  canUseRoomDesign(profile) &&
                   (activePage.roomId || rooms[0]?.id) && (
                     <Link
                       to="/projects/$id/room-design"
@@ -6014,8 +6043,11 @@ function MissingMaterialInfoDialog({
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           {items.map((item) => {
             const element = item.element;
-            const quantityValue =
-              element.materialQuantity == null ? "" : String(element.materialQuantity);
+            const quantityValue = element.materialQuantityTbd
+              ? "TBD"
+              : element.materialQuantity == null
+                ? ""
+                : String(element.materialQuantity);
             return (
               <div
                 key={`${item.pageId}:${element.id}`}
@@ -6159,10 +6191,17 @@ function MissingMaterialInfoDialog({
                         <MissingMaterialInfoDraftInput
                           value={quantityValue}
                           onCommit={(draft) => {
-                            const value = draft.trim();
-                            onUpdateItem(item.pageId, element.id, {
-                              materialQuantity: value ? Math.max(1, Number(value) || 1) : null,
-                            });
+                            try {
+                              onUpdateItem(
+                                item.pageId,
+                                element.id,
+                                boardQuantityEdit(element, draft),
+                              );
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error ? error.message : "Check the quantity.",
+                              );
+                            }
                           }}
                           inputMode="numeric"
                           placeholder="Auto"
@@ -6273,20 +6312,29 @@ function SelectedPanel({
   const selectedMaterialIssues =
     selected.type === "image" ? imageMaterialIssues(selected, linkedProduct) : [];
   const [quantityDraft, setQuantityDraft] = useState(
-    selected.materialQuantity == null ? "" : String(selected.materialQuantity),
+    selected.materialQuantityTbd
+      ? "TBD"
+      : selected.materialQuantity == null
+        ? ""
+        : String(selected.materialQuantity),
   );
 
   useEffect(() => {
-    setQuantityDraft(selected.materialQuantity == null ? "" : String(selected.materialQuantity));
-  }, [selected.id, selected.materialQuantity]);
+    setQuantityDraft(
+      selected.materialQuantityTbd
+        ? "TBD"
+        : selected.materialQuantity == null
+          ? ""
+          : String(selected.materialQuantity),
+    );
+  }, [selected.id, selected.materialQuantity, selected.materialQuantityTbd]);
 
   const commitQuantityDraft = () => {
-    const value = quantityDraft.trim();
-    if (!value) {
-      onUpdate({ materialQuantity: null });
-      return;
+    try {
+      onUpdate(boardQuantityEdit(selected, quantityDraft));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Check the quantity.");
     }
-    onUpdate({ materialQuantity: Math.max(1, Number(value) || 1) });
   };
 
   return (
@@ -6658,8 +6706,7 @@ function SelectedPanel({
                 Qty
                 <input
                   type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
+                  inputMode="text"
                   value={quantityDraft}
                   onFocus={(event) => event.currentTarget.select()}
                   onMouseUp={(event) => event.preventDefault()}
@@ -6999,7 +7046,10 @@ function materialItemToBoardElement(
     materialItemId: item.id,
     materialRoomId: item.room_id,
     materialCategory,
-    materialQuantity: item.quantity ?? 1,
+    materialQuantity: item.quantity_tbd ? null : (item.quantity ?? 1),
+    materialQuantityTbd: item.quantity_tbd === true,
+    materialQuantityUnit: selectionQuantityUnitFromSpec(item.quantity_unit),
+    materialWastePercent: item.waste_percent || 0,
     materialFinish: item.color ?? product?.finish ?? null,
     materialDimensions: product?.dimensions ?? null,
     x,
@@ -8103,11 +8153,15 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "productName",
     "vendor",
     "price",
+    "sku",
     "finish",
     "materialItemId",
     "materialRoomId",
     "materialCategory",
     "materialQuantity",
+    "materialQuantityTbd",
+    "materialQuantityUnit",
+    "materialWastePercent",
     "materialFinish",
     "materialDimensions",
     "materialInfoNotNeeded",
@@ -8431,6 +8485,11 @@ function normalizePageMaterialsSyncSnapshot(value: unknown): PageMaterialsSyncSn
       materialCategory: nullableString(item.materialCategory),
       materialQuantity:
         typeof item.materialQuantity === "number" ? item.materialQuantity : null,
+      materialQuantityTbd: item.materialQuantityTbd === true,
+      materialQuantityUnit:
+        typeof item.materialQuantityUnit === "string" ? item.materialQuantityUnit : undefined,
+      materialWastePercent:
+        typeof item.materialWastePercent === "number" ? item.materialWastePercent : 0,
       materialFinish: nullableString(item.materialFinish),
       materialDimensions: nullableString(item.materialDimensions),
       materialInfoNotNeeded: item.materialInfoNotNeeded === true,
