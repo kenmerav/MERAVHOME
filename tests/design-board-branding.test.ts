@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DesignBoardBranding } from "../src/components/DesignBoardBranding";
-import { designBoardBranding, DESIGN_BOARD_LOGO } from "../src/lib/designBoardBranding";
+import {
+  designBoardBranding,
+  designBoardDisplayElement,
+  DESIGN_BOARD_LOGO,
+} from "../src/lib/designBoardBranding";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 const heading = {
   type: "text",
@@ -23,6 +28,62 @@ const logo = {
 };
 
 describe("automatic design-board corner branding", () => {
+  it("uses a genuinely transparent wordmark without opaque white pixels", async () => {
+    const image = await loadImage(
+      new URL(`../public${DESIGN_BOARD_LOGO}`, import.meta.url).pathname,
+    );
+    const canvas = createCanvas(image.width, image.height);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
+    let transparentPixels = 0;
+    let opaqueWhitePixels = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index + 3] === 0) transparentPixels++;
+      if (
+        pixels[index] > 245 &&
+        pixels[index + 1] > 245 &&
+        pixels[index + 2] > 245 &&
+        pixels[index + 3] > 250
+      )
+        opaqueWhitePixels++;
+    }
+    expect(transparentPixels).toBeGreaterThan(image.width * image.height * 0.7);
+    expect(opaqueWhitePixels).toBe(0);
+  });
+
+  it("displays existing image logos using the transparent asset without changing their saved source or position", () => {
+    const saved = {
+      ...logo,
+      rotation: 12,
+      productId: null,
+      materialItemId: null,
+      backgroundRemovedUrl: "/old-logo-cutout.png",
+      imageCropZoom: 1.7,
+    };
+    const before = JSON.stringify(saved);
+    const display = designBoardDisplayElement(saved);
+    expect(display.src).toBe(DESIGN_BOARD_LOGO);
+    expect(display.backgroundRemovedUrl).toBeNull();
+    expect(display.imageCropZoom).toBe(1);
+    expect([display.x, display.y, display.width, display.height, display.rotation]).toEqual([
+      saved.x,
+      saved.y,
+      saved.width,
+      saved.height,
+      saved.rotation,
+    ]);
+    expect(JSON.stringify(saved)).toBe(before);
+    expect(designBoardBranding({ title: "Kitchen", elements: [saved] }).showLogo).toBe(false);
+  });
+
+  it("leaves product images and text brand marks unchanged", () => {
+    const product = { ...logo, src: "/product/faucet.png", label: "Faucet" };
+    const text = { ...heading, text: "MERAV INTERIORS" };
+    expect(designBoardDisplayElement(product)).toBe(product);
+    expect(designBoardDisplayElement(text)).toBe(text);
+  });
+
   it("recognizes Hacienda's existing logo whose padded frame extends above the page", () => {
     const page = {
       title: "Hallway",

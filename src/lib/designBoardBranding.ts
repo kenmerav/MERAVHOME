@@ -1,4 +1,4 @@
-export const DESIGN_BOARD_LOGO = "/brand/merav-design-board-logo.png";
+export const DESIGN_BOARD_LOGO = "/brand/merav-design-board-wordmark.png";
 
 // Visually verified corner logos on existing Studio boards, October 19, 2026.
 // Older uploads have screenshot/cutout filenames rather than a logo label.
@@ -39,12 +39,28 @@ export function isDesignBoardLogo(element: BrandingElement) {
   const metadata = [element.src, element.originalSrc, element.label].filter(Boolean).join(" ");
   return (
     (element.type === "image" &&
-      (/merav[-_ ]?(?:finalmainlogo|submark|design.board.logo)|merav.*logo|logo.*merav/i.test(
-        metadata,
-      ) ||
+      (metadata.includes(DESIGN_BOARD_LOGO) ||
+        /merav[-_ ]?(?:finalmainlogo|submark|design.board.logo)|merav.*logo|logo.*merav/i.test(
+          metadata,
+        ) ||
         LEGACY_LOGO_FILES.some((file) => metadata.includes(file)))) ||
     (element.type === "text" && /\bmerav\s+interiors\b/i.test(element.text ?? ""))
   );
+}
+
+// Use the current transparent wordmark when displaying old uploaded logos, while
+// keeping their saved geometry, source files, material links, and history intact.
+export function designBoardDisplayElement<T extends BrandingElement>(element: T): T {
+  if (element.type !== "image" || !isDesignBoardLogo(element)) return element;
+  return {
+    ...element,
+    src: DESIGN_BOARD_LOGO,
+    backgroundRemovedUrl: null,
+    hideDetails: true,
+    imageCropZoom: 1,
+    imageCropX: 0,
+    imageCropY: 0,
+  };
 }
 
 // A rendering-only header: opening a board never writes, moves, or deletes layers.

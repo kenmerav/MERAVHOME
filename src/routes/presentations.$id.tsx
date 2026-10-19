@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { designBoardDisplayElement } from "@/lib/designBoardBranding";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { jsPDF } from "jspdf";
 import {
@@ -3215,6 +3216,7 @@ function DesignBoardCanvasElement({
   element: PresentationBoardElement;
   compact: boolean;
 }) {
+  element = designBoardDisplayElement(element);
   const left = `${(element.x / DESIGN_BOARD_PRESENTATION_WIDTH) * 100}%`;
   const top = `${(element.y / DESIGN_BOARD_PRESENTATION_HEIGHT) * 100}%`;
   const width = `${(element.width / DESIGN_BOARD_PRESENTATION_WIDTH) * 100}%`;
