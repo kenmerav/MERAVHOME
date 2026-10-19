@@ -230,6 +230,14 @@ describe("automatic design-board corner branding", () => {
     expect(designBoardBranding(page).title).toBe("KITCHEN");
   });
 
+  it("replaces narrow legacy corner headings, including Cambridge and Hacienda rooms", () => {
+    for (const text of ["Kitchen", "Pantry", "Hallway 2", "Rec Room"]) {
+      const page = { title: text, elements: [{ ...heading, x: 1130, y: 35, width: 181, text }] };
+      expect(designBoardContentElements(page)).toEqual([]);
+      expect(designBoardBranding(page).title).toBe(text);
+    }
+  });
+
   it("keeps product content and notes while suppressing every duplicate legacy header", () => {
     const product = { ...logo, src: "/faucet.png", productId: "faucet" };
     const caption = { ...heading, width: 120, fontSize: 12, text: "Cabinet pull" };

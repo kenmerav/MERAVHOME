@@ -71,7 +71,7 @@ function isRoomHeading(element: BrandingElement) {
       element.y + element.height > 0 &&
       element.y < 160 &&
       element.x + element.width / 2 >= 700 &&
-      element.width >= 250 &&
+      (element.width >= 250 || element.x >= 900) &&
       (element.fontSize ?? 24) >= 18
   );
 }
