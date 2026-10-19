@@ -246,7 +246,7 @@ function DesignBoardPresentationPage() {
                     transform: `scale(${scale})`,
                   }}
                 >
-                  <DesignBoardPagePreview page={activePage} pageNumber={activeIndex + 1} />
+                  <DesignBoardPagePreview page={activePage} pageNumber={activeIndex + 1} roomName={roomById.get(activePage.roomId ?? "")} />
                   <DesignBoardBranding page={activePage} roomName={roomById.get(activePage.roomId ?? "")} />
                 </div>
               </div>
@@ -299,11 +299,13 @@ function DesignBoardPresentationPage() {
 function DesignBoardPagePreview({
   page,
   pageNumber,
+  roomName,
 }: {
   page: PresentationBoardPage;
   pageNumber: number;
+  roomName?: string;
 }) {
-  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page, roomName).sort((a, b) => a.zIndex - b.zIndex);
 
   if (sortedElements.length === 0) {
     return (
@@ -412,7 +414,7 @@ function DesignBoardThumbnail({
   roomName?: string;
 }) {
   const scale = 0.058;
-  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page, roomName).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <>

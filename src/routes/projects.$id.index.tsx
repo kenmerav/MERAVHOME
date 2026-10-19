@@ -1538,7 +1538,7 @@ function getAutomaticRoomCoverBoardPage(room: Room, pages: RoomCoverBoardPage[])
 }
 
 function RoomCoverBoardPreview({ page }: { page: RoomCoverBoardPage }) {
-  const elements = designBoardContentElements(page)
+  const elements = designBoardContentElements(page, page.roomName)
     .filter((element) => element.visible !== false)
     .sort((a, b) => a.zIndex - b.zIndex);
 

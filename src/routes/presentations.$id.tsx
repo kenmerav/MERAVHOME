@@ -3184,7 +3184,7 @@ function DesignBoardCanvasPreview({
   compact?: boolean;
   fill?: boolean;
 }) {
-  const sortedElements = designBoardContentElements(page)
+  const sortedElements = designBoardContentElements(page, page.roomName)
     .filter(boardElementIsMeaningful)
     .sort((a, b) => a.zIndex - b.zIndex);
 

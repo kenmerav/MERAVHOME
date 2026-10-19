@@ -66,7 +66,8 @@ function isCornerLogo(element: BrandingElement) {
 function isRoomHeading(element: BrandingElement) {
   return (
       element.type === "text" &&
-      Boolean(element.text?.trim()) &&
+      (element.text?.trim().length ?? 0) >= 3 &&
+      (element.text?.trim().split(/\s+/).length ?? 0) <= 9 &&
       !isDesignBoardLogo(element) &&
       element.y + element.height > 0 &&
       element.y < 160 &&
@@ -83,7 +84,7 @@ function boardRoomHeading(page: BrandingPage, roomName?: string | null) {
   // Some older templates have the project name above the room. Prefer the room line.
   return candidates.find(element => normalize(element.text ?? "") === room)
     ?? candidates.find(element => room && normalize(element.text ?? "").includes(room))
-    ?? candidates[0];
+    ?? [...candidates].sort((a, b) => a.y - b.y)[0];
 }
 
 export function designBoardLogoRect() {
@@ -99,9 +100,12 @@ export function designBoardLogoRect() {
 }
 
 // Keep saved layers/history intact. Corner branding is replaced only at render time.
-export function designBoardContentElements<T extends BrandingElement>(page: { elements: readonly T[] }) {
+export function designBoardContentElements<T extends BrandingElement>(page: { title?: string; elements: readonly T[] }, roomName?: string | null) {
+  const heading = boardRoomHeading({ title: page.title ?? "", elements: page.elements }, roomName);
+  const headingText = heading?.text?.trim().toLowerCase();
   return page.elements
-    .filter(element => !isCornerLogo(element) && !isRoomHeading(element))
+    .filter(element => !isCornerLogo(element) && !(isRoomHeading(element) &&
+      headingText && element.text?.trim().toLowerCase() === headingText))
     .map(element => designBoardDisplayElement(element));
 }
 

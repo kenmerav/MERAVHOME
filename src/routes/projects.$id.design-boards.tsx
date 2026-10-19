@@ -4069,7 +4069,7 @@ function ProjectDesignBoardsPage() {
             >
               {pages.map((page, pageIndex) => {
                 const pageElements = page.elements;
-                const sortedPageElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
+                const sortedPageElements = designBoardContentElements(page, roomById.get(page.roomId ?? "")?.name).sort((a, b) => a.zIndex - b.zIndex);
                 const isActivePage = page.id === selectedPageId;
                 const isNearbyPage = editablePageIds.has(page.id);
                 const pageHidden = page.hidden === true;
@@ -4133,7 +4133,7 @@ function ProjectDesignBoardsPage() {
                       )}
 
                       {!isActivePage && isNearbyPage && (
-                        <LightweightPagePreview page={page} pageNumber={pageIndex + 1} />
+                        <LightweightPagePreview page={page} pageNumber={pageIndex + 1} roomName={roomById.get(page.roomId ?? "")?.name} />
                       )}
 
                       <DesignBoardBranding page={page} roomName={roomById.get(page.roomId ?? "")?.name} />
@@ -4838,6 +4838,7 @@ function ProjectDesignBoardsPage() {
                           <LightweightPagePreview
                             page={selectedVersionPreviewPage}
                             pageNumber={1}
+                            roomName={roomById.get(selectedVersionPreviewPage.roomId ?? "")?.name}
                           />
                           <DesignBoardBranding page={selectedVersionPreviewPage} roomName={roomById.get(selectedVersionPreviewPage.roomId ?? "")?.name} />
                         </div>
@@ -5207,8 +5208,8 @@ function LightweightPagePlaceholder({ page, pageNumber }: { page: BoardPage; pag
   );
 }
 
-function LightweightPagePreview({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
-  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
+function LightweightPagePreview({ page, pageNumber, roomName }: { page: BoardPage; pageNumber: number; roomName?: string }) {
+  const sortedElements = designBoardContentElements(page, roomName).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <>
@@ -5287,7 +5288,7 @@ function PageThumbnail({
   renderImages?: boolean;
 }) {
   const scale = 0.058;
-  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page, roomName).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <div className="flex items-end gap-1.5">
@@ -7176,7 +7177,7 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1, r
   ctx.fillStyle = "#fbfaf7";
   ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
-  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page, roomName).sort((a, b) => a.zIndex - b.zIndex);
   const loadExportImage = createDesignBoardExportImageLoader();
   for (const [index, element] of sortedElements.entries()) {
     try {

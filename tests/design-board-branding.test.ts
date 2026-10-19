@@ -252,6 +252,24 @@ describe("automatic design-board corner branding", () => {
     expect(designBoardContentElements(page)).toEqual([product, caption, note]);
   });
 
+  it("preserves top-of-board annotations, option names, and finish notes", () => {
+    const title = { ...heading, x: 805, y: 24, text: "dining room option two" };
+    const option = { ...heading, x: 883, y: 68, width: 335, text: '"Rustica"' };
+    const annotation = { ...heading, x: 1029, y: 137, width: 40, text: "B" };
+    const note = { ...heading, x: 689, y: 85, width: 402, text: "stone on wall of window - from countertop to ceiling" };
+    const page = { title: "Dining Room", elements: [note, annotation, option, title] };
+    expect(designBoardBranding(page).title).toBe(title.text);
+    expect(designBoardContentElements(page)).toEqual([note, annotation, option]);
+  });
+
+  it("chooses the same heading for content and branding using the assigned room", () => {
+    const project = { ...heading, y: 20, text: "Project name" };
+    const room = { ...heading, y: 75, text: "Kitchen" };
+    const page = { title: "Board 2", elements: [project, room] };
+    expect(designBoardBranding(page, "Kitchen").title).toBe("Kitchen");
+    expect(designBoardContentElements(page, "Kitchen")).toEqual([project]);
+  });
+
   it("fits long room names within the same right-aligned header in previews and PDF", () => {
     const title = "PRIMARY BATHROOM SHOWER FIXTURES AND FINISHES";
     const layout = designBoardTitleLayout(title, (text, size) => text.length * size * 0.65);
