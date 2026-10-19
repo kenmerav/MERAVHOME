@@ -48,6 +48,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RoomDesignTileFields } from "@/components/RoomDesignTileFields";
 import { RoomDesignQuantityInput } from "@/components/RoomDesignQuantityInput";
 import { roomDesignQuantityLabel } from "@/lib/roomDesignQuantity";
 import { Label } from "@/components/ui/label";
@@ -1540,10 +1541,14 @@ function RoomDesignWorkflow({
   };
 
   const updateSelection = (id: string, patch: Partial<DemoSelection>) => {
-    if ("quantity" in patch)
+    if ("quantity" in patch || "notes" in patch)
       setLinks((items) =>
         items.map((item) =>
-          `link-${item.id}` === id ? { ...item, quantity: patch.quantity ?? null } : item,
+          `link-${item.id}` === id ? {
+            ...item,
+            ...("quantity" in patch ? { quantity: patch.quantity ?? null } : {}),
+            ...("notes" in patch ? { notes: patch.notes ?? "" } : {}),
+          } : item,
         ),
       );
     const detailsChanged = Object.keys(patch).some((key) =>
@@ -2453,6 +2458,10 @@ function StartStep(props: {
                 ) : (
                   <span />
                 )}
+                <div className="md:col-span-full">
+                  <RoomDesignTileFields category={item.category} productName={item.catalogProductName} notes={item.notes} disabled={props.gathering} productSource={[item.productId, item.url].filter(Boolean).join("|")}
+                    onChange={notes => props.onLinks(props.links.map(link => link.id === item.id ? { ...link, notes } : link))} />
+                </div>
               </div>
             ))}
           </div>
@@ -4704,6 +4713,11 @@ function ProductDetailsEditor({
             />
           </label>
         ))}
+      </div>
+      <div className="mt-3">
+        <RoomDesignTileFields category={selection.category} productName={selection.productName} notes={selection.notes}
+          productSource={[selection.productId, selection.url].filter(Boolean).join("|")}
+          onChange={notes => onUpdate(selection.id, { notes })} />
       </div>
       {!!issues.length && (
         <ul className="my-3 list-disc space-y-1 pl-4 text-amber-800">

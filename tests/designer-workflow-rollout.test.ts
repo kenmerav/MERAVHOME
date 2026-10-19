@@ -158,7 +158,8 @@ describe("designer workflow round trip", () => {
     expect(roomDesignOrderReady({ ...product, finish: "Open Mobile Menu" })).toBe(false);
     expect(roomDesignOrderReady({ ...product, quantity: null })).toBe(false);
     expect(roomDesignOrderReady({ ...product, sku: undefined })).toBe(false);
-    expect(roomDesignOrderReady(product)).toBe(true);
+    expect(roomDesignOrderReady(product)).toBe(false);
+    expect(roomDesignOrderReady({ ...product, notes: "Grout color: MAPEI Avalanche. Grout joint width: 1/8 inch. Tile layout: Vertical straight set." })).toBe(true);
   });
   it("assigns wall tile an area unit without misclassifying paint", () => {
     expect(productAwareQuantityUnit("Wall finish", product.productName)).toBe("sq ft");

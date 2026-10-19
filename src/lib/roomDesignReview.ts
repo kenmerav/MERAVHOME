@@ -2,6 +2,7 @@ import { cleanProductDetail } from "./productDetails";
 import { exactProductPrice } from "./productPricing";
 import { parseSpecQuantity, specQuantityUnitFromSelection } from "./specQuantity";
 import type { RoomDesignSelection } from "./roomDesignWorkflow";
+import { roomDesignTileIssues } from "./roomDesignTile";
 
 /** Refreshing the same link must not reset the designer's measurement decisions. */
 export function retainRoomDesignMeasurements<T extends RoomDesignSelection>(
@@ -16,6 +17,7 @@ export function retainRoomDesignMeasurements<T extends RoomDesignSelection>(
     return next;
   return {
     ...next,
+    notes: next.notes || previous.notes,
     quantityUnit: previous.quantityUnit,
     wastePercent: previous.wastePercent,
     finish: cleanProductDetail(next.finish) || cleanProductDetail(previous.finish),
@@ -35,7 +37,7 @@ export function productAwareQuantityUnit(category: string, productName = "") {
 
 /** Selection review is separate from room completeness and procurement readiness. */
 export function roomDesignSelectionIssues(item: RoomDesignSelection): string[] {
-  const issues: string[] = [];
+  const issues: string[] = roomDesignTileIssues(item);
   if (!cleanProductDetail(item.productName) || / selection$/i.test(item.productName))
     issues.push("Confirm the exact product name.");
   if (!cleanProductDetail(item.vendor) || item.vendor === "Linked vendor")

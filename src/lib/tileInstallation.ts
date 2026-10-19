@@ -20,15 +20,15 @@ export type TileInstallationReview = {
   covered: { item_id: string; field: TileField; evidence: TileProof[] }[];
   unverified: { item_id: string; message: string }[];
 };
-const identity = (item: MaterialItem) => [item.item_label, item.client_product_name, item.product?.name, item.product?.subcategory].filter(Boolean).join(" ");
+const identity = (item: Partial<MaterialItem>) => [item.item_label, item.client_product_name, item.product?.name, item.product?.subcategory].filter(Boolean).join(" ");
 const inactive = /\b(cancel(?:ed|led)?|superseded|historical reference|reference only|not selected|no installation|do not (?:order|install)|option[, ]+not final)\b/i;
-export function needsTileInstallation(item: MaterialItem) {
+export function needsTileInstallation(item: Partial<MaterialItem> & { item_label: string }) {
   if (!materialVisibleInProcurement(item) || inactive.test(item.item_label) ||
     /^(?:CANCEL(?:ED|LED)|SUPERSEDED|HISTORICAL REFERENCE|REFERENCE ONLY|NOT SELECTED|DO NOT (?:ORDER|INSTALL))\b/i.test((item.notes || "").trim())) return false;
   const name = identity(item);
   // A tile-in drain, a slab countertop, a wood herringbone floor, or a tile
   // manufacturer's vanity is not an installed tiled surface.
-  if (/\b(drains?|faucets?|sinks?|vanit(?:y|ies)|toilets?|mirrors?|grout|refractory|firebox|wallpaper|vinyl|laminate|hardwood|white oak)\b/i.test(name)) return false;
+  if (/\b(drains?|faucets?|sinks?|vanit(?:y|ies)|toilets?|mirrors?|pendants?|sconces?|lamps?|chandeliers?|grout|refractory|firebox|wallpaper|vinyl|laminate|hardwood|white oak|wood(?:en)? panels?|mdf)\b/i.test(name)) return false;
   if (/\b(countertops?|slabs?|plaster|limewash|roman clay)\b/i.test(name) && !/\b(?:tile|mosaic)\b/i.test(name)) return false;
   return /\b(tiles?|mosaics?|zellige|terracotta|porcelain|ceramic|pavers?)\b/i.test(name) ||
     (/\b(stone|marble|travertine|limestone)\b/i.test(name) && /\b(floor|flooring|wall|backsplash|surround)\b/i.test(name)) ||
@@ -38,11 +38,11 @@ export function needsTileInstallation(item: MaterialItem) {
 // A pending choice mentioning a pattern/color is not a selection. Scope this
 // per sentence so "running bond. Grout TBD" keeps the confirmed layout.
 function confirmedSegments(value: string) {
-  return value.replace(/\\n/g, "\n").split(/[\n;.!]+/).map(s => s.trim()).filter(s => s &&
-    !/\b(tbd|tbc|pending|unselected|unresolved|choose|select|selection (?:still )?needed|decision needed|confirm (?:the )?(?:grout|pattern|layout)|to be (?:confirmed|selected|determined)|remain(?:s)? to be|(?:grout|layout|pattern).{0,30}(?:require|need).{0,15}(?:approval|review|confirm)|OR|versus)\b/i.test(s) &&
+  return value.replace(/\\n/g, "\n").split(/[\n;!]+|(?<!\d)\.|\.(?!\d)/).map(s => s.trim()).filter(s => s &&
+    !/\b(tbd|tbc|pending|unknown|unsure|undecided|not sure|unselected|unresolved|choose|select|selection (?:still )?needed|decision needed|confirm (?:the )?(?:grout|pattern|layout)|to be (?:confirmed|selected|determined)|remain(?:s)? to be|(?:grout|layout|pattern).{0,30}(?:require|need).{0,15}(?:approval|review|confirm)|OR|versus)\b/i.test(s) &&
     !inactive.test(s) && !/\b(?:not|no) (?:yet )?(?:confirmed|selected|specified)\b/i.test(s));
 }
-const layout = /\b(straight[ -]?(?:set|lay)|stack(?:ed)?(?:[ -]bond)?|running[ -]bond|herringbone|herringbione|chevron|basket[ -]?weave|brick[ -]bond|crosshatch|diagonal|checkerboard|offset(?: (?:lay|rows|pattern))?|rows? offset|octagon|hexagon|penny round)\b/i;
+const layout = /\b(straight[ -]?(?:set|lay)|stack(?:ed)?(?:[ -]bond)?|running[ -]bond|broken[ -]joint|herringbone|herringbione|chevron|basket[ -]?weave|brick[ -]bond|crosshatch|diagonal|checkerboard|offset(?: (?:lay|rows|pattern))?|rows? offset|octagon|hexagon|penny round)\b/i;
 const width = /(?:\b(?:\d+\s+)?\d+\s*\/\s*\d+|\b\d+(?:\.\d+)?|[⅛¼⅜½¾])\s*[-–]?\s*(?:["″]|inch(?:es)?\b|in\b|mm\b|millimet(?:er|re)s?\b)/i;
 const color = /\b(?:off[ -]?white|offwhite|white|black|gr[ae]y|greige|beige|ivory|cream|almond|charcoal|silver|taupe|sand|brown|tan|buff|pewter|linen|frost|bone|alabaster|bright white|warm gr[ae]y)\b/i;
 const groutColor = new RegExp(`(?:${color.source})\\s+(?:colou?red\\s+)?grout\\b|\\bgrout(?:\\s+colou?r)?\\s*[:=-]?\\s*(?:(?:to be|is|in)\\s+)?(?:(?:light|medium|dark|warm|cool|bright|pure|antique)\\s+)?(?:${color.source})`, "i");
@@ -51,12 +51,16 @@ function groutParts(value: string) {
   // Only inspect grout/joint sentences, never mistake a tile's color/size for grout.
   const segments = confirmedSegments(value).filter(s => /\b(grout|joint(?:s)?)\b/i.test(s));
   return {
-    color: segments.some(s => /\bgrout\b/i.test(s) && (groutColor.test(s) || /\b(?:match(?:ing)?|blend(?:ing)?)\b/i.test(s) ||
+    color: segments.some(s => /\bgrout\b/i.test(s) && (/^grout colou?r\s*:\s*(?!(?:n\/a|na|none|not applicable)\s*$)\S.{1,}/i.test(s) || groutColor.test(s) || /\b(?:match(?:ing)?|blend(?:ing)?)\b/i.test(s) ||
       /\b(?:mapei|laticrete|spectralock|prism|polyblend|custom building|ardex|tec)\b.{0,60}(?:#\s*\w+|\d{2,})/i.test(s))),
     width: segments.some(s => groutWidth.test(s)),
   };
 }
 export function tileDetailConfirmed(field: TileField, value: string) {
+  // Explicit unfinished fields must not be hidden by an older pattern or grout note.
+  const labelled = value.replace(/\\n/g, "\n").split("\n").filter(line =>
+    (field === "grout" ? /^\s*Grout(?: color| joint width)?\s*:/i : /^\s*Tile (?:layout|lay direction)\s*:/i).test(line));
+  if (labelled.some(line => /:\s*(?:$|(?:tbd|tbc|pending|unknown|unsure|undecided|not sure|n\/a|none|not applicable)\b)/i.test(line))) return false;
   if (field === "grout" && confirmedSegments(value).some(s => /\b(no grout(?: is)? (?:required|needed)|grout(?: is)? not (?:required|needed)|groutless|dry[ -]stack)\b/i.test(s))) return true;
   if (field === "grout") { const p = groutParts(value); return p.color && p.width; }
   return confirmedSegments(value).some(s => layout.test(s) || /\b(?:tile lay|tile layout|installation|laid|lay).{0,30}(?:like|per|as shown|see).{0,35}(?:example|photo|image|board|drawing|reference)\b/i.test(s));
