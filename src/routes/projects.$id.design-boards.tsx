@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { DesignBoardBranding } from "@/components/DesignBoardBranding";
-import { BOARD_TITLE_RECT, DESIGN_BOARD_LOGO, designBoardBranding, designBoardDisplayElement, designBoardLogoRect } from "@/lib/designBoardBranding";
+import { BOARD_HEADER_FONT, BOARD_HEADER_LETTER_SPACING, DESIGN_BOARD_LOGO, designBoardBranding, designBoardContentElements, designBoardLogoRect, designBoardTitleLayout } from "@/lib/designBoardBranding";
 import {
   Dialog,
   DialogContent,
@@ -4069,7 +4069,7 @@ function ProjectDesignBoardsPage() {
             >
               {pages.map((page, pageIndex) => {
                 const pageElements = page.elements;
-                const sortedPageElements = [...pageElements].sort((a, b) => a.zIndex - b.zIndex);
+                const sortedPageElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
                 const isActivePage = page.id === selectedPageId;
                 const isNearbyPage = editablePageIds.has(page.id);
                 const pageHidden = page.hidden === true;
@@ -4153,7 +4153,7 @@ function ProjectDesignBoardsPage() {
                         sortedPageElements.map((element) => (
                           <BoardObject
                             key={element.id}
-                            element={designBoardDisplayElement(element, page)}
+                            element={element}
                             editable={canEditDesignBoards}
                             showProductBadge={false}
                             cropMode={croppingElementId === element.id}
@@ -5208,7 +5208,7 @@ function LightweightPagePlaceholder({ page, pageNumber }: { page: BoardPage; pag
 }
 
 function LightweightPagePreview({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
-  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <>
@@ -5287,7 +5287,7 @@ function PageThumbnail({
   renderImages?: boolean;
 }) {
   const scale = 0.058;
-  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <div className="flex items-end gap-1.5">
@@ -7176,7 +7176,7 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1, r
   ctx.fillStyle = "#fbfaf7";
   ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
-  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
   const loadExportImage = createDesignBoardExportImageLoader();
   for (const [index, element] of sortedElements.entries()) {
     try {
@@ -7195,15 +7195,17 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1, r
   }
 
   const header = designBoardBranding(page, roomName);
-  if (header.showLogo) {
-    const logo = await loadExportImage(DESIGN_BOARD_LOGO);
-    const rect = designBoardLogoRect(page);
-    ctx.drawImage(logo, rect.x, rect.y, rect.width, rect.height);
-  }
-  if (header.showTitle) {
-    drawWrappedCanvasText(ctx, header.title, BOARD_TITLE_RECT.x + BOARD_TITLE_RECT.width,
-      BOARD_TITLE_RECT.y + BOARD_TITLE_RECT.height / 2, BOARD_TITLE_RECT.width,
-      28, DEFAULT_BOARD_TEXT_FONT, DEFAULT_BOARD_TEXT_COLOR, "right", "middle", 2);
+  const logo = await loadExportImage(DESIGN_BOARD_LOGO);
+  const rect = designBoardLogoRect();
+  ctx.drawImage(logo, rect.x, rect.y, rect.width, rect.height);
+  await document.fonts.load(`28px ${BOARD_HEADER_FONT}`);
+  const titleLayout = designBoardTitleLayout(header.title, (text, size) => {
+    ctx.font = `${size}px ${BOARD_HEADER_FONT}`;
+    return ctx.measureText(text).width;
+  });
+  for (const line of titleLayout.lines) {
+    drawWrappedCanvasText(ctx, line.text, line.x, line.y, Number.MAX_SAFE_INTEGER,
+      titleLayout.fontSize, BOARD_HEADER_FONT, DEFAULT_BOARD_TEXT_COLOR, "right", "middle", BOARD_HEADER_LETTER_SPACING);
   }
 
   return canvas.toDataURL("image/png");

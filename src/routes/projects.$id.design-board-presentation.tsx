@@ -10,7 +10,7 @@ import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { canViewProjectSurface } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { DesignBoardBranding } from "@/components/DesignBoardBranding";
-import { designBoardDisplayElement } from "@/lib/designBoardBranding";
+import { designBoardContentElements } from "@/lib/designBoardBranding";
 
 export const Route = createFileRoute("/projects/$id/design-board-presentation")({
   head: () => ({ meta: [{ title: "Design Board Presentation — MERAV Studio" }] }),
@@ -303,7 +303,7 @@ function DesignBoardPagePreview({
   page: PresentationBoardPage;
   pageNumber: number;
 }) {
-  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
 
   if (sortedElements.length === 0) {
     return (
@@ -412,7 +412,7 @@ function DesignBoardThumbnail({
   roomName?: string;
 }) {
   const scale = 0.058;
-  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = designBoardContentElements(page).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <>

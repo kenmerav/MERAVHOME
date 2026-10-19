@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { designBoardDisplayElement } from "@/lib/designBoardBranding";
+import { designBoardContentElements } from "@/lib/designBoardBranding";
+import { DesignBoardBranding } from "@/components/DesignBoardBranding";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { jsPDF } from "jspdf";
 import {
@@ -82,6 +83,7 @@ type PresentationBoardPage = {
   id: string;
   title: string;
   roomId: string | null;
+  roomName?: string;
   hidden?: boolean;
   presentationVisible: boolean;
   elements: PresentationBoardElement[];
@@ -872,8 +874,8 @@ function PresentationPage() {
     () =>
       normalizePresentationBoardPages(sharedBoard?.board_state).filter(
         (page) => page.hidden !== true && boardPageHasRenderableContent(page),
-      ),
-    [sharedBoard?.board_state, sharedBoard?.updated_at],
+      ).map(page => ({ ...page, roomName: rooms.find(room => room.id === page.roomId)?.name })),
+    [sharedBoard?.board_state, sharedBoard?.updated_at, rooms],
   );
   const presentationExtraPages = useMemo(
     () => normalizePresentationExtraPageSlots(sharedBoard?.board_state),
@@ -3182,9 +3184,8 @@ function DesignBoardCanvasPreview({
   compact?: boolean;
   fill?: boolean;
 }) {
-  const sortedElements = [...page.elements]
+  const sortedElements = designBoardContentElements(page)
     .filter(boardElementIsMeaningful)
-    .map(element => designBoardDisplayElement(element, page))
     .sort((a, b) => a.zIndex - b.zIndex);
 
   return (
@@ -3197,6 +3198,7 @@ function DesignBoardCanvasPreview({
             : "aspect-[14/9] lg:min-h-[640px] print:min-h-0"
       }`}
     >
+      <DesignBoardBranding page={page} roomName={page.roomName} />
       {sortedElements.length ? (
         sortedElements.map((element) => (
           <DesignBoardCanvasElement key={element.id} element={element} compact={compact} />

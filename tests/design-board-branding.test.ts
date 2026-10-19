@@ -5,7 +5,10 @@ import { DesignBoardBranding } from "../src/components/DesignBoardBranding";
 import {
   designBoardBranding,
   designBoardDisplayElement,
+  designBoardContentElements,
+  designBoardTitleLayout,
   designBoardLogoRect,
+  BOARD_TITLE_RECT,
   DESIGN_BOARD_LOGO,
 } from "../src/lib/designBoardBranding";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -53,7 +56,7 @@ describe("automatic design-board corner branding", () => {
     expect(opaqueWhitePixels).toBe(0);
   });
 
-  it("insets and aligns existing header logos without rewriting saved layers", () => {
+  it("replaces legacy headers for display without rewriting saved layers", () => {
     const saved = {
       ...logo,
       rotation: 12,
@@ -64,25 +67,18 @@ describe("automatic design-board corner branding", () => {
     };
     const before = JSON.stringify(saved);
     const page = { title: "Bathroom", elements: [saved, heading] };
-    const display = designBoardDisplayElement(saved, page);
-    expect(display.src).toBe(DESIGN_BOARD_LOGO);
-    expect(display.backgroundRemovedUrl).toBeNull();
-    expect(display.imageCropZoom).toBe(1);
-    expect(display.x).toBe(48);
-    expect(display.width).toBe(saved.width);
-    expect(display.rotation).toBe(0);
-    expect(display.y + display.height * (69 / 232)).toBeCloseTo(heading.y + heading.height / 2);
+    expect(designBoardContentElements(page)).toEqual([]);
     expect(JSON.stringify(saved)).toBe(before);
-    expect(designBoardBranding({ title: "Kitchen", elements: [saved] }).showLogo).toBe(false);
+    expect(designBoardBranding(page).title).toBe(heading.text);
   });
 
-  it("aligns automatic logos with an existing heading or the default room-name line", () => {
-    for (const elements of [[], [heading], [{ ...heading, y: 24, height: 72 }]]) {
-      const rect = designBoardLogoRect({ title: "Room", elements });
-      const titleCenter = elements.length ? elements[0].y + elements[0].height / 2 : 60;
-      expect(rect.x).toBe(48);
-      expect(rect.y + rect.height * (69 / 232)).toBeCloseTo(titleCenter);
-    }
+  it("uses fixed equal margins and aligns the logo headline with the room-name line", () => {
+    const rect = designBoardLogoRect();
+    expect(rect.x).toBe(48);
+    expect(rect.width).toBe(340);
+    expect(1400 - BOARD_TITLE_RECT.x - BOARD_TITLE_RECT.width).toBe(rect.x);
+    expect(rect.y + rect.height * (69 / 232)).toBeCloseTo(74);
+    expect(designBoardTitleLayout("Kitchen").lines[0]).toMatchObject({ x: 1352, y: 74 });
   });
 
   it("leaves product images and text brand marks unchanged", () => {
@@ -107,16 +103,15 @@ describe("automatic design-board corner branding", () => {
         { ...heading, x: 928, y: 54, text: "foyer + hallway" },
       ],
     };
-    expect(designBoardBranding(page)).toMatchObject({ showLogo: false, showTitle: false });
+    expect(designBoardContentElements(page)).toEqual([]);
     const html = renderToStaticMarkup(createElement(DesignBoardBranding, { page }));
-    expect(html).not.toContain("<img");
-    expect(html).not.toContain("data-board-room-name");
+    expect(html.match(/data-board-logo/g)).toHaveLength(1);
+    expect(html.match(/data-board-room-name/g)).toHaveLength(1);
+    expect(html).toContain("FOYER + HALLWAY");
   });
 
   it("adds both corners on a new page using its assigned room", () => {
     expect(designBoardBranding({ title: "Board 2", elements: [] }, "Primary Bathroom")).toEqual({
-      showLogo: true,
-      showTitle: true,
       title: "Primary Bathroom",
     });
   });
@@ -134,7 +129,7 @@ describe("automatic design-board corner branding", () => {
         { title: "Bedroom 2 Bathroom", elements: [heading] },
         "Bedroom 2 Bathroom",
       ),
-    ).toMatchObject({ showLogo: true, showTitle: false });
+    ).toEqual({ title: "bathroom 2" });
   });
 
   it("recognizes unlabeled, visually audited legacy cutout and screenshot logos", () => {
@@ -149,10 +144,7 @@ describe("automatic design-board corner branding", () => {
       "1781615242302-2c8d2cef-ee37-4bca-b8ca-91913bbd5e48-screenshot.png",
       "1790356581615-ebcd0bcd-739c-42e3-bf04-b1b36a5858f7-merav-finalmainlogo.png",
     ]) {
-      expect(
-        designBoardBranding({ title: "Kitchen", elements: [{ ...logo, src: `/uploads/${file}` }] })
-          .showLogo,
-      ).toBe(false);
+      expect(designBoardContentElements({ elements: [{ ...logo, src: `/uploads/${file}` }] })).toEqual([]);
     }
   });
 
@@ -162,20 +154,13 @@ describe("automatic design-board corner branding", () => {
       { ...logo, src: DESIGN_BOARD_LOGO },
       { ...heading, x: 32, text: "MERAV INTERIORS" },
     ]) {
-      expect(designBoardBranding({ title: "Kitchen", elements: [element] })).toMatchObject({
-        showLogo: false,
-        showTitle: true,
-      });
+      expect(designBoardContentElements({ elements: [element] })).toEqual([]);
     }
   });
 
   it("still adds the corner logo when an old page has only a brand footer", () => {
-    expect(
-      designBoardBranding({
-        title: "Kitchen",
-        elements: [{ ...heading, x: 450, y: 850, text: "MERAV INTERIORS" }],
-      }).showLogo,
-    ).toBe(true);
+    const footer = { ...heading, x: 450, y: 850, text: "MERAV INTERIORS" };
+    expect(designBoardContentElements({ elements: [footer] })).toEqual([footer]);
   });
 
   it("ignores hidden branding and product images and notes elsewhere on the board", () => {
@@ -189,7 +174,7 @@ describe("automatic design-board corner branding", () => {
           { ...heading, text: "Shiplap wall", y: 460 },
         ],
       }),
-    ).toMatchObject({ showLogo: true, showTitle: true });
+    ).toEqual({ title: "Kitchen" });
   });
 
   it("does not mistake a product caption for the room heading", () => {
@@ -197,8 +182,8 @@ describe("automatic design-board corner branding", () => {
       designBoardBranding({
         title: "Kitchen",
         elements: [{ ...heading, width: 120, fontSize: 12, text: "Cabinet pull" }],
-      }).showTitle,
-    ).toBe(true);
+      }).title,
+    ).toBe("Kitchen");
   });
 
   it("does not mutate board layers or add material/product objects on repeat renders", () => {
@@ -207,8 +192,8 @@ describe("automatic design-board corner branding", () => {
     for (let i = 0; i < 3; i++) designBoardBranding(page, "Kitchen");
     expect(JSON.stringify(page)).toBe(before);
     const html = renderToStaticMarkup(createElement(DesignBoardBranding, { page }));
-    expect(html).not.toContain("<img");
-    expect(html).not.toContain("data-board-room-name");
+    expect(html.match(/data-board-logo/g)).toHaveLength(1);
+    expect(html.match(/data-board-room-name/g)).toHaveLength(1);
   });
 
   it("renders the supplied logo and the current room name as fixed, noninteractive corners", () => {
@@ -219,9 +204,46 @@ describe("automatic design-board corner branding", () => {
       }),
     );
     expect(html).toContain(DESIGN_BOARD_LOGO);
-    expect(html).toContain("Guest Bathroom");
+    expect(html).toContain("GUEST BATHROOM");
     expect(html).toContain("pointer-events-none");
-    expect(html).toContain("left:48px;");
-    expect(html).toContain("justify-end");
+    expect(html).toContain('x="48"');
+    expect(html).toContain('text-anchor="end"');
+    expect(html).toContain('viewBox="0 0 1400 900"');
+  });
+
+  it("uses identical header geometry on old boards, new boards, and scaled previews", () => {
+    const pages = [
+      { title: "Kitchen", elements: [] },
+      { title: "Kitchen", elements: [logo, { ...heading, text: "Kitchen" }] },
+      { title: "Kitchen", elements: [{ ...logo, width: 600, y: -90 }, { ...heading, text: "Kitchen", y: 130 }] },
+    ];
+    const markup = pages.map(page => renderToStaticMarkup(createElement(DesignBoardBranding, { page })));
+    expect(new Set(markup).size).toBe(1);
+  });
+
+  it("uses the room heading when an old template also has a project heading", () => {
+    const page = { title: "Kitchen — Design Board 1", elements: [
+      { ...heading, x: 300, y: 35, width: 800, text: "TEST DESIGN PROCESS" },
+      { ...heading, x: 300, y: 76, width: 800, text: "KITCHEN" },
+    ] };
+    expect(designBoardBranding(page, "Kitchen").title).toBe("KITCHEN");
+    expect(designBoardBranding(page).title).toBe("KITCHEN");
+  });
+
+  it("keeps product content and notes while suppressing every duplicate legacy header", () => {
+    const product = { ...logo, src: "/faucet.png", productId: "faucet" };
+    const caption = { ...heading, width: 120, fontSize: 12, text: "Cabinet pull" };
+    const note = { ...heading, y: 450, text: "Stone detail" };
+    const page = { elements: [logo, heading, { ...logo, x: 8 }, { ...heading, y: 10 }, product, caption, note] };
+    expect(designBoardContentElements(page)).toEqual([product, caption, note]);
+  });
+
+  it("fits long room names within the same right-aligned header in previews and PDF", () => {
+    const title = "PRIMARY BATHROOM SHOWER FIXTURES AND FINISHES";
+    const layout = designBoardTitleLayout(title, (text, size) => text.length * size * 0.65);
+    expect(layout.lines.length).toBe(2);
+    expect(layout.lines.every(line => line.x === 1352)).toBe(true);
+    expect((layout.lines[0].y + layout.lines[1].y) / 2).toBe(74);
+    expect(layout.lines.map(line => line.text).join(" ")).toBe(title);
   });
 });

@@ -32,7 +32,10 @@ export type BrandingPage = {
   elements: readonly BrandingElement[];
 };
 
-export const BOARD_TITLE_RECT = { x: 568, y: 24, width: 800, height: 72 };
+export const BOARD_TITLE_RECT = { x: 520, y: 38, width: 832, height: 72 };
+export const BOARD_HEADER_FONT = "Montserrat, Arial, sans-serif";
+export const BOARD_HEADER_FONT_SIZE = 28;
+export const BOARD_HEADER_LETTER_SPACING = 2;
 const LOGO_SOURCE_WIDTH = 1600;
 const LOGO_SOURCE_HEIGHT = 232;
 const LOGO_HEADLINE_CENTER_Y = 69;
@@ -53,7 +56,6 @@ export function isDesignBoardLogo(element: BrandingElement) {
 
 function isCornerLogo(element: BrandingElement) {
   return (
-    element.visible !== false &&
     element.x < 500 &&
     element.y + element.height > 0 &&
     element.y < 160 &&
@@ -61,10 +63,8 @@ function isCornerLogo(element: BrandingElement) {
   );
 }
 
-function boardRoomHeading(page?: BrandingPage) {
-  return page?.elements.find(
-    (element) =>
-      element.visible !== false &&
+function isRoomHeading(element: BrandingElement) {
+  return (
       element.type === "text" &&
       Boolean(element.text?.trim()) &&
       !isDesignBoardLogo(element) &&
@@ -72,15 +72,23 @@ function boardRoomHeading(page?: BrandingPage) {
       element.y < 160 &&
       element.x + element.width / 2 >= 700 &&
       element.width >= 250 &&
-      (element.fontSize ?? 24) >= 18,
+      (element.fontSize ?? 24) >= 18
   );
 }
 
-export function designBoardLogoRect(page?: BrandingPage, width = 340) {
-  const heading = boardRoomHeading(page);
-  const lineCenter = heading
-    ? heading.y + heading.height / 2
-    : BOARD_TITLE_RECT.y + BOARD_TITLE_RECT.height / 2;
+function boardRoomHeading(page: BrandingPage, roomName?: string | null) {
+  const candidates = page.elements.filter(element => element.visible !== false && isRoomHeading(element));
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const room = normalize(roomName?.trim() || page.title.replace(/\s*[—–-]\s*Design Board\s*\d*$/i, ""));
+  // Some older templates have the project name above the room. Prefer the room line.
+  return candidates.find(element => normalize(element.text ?? "") === room)
+    ?? candidates.find(element => room && normalize(element.text ?? "").includes(room))
+    ?? candidates[0];
+}
+
+export function designBoardLogoRect() {
+  const width = 340;
+  const lineCenter = BOARD_TITLE_RECT.y + BOARD_TITLE_RECT.height / 2;
   const scale = width / LOGO_SOURCE_WIDTH;
   return {
     x: LOGO_INSET,
@@ -90,22 +98,19 @@ export function designBoardLogoRect(page?: BrandingPage, width = 340) {
   };
 }
 
-// Align header logos for display without rewriting saved layers or their history.
+// Keep saved layers/history intact. Corner branding is replaced only at render time.
+export function designBoardContentElements<T extends BrandingElement>(page: { elements: readonly T[] }) {
+  return page.elements
+    .filter(element => !isCornerLogo(element) && !isRoomHeading(element))
+    .map(element => designBoardDisplayElement(element));
+}
+
 export function designBoardDisplayElement<T extends BrandingElement>(
   element: T,
-  page?: BrandingPage,
 ): T {
   if (element.type !== "image" || !isDesignBoardLogo(element)) return element;
   return {
     ...element,
-    ...(isCornerLogo(element)
-      ? {
-          ...designBoardLogoRect(page, element.width),
-          rotation: 0,
-          flipHorizontal: false,
-          flipVertical: false,
-        }
-      : {}),
     src: DESIGN_BOARD_LOGO,
     backgroundRemovedUrl: null,
     hideDetails: true,
@@ -116,10 +121,49 @@ export function designBoardDisplayElement<T extends BrandingElement>(
 }
 
 // A rendering-only header: opening a board never writes, moves, or deletes layers.
-// Existing headings and logo objects are reused, so no duplicate layers are added.
+// Every surface uses one fixed header, including pages with legacy branding.
 export function designBoardBranding(page: BrandingPage, roomName?: string | null) {
-  const hasLogo = page.elements.some(isCornerLogo);
-  const hasTitle = Boolean(boardRoomHeading(page));
-  const title = roomName?.trim() || page.title.trim() || "Design Board";
-  return { showLogo: !hasLogo, showTitle: !hasTitle, title };
+  const title = boardRoomHeading(page, roomName)?.text?.trim() || roomName?.trim() || page.title.trim() || "Design Board";
+  return { title };
+}
+
+// Shared line breaking/font fitting for SVG previews and canvas/PDF exports.
+export function designBoardTitleLayout(
+  title: string,
+  measureText: (text: string, fontSize: number) => number = (text, size) => text.length * size * 0.65,
+) {
+  const text = title.toUpperCase().replace(/\s+/g, " ").trim();
+  const measure = (value: string, size: number) =>
+    measureText(value, size) + Math.max(0, value.length - 1) * BOARD_HEADER_LETTER_SPACING;
+  const wrap = (size: number) => {
+    const lines: string[] = [];
+    let line = "";
+    for (const word of text.split(" ")) {
+      // Split unusually long unbroken names too; never clip a room name.
+      for (const part of word.match(/.{1,32}/gu) ?? [word]) {
+        const candidate = line ? `${line} ${part}` : part;
+        if (line && measure(candidate, size) > BOARD_TITLE_RECT.width) {
+          lines.push(line);
+          line = part;
+        } else line = candidate;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+  let fontSize = BOARD_HEADER_FONT_SIZE;
+  let lines = wrap(fontSize);
+  while (fontSize > 12 && (lines.length > 2 || lines.some(line => measure(line, fontSize) > BOARD_TITLE_RECT.width))) {
+    lines = wrap(--fontSize);
+  }
+  const lineHeight = fontSize * 1.12;
+  const centerY = BOARD_TITLE_RECT.y + BOARD_TITLE_RECT.height / 2;
+  return {
+    fontSize,
+    lines: lines.map((text, index) => ({
+      text,
+      x: BOARD_TITLE_RECT.x + BOARD_TITLE_RECT.width,
+      y: centerY + (index - (lines.length - 1) / 2) * lineHeight,
+    })),
+  };
 }
