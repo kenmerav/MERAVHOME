@@ -57,6 +57,7 @@ import { cleanUuid, isUuid } from "@/lib/ids";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialHasUserSelection } from "@/lib/materialSelection";
 import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel, suggestedTemplatesForRoom, confirmedNoShower, type BathroomPlanEvidence } from "@/lib/materialSuggestions";
+import { TileInstallationCheck } from "@/components/TileInstallationCheck";
 import { fetchMaterialPlanCheck } from "@/lib/materialPlanCheck";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -635,6 +636,7 @@ function MaterialsPage() {
                 <ScanSearch className="h-4 w-4" />
                 {checkingFinishes ? finishCheckStatus || "Checking..." : "Check Finishes"}
               </button>
+              <TileInstallationCheck projectId={projectId!} items={items} rooms={rooms} />
               <button
                 onClick={runScrape}
                 disabled={scraping || checkingFinishes}

@@ -6,9 +6,10 @@ import { materialCoversTemplateSuggestion, normalizeMaterialSuggestionLabel } fr
 import { inferMaterialCategory } from "@/lib/roomTemplates";
 import { sharedCompletionCoversMissing, sharedCompletionSelections, sharedCompletionQuantity } from "@/lib/specSharedMaterials";
 import { isCountertopMaterial } from "@/lib/countertopPricing";
+import { isTileInstallationLabel } from "./tileInstallation";
 
 export type CompletionRoom = { id: string; name: string };
-export type CompletionField = "quantity" | "color" | "finish" | "dimensions" | "price" | "price_unit" | "product" | "link" | "missing_item";
+export type CompletionField = "quantity" | "color" | "finish" | "dimensions" | "price" | "price_unit" | "product" | "link" | "missing_item" | "grout" | "tile_layout";
 export type CompletionFinding = {
   id: string; room_id: string; item_id: string | null; item_label: string;
   field: CompletionField; source: "details" | "plans"; message: string;
@@ -17,6 +18,7 @@ export type CompletionFinding = {
   shared_quantity_reviewed?: boolean;
 };
 export type SpecCompletionReport = {
+  tile_review?: import("./tileInstallation").TileInstallationReview;
   board_refresh?: import("@/lib/specBoardSync").SpecBoardSyncSummary;
   catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
   spec_drawing_evidence?: Record<string, import("@/lib/specDrawingEvidence").DrawingEvidenceJob>;
@@ -145,6 +147,7 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
     if (row.field === "missing_item") {
       const label = text(row.item_label, 180);
       if (!label || row.confirmed_missing !== true || row.item_id != null) continue;
+      if (isTileInstallationLabel(label)) continue;
       if (/\b(sink|basin|lavatory) drain\b/i.test(label)) continue;
       if (sharedCompletionCoversMissing(items, rooms, row.room_id, label)) continue;
       const room = rooms.find(room => room.id === row.room_id)!;

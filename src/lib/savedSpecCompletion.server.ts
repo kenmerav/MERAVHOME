@@ -13,6 +13,7 @@ import type { MaterialItem } from "@/lib/db";
 import type { SavedCompletionIssue, SavedSpecCompletionReview, CompletionIssueStatus } from "@/lib/savedSpecCompletion";
 import { groundedSavedCompletion, drawingEvidenceKey } from "./specDrawingEvidence.server";
 import { publicSpecCompletionReport } from "./specCompletion";
+import { TILE_REVIEW_VERSION, reviewTileInstallation, isTileInstallationLabel } from "./tileInstallation";
 
 const admin = supabaseAdmin as any;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -27,10 +28,10 @@ export function completionStorageError(error: any): never {
 }
 
 export function completionSourceSignature(items: MaterialItem[], rooms: CompletionRoom[], document: SpecCompletionReport["document"], boardState?: unknown) {
-  const sources: unknown[] = [rooms.map(room => [room.id, room.name]).sort(),
+  const sources: unknown[] = [TILE_REVIEW_VERSION, rooms.map(room => [room.id, room.name]).sort(),
     items.map(item => [item.id, item.room_id, item.item_label, item.client_product_name, item.category, item.cad_label,
       item.not_needed, item.is_required, item.product_id, item.quantity, item.quantity_tbd, item.quantity_unit,
-      item.color, item.product_url, item.source_board_id, item.source_board_page_id, item.source_board_element_id,
+      item.color, item.notes, item.product?.notes, item.product_url, item.source_board_id, item.source_board_page_id, item.source_board_element_id,
       item.product?.name, item.product?.sku, item.product?.finish, item.product?.dimensions, item.product?.price,
       item.product?.price_unit, item.product?.product_url, linkedBoardImage(item, boardState)?.image_url ?? null]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
     document];
@@ -46,6 +47,7 @@ export function completionSourceSignature(items: MaterialItem[], rooms: Completi
 
 export function completionFindingKey(finding: CompletionFinding, item: MaterialItem | undefined, document: SpecCompletionReport["document"], boardState?: unknown) {
   const fieldValue = !item ? null : finding.field === "quantity" ? [item.quantity, item.quantity_tbd, item.quantity_unit] :
+    finding.field === "grout" || finding.field === "tile_layout" ? [item.notes, item.product?.notes] :
     finding.field === "color" || finding.field === "finish" ? [item.color, item.product?.finish] :
     finding.field === "dimensions" ? [item.product?.dimensions, item.product?.size_options, item.product?.selected_size] :
     finding.field === "price" ? [item.product?.price, item.product?.price_unit] :
@@ -230,7 +232,10 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
   saved = await finishPendingReview(projectId, saved, items, rooms, currentDocument, board.data?.board_state, drawingChanged);
   const byItem = new Map(items.map(item => [item.id, item]));
   const sharedIds = new Set(sharedCompletionSelections(items, rooms).map(item => item.id));
+  const tileFields = Object.values(saved.issues ?? {}).some((issue: any) => ["grout", "tile_layout"].includes(issue.finding?.field))
+    ? new Set(reviewTileInstallation(items, rooms, { board: board.data?.board_state, planStatus: "no_document" }).findings.map(f => `${f.item_id}:${f.field}`)) : null;
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
+    if (issue.status === "open" && issue.finding.field === "missing_item" && isTileInstallationLabel(issue.finding.item_label)) return false;
     const pricingItem = byItem.get(issue.finding.item_id ?? "");
     if (issue.status === "open" && ["price", "price_unit"].includes(issue.finding.field) && pricingItem && isCountertopMaterial(pricingItem)) return false;
     if (issue.status === "open" && issue.finding.source === "plans" && issue.finding.field === "missing_item" &&
@@ -244,6 +249,12 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
     if (issue.finding.field === "price") return !!item && needsCompletionPrice(item);
     if (issue.finding.field === "price_unit") return !!item && needsCompletionPriceUnit(item);
     if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);
+    if (issue.finding.field === "grout" || issue.finding.field === "tile_layout") {
+      // Notes entered since the saved check resolve the corresponding issue
+      // without another PDF or AI scan. Never resurrect a field already covered
+      // by that review's current drawing evidence.
+      return !!item && !!tileFields?.has(`${item.id}:${issue.finding.field}`);
+    }
     return true;
   });
   return { report: { ...publicSpecCompletionReport(saved.report), findings: saved.report.findings?.filter((finding: any) => {

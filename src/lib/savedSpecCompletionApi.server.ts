@@ -20,7 +20,7 @@ export async function savedSpecCompletionRequest(request: Request) {
     !/^[a-f0-9]{64}$/.test(body.issue_key ?? "") || !(body.expected_updated_at === null || timestamp(body.expected_updated_at)) ||
     !timestamp(body.expected_material_updated_at) || !(body.expected_product_id === null || cleanUuid(body.expected_product_id)) ||
     !(body.expected_product_updated_at === null || timestamp(body.expected_product_updated_at)) ||
-    typeof body.value !== "string" || body.value.length > 200 ||
+    typeof body.value !== "string" || body.value.length > 1000 ||
     (body.price_unit !== undefined && !["", "unit", "sq_ft"].includes(body.price_unit))))
     return json({ error: "Choose a valid detail and current selection." }, 400);
   if (body.action === "status" && (!/^[a-f0-9]{64}$/.test(body.issue_key ?? "") || !isCompletionIssueStatus(body.status) ||

@@ -110,3 +110,14 @@ it('can save price on an unassigned material and link only that material and roo
   expect(state.filters).toContainEqual(['material_items', 'product_id', null]);
   expect(state.status).toHaveBeenCalledOnce();
 });
+it.each(['grout', 'tile_layout'])('saves %s only to project material notes and completes the issue', async field => {
+  issue.finding.field = field;
+  body.value = field === 'grout' ? 'Off-white, 1/8 inch joints' : 'Vertical straight set';
+  state.responses.material_items[0].data = { ...item, notes: 'Keep existing trim.' };
+  expect((await request()).status).toBe(200);
+  expect(state.writes).toContainEqual(['material_items', 'update', {
+    notes: `Keep existing trim.\n${field === 'grout' ? 'Grout' : 'Tile layout'}: ${body.value}`,
+  }]);
+  expect(state.writes.some(write => write[0] === 'products' || write[0] === 'room_products')).toBe(false);
+  expect(state.status).toHaveBeenCalledOnce();
+});

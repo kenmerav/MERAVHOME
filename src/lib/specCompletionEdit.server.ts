@@ -16,7 +16,7 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
   if (reviewError) throw reviewError;
   const issue = saved?.issues?.[body.issue_key];
   if (!issue || issue.status !== "open" || issue.status_updated_at !== body.expected_updated_at ||
-    !issue.finding.item_id || !["color", "finish", "price", "price_unit", "dimensions"].includes(issue.finding.field))
+    !issue.finding.item_id || !["color", "finish", "price", "price_unit", "dimensions", "grout", "tile_layout"].includes(issue.finding.field))
     throw new CompletionReviewConflict("This issue changed or cannot be edited here. Reopen the saved review.");
   if (saved.report?.plan_status === "checking") throw new CompletionReviewConflict("Wait for the plan check to finish before changing selections.");
   const { data: item, error: itemError } = await admin.from("material_items").select("*,product:products(*)")
@@ -32,14 +32,14 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
   if (!room) throw new CompletionReviewConflict("This room is no longer in the project.");
   let patch: ReturnType<typeof completionDetailValue>;
   try { patch = completionDetailValue(issue.finding.field, { value: body.value,
-    priceUnit: body.price_unit || materialPriceUnit({ ...item, product: { ...item.product, price: body.value } }) }); }
+    priceUnit: body.price_unit || materialPriceUnit({ ...item, product: { ...item.product, price: body.value } }) }, item.notes); }
   catch (error) { throw new CompletionDetailInputError((error as Error).message); }
   if ("price" in patch && item.product?.markup_percent != null)
     throw new CompletionDetailInputError("This price uses markup. Edit its pricing settings in Materials to preserve the calculation.");
   let written = false;
   try {
-    if ("color" in patch) {
-      let query = admin.from("material_items").update({ color: patch.color }).eq("id", item.id).eq("project_id", projectId)
+    if ("color" in patch || "notes" in patch) {
+      let query = admin.from("material_items").update(patch).eq("id", item.id).eq("project_id", projectId)
         .eq("room_id", item.room_id).eq("updated_at", item.updated_at);
       query = item.product_id ? query.eq("product_id", item.product_id) : query.is("product_id", null);
       const { data, error } = await query.select("id").maybeSingle();

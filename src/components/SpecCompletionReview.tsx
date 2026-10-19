@@ -24,6 +24,7 @@ import { MaterialProductLinkInput } from "@/components/MaterialProductLinkInput"
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
   price: "Price", price_unit: "Price basis", product: "Product assignment", link: "Product link", missing_item: "Missing item",
+  grout: "Grout color / joint width", tile_layout: "Tile layout",
 };
 
 type CompletionReviewProps = { projectId: string; items: MaterialItem[]; rooms: CompletionRoom[] };
@@ -297,7 +298,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                       </>}
                     </div>}
                   </div>
-                  {onSaveDetail && item && issue.status === "open" && ["color", "finish", "price", "price_unit", "dimensions"].includes(row.field) &&
+                  {onSaveDetail && item && issue.status === "open" && ["color", "finish", "price", "price_unit", "dimensions", "grout", "tile_layout"].includes(row.field) &&
                     item.room_id === row.room_id && (!issue.item_preview?.product_id || issue.item_preview.product_id === item.product_id) && (
                     <CompletionDetailEditor key={issue.key} item={item} issue={issue} disabled={!!savingIssue}
                       onSave={draft => onSaveDetail(issue, item, draft)} />
@@ -333,7 +334,9 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
 }) {
   const price = issue.finding.field === "price" || issue.finding.field === "price_unit";
   const dimensions = issue.finding.field === "dimensions";
-  const initial = price ? item.product?.price : dimensions ? item.product?.dimensions || item.product?.selected_size : item.color;
+  const tile = issue.finding.field === "grout" || issue.finding.field === "tile_layout";
+  const tileLabel = issue.finding.field === "grout" ? "Grout color and joint width" : "Tile pattern / direction";
+  const initial = tile ? "" : price ? item.product?.price : dimensions ? item.product?.dimensions || item.product?.selected_size : item.color;
   const [value, setValue] = useState(hasCompletionValue(initial) ? initial! : "");
   const [priceUnit, setPriceUnit] = useState<CompletionDetailDraft["priceUnit"]>(materialPriceUnit(item) || "");
   const [saving, setSaving] = useState(false);
@@ -354,10 +357,10 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
   return <form className="mt-3 border bg-white p-3" onSubmit={event => { event.preventDefault(); void save(); }}>
     <fieldset disabled={disabled || saving} className="flex flex-wrap items-end gap-3 min-w-0">
       <label className="min-w-40 flex-1">
-        <span className="block text-xs font-medium mb-1">{price ? "Price" : dimensions ? "Confirmed product dimensions / size" : "Confirmed color / finish"}</span>
-        <input aria-label={`${price ? "Price" : dimensions ? "Dimensions" : "Color / finish"} for ${issue.finding.item_label}`} value={value}
+        <span className="block text-xs font-medium mb-1">{tile ? tileLabel : price ? "Price" : dimensions ? "Confirmed product dimensions / size" : "Confirmed color / finish"}</span>
+        <input aria-label={`${tile ? tileLabel : price ? "Price" : dimensions ? "Dimensions" : "Color / finish"} for ${issue.finding.item_label}`} value={value}
           onChange={event => setValue(event.target.value)} inputMode={price ? "decimal" : undefined}
-          placeholder={price ? "0.00" : dimensions ? 'e.g. 30" W × 36" H' : "e.g. Brushed brass"} maxLength={price ? 40 : 200}
+          placeholder={tile ? issue.finding.field === "grout" ? "e.g. Off-white, 1/8 inch joints" : "e.g. Vertical straight set" : price ? "0.00" : dimensions ? 'e.g. 30" W × 36" H' : "e.g. Brushed brass"} maxLength={tile ? 1000 : price ? 40 : 200}
           className="h-10 w-full border border-input bg-background px-3 text-sm" />
       </label>
       {price && <label>

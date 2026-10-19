@@ -3,7 +3,8 @@ const projectId = "527d1356-919b-48b9-877e-1924c766282b";
 const docId = "cd3700c1-2889-43f9-b7a7-3e2af36036b1";
 const roomId = "9015b5ff-6343-462b-9539-9e62ed1c52d0";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true,
-  documents: [] as any[], rooms: [] as any[], reads: [] as any[], download: vi.fn(), fetch: vi.fn(), load: vi.fn() }));
+  documents: [] as any[], rooms: [] as any[], items: [] as any[], reads: [] as any[], download: vi.fn(), fetch: vi.fn(), load: vi.fn(), tile: vi.fn() }));
+vi.mock("@/lib/tileInstallation.server", () => ({ checkTileInstallation: state.tile }));
 vi.mock("@/lib/materialCatalogFit.server", () => ({ loadCatalogDocumentFit: state.load }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 20 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
@@ -12,11 +13,11 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
   from: (table: string) => {
     const filters: any = {};
     const query: any = { select: () => query, eq: (key: string, value: string) => { filters[key] = value; return query; },
-      is: (key: string, value: any) => { filters[key] = value; return query; }, order: () => query, limit: () => query,
-      maybeSingle: async () => table === "user_profiles" ? { data: state.profile, error: null } :
+      is: (key: string, value: any) => { filters[key] = value; return query; }, order: () => query, limit: () => query, range: () => query,
+      maybeSingle: async () => table === "design_boards" ? { data: { board_state: null }, error: null } : table === "user_profiles" ? { data: state.profile, error: null } :
         { data: state.assigned ? { project_id: projectId } : null, error: null },
       then: (resolve: any) => { state.reads.push({ table, filters }); return Promise.resolve({
-        data: filters.project_id === projectId ? (table === "rooms" ? state.rooms : state.documents) : [], error: null,
+        data: filters.project_id === projectId ? (table === "rooms" ? state.rooms : table === "material_items" ? state.items : state.documents) : [], error: null,
       }).then(resolve); },
     };
     return query;
@@ -31,6 +32,7 @@ const request = (body: any = { project_id: projectId, document_id: docId }, toke
     headers: { ...(token ? { Authorization: "Bearer TEST_ONLY_TOKEN" } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) });
 beforeEach(() => {
   vi.clearAllMocks(); state.authenticated = true; state.assigned = true;
+  state.items = []; state.tile.mockResolvedValue({ version: "tile-installation-v1", findings: [], checked_items: 0, plan_status: "no_document" });
   state.profile = { role: "Admin", is_active: true, can_view_all_projects: true };
   state.documents = [{ id: docId, title: "Latest plans", updated_at: `version-${++version}`, file_size: 12,
     file_url: `https://example.supabase.co/storage/v1/object/public/project-files/${projectId}/construction-docs/latest.pdf` }];
@@ -44,6 +46,28 @@ beforeEach(() => {
   vi.stubGlobal("fetch", state.fetch); vi.stubEnv("OPENAI_API_KEY", "TEST_ONLY_KEY"); vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+it("checks installation details using current server-selected documents and notes, without a paid layout scan", async () => {
+  state.items = [{ id: "tile", project_id: projectId, room_id: roomId, item_label: "Shower tile", is_required: false, notes: "Vertical straight set" }];
+  const response = await checkMaterialPlans(request({ project_id: projectId, action: "tile_details" }));
+  expect(response.status).toBe(200);
+  expect(state.tile).toHaveBeenCalledWith(projectId, state.items, state.rooms, null, state.documents[0]);
+  expect(state.load).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled();
+});
+it("checks notes even with no construction attachment", async () => {
+  state.documents = [];
+  const response = await checkMaterialPlans(request({ project_id: projectId, action: "tile_details" }));
+  expect(response.status).toBe(200);
+  expect(state.tile).toHaveBeenCalledWith(projectId, [], state.rooms, null, null);
+});
+it("authorizes installation reviews before reading any project sources", async () => {
+  state.profile = { role: "Client", is_active: true };
+  expect((await checkMaterialPlans(request({ project_id: projectId, action: "tile_details" }))).status).toBe(403);
+  expect(state.tile).not.toHaveBeenCalled(); expect(state.reads).toEqual([]);
+  state.profile = { role: "Employee", is_active: true, can_view_all_projects: false }; state.assigned = false;
+  expect((await checkMaterialPlans(request({ project_id: projectId, action: "tile_details" }))).status).toBe(403);
+  expect(state.tile).not.toHaveBeenCalled();
+});
 
 it("checks the latest project plan and returns room-specific, page-supported evidence", async () => {
   const response = await checkMaterialPlans(request()); const result = await response.json();

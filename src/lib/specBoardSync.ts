@@ -182,7 +182,7 @@ export function specBoardSelectionEvidence(board: unknown) {
     (page.elements || []).filter(layer => layer.type === "image").map(layer => [
       layer.id, layer.label, layer.productName, layer.productId, layer.materialItemId, layer.materialRoomId,
       layer.link, layer.materialLinkCleared === true, layer.materialExcludeFromMaterials === true,
-      layer.materialQuantity, layer.materialFinish, layer.materialDimensions, layer.src,
+      layer.materialQuantity, layer.materialFinish, layer.materialDimensions, layer.src, layer.notes,
     ]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   ]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 }

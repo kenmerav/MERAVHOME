@@ -16,6 +16,7 @@ import { syncSpecBoardForStaff } from "@/lib/specBoardSync.server";
 import { SpecBoardSyncConflict, specBoardSelectionEvidence } from "@/lib/specBoardSync";
 import { startCompletionSaveWorker } from "@/lib/specCompletionBackground.server";
 import { analyzeFullSpecWithEvidence, drawingEvidenceKey, DrawingEvidencePending, type FullPlanReview } from "./specDrawingEvidence.server";
+import { checkTileInstallation } from "./tileInstallation.server";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -49,6 +50,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
         "Count discrete items only when the complete relevant layout or explicit schedule supports it. Sink faucets are not shower faucets. Assembly/trim/rough-in parts are separate selections; quantities of assemblies do not establish component quantities.",
         "For square_feet only accept explicit scheduled area for that exact material/room. Do not estimate scale, wall/floor area, waste, cartons, or installation allowances. Do not convert square footage to item counts or price units.",
         "Check missing items only when clearly shown in the proposed drawings and no supplied selection covers them. Recognize aliases (hooks/robe hooks, vanity light/sconce, tissue/TP holder, showerhead/shower system). Respect excluded_items: do not suggest deliberately not-needed items. Do not recommend every generic room-template item. Do not add default sink drains.",
+        "Read each selection's notes and product_notes before proposing a discrepancy. Grout color/joint width and tile layout are checked separately on each tiled surface using saved notes, linked board notes and current PDF callouts. Do not return grout, tile layout or installation pattern as missing_item catalog products; do not duplicate the dedicated installation review.",
         "Color, finish and pricing findings require an explicit specification for the selected product/variant. Never infer these from pictures or generic sizes; do not browse vendors. Prices must be explicit USD unit prices with their basis, not totals, budgets or allowances. Countertops require no price or price-basis findings, including blank, quote-only, range or entered prices. Missing prices are also acceptable for paint and cabinetry (pricing_optional:true); never flag their blank pricing. Other missing prices are handled by the Materials detail check.",
         "For dimensions, find explicit dimension callouts or specifications for this exact item in its identified room. A mirror's width/height must refer to that mirror, not its vanity, adjacent wall, cabinet, gap, mounting height or ceiling. Do not measure image pixels, estimate from scale, infer from standard sizes, or subtract surrounding dimensions. If only width is stated, return only width and say height is unspecified. If multiple same-room objects cannot be matched or dimensions conflict, omit the finding.",
         "During a full review, a blank dimension is not automatically a problem. Suggest missing dimensions only for products with multiple published size_options and no confirmed selected_size. You may also flag a clear discrepancy against dimensions already recorded. Targeted dimension reviews may search for an explicitly requested item's planned size even without size-option metadata.",
@@ -65,6 +67,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
             product: item.product?.name, sku: item.product?.sku, product_url: item.product_url || item.product?.product_url,
             quantity: item.quantity, quantity_tbd: item.quantity_tbd, quantity_unit: item.quantity_unit || "count",
             color: item.color, finish: item.product?.finish, dimensions: item.product?.dimensions,
+            notes: item.notes, product_notes: item.product?.notes,
             size_options: item.product?.size_options, selected_size: item.product?.selected_size,
             price: item.product?.price, price_unit: item.product?.price_unit, pricing_optional: allowsMissingMaterialPrice(item) })),
           excluded_items: items.filter(item => item.not_needed).map(item => ({ room_id: item.room_id, label: item.item_label, product: item.product?.name })),
@@ -196,6 +199,8 @@ export async function checkSpecCompletion(request: Request) {
     plan_status: "no_document", document: document ? { id: document.id, title: document.title, updated_at: document.updated_at } : null,
     plan_message: "No current construction document is attached. Missing-detail checks are complete; plan quantities and items have not been checked.",
   };
+  report.tile_review = await checkTileInstallation(projectId, items, rooms, boardResult.data?.board_state, document || null, refresh.status === "checked");
+  report.findings.push(...report.tile_review.findings);
   if (refresh.status !== "checked") {
     report.plan_status = "unavailable";
     report.plan_message = refresh.message;
