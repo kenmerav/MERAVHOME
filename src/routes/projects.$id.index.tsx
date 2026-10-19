@@ -24,6 +24,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { DesignBoardBranding } from "@/components/DesignBoardBranding";
+import { designBoardContentElements } from "@/lib/designBoardBranding";
 import {
   db,
   PROJECT_LABELS,
@@ -118,6 +120,7 @@ type RoomCoverBoardPage = {
   id: string;
   title: string;
   roomId: string | null;
+  roomName?: string;
   hidden?: boolean;
   roomApprovalStatus?: "approved" | "declined";
   declinedMaterialItems?: DeclinedBoardMaterialItem[];
@@ -180,7 +183,8 @@ function ProjectDetailPage() {
     );
   }
 
-  const designBoardPages = normalizeRoomCoverBoardPages(designBoard?.board_state);
+  const designBoardPages = normalizeRoomCoverBoardPages(designBoard?.board_state)
+    .map(page => ({ ...page, roomName: rooms.find(room => room.id === page.roomId)?.name }));
 
   const setStatus = async (s: ProjectStatus) => {
     await db.updateProject(id, { status: s });
@@ -1534,12 +1538,13 @@ function getAutomaticRoomCoverBoardPage(room: Room, pages: RoomCoverBoardPage[])
 }
 
 function RoomCoverBoardPreview({ page }: { page: RoomCoverBoardPage }) {
-  const elements = [...page.elements]
+  const elements = designBoardContentElements(page)
     .filter((element) => element.visible !== false)
     .sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
+      <DesignBoardBranding page={page} roomName={page.roomName} />
       {elements.length ? (
         elements.map((element) => (
           <RoomCoverBoardPreviewElement key={element.id} element={element} />
