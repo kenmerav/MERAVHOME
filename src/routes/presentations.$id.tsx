@@ -3184,6 +3184,7 @@ function DesignBoardCanvasPreview({
 }) {
   const sortedElements = [...page.elements]
     .filter(boardElementIsMeaningful)
+    .map(element => designBoardDisplayElement(element, page))
     .sort((a, b) => a.zIndex - b.zIndex);
 
   return (
@@ -3216,7 +3217,6 @@ function DesignBoardCanvasElement({
   element: PresentationBoardElement;
   compact: boolean;
 }) {
-  element = designBoardDisplayElement(element);
   const left = `${(element.x / DESIGN_BOARD_PRESENTATION_WIDTH) * 100}%`;
   const top = `${(element.y / DESIGN_BOARD_PRESENTATION_HEIGHT) * 100}%`;
   const width = `${(element.width / DESIGN_BOARD_PRESENTATION_WIDTH) * 100}%`;

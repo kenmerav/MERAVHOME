@@ -303,7 +303,7 @@ function DesignBoardPagePreview({
   page: PresentationBoardPage;
   pageNumber: number;
 }) {
-  const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
 
   if (sortedElements.length === 0) {
     return (
@@ -329,7 +329,6 @@ function DesignBoardPagePreview({
 
 function DesignBoardElementPreview({ element }: { element: PresentationBoardElement }) {
   if (element.visible === false) return null;
-  element = designBoardDisplayElement(element);
   const elementLinkHref = externalHref(element.link);
   const displayLabel = roomDesignBoardDisplayLabel(element);
 
@@ -413,7 +412,7 @@ function DesignBoardThumbnail({
   roomName?: string;
 }) {
   const scale = 0.058;
-  const sortedElements = page.elements.map(designBoardDisplayElement).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <>

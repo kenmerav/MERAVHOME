@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { DesignBoardBranding } from "@/components/DesignBoardBranding";
-import { BOARD_LOGO_RECT, BOARD_TITLE_RECT, DESIGN_BOARD_LOGO, designBoardBranding, designBoardDisplayElement } from "@/lib/designBoardBranding";
+import { BOARD_TITLE_RECT, DESIGN_BOARD_LOGO, designBoardBranding, designBoardDisplayElement, designBoardLogoRect } from "@/lib/designBoardBranding";
 import {
   Dialog,
   DialogContent,
@@ -4153,7 +4153,7 @@ function ProjectDesignBoardsPage() {
                         sortedPageElements.map((element) => (
                           <BoardObject
                             key={element.id}
-                            element={designBoardDisplayElement(element)}
+                            element={designBoardDisplayElement(element, page)}
                             editable={canEditDesignBoards}
                             showProductBadge={false}
                             cropMode={croppingElementId === element.id}
@@ -5208,7 +5208,7 @@ function LightweightPagePlaceholder({ page, pageNumber }: { page: BoardPage; pag
 }
 
 function LightweightPagePreview({ page, pageNumber }: { page: BoardPage; pageNumber: number }) {
-  const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <>
@@ -5231,7 +5231,6 @@ function boardTextFontSize(element: BoardElement) {
 
 function LightweightPageElement({ element }: { element: BoardElement }) {
   if (element.visible === false) return null;
-  element = designBoardDisplayElement(element);
 
   return (
     <div
@@ -5288,7 +5287,7 @@ function PageThumbnail({
   renderImages?: boolean;
 }) {
   const scale = 0.058;
-  const sortedElements = page.elements.map(designBoardDisplayElement).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <div className="flex items-end gap-1.5">
@@ -7177,7 +7176,7 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1, r
   ctx.fillStyle = "#fbfaf7";
   ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
-  const sortedElements = page.elements.map(designBoardDisplayElement).sort((a, b) => a.zIndex - b.zIndex);
+  const sortedElements = page.elements.map(element => designBoardDisplayElement(element, page)).sort((a, b) => a.zIndex - b.zIndex);
   const loadExportImage = createDesignBoardExportImageLoader();
   for (const [index, element] of sortedElements.entries()) {
     try {
@@ -7198,7 +7197,8 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1, r
   const header = designBoardBranding(page, roomName);
   if (header.showLogo) {
     const logo = await loadExportImage(DESIGN_BOARD_LOGO);
-    ctx.drawImage(logo, BOARD_LOGO_RECT.x, BOARD_LOGO_RECT.y, BOARD_LOGO_RECT.width, BOARD_LOGO_RECT.height);
+    const rect = designBoardLogoRect(page);
+    ctx.drawImage(logo, rect.x, rect.y, rect.width, rect.height);
   }
   if (header.showTitle) {
     drawWrappedCanvasText(ctx, header.title, BOARD_TITLE_RECT.x + BOARD_TITLE_RECT.width,

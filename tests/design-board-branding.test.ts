@@ -5,6 +5,7 @@ import { DesignBoardBranding } from "../src/components/DesignBoardBranding";
 import {
   designBoardBranding,
   designBoardDisplayElement,
+  designBoardLogoRect,
   DESIGN_BOARD_LOGO,
 } from "../src/lib/designBoardBranding";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -52,7 +53,7 @@ describe("automatic design-board corner branding", () => {
     expect(opaqueWhitePixels).toBe(0);
   });
 
-  it("displays existing image logos using the transparent asset without changing their saved source or position", () => {
+  it("insets and aligns existing header logos without rewriting saved layers", () => {
     const saved = {
       ...logo,
       rotation: 12,
@@ -62,19 +63,26 @@ describe("automatic design-board corner branding", () => {
       imageCropZoom: 1.7,
     };
     const before = JSON.stringify(saved);
-    const display = designBoardDisplayElement(saved);
+    const page = { title: "Bathroom", elements: [saved, heading] };
+    const display = designBoardDisplayElement(saved, page);
     expect(display.src).toBe(DESIGN_BOARD_LOGO);
     expect(display.backgroundRemovedUrl).toBeNull();
     expect(display.imageCropZoom).toBe(1);
-    expect([display.x, display.y, display.width, display.height, display.rotation]).toEqual([
-      saved.x,
-      saved.y,
-      saved.width,
-      saved.height,
-      saved.rotation,
-    ]);
+    expect(display.x).toBe(48);
+    expect(display.width).toBe(saved.width);
+    expect(display.rotation).toBe(0);
+    expect(display.y + display.height * (69 / 232)).toBeCloseTo(heading.y + heading.height / 2);
     expect(JSON.stringify(saved)).toBe(before);
     expect(designBoardBranding({ title: "Kitchen", elements: [saved] }).showLogo).toBe(false);
+  });
+
+  it("aligns automatic logos with an existing heading or the default room-name line", () => {
+    for (const elements of [[], [heading], [{ ...heading, y: 24, height: 72 }]]) {
+      const rect = designBoardLogoRect({ title: "Room", elements });
+      const titleCenter = elements.length ? elements[0].y + elements[0].height / 2 : 60;
+      expect(rect.x).toBe(48);
+      expect(rect.y + rect.height * (69 / 232)).toBeCloseTo(titleCenter);
+    }
   });
 
   it("leaves product images and text brand marks unchanged", () => {
@@ -213,7 +221,7 @@ describe("automatic design-board corner branding", () => {
     expect(html).toContain(DESIGN_BOARD_LOGO);
     expect(html).toContain("Guest Bathroom");
     expect(html).toContain("pointer-events-none");
-    expect(html).toContain("left:32px;top:20px");
+    expect(html).toContain("left:48px;");
     expect(html).toContain("justify-end");
   });
 });

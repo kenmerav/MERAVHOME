@@ -32,8 +32,11 @@ export type BrandingPage = {
   elements: readonly BrandingElement[];
 };
 
-export const BOARD_LOGO_RECT = { x: 32, y: 20, width: 340, height: 74 };
 export const BOARD_TITLE_RECT = { x: 568, y: 24, width: 800, height: 72 };
+const LOGO_SOURCE_WIDTH = 1600;
+const LOGO_SOURCE_HEIGHT = 232;
+const LOGO_HEADLINE_CENTER_Y = 69;
+const LOGO_INSET = 48;
 
 export function isDesignBoardLogo(element: BrandingElement) {
   const metadata = [element.src, element.originalSrc, element.label].filter(Boolean).join(" ");
@@ -48,12 +51,61 @@ export function isDesignBoardLogo(element: BrandingElement) {
   );
 }
 
-// Use the current transparent wordmark when displaying old uploaded logos, while
-// keeping their saved geometry, source files, material links, and history intact.
-export function designBoardDisplayElement<T extends BrandingElement>(element: T): T {
+function isCornerLogo(element: BrandingElement) {
+  return (
+    element.visible !== false &&
+    element.x < 500 &&
+    element.y + element.height > 0 &&
+    element.y < 160 &&
+    isDesignBoardLogo(element)
+  );
+}
+
+function boardRoomHeading(page?: BrandingPage) {
+  return page?.elements.find(
+    (element) =>
+      element.visible !== false &&
+      element.type === "text" &&
+      Boolean(element.text?.trim()) &&
+      !isDesignBoardLogo(element) &&
+      element.y + element.height > 0 &&
+      element.y < 160 &&
+      element.x + element.width / 2 >= 700 &&
+      element.width >= 250 &&
+      (element.fontSize ?? 24) >= 18,
+  );
+}
+
+export function designBoardLogoRect(page?: BrandingPage, width = 340) {
+  const heading = boardRoomHeading(page);
+  const lineCenter = heading
+    ? heading.y + heading.height / 2
+    : BOARD_TITLE_RECT.y + BOARD_TITLE_RECT.height / 2;
+  const scale = width / LOGO_SOURCE_WIDTH;
+  return {
+    x: LOGO_INSET,
+    y: lineCenter - LOGO_HEADLINE_CENTER_Y * scale,
+    width,
+    height: LOGO_SOURCE_HEIGHT * scale,
+  };
+}
+
+// Align header logos for display without rewriting saved layers or their history.
+export function designBoardDisplayElement<T extends BrandingElement>(
+  element: T,
+  page?: BrandingPage,
+): T {
   if (element.type !== "image" || !isDesignBoardLogo(element)) return element;
   return {
     ...element,
+    ...(isCornerLogo(element)
+      ? {
+          ...designBoardLogoRect(page, element.width),
+          rotation: 0,
+          flipHorizontal: false,
+          flipVertical: false,
+        }
+      : {}),
     src: DESIGN_BOARD_LOGO,
     backgroundRemovedUrl: null,
     hideDetails: true,
@@ -64,27 +116,10 @@ export function designBoardDisplayElement<T extends BrandingElement>(element: T)
 }
 
 // A rendering-only header: opening a board never writes, moves, or deletes layers.
-// Existing visible logos and top headings remain the designer's original objects.
+// Existing headings and logo objects are reused, so no duplicate layers are added.
 export function designBoardBranding(page: BrandingPage, roomName?: string | null) {
-  const visible = page.elements.filter((element) => element.visible !== false);
-  const hasLogo = visible.some(
-    (element) =>
-      element.x < 500 &&
-      element.y + element.height > 0 &&
-      element.y < 160 &&
-      isDesignBoardLogo(element),
-  );
-  const hasTitle = visible.some(
-    (element) =>
-      element.type === "text" &&
-      Boolean(element.text?.trim()) &&
-      !isDesignBoardLogo(element) &&
-      element.y + element.height > 0 &&
-      element.y < 160 &&
-      element.x + element.width / 2 >= 700 &&
-      element.width >= 250 &&
-      (element.fontSize ?? 24) >= 18,
-  );
+  const hasLogo = page.elements.some(isCornerLogo);
+  const hasTitle = Boolean(boardRoomHeading(page));
   const title = roomName?.trim() || page.title.trim() || "Design Board";
   return { showLogo: !hasLogo, showTitle: !hasTitle, title };
 }

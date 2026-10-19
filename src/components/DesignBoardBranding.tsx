@@ -1,8 +1,8 @@
 import {
-  BOARD_LOGO_RECT,
   BOARD_TITLE_RECT,
   DESIGN_BOARD_LOGO,
   designBoardBranding,
+  designBoardLogoRect,
   type BrandingPage,
 } from "@/lib/designBoardBranding";
 
@@ -14,6 +14,7 @@ export function DesignBoardBranding({
   roomName?: string | null;
 }) {
   const header = designBoardBranding(page, roomName);
+  const logoRect = designBoardLogoRect(page);
   return (
     <div
       className="pointer-events-none absolute inset-0 select-none"
@@ -27,10 +28,10 @@ export function DesignBoardBranding({
           draggable={false}
           className="absolute object-contain"
           style={{
-            left: BOARD_LOGO_RECT.x,
-            top: BOARD_LOGO_RECT.y,
-            width: BOARD_LOGO_RECT.width,
-            height: BOARD_LOGO_RECT.height,
+            left: logoRect.x,
+            top: logoRect.y,
+            width: logoRect.width,
+            height: logoRect.height,
           }}
         />
       )}
