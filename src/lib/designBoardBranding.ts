@@ -50,14 +50,17 @@ export function designBoardBranding(page: BrandingPage, roomName?: string | null
   const visible = page.elements.filter((element) => element.visible !== false);
   const hasLogo = visible.some(
     (element) =>
-      element.x < 500 && element.y >= -40 && element.y < 160 && isDesignBoardLogo(element),
+      element.x < 500 &&
+      element.y + element.height > 0 &&
+      element.y < 160 &&
+      isDesignBoardLogo(element),
   );
   const hasTitle = visible.some(
     (element) =>
       element.type === "text" &&
       Boolean(element.text?.trim()) &&
       !isDesignBoardLogo(element) &&
-      element.y >= -20 &&
+      element.y + element.height > 0 &&
       element.y < 160 &&
       element.x + element.width / 2 >= 700 &&
       element.width >= 250 &&

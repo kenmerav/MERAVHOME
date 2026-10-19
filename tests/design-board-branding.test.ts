@@ -23,6 +23,27 @@ const logo = {
 };
 
 describe("automatic design-board corner branding", () => {
+  it("recognizes Hacienda's existing logo whose padded frame extends above the page", () => {
+    const page = {
+      title: "Hallway",
+      elements: [
+        {
+          ...logo,
+          x: 2.85,
+          y: -70.61,
+          width: 393.35,
+          height: 279.52,
+          src: "/uploads/1787766792729-fca2e12e-1104-49d9-9593-0feb1992acd2-screen-shot.png",
+        },
+        { ...heading, x: 928, y: 54, text: "foyer + hallway" },
+      ],
+    };
+    expect(designBoardBranding(page)).toMatchObject({ showLogo: false, showTitle: false });
+    const html = renderToStaticMarkup(createElement(DesignBoardBranding, { page }));
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("data-board-room-name");
+  });
+
   it("adds both corners on a new page using its assigned room", () => {
     expect(designBoardBranding({ title: "Board 2", elements: [] }, "Primary Bathroom")).toEqual({
       showLogo: true,
