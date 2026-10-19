@@ -1,4 +1,5 @@
 import type { MaterialItem, Product, Project, Room } from "@/lib/db";
+import { specQuantityUnit } from "./specQuantity";
 
 export const MERAV_CART_PLUGIN_ID = "merav-cart-builder";
 export const PROCUREMENT_RUN_TTL_MINUTES = 60;
@@ -452,8 +453,16 @@ export function buildProcurementDraft(
     vendor: text(product?.vendor),
     productUrl,
     sku: text(product?.sku),
-    quantity: item.quantity_tbd ? null : item.quantity,
-    quantityUnit: item.quantity_unit === "square_feet" ? "square_feet" : "pieces",
+    quantity:
+      item.quantity_tbd || !["count", "square_feet", "box"].includes(specQuantityUnit(item))
+        ? null
+        : item.quantity,
+    quantityUnit:
+      specQuantityUnit(item) === "square_feet"
+        ? "square_feet"
+        : specQuantityUnit(item) === "box"
+          ? "boxes"
+          : "pieces",
     cartonCoverageSquareFeet:
       typeof product?.carton_coverage_sq_ft === "number"
         ? product.carton_coverage_sq_ft
@@ -461,7 +470,7 @@ export function buildProcurementDraft(
     cartonCoverageSourceUrl: text(product?.carton_coverage_source_url),
     cartonCoverageSourceText: text(product?.carton_coverage_source_text),
     cartonCoverageConfidence: product?.carton_coverage_confidence ?? null,
-    wastePercentage: null,
+    wastePercentage: item.waste_percent ?? null,
     color: text(item.color),
     finish: text(product?.finish),
     size: "",
@@ -470,7 +479,14 @@ export function buildProcurementDraft(
     // Cart runs compare the retailer price against our cost, not the client-facing price.
     expectedPrice: parseMoney(product?.unit_cost) ?? parseMoney(product?.price),
     imageUrl: text(item.image_url) || text(product?.image_url),
-    notes: text(item.notes) || text(product?.notes),
+    notes: [
+      text(item.notes) || text(product?.notes),
+      !["count", "square_feet", "box"].includes(specQuantityUnit(item))
+        ? `Spec measurement: ${item.quantity_tbd ? "TBD" : item.quantity} ${specQuantityUnit(item)}. Confirm the retailer selling unit and enter its order quantity before preparing a cart.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     substitutionInstructions: "",
     requiredOptionKeys,
     procurementMethod: emailArizonaTile ? "email_rep" : "online_cart",

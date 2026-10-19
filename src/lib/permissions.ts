@@ -12,6 +12,10 @@ const EA_WORKSPACE_EMAILS = new Set(MARVIN_EMAILS);
 
 export const OVERALL_ADMIN_EMAILS = FINANCIAL_EMAILS;
 
+export function canUseRoomDesign(profile?: Pick<UserProfile, "is_active" | "role"> | null) {
+  return !!profile?.is_active && isStudioTeamRole(profile.role);
+}
+
 // Temporary private access while Rendering Studio is under development.
 export function canUseRenderingStudio(
   profile?: Pick<UserProfile, "email" | "is_active" | "role"> | null,

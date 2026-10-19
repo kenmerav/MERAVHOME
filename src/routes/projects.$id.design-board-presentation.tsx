@@ -9,6 +9,7 @@ import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { canViewProjectSurface } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { DesignBoardBranding } from "@/components/DesignBoardBranding";
 
 export const Route = createFileRoute("/projects/$id/design-board-presentation")({
   head: () => ({ meta: [{ title: "Design Board Presentation — MERAV Studio" }] }),
@@ -46,6 +47,7 @@ type PresentationBoardElement = {
 type PresentationBoardPage = {
   id: string;
   title: string;
+  roomId?: string | null;
   hidden?: boolean;
   elements: PresentationBoardElement[];
 };
@@ -78,6 +80,12 @@ function DesignBoardPresentationPage() {
     profile?.is_active === true &&
     project != null &&
     canViewProjectSurface(profile, project, "designBoards");
+  const { data: rooms = [] } = useQuery({
+    queryKey: ["rooms", id],
+    queryFn: () => db.listRooms(id),
+    enabled: canViewDesignBoards,
+  });
+  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room.name])), [rooms]);
   const { data: sharedBoard, isLoading: loadingBoard } = useQuery({
     queryKey: ["designBoard", id],
     queryFn: async () => {
@@ -238,6 +246,7 @@ function DesignBoardPresentationPage() {
                   }}
                 >
                   <DesignBoardPagePreview page={activePage} pageNumber={activeIndex + 1} />
+                  <DesignBoardBranding page={activePage} roomName={roomById.get(activePage.roomId ?? "")} />
                 </div>
               </div>
               <button
@@ -276,7 +285,7 @@ function DesignBoardPresentationPage() {
                     : "border-stone-200 hover:border-ink",
                 )}
               >
-                <DesignBoardThumbnail page={page} pageNumber={pageIndex + 1} />
+                <DesignBoardThumbnail page={page} pageNumber={pageIndex + 1} roomName={roomById.get(page.roomId ?? "")} />
               </button>
             ))}
           </footer>
@@ -395,9 +404,11 @@ function DesignBoardElementPreview({ element }: { element: PresentationBoardElem
 function DesignBoardThumbnail({
   page,
   pageNumber,
+  roomName,
 }: {
   page: PresentationBoardPage;
   pageNumber: number;
+  roomName?: string;
 }) {
   const scale = 0.058;
   const sortedElements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
@@ -458,6 +469,7 @@ function DesignBoardThumbnail({
               )}
             </div>
           ))}
+          <DesignBoardBranding page={page} roomName={roomName} />
         </div>
       </div>
       <div className="max-w-[80px] pb-0.5">
@@ -570,7 +582,7 @@ function normalizeBoardPage(value: unknown, pageIndex: number): PresentationBoar
         .map(normalizeBoardElement)
         .filter((element): element is PresentationBoardElement => Boolean(element))
     : [];
-  return { id, title, hidden: page.hidden === true, elements };
+  return { id, title, roomId: typeof page.roomId === "string" ? page.roomId : null, hidden: page.hidden === true, elements };
 }
 
 function normalizeBoardElement(value: unknown): PresentationBoardElement | null {

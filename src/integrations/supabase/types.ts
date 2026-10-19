@@ -290,6 +290,8 @@ export type Database = {
           quantity: number | null
           quantity_tbd: boolean
           quantity_unit: "count" | "square_feet"
+          selection_quantity_unit: string | null
+          waste_percent: number
           room_id: string
           scrape_error: string | null
           scrape_status: string
@@ -326,6 +328,8 @@ export type Database = {
           quantity?: number | null
           quantity_tbd?: boolean
           quantity_unit?: "count" | "square_feet"
+          selection_quantity_unit?: string | null
+          waste_percent?: number
           room_id: string
           scrape_error?: string | null
           scrape_status?: string
@@ -362,6 +366,8 @@ export type Database = {
           quantity?: number | null
           quantity_tbd?: boolean
           quantity_unit?: "count" | "square_feet"
+          selection_quantity_unit?: string | null
+          waste_percent?: number
           room_id?: string
           scrape_error?: string | null
           scrape_status?: string

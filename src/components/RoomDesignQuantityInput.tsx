@@ -36,6 +36,11 @@ export function RoomDesignQuantityInput({
       onChange={(event) => {
         event.currentTarget.setCustomValidity("");
         setDraft(event.target.value);
+        try {
+          onValueChange(parseRoomDesignQuantity(event.target.value));
+        } catch {
+          /* Keep incomplete typing local until it is valid. */
+        }
       }}
       onBlur={(event) => commit(event.currentTarget)}
       onKeyDown={(event) => {

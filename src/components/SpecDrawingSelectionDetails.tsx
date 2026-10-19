@@ -26,6 +26,7 @@ export function SpecDrawingSelectionDetails({
     ["CAD", row.cadLabel],
     ["Qty", row.quantity],
     ["Unit", specQuantityUnitLabel(row.quantityUnit)],
+    ["Waste / order", row.waste || ""],
     ["Finish", row.finish],
     ["Color", row.color],
     ["Dimensions", row.dimensions],

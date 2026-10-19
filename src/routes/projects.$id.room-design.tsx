@@ -98,7 +98,15 @@ import {
   roomDesignGeneratedPageCount,
   type RoomDesignWorkflowState,
 } from "@/lib/roomDesignWorkflow";
-import { canManageStudio } from "@/lib/permissions";
+import { canUseRoomDesign } from "@/lib/permissions";
+import { cleanProductDetail } from "@/lib/productDetails";
+import {
+  productAwareQuantityUnit,
+  roomDesignSelectionIssues,
+  roomDesignOrderReady,
+  retainRoomDesignMeasurements,
+} from "@/lib/roomDesignReview";
+import { selectionQuantityUnitFromSpec } from "@/lib/specQuantity";
 import { mergeRoomDesignEdits, roomDesignStatesEqual } from "@/lib/roomDesignSync";
 import {
   inferMaterialCategory,
@@ -424,7 +432,10 @@ function createSavedRoomWorkflowDraft(
     planPreview: normalized.floorPlanImageUrl,
     sketchupPreview: normalized.sketchupImageUrl || latestRoomImage(roomImages, roomId, "sketchup"),
     completedRenderPreview:
-      normalized.completedRenderImageUrl || latestRoomImage(roomImages, roomId, "rendering"),
+      normalized.completedRenderImageUrl ||
+      (savedState && typeof savedState === "object" && "completedRenderImageUrl" in savedState
+        ? ""
+        : latestRoomImage(roomImages, roomId, "rendering")),
     boardReady: normalized.boardReady,
     renderReady: normalized.renderReady,
     materialsSent: normalized.materialsSent,
@@ -487,12 +498,16 @@ function handoffImageFile(image: HandoffImage) {
   };
 }
 
-function buildRoomHandoffPackage({
+async function buildRoomHandoffPackage({
   projectName,
   room,
+  prepareImage,
+  boardState,
 }: {
   projectName: string;
   room: ProjectRenderRoom;
+  prepareImage: (url: string, roomId: string) => Promise<string>;
+  boardState?: unknown;
 }) {
   const imageInputs: HandoffImage[] = [
     ...(room.roomPreview
@@ -520,15 +535,32 @@ function buildRoomHandoffPackage({
         ]
       : []),
   ];
-  const packagedImages = imageInputs.map(handoffImageFile).filter(Boolean) as Array<
-    NonNullable<ReturnType<typeof handoffImageFile>>
-  >;
+  room.selections.forEach((selection, index) => {
+    if (selection.imageUrl)
+      imageInputs.push({
+        dataUrl: selection.imageUrl,
+        baseName: `product-${String(index + 1).padStart(2, "0")}`,
+        purpose: "product-reference",
+      });
+  });
+  const packagedImages: NonNullable<ReturnType<typeof handoffImageFile>>[] = [];
+  for (const image of imageInputs) {
+    const dataUrl = image.dataUrl.startsWith("data:image/")
+      ? image.dataUrl
+      : await prepareImage(image.dataUrl, room.id);
+    const packaged = handoffImageFile({ ...image, dataUrl });
+    if (!packaged)
+      throw new Error(
+        `Could not package ${image.baseName}. Reattach that reference before downloading.`,
+      );
+    packagedImages.push(packaged);
+  }
   const handoff = createCodexRenderHandoff({
     projectName,
     roomName: room.name,
     outputFilename: room.outputFilename,
     attachments: packagedImages.map((image) => image.attachment),
-    selections: room.selections.map((selection) => ({
+    selections: room.selections.map((selection, index) => ({
       category: selection.category,
       productName: selection.productName,
       vendor: selection.vendor,
@@ -539,12 +571,32 @@ function buildRoomHandoffPackage({
       group: selection.group,
       quantity: selection.quantity,
       notes: selection.notes,
+      imageUrl: selection.imageUrl,
+      imageFilename: packagedImages.find((image) =>
+        image.attachment.filename.startsWith(`product-${String(index + 1).padStart(2, "0")}.`),
+      )?.attachment.filename,
+      sku: selection.sku,
+      dimensions: selection.dimensions,
+      price: selection.price,
+      quantityUnit: selection.quantityUnit,
+      wastePercent: selection.wastePercent,
     })),
   });
   return {
     handoff,
     markdown: buildCodexRenderHandoffMarkdown(handoff),
     packagedImages,
+    boardSnapshot:
+      boardState && typeof boardState === "object"
+        ? {
+            projectName,
+            roomId: room.id,
+            roomName: room.name,
+            pages: ((boardState as { pages?: Array<{ roomId?: string }> }).pages || []).filter(
+              (page) => page.roomId === room.id,
+            ),
+          }
+        : null,
   };
 }
 
@@ -617,14 +669,15 @@ function RoomDesignPage() {
     );
   }
 
-  if (!canManageStudio(profile as UserProfile | null)) {
+  if (!canUseRoomDesign(profile as UserProfile | null)) {
     return (
       <AppShell>
         <div className="page-pad">
           <div className="eyebrow">Room Design Pilot</div>
           <h1 className="mt-3 font-display text-5xl">Admin access required</h1>
           <p className="mt-4 text-sm text-muted-foreground">
-            The pilot is limited to Studio administrators during production testing.
+            Room Design is available to active Studio designers and administrators on their
+            projects.
           </p>
         </div>
       </AppShell>
@@ -721,6 +774,7 @@ function RoomDesignWorkflow({
   const [sourcing, setSourcing] = useState(false);
   const [conceptSourceMessage, setConceptSourceMessage] = useState("");
   const [gathering, setGathering] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const [gatherProgress, setGatherProgress] = useState(EMPTY_GATHER_PROGRESS);
   const [linkScrapeStates, setLinkScrapeStates] = useState<Record<string, LinkScrapeState>>({});
   const [boardReady, setBoardReady] = useState(initialDraft.boardReady);
@@ -948,9 +1002,11 @@ function RoomDesignWorkflow({
     const manualSelections: DemoSelection[] = materialItems
       .filter((item) => item.room_id === roomId && !item.not_needed)
       .map((item) => ({
-        id: `manual-material:${item.id}`,
+        id: item.source_board_element_id?.startsWith(`room-design-v2:${roomId}:selection:`)
+          ? item.source_board_element_id.split(":selection:")[1]
+          : `manual-material:${item.id}`,
         category: item.item_label,
-        productName: item.client_product_name || item.product?.name || item.item_label,
+        productName: item.product?.name || item.client_product_name || item.item_label,
         vendor: item.product?.vendor || "",
         finish: item.product?.finish || item.color || "",
         source: "Manual board",
@@ -960,7 +1016,8 @@ function RoomDesignWorkflow({
         imageUrl: item.image_url || item.product?.image_url || undefined,
         group: classifyBoardGroup(item.item_label),
         quantity: item.quantity_tbd || item.quantity === null ? null : item.quantity ?? 1,
-        quantityUnit: defaultQuantityUnit(item.item_label),
+        quantityUnit: selectionQuantityUnitFromSpec(item.quantity_unit),
+        wastePercent: item.waste_percent || 0,
         notes: item.notes || undefined,
         price: item.product?.price || undefined,
         sku: item.product?.sku || undefined,
@@ -1131,8 +1188,8 @@ function RoomDesignWorkflow({
           caption: `${activeRoom.name} CAD / SketchUp view`,
           status: "complete",
           role: "sketchup_single_hero",
-          is_approved: true,
-          review_status: "approved",
+          is_approved: false,
+          review_status: "draft",
           revision_number: 1,
         }));
       sketchupId = sketchup?.id ?? sketchupId;
@@ -1156,21 +1213,17 @@ function RoomDesignWorkflow({
           linked_sketchup_id: sketchupId,
           status: "complete",
           role: "single_hero",
-          is_approved: true,
-          review_status: "approved",
+          is_approved: false,
+          review_status: "draft",
           revision_number: 1,
         }));
       renderingId = rendering?.id ?? renderingId;
     }
 
-    await db.updateRoom(roomId, {
-      presentation_sketchup_image_id: sketchupId,
-      presentation_rendering_image_id: renderingId,
-    });
     await db.appendRoomDesignEvent(
       projectId,
       roomId,
-      "presentation_images_saved",
+      "room_render_draft_saved",
       { sketchupImageId: sketchupId, renderingImageId: renderingId },
       profile.id,
     );
@@ -1184,7 +1237,9 @@ function RoomDesignWorkflow({
   const addSelections = (incoming: DemoSelection[]) => {
     setSelections((current) => {
       const next = new Map(current.map((selection) => [selection.id, selection]));
-      incoming.forEach((selection) => next.set(selection.id, selection));
+      incoming.forEach((selection) =>
+        next.set(selection.id, retainRoomDesignMeasurements(selection, next.get(selection.id))),
+      );
       return Array.from(next.values());
     });
   };
@@ -1205,169 +1260,189 @@ function RoomDesignWorkflow({
     if (!linkedItems.length) return;
 
     setGathering(true);
-    setGatherProgress({ ...EMPTY_GATHER_PROGRESS, total: linkedItems.length });
-    setLinkScrapeStates((current) => ({
-      ...(failedOnly ? current : {}),
-      ...Object.fromEntries(linkedItems.map((link) => [link.id, { status: "waiting" as const }])),
-    }));
-
-    const catalogPairs = await Promise.all(
-      linkedItems.map(
-        async (link) =>
-          [
-            link.id,
-            link.productId
-              ? await db.getProduct(link.productId)
-              : (await db.listProductsByUrl(link.url.trim()))?.[0],
-          ] as const,
-      ),
-    );
-    const catalogByLinkId = new Map(catalogPairs.filter((entry) => Boolean(entry[1])));
-    const linksNeedingScrape = linkedItems.filter(
-      (link) => link.url.trim() && !catalogByLinkId.has(link.id),
-    );
-    let batchResults: Awaited<ReturnType<typeof scrapeProductUrlsBatch>> = [];
-    let batchError = "";
-    if (linksNeedingScrape.length) {
-      try {
-        const requestOptions = await pilotRequestOptions();
-        batchResults = await scrapeProductUrlsBatch(
-          linksNeedingScrape.map((link) => link.url),
-          fetch,
-          {
-            ...requestOptions,
-            onProgress: ({ completed }) =>
-              setGatherProgress((current) => ({
-                ...current,
-                completed: Math.max(current.completed, Math.min(completed, current.total)),
-              })),
-          },
-        );
-      } catch (error) {
-        batchError =
-          error instanceof Error ? error.message : "The batch queue could not be completed.";
-      }
-    }
-    const batchByUrl = new Map(batchResults.map((result) => [result.url.trim(), result]));
-
-    const gathered: DemoSelection[] = [];
-    for (const [index, link] of linkedItems.entries()) {
-      const fallbackVendor = inferVendorFromUrl(link.url) || "Linked vendor";
+    try {
+      setGatherProgress({ ...EMPTY_GATHER_PROGRESS, total: linkedItems.length });
       setLinkScrapeStates((current) => ({
-        ...current,
-        [link.id]: { status: "scraping" },
+        ...(failedOnly ? current : {}),
+        ...Object.fromEntries(linkedItems.map((link) => [link.id, { status: "waiting" as const }])),
       }));
 
-      const batchResult = batchByUrl.get(link.url.trim());
-      const catalogProduct = catalogByLinkId.get(link.id);
-      let scraped: ScrapedProductData = catalogProduct
-        ? {
-            name: catalogProduct.name,
-            vendor: catalogProduct.vendor || undefined,
-            sku: catalogProduct.sku || undefined,
-            finish: catalogProduct.finish || undefined,
-            dimensions: catalogProduct.dimensions || undefined,
-            size_options: catalogProduct.size_options || undefined,
-            selected_size: catalogProduct.selected_size || undefined,
-            price: catalogProduct.price || undefined,
-            image_url: catalogProduct.image_url || undefined,
-          }
-        : (batchResult?.product ?? {});
-      let scrapeStatus: "complete" | "partial" | "failed" = "failed";
-      let scrapeError = batchResult?.error || batchError;
-      if (!catalogProduct && !batchResult?.product) {
+      const catalogPairs = await Promise.all(
+        linkedItems.map(
+          async (link) =>
+            [
+              link.id,
+              link.productId
+                ? await db.getProduct(link.productId)
+                : (await db.listProductsByUrl(link.url.trim()))?.[0],
+            ] as const,
+        ),
+      );
+      const catalogByLinkId = new Map(catalogPairs.filter((entry) => Boolean(entry[1])));
+      const linksNeedingScrape = linkedItems.filter(
+        (link) => link.url.trim() && !catalogByLinkId.has(link.id),
+      );
+      let batchResults: Awaited<ReturnType<typeof scrapeProductUrlsBatch>> = [];
+      let batchError = "";
+      if (linksNeedingScrape.length) {
         try {
-          scraped = await scrapeProductUrl(link.url, fetch, {
-            maxAttempts: 4,
-            ...(await pilotRequestOptions()),
-          });
-          scrapeError = "";
+          const requestOptions = await pilotRequestOptions();
+          batchResults = await scrapeProductUrlsBatch(
+            linksNeedingScrape.map((link) => link.url),
+            fetch,
+            {
+              ...requestOptions,
+              onProgress: ({ completed }) =>
+                setGatherProgress((current) => ({
+                  ...current,
+                  completed: Math.max(current.completed, Math.min(completed, current.total)),
+                })),
+            },
+          );
         } catch (error) {
-          scrapeError =
-            error instanceof Error ? error.message : "Product page could not be scraped.";
+          batchError =
+            error instanceof Error ? error.message : "The batch queue could not be completed.";
         }
       }
-      if (Object.keys(scraped).length) scrapeStatus = scrapedProductStatus(scraped);
-      const reviewMessage =
-        Object.keys(scraped).length && !link.productId
-          ? productScrapeReviewMessage(link.url, link.category, scraped)
-          : "";
-      if (reviewMessage) {
-        scrapeStatus = "partial";
-        scrapeError = reviewMessage;
-      }
+      const batchByUrl = new Map(batchResults.map((result) => [result.url.trim(), result]));
 
-      setLinkScrapeStates((current) => ({
-        ...current,
-        [link.id]: {
-          status: scrapeStatus,
-          message:
-            scrapeStatus === "partial"
-              ? "Some details need review"
-              : scrapeStatus === "failed"
-                ? scrapeError
-                : undefined,
-        },
-      }));
-      setGatherProgress((current) => ({
-        ...current,
-        completed: Math.max(current.completed, index + 1),
-        successful: current.successful + (scrapeStatus === "complete" ? 1 : 0),
-        partial: current.partial + (scrapeStatus === "partial" ? 1 : 0),
-        failed: current.failed + (scrapeStatus === "failed" ? 1 : 0),
-      }));
+      const gathered: DemoSelection[] = [];
+      for (const [index, link] of linkedItems.entries()) {
+        const fallbackVendor = inferVendorFromUrl(link.url) || "Linked vendor";
+        setLinkScrapeStates((current) => ({
+          ...current,
+          [link.id]: { status: "scraping" },
+        }));
 
-      let productId = catalogProduct?.id ?? null;
-      if (!productId && scraped.name) {
-        const category = toProductCategory(
-          inferMaterialCategory(`${link.category} ${scraped.name}`, link.url),
-        );
-        const created = await db.createProduct({
-          category,
-          name: scraped.name,
+        const batchResult = batchByUrl.get(link.url.trim());
+        const catalogProduct = catalogByLinkId.get(link.id);
+        let scraped: ScrapedProductData = catalogProduct
+          ? {
+              name: catalogProduct.name,
+              vendor: catalogProduct.vendor || undefined,
+              sku: catalogProduct.sku || undefined,
+              finish: catalogProduct.finish || undefined,
+              dimensions: catalogProduct.dimensions || undefined,
+              size_options: catalogProduct.size_options || undefined,
+              selected_size: catalogProduct.selected_size || undefined,
+              price: catalogProduct.price || undefined,
+              image_url: catalogProduct.image_url || undefined,
+            }
+          : (batchResult?.product ?? {});
+        let scrapeStatus: "complete" | "partial" | "failed" = "failed";
+        let scrapeError = batchResult?.error || batchError;
+        if (!catalogProduct && !batchResult?.product) {
+          try {
+            scraped = await scrapeProductUrl(link.url, fetch, {
+              maxAttempts: 4,
+              ...(await pilotRequestOptions()),
+            });
+            scrapeError = "";
+          } catch (error) {
+            scrapeError =
+              error instanceof Error ? error.message : "Product page could not be scraped.";
+          }
+        }
+        if (Object.keys(scraped).length) scrapeStatus = scrapedProductStatus(scraped);
+        scraped = {
+          ...scraped,
+          finish: cleanProductDetail(scraped.finish),
+          color: cleanProductDetail(scraped.color),
+        };
+        const reviewMessage =
+          Object.keys(scraped).length && !link.productId
+            ? productScrapeReviewMessage(link.url, link.category, scraped)
+            : "";
+        if (reviewMessage) {
+          scrapeStatus = "partial";
+          scrapeError = reviewMessage;
+        }
+
+        setLinkScrapeStates((current) => ({
+          ...current,
+          [link.id]: {
+            status: scrapeStatus,
+            message:
+              scrapeStatus === "partial"
+                ? "Some details need review"
+                : scrapeStatus === "failed"
+                  ? scrapeError
+                  : undefined,
+          },
+        }));
+        setGatherProgress((current) => ({
+          ...current,
+          completed: Math.max(current.completed, index + 1),
+          successful: current.successful + (scrapeStatus === "complete" ? 1 : 0),
+          partial: current.partial + (scrapeStatus === "partial" ? 1 : 0),
+          failed: current.failed + (scrapeStatus === "failed" ? 1 : 0),
+        }));
+
+        let productId = catalogProduct?.id ?? null;
+        if (!productId && scraped.name) {
+          const category = toProductCategory(
+            inferMaterialCategory(`${link.category} ${scraped.name}`, link.url),
+          );
+          const created = await db.createProduct({
+            category,
+            name: scraped.name,
+            vendor: scraped.vendor || fallbackVendor,
+            product_url: link.url,
+            image_url: scraped.image_url || null,
+            finish: scraped.finish || null,
+            sku: scraped.sku || null,
+            dimensions: scraped.dimensions || null,
+            size_options: scraped.size_options?.length ? scraped.size_options : null,
+            selected_size: scraped.selected_size || null,
+            price: scraped.price || null,
+            notes: `Created by the Room Design V2 pilot for ${project.name}.`,
+          });
+          productId = created?.id ?? null;
+        }
+
+        gathered.push({
+          id: `link-${link.id}`,
+          category: link.category,
+          productName: scraped.name || `${link.category} selection`,
           vendor: scraped.vendor || fallbackVendor,
-          product_url: link.url,
-          image_url: scraped.image_url || null,
-          finish: scraped.finish || null,
-          sku: scraped.sku || null,
-          dimensions: scraped.dimensions || null,
-          size_options: scraped.size_options?.length ? scraped.size_options : null,
-          selected_size: scraped.selected_size || null,
-          price: scraped.price || null,
-          notes: `Created by the Room Design V2 pilot for ${project.name}.`,
+          finish: cleanProductDetail(scraped.finish || scraped.color),
+          source: link.productId ? ("Product catalog" as const) : ("Product link" as const),
+          state: "selected" as const,
+          swatch: swatchForGroup(link.group),
+          url: link.url || catalogProduct?.product_url || undefined,
+          group: link.group,
+          quantity: link.quantity,
+          quantityUnit: productAwareQuantityUnit(link.category, scraped.name),
+          wastePercent:
+            productAwareQuantityUnit(link.category, scraped.name) === "sq ft"
+              ? 10
+              : defaultWastePercent(link.category),
+          notes: link.notes,
+          savedToTemplate: link.saveToTemplate,
+          imageUrl: scraped.image_url,
+          price: scraped.price,
+          sku: scraped.sku,
+          dimensions: scraped.dimensions,
+          scrapeStatus,
+          scrapeError: scrapeError || undefined,
+          productId,
         });
-        productId = created?.id ?? null;
       }
 
-      gathered.push({
-        id: `link-${link.id}`,
-        category: link.category,
-        productName: scraped.name || `${link.category} selection`,
-        vendor: scraped.vendor || fallbackVendor,
-        finish: scraped.finish || "Finish needs review",
-        source: link.productId ? ("Product catalog" as const) : ("Product link" as const),
-        state: "selected" as const,
-        swatch: swatchForGroup(link.group),
-        url: link.url || catalogProduct?.product_url || undefined,
-        group: link.group,
-        quantity: link.quantity,
-        quantityUnit: defaultQuantityUnit(link.category),
-        wastePercent: defaultWastePercent(link.category),
-        notes: link.notes,
-        savedToTemplate: link.saveToTemplate,
-        imageUrl: scraped.image_url,
-        price: scraped.price,
-        sku: scraped.sku,
-        dimensions: scraped.dimensions,
-        scrapeStatus,
-        scrapeError: scrapeError || undefined,
-        productId,
-      });
+      addSelections(gathered);
+      setBoardReady(false);
+      setRenderReady(false);
+      setCompletedRenderPreview("");
+      setStep(1);
+    } catch (error) {
+      setReviewError(
+        error instanceof Error
+          ? error.message
+          : "Product gathering failed. Your saved selections are still available.",
+      );
+    } finally {
+      setGathering(false);
     }
-
-    addSelections(gathered);
-    setGathering(false);
-    setStep(1);
   };
 
   const retryFailedLinks = () => {
@@ -1422,18 +1497,23 @@ function RoomDesignWorkflow({
       ...current,
       productName: scraped.name || current.productName,
       vendor: scraped.vendor || inferVendorFromUrl(url) || current.vendor,
-      finish: scraped.finish || current.finish,
+      finish: cleanProductDetail(scraped.finish || scraped.color),
       url,
       imageUrl: scraped.image_url || current.imageUrl,
-      price: scraped.price || current.price,
-      sku: scraped.sku || current.sku,
-      dimensions: scraped.dimensions || current.dimensions,
-      scrapeStatus: reviewMessage ? "partial" : scrapeStatus,
-      scrapeError: reviewMessage || undefined,
+      price: scraped.price,
+      sku: scraped.sku,
+      dimensions: scraped.dimensions,
+      state: "selected",
+      scrapeStatus: "partial",
+      scrapeError:
+        reviewMessage || "Confirm the replacement product's exact variant and dimensions.",
       materialsSyncStatus: materialsSent ? "changed" : current.materialsSyncStatus,
       productId,
     };
     setSelections((items) => items.map((selection) => (selection.id === id ? updated : selection)));
+    setBoardReady(false);
+    setRenderReady(false);
+    setCompletedRenderPreview("");
     return updated;
   };
 
@@ -1447,13 +1527,40 @@ function RoomDesignWorkflow({
     const updated = {
       ...current,
       imageUrl: storedImageUrl,
+      state: "selected" as const,
+      scrapeStatus: "partial" as const,
+      scrapeError: "Confirm the replacement image matches this exact product variant.",
       materialsSyncStatus: materialsSent ? ("changed" as const) : current.materialsSyncStatus,
     };
     setSelections((items) => items.map((selection) => (selection.id === id ? updated : selection)));
+    setBoardReady(false);
+    setRenderReady(false);
+    setCompletedRenderPreview("");
     return updated;
   };
 
   const updateSelection = (id: string, patch: Partial<DemoSelection>) => {
+    if ("quantity" in patch)
+      setLinks((items) =>
+        items.map((item) =>
+          `link-${item.id}` === id ? { ...item, quantity: patch.quantity ?? null } : item,
+        ),
+      );
+    const detailsChanged = Object.keys(patch).some((key) =>
+      ["productName", "vendor", "finish", "url", "imageUrl", "sku", "dimensions", "price"].includes(
+        key,
+      ),
+    );
+    const invalidatesReview =
+      detailsChanged ||
+      Object.keys(patch).some((key) =>
+        ["quantity", "quantityUnit", "wastePercent", "notes"].includes(key),
+      );
+    if (invalidatesReview) {
+      setBoardReady(false);
+      setRenderReady(false);
+      setCompletedRenderPreview("");
+    }
     const materialFieldsChanged = Object.keys(patch).some((key) =>
       ["quantity", "quantityUnit", "wastePercent", "notes", "finish"].includes(key),
     );
@@ -1463,6 +1570,13 @@ function RoomDesignWorkflow({
           ? {
               ...selection,
               ...patch,
+              ...(invalidatesReview ? { state: "selected" as const } : {}),
+              ...(detailsChanged
+                ? {
+                    scrapeStatus: "partial" as const,
+                    scrapeError: "Review the edited product details.",
+                  }
+                : {}),
               ...(materialsSent && materialFieldsChanged
                 ? { materialsSyncStatus: "changed" as const }
                 : {}),
@@ -1531,9 +1645,14 @@ function RoomDesignWorkflow({
     }
   };
 
-  const composeBoard = () => {
-    setBoardReady(true);
-    setStep(2);
+  const composeBoard = async () => {
+    setReviewError("");
+    try {
+      await populateStudioDesignBoard(Math.max(1, Math.ceil(selections.length / 18)), selections);
+      setStep(2);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Could not save the shared board.");
+    }
   };
 
   const prepareRender = () => {
@@ -1541,18 +1660,42 @@ function RoomDesignWorkflow({
     setStep(3);
   };
 
-  const approveAll = () => {
-    setSelections((current) =>
-      current.map((selection) => ({
-        ...selection,
-        state: selection.state === "draft" ? "draft" : ("locked" as const),
-      })),
+  const approveAll = async () => {
+    const unresolved = selections.filter(
+      (item) => roomDesignSelectionIssues(item).length || item.scrapeStatus !== "complete",
     );
-    setStep(4);
-  };
-
-  const sendToMaterials = () => {
-    setStep(5);
+    if (!selections.length || unresolved.length) {
+      setReviewError(
+        "Review the highlighted product details and quantities before saving approval.",
+      );
+      return;
+    }
+    setReviewError("");
+    try {
+      await db.appendRoomDesignEvent(
+        projectId,
+        roomId,
+        "selections_reviewed",
+        {
+          selections: selections.map((item) => ({ ...item, state: "locked" })),
+          roomName: activeRoom?.name,
+          reviewedAt: new Date().toISOString(),
+          scope: "selected-products-only",
+        },
+        profile.id,
+      );
+      setSelections((current) =>
+        current.map((selection) => ({
+          ...selection,
+          state: selection.state === "draft" ? "draft" : ("locked" as const),
+        })),
+      );
+      setStep(5);
+    } catch (error) {
+      setReviewError(
+        error instanceof Error ? error.message : "The reviewed version could not be saved.",
+      );
+    }
   };
 
   const resetPreview = () => {
@@ -1574,7 +1717,7 @@ function RoomDesignWorkflow({
       <div className="page-pad max-w-[1720px]">
         <header className="mb-7 flex flex-wrap items-end justify-between gap-5">
           <div>
-            <div className="eyebrow mb-3">{project.name} · Room Design V2 Pilot</div>
+            <div className="eyebrow mb-3">{project.name} · Room Design</div>
             <h1 className="editorial-hero text-5xl lg:text-7xl">Room Design</h1>
             <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
               Begin manually, from product links, or from a concept. Every path builds one room
@@ -1599,6 +1742,11 @@ function RoomDesignWorkflow({
             </Button>
           </div>
         </header>
+        {reviewError && (
+          <p role="alert" className="mb-5 border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            {reviewError}
+          </p>
+        )}
 
         {saveStatus === "error" && saveError && <p role="alert" className="mb-5 text-sm text-destructive">{saveError}</p>}
 
@@ -1730,6 +1878,7 @@ function RoomDesignWorkflow({
             )}
             {step === 3 && (
               <RenderStep
+                boardState={designBoardState}
                 selections={selections}
                 method={method}
                 projectId={projectId}
@@ -1754,18 +1903,21 @@ function RoomDesignWorkflow({
                 onSaveToStudio={saveRenderToStudio}
                 ready={renderReady}
                 onBack={() => setStep(2)}
-                onContinue={approveAll}
+                onContinue={() => setStep(4)}
               />
             )}
             {step === 4 && (
               <ApprovalStep
                 selections={selections}
                 onBack={() => setStep(3)}
-                onContinue={sendToMaterials}
+                onContinue={() => void approveAll()}
               />
             )}
             {step === 5 && (
               <MaterialsStep
+                materialItems={materialItems.filter(
+                  (item) => item.room_id === roomId && !item.not_needed,
+                )}
                 selections={selections}
                 sent={materialsSent}
                 completedRenderPreview={completedRenderPreview}
@@ -2568,13 +2720,19 @@ function SelectionsStep({
               action={
                 <div className="flex flex-wrap items-end justify-end gap-2">
                   <QuantityEditor selection={selection} onUpdate={onUpdate} compact />
+                  <ProductDetailsEditor selection={selection} onUpdate={onUpdate} />
                   <Button
                     size="sm"
                     variant={selection.state === "locked" ? "default" : "outline"}
                     onClick={() => onToggle(selection.id)}
+                    disabled={
+                      roomDesignSelectionIssues(selection).length > 0 ||
+                      selection.scrapeStatus !== "complete"
+                    }
+                    title={roomDesignSelectionIssues(selection).join(" ")}
                   >
                     {selection.state === "locked" ? <Lock /> : <Check />}{" "}
-                    {selection.state === "locked" ? "Locked" : "Select"}
+                    {selection.state === "locked" ? "Reviewed" : "Mark reviewed"}
                   </Button>
                 </div>
               }
@@ -3139,7 +3297,7 @@ function BoardStep({
               ) : (
                 <LayoutTemplate />
               )}
-              {populateState.status === "saved"
+              {populateState.status === "saved" || initialStudioPageCount > 0
                 ? "Update Studio Design Board"
                 : "Populate Studio Design Board"}
             </Button>
@@ -3196,6 +3354,13 @@ function BoardStep({
             )}
           >
             {populateState.message}
+          </p>
+        )}
+        {!populateState.message && initialStudioPageCount > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {ready
+              ? "Shared board saved. Open it to send this room to Materials."
+              : "Selections changed. Update the Studio Design Board before sending it to Materials."}
           </p>
         )}
         {!showFullProjectBoard && (
@@ -3283,6 +3448,7 @@ function BoardStep({
               Room Selection Set quantity
             </div>
             <QuantityEditor selection={selectedSelection} onUpdate={onUpdate} />
+            <ProductDetailsEditor selection={selectedSelection} onUpdate={onUpdate} />
             <p className="mt-2 text-xs text-muted-foreground">
               This quantity follows the product into Materials, Specs, and Procurement. The board
               still shows one representative image.
@@ -3633,6 +3799,7 @@ function StudioCutoutBoard({
 }
 
 function RenderStep({
+  boardState,
   selections,
   method,
   projectId,
@@ -3655,6 +3822,7 @@ function RenderStep({
   onBack,
   onContinue,
 }: {
+  boardState?: unknown;
   selections: DemoSelection[];
   method: StartMethod;
   projectId: string;
@@ -3677,9 +3845,10 @@ function RenderStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const [handoffStatus, setHandoffStatus] = useState<"idle" | "downloaded" | "copied" | "failed">(
-    "idle",
-  );
+  const [handoffStatus, setHandoffStatus] = useState<
+    "idle" | "preparing" | "downloaded" | "copied" | "failed"
+  >("idle");
+  const [handoffError, setHandoffError] = useState("");
   const [projectHandoffStatus, setProjectHandoffStatus] = useState<
     "idle" | "downloaded" | "imported" | "partial"
   >("idle");
@@ -3691,11 +3860,29 @@ function RenderStep({
   const preparedProjectRooms = projectRooms.filter((room) => room.selections.length > 0);
   const unpreparedRoomCount = projectRooms.length - preparedProjectRooms.length;
 
+  const prepareImage = async (imageUrl: string, targetRoomId: string) => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw new Error("Sign in again before preparing the handoff.");
+    const response = await fetch("/api/room-design-image-source", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${data.session.access_token}`,
+      },
+      body: JSON.stringify({ projectId, roomId: targetRoomId, imageUrl }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.sourceDataUrl)
+      throw new Error(result.error || "A reference image could not be downloaded.");
+    return result.sourceDataUrl as string;
+  };
   const buildHandoff = () =>
     buildRoomHandoffPackage({
       projectName,
+      prepareImage,
+      boardState,
       room: {
-        id: "active-room",
+        id: roomId,
         name: roomName,
         outputFilename: `${codexRenderHandoffBaseName(projectName, roomName)}-render.png`,
         method,
@@ -3713,62 +3900,87 @@ function RenderStep({
       },
     });
 
-  const downloadHandoff = () => {
-    const { handoff, markdown, packagedImages } = buildHandoff();
-    const files: Record<string, Uint8Array> = {
-      "README.md": strToU8(markdown),
-      "render-manifest.json": strToU8(JSON.stringify(handoff, null, 2)),
-    };
-    packagedImages.forEach((image) => {
-      files[image.attachment.filename] = image.bytes;
-    });
-    const archive = zipSync(files, { level: 6 });
-    downloadBrowserFile(
-      `${codexRenderHandoffBaseName(projectName, roomName)}.zip`,
-      archive,
-      "application/zip",
-    );
-    setHandoffStatus("downloaded");
+  const downloadHandoff = async () => {
+    setHandoffStatus("preparing");
+    setHandoffError("");
+    try {
+      const { handoff, markdown, packagedImages, boardSnapshot } = await buildHandoff();
+      const files: Record<string, Uint8Array> = {
+        "README.md": strToU8(markdown),
+        "render-manifest.json": strToU8(JSON.stringify(handoff, null, 2)),
+        "design-board.json": strToU8(JSON.stringify(boardSnapshot, null, 2)),
+      };
+      packagedImages.forEach((image) => {
+        files[image.attachment.filename] = image.bytes;
+      });
+      const archive = zipSync(files, { level: 6 });
+      downloadBrowserFile(
+        `${codexRenderHandoffBaseName(projectName, roomName)}.zip`,
+        archive,
+        "application/zip",
+      );
+      setHandoffStatus("downloaded");
+    } catch (error) {
+      setHandoffStatus("failed");
+      setHandoffError(
+        error instanceof Error ? error.message : "The handoff could not be prepared.",
+      );
+    }
   };
 
   const copyHandoff = async () => {
     try {
-      await navigator.clipboard.writeText(buildHandoff().markdown);
+      await navigator.clipboard.writeText((await buildHandoff()).markdown);
       setHandoffStatus("copied");
     } catch {
       setHandoffStatus("failed");
     }
   };
 
-  const downloadProjectHandoff = () => {
-    const roomPackages = preparedProjectRooms.map((room) => ({
-      room,
-      package: buildRoomHandoffPackage({ projectName, room }),
-    }));
-    const projectHandoff = createCodexProjectRenderHandoff({
-      projectName,
-      handoffs: roomPackages.map(({ package: roomPackage }) => roomPackage.handoff),
-    });
-    const files: Record<string, Uint8Array> = {
-      "README.md": strToU8(buildCodexProjectRenderHandoffMarkdown(projectHandoff)),
-      "project-render-manifest.json": strToU8(JSON.stringify(projectHandoff, null, 2)),
-    };
-    projectHandoff.rooms.forEach(({ folder }, index) => {
-      const roomPackage = roomPackages[index].package;
-      files[`${folder}/README.md`] = strToU8(roomPackage.markdown);
-      files[`${folder}/render-manifest.json`] = strToU8(
-        JSON.stringify(roomPackage.handoff, null, 2),
+  const downloadProjectHandoff = async () => {
+    setHandoffStatus("preparing");
+    setHandoffError("");
+    try {
+      const roomPackages = await Promise.all(
+        preparedProjectRooms.map(async (room) => ({
+          room,
+          package: await buildRoomHandoffPackage({ projectName, room, prepareImage, boardState }),
+        })),
       );
-      roomPackage.packagedImages.forEach((image) => {
-        files[`${folder}/${image.attachment.filename}`] = image.bytes;
+      const projectHandoff = createCodexProjectRenderHandoff({
+        projectName,
+        handoffs: roomPackages.map(({ package: roomPackage }) => roomPackage.handoff),
       });
-    });
-    downloadBrowserFile(
-      `${codexProjectRenderHandoffBaseName(projectName)}.zip`,
-      zipSync(files, { level: 6 }),
-      "application/zip",
-    );
-    setProjectHandoffStatus("downloaded");
+      const files: Record<string, Uint8Array> = {
+        "README.md": strToU8(buildCodexProjectRenderHandoffMarkdown(projectHandoff)),
+        "project-render-manifest.json": strToU8(JSON.stringify(projectHandoff, null, 2)),
+      };
+      projectHandoff.rooms.forEach(({ folder }, index) => {
+        const roomPackage = roomPackages[index].package;
+        files[`${folder}/README.md`] = strToU8(roomPackage.markdown);
+        files[`${folder}/render-manifest.json`] = strToU8(
+          JSON.stringify(roomPackage.handoff, null, 2),
+        );
+        files[`${folder}/design-board.json`] = strToU8(
+          JSON.stringify(roomPackage.boardSnapshot, null, 2),
+        );
+        roomPackage.packagedImages.forEach((image) => {
+          files[`${folder}/${image.attachment.filename}`] = image.bytes;
+        });
+      });
+      downloadBrowserFile(
+        `${codexProjectRenderHandoffBaseName(projectName)}.zip`,
+        zipSync(files, { level: 6 }),
+        "application/zip",
+      );
+      setProjectHandoffStatus("downloaded");
+      setHandoffStatus("idle");
+    } catch (error) {
+      setHandoffStatus("failed");
+      setHandoffError(
+        error instanceof Error ? error.message : "The project handoff could not be prepared.",
+      );
+    }
   };
 
   const importProjectRenderFiles = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -3810,16 +4022,16 @@ function RenderStep({
   const saveRenderToStudioPresentation = async () => {
     if (!completedRenderPreview && !sketchupPreview) return;
     setStudioSaveStatus("saving");
-    setStudioSaveMessage("Saving the approved room images to Studio…");
+    setStudioSaveMessage("Saving the room images as review drafts…");
     try {
       await onSaveToStudio();
       setStudioSaveStatus("saved");
       setStudioSaveMessage(
         completedRenderPreview && sketchupPreview
-          ? "Saved. The render and linked Design Model view are now on this room's presentation page."
+          ? "Saved as review drafts with the linked Design Model. Approve them in the room before including them in a client presentation."
           : completedRenderPreview
-            ? "Saved. The render is now on this room's presentation page."
-            : "Saved. The Design Model view is now on this room's presentation page.",
+            ? "Saved as a rendering draft. Review it in the room before including it in a client presentation."
+            : "Saved as a Design Model reference draft.",
       );
     } catch (error) {
       setStudioSaveStatus("failed");
@@ -3948,10 +4160,20 @@ function RenderStep({
             </div>
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button onClick={downloadHandoff} disabled={!selections.length}>
-              <Archive /> Download AI Rendering Handoff
+            <Button
+              onClick={downloadHandoff}
+              disabled={!selections.length || handoffStatus === "preparing"}
+            >
+              <Archive />{" "}
+              {handoffStatus === "preparing"
+                ? "Preparing reference images…"
+                : "Download AI Rendering Handoff"}
             </Button>
-            <Button variant="outline" onClick={copyHandoff} disabled={!selections.length}>
+            <Button
+              variant="outline"
+              onClick={copyHandoff}
+              disabled={!selections.length || handoffStatus === "preparing"}
+            >
               <ClipboardCopy /> Copy instructions
             </Button>
           </div>
@@ -3962,11 +4184,15 @@ function RenderStep({
                 handoffStatus === "failed" ? "text-red-700" : "text-emerald-700",
               )}
             >
-              {handoffStatus === "downloaded"
-                ? "Handoff downloaded. Add the ZIP to a Codex task and ask it to complete README.md."
-                : handoffStatus === "copied"
-                  ? "Instructions copied. Paste them into an employee's Codex task."
-                  : "Clipboard access was unavailable. Download the handoff instead."}
+              {handoffStatus === "preparing"
+                ? "Downloading the exact selected images and room references. No image generation is running."
+                : handoffStatus === "failed"
+                  ? handoffError || "Could not prepare the handoff. Try again."
+                  : handoffStatus === "downloaded"
+                    ? "Handoff downloaded. Add the ZIP to a Codex task and ask it to complete README.md."
+                    : handoffStatus === "copied"
+                      ? "Instructions copied. Paste them into an employee's Codex task."
+                      : "Clipboard access was unavailable. Download the handoff instead."}
             </p>
           )}
         </div>
@@ -4023,8 +4249,8 @@ function RenderStep({
                   : completedRenderPreview && sketchupPreview
                     ? "Save Render + Design Model"
                     : sketchupPreview
-                      ? "Save Design Model to Presentation"
-                      : "Save to Studio Presentation"}
+                      ? "Save Design Model draft"
+                      : "Save rendering draft"}
             </Button>
             {studioSaveStatus === "saved" && (
               <a
@@ -4059,7 +4285,7 @@ function RenderStep({
           <Button
             className="bg-white text-ink hover:bg-bone"
             onClick={downloadProjectHandoff}
-            disabled={!preparedProjectRooms.length}
+            disabled={!preparedProjectRooms.length || handoffStatus === "preparing"}
           >
             <Archive />
             {unpreparedRoomCount
@@ -4119,15 +4345,20 @@ function ApprovalStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const draftCount = selections.filter((selection) => selection.state === "draft").length;
+  const unresolved = selections.filter(
+    (item) =>
+      item.state === "draft" ||
+      item.scrapeStatus !== "complete" ||
+      roomDesignSelectionIssues(item).length,
+  );
   return (
     <StepFrame
       eyebrow="Approval"
-      title="Freeze the room selections before handoff"
+      title="Review selected products before handoff"
       onBack={onBack}
       action={
-        <Button onClick={onContinue} disabled={!selections.length}>
-          <ArrowRight /> Continue to Studio outputs
+        <Button onClick={onContinue} disabled={!selections.length || unresolved.length > 0}>
+          <ArrowRight /> Save reviewed selections
         </Button>
       }
     >
@@ -4153,7 +4384,7 @@ function ApprovalStep({
                   ) : selection.state === "draft" ? (
                     "Draft · needs product details"
                   ) : (
-                    "Will be locked"
+                    "Review required"
                   )}
                 </span>
               }
@@ -4164,13 +4395,14 @@ function ApprovalStep({
           <BadgeCheck className="h-7 w-7 text-brass" />
           <div className="mt-5 font-display text-2xl">Room approval</div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Approval freezes this version of the board, render, and product set. Later changes
-            create a new version.
+            Save an immutable record of these reviewed products. Editing a selection reopens its
+            review. This reviews selected products only; unselected checklist items and room layout
+            still need separate review. Client approval and ordering remain separate.
           </p>
           <div className="mt-5 text-xs font-medium">
-            {draftCount
-              ? `${draftCount} manual draft${draftCount === 1 ? "" : "s"} will remain flagged for review`
-              : "All selected items are ready to approve"}
+            {unresolved.length
+              ? `${unresolved.length} selections need confirmed details or quantities. Return to Selections to resolve them.`
+              : "Selected products are ready to record as reviewed."}
           </div>
         </div>
       </div>
@@ -4180,6 +4412,7 @@ function ApprovalStep({
 
 function MaterialsStep({
   selections,
+  materialItems,
   sent,
   completedRenderPreview,
   projectName,
@@ -4188,6 +4421,7 @@ function MaterialsStep({
   onBack,
 }: {
   selections: DemoSelection[];
+  materialItems: MaterialItem[];
   sent: boolean;
   completedRenderPreview: string;
   projectName: string;
@@ -4196,10 +4430,7 @@ function MaterialsStep({
   onBack: () => void;
 }) {
   const draftCount = selections.filter((selection) => selection.state === "draft").length;
-  const procurementReady = selections.filter(
-    (selection) =>
-      selection.state === "locked" && selection.url && selection.scrapeStatus !== "failed",
-  );
+  const procurementReady = selections.filter(roomDesignOrderReady);
   const procurementReviewCount = selections.length - procurementReady.length;
   const quantityDefinedCount = selections.filter(
     (selection) => (selection.quantity ?? 0) > 0,
@@ -4213,8 +4444,9 @@ function MaterialsStep({
       <div className="mb-5 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
         <div className="font-medium">The existing Studio tools stay in control</div>
         <p className="mt-1 text-xs leading-5 text-emerald-900/75">
-          Open the shared design board and use its existing “Send Page to Materials” action. The
-          current Materials, Spec Book, Procurement, and Presentation pages continue from there.
+          {materialItems.length} products are currently saved in this room's Materials and Spec
+          Book. Use “Send Page to Materials” in the shared board to save new selections or updates.
+          The preview below is your selection draft, not confirmation that those updates were saved.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button size="sm" asChild>
@@ -4249,7 +4481,7 @@ function MaterialsStep({
           body={
             completedRenderPreview
               ? "The imported room render is included with the approved selection summary."
-              : "The approved design board is included; the render remains flagged as missing."
+              : "The board can be included after saving it to Studio; the render remains flagged as missing."
           }
           complete={sent}
         />
@@ -4352,7 +4584,7 @@ function MaterialsStep({
         </section>
       </div>
       <div className="mt-5 grid gap-4 border border-border bg-bone/25 p-5 sm:grid-cols-3">
-        <Metric value={procurementReady.length} label="Order ready" />
+        <Metric value={procurementReady.length} label="Order details complete" />
         <Metric value={procurementReviewCount} label="Needs review" />
         <Metric value={quantityDefinedCount} label="Qty defined" />
       </div>
@@ -4434,6 +4666,61 @@ function SelectionVisual({
         backgroundSize: selection.category.includes("Floor") ? "22px 22px" : undefined,
       }}
     />
+  );
+}
+
+function ProductDetailsEditor({
+  selection,
+  onUpdate,
+}: {
+  selection: DemoSelection;
+  onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
+}) {
+  const issues = roomDesignSelectionIssues(selection);
+  return (
+    <details className="w-full min-w-[220px] max-w-xl border border-border p-2 text-xs">
+      <summary className="cursor-pointer">
+        Review product details {issues.length ? `(${issues.length} to resolve)` : ""}
+      </summary>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {(
+          [
+            ["productName", "Product name"],
+            ["vendor", "Vendor"],
+            ["finish", "Color / finish"],
+            ["sku", "SKU / model"],
+            ["dimensions", "Product dimensions"],
+            ["price", "Price"],
+            ["url", "Exact product link"],
+            ["imageUrl", "Selected image URL"],
+          ] as const
+        ).map(([key, label]) => (
+          <label key={key}>
+            {label}
+            <Input
+              aria-label={`${selection.category} ${label}`}
+              value={selection[key] || ""}
+              onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
+            />
+          </label>
+        ))}
+      </div>
+      {!!issues.length && (
+        <ul className="my-3 list-disc space-y-1 pl-4 text-amber-800">
+          {issues.map((issue) => (
+            <li key={issue}>{issue}</li>
+          ))}
+        </ul>
+      )}
+      <Button
+        size="sm"
+        className="mt-2"
+        disabled={issues.length > 0}
+        onClick={() => onUpdate(selection.id, { scrapeStatus: "complete", scrapeError: undefined })}
+      >
+        Confirm product details
+      </Button>
+    </details>
   );
 }
 

@@ -1,4 +1,6 @@
 import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
+import { cleanProductDetail } from "./productDetails";
+import { productAwareQuantityUnit } from "./roomDesignReview";
 
 export type RoomDesignMethod = "manual" | "links" | "concept";
 
@@ -83,7 +85,8 @@ type BoardState = Record<string, unknown> & {
 
 const PAGE_PREFIX = "room-design-v2";
 
-export function roomDesignDefaultQuantityUnit(category: string) {
+export function roomDesignDefaultQuantityUnit(category: string, productName = "") {
+  if (productName) return productAwareQuantityUnit(category, productName);
   if (/flooring|tile|backsplash/i.test(category)) return "sq ft";
   if (/baseboard|casing|transition/i.test(category)) return "linear ft";
   if (/countertop/i.test(category)) return "slab";
@@ -295,7 +298,9 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     originalImageUrl: product.originalImageUrl,
     group: target.group,
     quantity: product.quantity,
-    quantityUnit: existingSelection?.quantityUnit || roomDesignDefaultQuantityUnit(target.category),
+    quantityUnit:
+      existingSelection?.quantityUnit ||
+      roomDesignDefaultQuantityUnit(target.category, product.name),
     wastePercent: existingSelection?.wastePercent ?? roomDesignDefaultWastePercent(target.category),
     notes: target.notes || existingSelection?.notes,
     price: product.price || undefined,
@@ -415,7 +420,7 @@ export function normalizeRoomDesignWorkflowState(
             category,
             productName: string(item.productName) || category,
             vendor: string(item.vendor),
-            finish: string(item.finish),
+            finish: cleanProductDetail(item.finish),
             source: string(item.source) || "Product link",
             state: selectionState,
             swatch: string(item.swatch),
@@ -738,6 +743,7 @@ export function mergeRoomDesignSelectionsIntoBoard({
           productName: selection.productName || selection.category,
           vendor: selection.vendor || null,
           price: selection.price || null,
+          sku: selection.sku || null,
           finish: selection.finish || null,
           notes: selection.notes || null,
           visible: true,
@@ -746,6 +752,10 @@ export function mergeRoomDesignSelectionsIntoBoard({
           materialRoomId: roomId,
           materialCategory: selection.category,
           materialQuantity: selection.quantity === null ? null : positiveNumber(selection.quantity, 1),
+          materialQuantityTbd: selection.quantity === null,
+          materialQuantityUnit:
+            selection.quantityUnit || roomDesignDefaultQuantityUnit(selection.category),
+          materialWastePercent: selection.wastePercent || 0,
           materialFinish: selection.finish || null,
           materialDimensions: selection.dimensions || null,
           materialInfoNotNeeded: false,
@@ -793,6 +803,8 @@ export function roomDesignBoardDisplayLabel(element: {
   // Room Design boards use the checklist type (for example, "Tub") as the
   // presentation caption. Keep productName separate for Materials and specs.
   return isGeneratedRoomDesignItem && materialCategory
-    ? materialCategory
+    ? savedLabel && savedLabel !== productName
+      ? savedLabel
+      : materialCategory
     : savedLabel || productName;
 }

@@ -65,9 +65,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import {
   canManageStudio,
+  canUseRoomDesign,
   canUseRenderingStudio,
   canUseMarvin,
   canViewFinancials,
@@ -263,7 +265,7 @@ function ProjectDetailPage() {
                 <ProjectCaptureDialog projectId={id} projectName={project.name} />
               )}
               {project.design_workflow_version === "room_design_v2" &&
-                canManageStudio(profile) &&
+                canUseRoomDesign(profile) &&
                 rooms[0] && (
                   <Link
                     to="/projects/$id/room-design"
@@ -273,6 +275,28 @@ function ProjectDetailPage() {
                   >
                     <LayoutTemplate className="h-4 w-4" /> Room Design
                   </Link>
+                )}
+              {project.design_workflow_version !== "room_design_v2" &&
+                canManageStudio(profile) &&
+                rooms[0] && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      if (!profile) return;
+                      try {
+                        await db.enableRoomDesign(id, profile.id);
+                        await qc.invalidateQueries({ queryKey: ["project", id] });
+                        await qc.invalidateQueries({ queryKey: ["projects"] });
+                        toast.success(
+                          "Room Design enabled for this project. Existing boards and selections were kept.",
+                        );
+                      } catch {
+                        toast.error("Room Design could not be enabled. Please try again.");
+                      }
+                    }}
+                  >
+                    Enable Room Design
+                  </Button>
                 )}
               <Link
                 to="/projects/$id/design-boards"

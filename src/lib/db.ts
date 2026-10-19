@@ -2,7 +2,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { canViewFinancials, canViewProjectSurface, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { stripePaidReceipt } from "@/lib/stripePaidReceipts";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
-import { validateSpecQuantityPatch, type SpecQuantityPatch, type SpecQuantityUnit } from "@/lib/specQuantity";
+import { cleanProductDetail } from "./productDetails";
+import {
+  validateSpecQuantityPatch,
+  specQuantityDatabasePatch,
+  specQuantityUnit,
+  type SpecQuantityPatch,
+  type SpecQuantityUnit,
+} from "@/lib/specQuantity";
 import { PRODUCT_CATEGORIES, SUBCATEGORIES, type ProductCategory } from "@/lib/productCategories";
 import type {
   RenderingStudioAssetType,
@@ -399,6 +406,8 @@ export interface MaterialItem {
   quantity: number | null;
   quantity_tbd?: boolean;
   quantity_unit?: SpecQuantityUnit;
+  waste_percent?: number;
+  selection_quantity_unit?: SpecQuantityUnit | null;
   color: string | null;
   image_url: string | null;
   notes: string | null;
@@ -708,6 +717,12 @@ export const db = {
         .select()
         .single()
     ).data as Project | null;
+  },
+  enableRoomDesign: async (projectId: string, createdBy: string) => {
+    const { error } = await supabase
+      .from("room_design_projects" as any)
+      .insert({ project_id: projectId, created_by: createdBy } as any);
+    if (error && error.code !== "23505") throw error;
   },
   markProjectOpened: async (id: string) =>
     supabase
@@ -1176,7 +1191,14 @@ export const db = {
       .eq("project_id", projectId)
       .order("sort_order")
       .order("created_at");
-    const items = (data ?? []) as MaterialItem[];
+    const items: MaterialItem[] = ((data ?? []) as MaterialItem[]).map((item) => ({
+      ...item,
+      quantity_unit: specQuantityUnit(item),
+      color: cleanProductDetail(item.color) || null,
+      product: item.product
+        ? { ...item.product, finish: cleanProductDetail(item.product.finish) || null }
+        : item.product,
+    }));
     const productIds = Array.from(
       new Set(items.map((item) => item.product_id).filter((id): id is string => Boolean(id))),
     );
@@ -1204,6 +1226,12 @@ export const db = {
     items: Array<Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product">>,
   ) => supabase.from("material_items").insert(items as any),
   updateMaterialItem: async (id: string, patch: Partial<MaterialItem>) => {
+    if (patch.quantity_unit && !patch.selection_quantity_unit)
+      patch = {
+        ...patch,
+        selection_quantity_unit: patch.quantity_unit,
+        quantity_unit: patch.quantity_unit === "square_feet" ? "square_feet" : "count",
+      };
     const result = await supabase
       .from("material_items")
       .update(patch as any)
@@ -1235,12 +1263,12 @@ export const db = {
     return body;
   },
   updateMaterialQuantity: async (id: string, patch: SpecQuantityPatch) => {
-    const values = validateSpecQuantityPatch(patch);
+    const values = specQuantityDatabasePatch(validateSpecQuantityPatch(patch));
     const { data, error } = await supabase
       .from("material_items")
       .update(values as any)
       .eq("id", id)
-      .select("id,quantity,quantity_tbd,quantity_unit")
+      .select("id,quantity,quantity_tbd,quantity_unit,selection_quantity_unit,waste_percent")
       .single();
     if (error) throw new Error(error.message || "Could not save quantity.");
     if (!data) throw new Error("Could not save quantity. Please refresh and try again.");

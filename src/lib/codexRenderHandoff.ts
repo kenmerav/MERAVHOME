@@ -9,11 +9,18 @@ export type CodexRenderSelection = {
   group?: string;
   quantity?: number | null;
   notes?: string;
+  imageUrl?: string;
+  imageFilename?: string;
+  sku?: string;
+  dimensions?: string;
+  quantityUnit?: string;
+  wastePercent?: number;
+  price?: string;
 };
 
 export type CodexRenderAttachment = {
   filename: string;
-  purpose: "room-photo" | "floor-plan" | "concept-board" | "sketchup-view";
+  purpose: "room-photo" | "floor-plan" | "concept-board" | "sketchup-view" | "product-reference";
 };
 
 export type CodexRenderHandoff = {
@@ -25,6 +32,8 @@ export type CodexRenderHandoff = {
   attachments: CodexRenderAttachment[];
   selections: CodexRenderSelection[];
   instructions: string[];
+  layoutReviewRequired: boolean;
+  reviewChecks: string[];
 };
 
 export type CodexProjectRenderRoom = {
@@ -94,7 +103,24 @@ export function createCodexRenderHandoff({
     outputFilename,
     attachments,
     selections,
+    layoutReviewRequired: attachments.some((attachment) =>
+      ["floor-plan", "sketchup-view"].includes(attachment.purpose),
+    ),
+    reviewChecks: [
+      "Product identity and selected variant",
+      "Dimensions and depth",
+      "Orientation and openings",
+      "Enclosure and shower glass",
+      "Occlusion and access",
+      "Board colors, patterns and finishes",
+    ],
     instructions: [
+      "Use subscription image generation only. Never call a paid image API or paid PDF scan as a fallback.",
+      "Inspect the packaged product-reference images and selected variant metadata, together with design-board.json when present. Do not rely on a retailer's default variant image.",
+      "When a floor plan or CAD/SketchUp source is supplied, establish a source-linked measured layout before generating a photo. Record dimensions, depth, orientation, openings and enclosure evidence in layout-review.json. Critical missing measurements block a source-accurate rendering; do not infer them from pixels or typical product sizes.",
+      "For source-constrained views, follow the same layout-first checks as Rendering Studio: inspect the measured plan, elevation and angled model, then compare the final image against both that model and the original sources. Do not call an image dimensionally verified from appearance alone.",
+      "Always include shower enclosure glass where a shower is present. If no glass design is specified, show clear frameless glass with hardware matching room fixtures, explicitly labeled as a presentation assumption; panel dimensions and hardware still require confirmation.",
+      "Return a review.json listing each reviewChecks category as pass, uncertain or fail, with evidence, unresolved details, and whether this is a concept. Stop after the initial generation and one targeted correction per view. Imported images remain review drafts until a designer checks them.",
       hasRoomPhoto
         ? "Use the attached room photo as the architectural and camera source of truth. Preserve walls, openings, cabinetry geometry, plumbing locations, proportions, and perspective unless the handoff explicitly says otherwise."
         : "No room photo is attached. Create a concept rendering for the named room and do not claim that it preserves an existing room layout.",
@@ -125,6 +151,12 @@ export function buildCodexRenderHandoffMarkdown(handoff: CodexRenderHandoff) {
           const details = [
             `**${index + 1}. ${selection.category}**`,
             selection.productName ? `Product: ${selection.productName}` : "Product: Needs review",
+            selection.imageFilename ? `Selected image: ${selection.imageFilename}` : "",
+            selection.sku ? `SKU / model: ${selection.sku}` : "",
+            selection.dimensions ? `Selected product dimensions: ${selection.dimensions}` : "",
+            selection.quantityUnit
+              ? `Measurement: ${selection.quantityUnit}; waste allowance: ${selection.wastePercent ?? 0}%`
+              : "",
             selection.vendor ? `Vendor: ${selection.vendor}` : "",
             selection.finish ? `Finish: ${selection.finish}` : "",
             selection.url ? `Product URL: ${selection.url}` : "",
@@ -219,6 +251,7 @@ ${rooms || "No prepared rooms were included. Stop and ask the designer to prepar
 }
 
 function attachmentPurpose(purpose: CodexRenderAttachment["purpose"]) {
+  if (purpose === "product-reference") return "Exact selected product image / material pattern";
   if (purpose === "room-photo") return "architectural and camera source of truth";
   if (purpose === "sketchup-view") return "CAD or SketchUp geometry and camera source of truth";
   if (purpose === "floor-plan") return "secondary layout constraint";

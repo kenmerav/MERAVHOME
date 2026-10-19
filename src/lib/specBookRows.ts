@@ -4,7 +4,14 @@ import { materialImageUrl } from "./materialImages";
 import { normalizeItemCategory } from "./roomTemplates";
 import { formatMoney, moneyValue } from "./money";
 import { materialPriceUnit, type ProductPriceUnit } from "./productPriceUnit";
-import { specQuantityInput, specQuantityUnit, type SpecQuantityUnit } from "./specQuantity";
+import {
+  specQuantityInput,
+  specQuantityUnit,
+  specOrderQuantity,
+  formatSpecQuantity,
+  type SpecQuantityUnit,
+} from "./specQuantity";
+import { cleanProductDetail } from "./productDetails";
 
 /** One source of displayed selection data for the spreadsheet and drawing views. */
 export type SpecSpreadsheetRow = {
@@ -23,6 +30,9 @@ export type SpecSpreadsheetRow = {
   color: string;
   quantity: string;
   quantityUnit: SpecQuantityUnit;
+  wastePercent?: number;
+  waste?: string;
+  orderQuantity?: string;
   dimensions: string;
   sku: string;
   clientPrice: string;
@@ -73,10 +83,13 @@ export function buildSpecSpreadsheetRows(
           : item.client_product_name || product?.name || "",
         productName: product?.name ?? "",
         vendor: product?.vendor ?? "",
-        finish: product?.finish ?? "",
-        color: item.color ?? "",
+        finish: cleanProductDetail(product?.finish),
+        color: cleanProductDetail(item.color),
         quantity: specQuantityInput(item),
         quantityUnit: specQuantityUnit(item),
+        wastePercent: item.waste_percent || 0,
+        waste: item.waste_percent ? `${item.waste_percent}%` : "",
+        orderQuantity: formatSpecQuantity({ ...item, quantity: specOrderQuantity(item) }),
         dimensions: product?.dimensions ?? "",
         sku: product?.sku ?? "",
         clientPrice: specPriceLabel(product?.price) ?? "",
