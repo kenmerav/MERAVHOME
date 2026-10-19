@@ -238,6 +238,12 @@ describe("automatic design-board corner branding", () => {
     }
   });
 
+  it("replaces slightly off-center legacy room headings", () => {
+    const page = { title: "Guest Bedroom", elements: [{ ...heading, x: 540, y: 90, width: 316.28, text: "guest bedroom" }] };
+    expect(designBoardContentElements(page)).toEqual([]);
+    expect(designBoardBranding(page).title).toBe("guest bedroom");
+  });
+
   it("keeps product content and notes while suppressing every duplicate legacy header", () => {
     const product = { ...logo, src: "/faucet.png", productId: "faucet" };
     const caption = { ...heading, width: 120, fontSize: 12, text: "Cabinet pull" };
