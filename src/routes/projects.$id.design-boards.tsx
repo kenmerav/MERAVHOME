@@ -37,6 +37,8 @@ import {
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { DesignBoardBranding } from "@/components/DesignBoardBranding";
+import { BOARD_LOGO_RECT, BOARD_TITLE_RECT, DESIGN_BOARD_LOGO, designBoardBranding } from "@/lib/designBoardBranding";
 import {
   Dialog,
   DialogContent,
@@ -1210,6 +1212,7 @@ function ProjectDesignBoardsPage() {
         const pageDataUrl = await renderDesignBoardPageToDataUrl(
           exportPages[index],
           BOARD_EXPORT_PIXEL_RATIO,
+          roomById.get(exportPages[index].roomId ?? "")?.name,
         );
         pdf.addImage(pageDataUrl, "PNG", 0, 0, BOARD_WIDTH, BOARD_HEIGHT, undefined, "SLOW");
       }
@@ -1222,7 +1225,7 @@ function ProjectDesignBoardsPage() {
     } finally {
       setExportingPdf(false);
     }
-  }, [exportingPdf, project?.name, visiblePages]);
+  }, [exportingPdf, project?.name, visiblePages, roomById]);
 
   const onlineUsers = useMemo(() => {
     const usersByIdentity = new Map<string, ActiveBoardUser>();
@@ -4081,6 +4084,8 @@ function ProjectDesignBoardsPage() {
                     style={{ width: BOARD_WIDTH * boardScale, height: BOARD_HEIGHT * boardScale }}
                   >
                     <div
+                      data-design-board-page={page.id}
+                      data-active-design-board-page={isActivePage || undefined}
                       className={cn(
                         "relative origin-top-left overflow-hidden bg-[#fbfaf7] shadow-[0_24px_80px_rgba(40,34,25,0.13)] transition",
                         isActivePage && "ring-2 ring-[#6d4cff]",
@@ -4130,6 +4135,8 @@ function ProjectDesignBoardsPage() {
                       {!isActivePage && isNearbyPage && (
                         <LightweightPagePreview page={page} pageNumber={pageIndex + 1} />
                       )}
+
+                      <DesignBoardBranding page={page} roomName={roomById.get(page.roomId ?? "")?.name} />
 
                       {isActivePage && pageElements.length === 0 && (
                         <div className="pointer-events-none absolute inset-8 flex items-center justify-center border border-dashed border-stone-200 text-center text-stone-300">
@@ -4347,6 +4354,7 @@ function ProjectDesignBoardsPage() {
                         <PageThumbnail
                           page={page}
                           pageNumber={index + 1}
+                          roomName={roomById.get(page.roomId ?? "")?.name}
                           renderImages={!virtualizeThumbnails || isNearSelected}
                         />
                       </button>
@@ -4831,6 +4839,7 @@ function ProjectDesignBoardsPage() {
                             page={selectedVersionPreviewPage}
                             pageNumber={1}
                           />
+                          <DesignBoardBranding page={selectedVersionPreviewPage} roomName={roomById.get(selectedVersionPreviewPage.roomId ?? "")?.name} />
                         </div>
                       </div>
                     </>
@@ -5269,10 +5278,12 @@ function LightweightPageElement({ element }: { element: BoardElement }) {
 function PageThumbnail({
   page,
   pageNumber,
+  roomName,
   renderImages = true,
 }: {
   page: BoardPage;
   pageNumber: number;
+  roomName?: string;
   renderImages?: boolean;
 }) {
   const scale = 0.058;
@@ -5334,6 +5345,7 @@ function PageThumbnail({
               )}
             </div>
           ))}
+          <DesignBoardBranding page={page} roomName={roomName} />
         </div>
       </div>
       <div className="max-w-[60px] pb-0.5">
@@ -7150,7 +7162,7 @@ async function imageSourceForCanvas(src: string) {
   return body.image as string;
 }
 
-async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1) {
+async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1, roomName?: string) {
   const canvas = document.createElement("canvas");
   const scale = Math.max(1, pixelRatio);
   canvas.width = BOARD_WIDTH * scale;
@@ -7180,6 +7192,17 @@ async function renderDesignBoardPageToDataUrl(page: BoardPage, pixelRatio = 1) {
         `Could not export "${page.title}": ${imageName} could not be loaded. Try exporting again.`,
       );
     }
+  }
+
+  const header = designBoardBranding(page, roomName);
+  if (header.showLogo) {
+    const logo = await loadExportImage(DESIGN_BOARD_LOGO);
+    ctx.drawImage(logo, BOARD_LOGO_RECT.x, BOARD_LOGO_RECT.y, BOARD_LOGO_RECT.width, BOARD_LOGO_RECT.height);
+  }
+  if (header.showTitle) {
+    drawWrappedCanvasText(ctx, header.title, BOARD_TITLE_RECT.x + BOARD_TITLE_RECT.width,
+      BOARD_TITLE_RECT.y + BOARD_TITLE_RECT.height / 2, BOARD_TITLE_RECT.width,
+      28, DEFAULT_BOARD_TEXT_FONT, DEFAULT_BOARD_TEXT_COLOR, "right", "middle", 2);
   }
 
   return canvas.toDataURL("image/png");
@@ -7399,7 +7422,7 @@ function drawCanvasTextWithLetterSpacing(
   y: number,
   letterSpacing: number,
 ) {
-  if (!letterSpacing || text.length <= 1 || ctx.textAlign !== "center") {
+  if (!letterSpacing || text.length <= 1) {
     ctx.fillText(text, x, y);
     return;
   }
@@ -7408,11 +7431,16 @@ function drawCanvasTextWithLetterSpacing(
   const widths = letters.map((letter) => ctx.measureText(letter).width);
   const totalWidth =
     widths.reduce((total, width) => total + width, 0) + letterSpacing * (letters.length - 1);
-  let cursor = x - totalWidth / 2;
+  const alignment = ctx.textAlign;
+  let cursor = alignment === "right" || alignment === "end"
+    ? x - totalWidth
+    : alignment === "center" ? x - totalWidth / 2 : x;
+  ctx.textAlign = "center";
   letters.forEach((letter, index) => {
     ctx.fillText(letter, cursor + widths[index] / 2, y);
     cursor += widths[index] + letterSpacing;
   });
+  ctx.textAlign = alignment;
 }
 
 function resolveCanvasFontFamily(fontFamily: string) {
