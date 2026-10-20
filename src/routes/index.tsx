@@ -14,7 +14,7 @@ import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canUseRoomDesign, canViewFinancials, isClientRole, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
+import { canManageStudio, canViewFinancials, isClientRole, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
@@ -1307,7 +1307,7 @@ export function NewProjectDialog() {
   const { data: roomDesignFlag } = useQuery({
     queryKey: ["studioFeatureFlag", "room_design_v2"],
     queryFn: () => db.getStudioFeatureFlag("room_design_v2"),
-    enabled: open && canUseRoomDesign(profile as UserProfile | null),
+    enabled: open && canManageStudio(profile as UserProfile | null),
   });
   const { data: unattachedInvoices = [] } = useQuery({
     queryKey: ["financialInvoices", "unattached"],
@@ -1331,7 +1331,7 @@ export function NewProjectDialog() {
     if (!name.trim() || !client.trim()) return toast.error("Project name and client are required");
     const roomNames = [...selected, ...others.map(o => o.trim()).filter(Boolean)];
     if (roomNames.length === 0) return toast.error("Select at least one room");
-    const selectedWorkflow = canUseRoomDesign(profile as UserProfile | null) ? designWorkflow : "legacy";
+    const selectedWorkflow = canManageStudio(profile as UserProfile | null) ? designWorkflow : "legacy";
 
     setBusy(true);
     try {
@@ -1434,7 +1434,7 @@ export function NewProjectDialog() {
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Client priorities, scope, references…" />
           </div>
 
-          {canUseRoomDesign(profile as UserProfile | null) && roomDesignFlag?.enabled === true && (
+          {canManageStudio(profile as UserProfile | null) && roomDesignFlag?.enabled === true && (
             <div className="space-y-3 border border-border bg-bone/25 p-4">
               <Label className="eyebrow">Design process</Label>
               <div className="grid gap-2 sm:grid-cols-2">
