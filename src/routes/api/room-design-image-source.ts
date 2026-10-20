@@ -59,6 +59,7 @@ export const Route = createFileRoute("/api/room-design-image-source")({
             imageUrl?: string;
             projectId?: string;
             roomId?: string;
+            purpose?: string;
           };
           if (!body.projectId || !body.roomId) {
             return json({ error: "projectId and roomId are required." }, 400);
@@ -66,6 +67,7 @@ export const Route = createFileRoute("/api/room-design-image-source")({
           const access = await requireRoomDesignPilotAccess(request, {
             projectId: body.projectId,
             roomId: body.roomId,
+            rendering: body.purpose === "render-handoff",
           });
           if ("error" in access) return access.error;
           if (!body.imageUrl) return json({ error: "A product image is required." }, 400);

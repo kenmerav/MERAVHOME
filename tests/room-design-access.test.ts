@@ -1,6 +1,13 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
-  profile: { id: "designer", role: "Employee", is_active: true, can_view_all_projects: false },
+  profile: {
+    id: "ken",
+    email: "ken@meravinteriors.com",
+    role: "Employee",
+    is_active: true,
+    can_view_all_projects: false,
+  },
+  authEmail: "ken@meravinteriors.com",
   assigned: true,
   enrolled: true,
   enabled: true,
@@ -10,7 +17,9 @@ const state = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     auth: {
-      getUser: async () => ({ data: { user: { id: "designer", is_anonymous: state.anonymous } } }),
+      getUser: async () => ({
+        data: { user: { id: "ken", email: state.authEmail, is_anonymous: state.anonymous } },
+      }),
     },
     from: (table: string) => {
       const chain: any = {
@@ -47,7 +56,14 @@ const request = () =>
 const scope = { projectId: "p", roomId: "r" };
 beforeEach(() =>
   Object.assign(state, {
-    profile: { id: "designer", role: "Employee", is_active: true, can_view_all_projects: false },
+    profile: {
+      id: "ken",
+      email: "ken@meravinteriors.com",
+      role: "Employee",
+      is_active: true,
+      can_view_all_projects: false,
+    },
+    authEmail: "ken@meravinteriors.com",
     assigned: true,
     enrolled: true,
     enabled: true,
@@ -55,11 +71,8 @@ beforeEach(() =>
     anonymous: false,
   }),
 );
-it("allows an assigned active designer to prepare products and images", async () =>
-  expect(await requireRoomDesignPilotAccess(request(), scope)).toHaveProperty(
-    "user.id",
-    "designer",
-  ));
+it("allows Ken’s active assigned account to prepare products and images", async () =>
+  expect(await requireRoomDesignPilotAccess(request(), scope)).toHaveProperty("user.id", "ken"));
 it("denies a designer's unassigned project at the server boundary", async () => {
   state.assigned = false;
   const result = await requireRoomDesignPilotAccess(request(), scope);
@@ -68,10 +81,28 @@ it("denies a designer's unassigned project at the server boundary", async () => 
 it("allows employees already granted all-project access", async () => {
   state.assigned = false;
   state.profile.can_view_all_projects = true;
-  expect(await requireRoomDesignPilotAccess(request(), scope)).toHaveProperty(
-    "user.id",
-    "designer",
-  );
+  expect(await requireRoomDesignPilotAccess(request(), scope)).toHaveProperty("user.id", "ken");
+});
+it.each(["katie@meravinteriors.com", "brynn@meravinteriors.com"])(
+  "allows the normal flow but denies rendering to other team accounts: %s",
+  async (email) => {
+    state.profile.email = email;
+    state.authEmail = email;
+    state.profile.role = "Admin";
+    expect(await requireRoomDesignPilotAccess(request(), scope)).toHaveProperty("user.id");
+    expect(
+      await requireRoomDesignPilotAccess(request(), { ...scope, rendering: true }),
+    ).toHaveProperty("error.status", 403);
+  },
+);
+it("allows Ken to render but rejects his profile email on another authenticated account", async () => {
+  expect(
+    await requireRoomDesignPilotAccess(request(), { ...scope, rendering: true }),
+  ).toHaveProperty("user.id");
+  state.authEmail = "brynn@meravinteriors.com";
+  expect(
+    await requireRoomDesignPilotAccess(request(), { ...scope, rendering: true }),
+  ).toHaveProperty("error.status", 403);
 });
 it.each(["Client", "Contractor"])("denies external %s users", async (role) => {
   state.profile.role = role;

@@ -7,7 +7,16 @@ type TileSelection = {
   notes?: string;
 };
 export type RoomDesignTileField =
-  "surface" | "location" | "groutColor" | "jointWidth" | "layout" | "direction";
+  | "surface"
+  | "location"
+  | "groutColor"
+  | "jointWidth"
+  | "layout"
+  | "direction"
+  | "edgeTreatment"
+  | "edgeProduct"
+  | "edgeFinish"
+  | "edgeSize";
 const labels = {
   surface: "Installation surface",
   location: "Tile installation area",
@@ -15,6 +24,10 @@ const labels = {
   jointWidth: "Grout joint width",
   layout: "Tile layout",
   direction: "Tile lay direction",
+  edgeTreatment: "Tile edge treatment",
+  edgeProduct: "Tile edge product / profile",
+  edgeFinish: "Tile edge finish",
+  edgeSize: "Tile edge size",
 };
 const lines = (notes = "") => notes.replace(/\\n/g, "\n").split("\n");
 
@@ -37,6 +50,10 @@ export function roomDesignTileFields(notes = "") {
     jointWidth: read("jointWidth") || legacyParts?.[2]?.replace(/\s+joints?\.?$/i, "") || "",
     layout: read("layout"),
     direction: read("direction"),
+    edgeTreatment: read("edgeTreatment"),
+    edgeProduct: read("edgeProduct"),
+    edgeFinish: read("edgeFinish"),
+    edgeSize: read("edgeSize"),
   };
 }
 
@@ -103,6 +120,12 @@ export function roomDesignTileSurface(
   item: TileSelection,
 ): "tile" | "other" | "unknown" | "unrelated" {
   const productName = item.productName || item.catalogProductName || "";
+  if (/tile installation defaults/i.test(item.category)) return "tile";
+  if (
+    /\b(?:paint|limewash|roman clay|plaster)\b/i.test(productName) &&
+    !/\b(?:tile|mosaic|porcelain|ceramic)\b/i.test(productName)
+  )
+    return "other";
   // A known wood floor, slab backsplash or ceramic fixture must not acquire tile requirements.
   if (
     /\b(hardwood|engineered wood|wood flooring|vinyl|laminate|wallpaper|slab|wood(?:en)? panels?|mdf|pendants?|sconces?|lamps?|chandeliers?)\b/i.test(
@@ -133,6 +156,26 @@ export function roomDesignTileIssues(item: TileSelection) {
   if (surface !== "tile") return [];
   const issues: string[] = [];
   const fields = roomDesignTileFields(item.notes);
+  if (/tile installation defaults/i.test(item.category)) {
+    if (
+      [
+        fields.groutColor,
+        fields.jointWidth,
+        fields.layout,
+        fields.direction,
+        fields.edgeTreatment,
+      ].some((value) => pending.test(value))
+    )
+      issues.push("Confirm the remaining shared tile decisions.");
+    if (
+      ["Metal trim", "Pencil / bullnose"].includes(fields.edgeTreatment) &&
+      [fields.edgeProduct, fields.edgeFinish, fields.edgeSize].some(
+        (value) => !value.trim() || pending.test(value),
+      )
+    )
+      issues.push("Confirm the tile edge product, finish and size.");
+    return issues;
+  }
   const location = roomDesignTileLocation(item);
   if (!location.trim() || pending.test(location)) issues.push("Confirm where this tile is used.");
   const incompleteGrout =
@@ -148,5 +191,13 @@ export function roomDesignTileIssues(item: TileSelection) {
     issues.push("Enter the tile layout / pattern or approved drawing reference.");
   if (!roomDesignTileDirectionConfirmed(item.notes))
     issues.push("Enter the tile lay direction or approved drawing reference.");
+  if (pending.test(fields.edgeTreatment)) issues.push("Confirm the tile edge treatment.");
+  if (
+    /^(?:Metal trim|Pencil \/ bullnose)$/i.test(fields.edgeTreatment) &&
+    [fields.edgeProduct, fields.edgeFinish, fields.edgeSize].some(
+      (value) => !value.trim() || pending.test(value),
+    )
+  )
+    issues.push("Confirm the tile edge product, finish and size.");
   return issues;
 }

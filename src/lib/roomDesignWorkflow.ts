@@ -1,6 +1,7 @@
 import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
 import { cleanProductDetail } from "./productDetails";
 import { productAwareQuantityUnit } from "./roomDesignReview";
+import { roomDesignInitialQuantity, roomItemStatus } from "./roomDesignDetails";
 
 export type RoomDesignMethod = "manual" | "links" | "concept";
 
@@ -87,6 +88,8 @@ const PAGE_PREFIX = "room-design-v2";
 
 export function roomDesignDefaultQuantityUnit(category: string, productName = "") {
   if (productName) return productAwareQuantityUnit(category, productName);
+  if (/stair runner/i.test(category)) return "linear ft";
+  if (/power/i.test(category)) return "each";
   if (/flooring|tile|backsplash/i.test(category)) return "sq ft";
   if (/baseboard|casing|transition/i.test(category)) return "linear ft";
   if (/countertop/i.test(category)) return "slab";
@@ -125,7 +128,7 @@ export function createDefaultRoomDesignWorkflowState(roomName: string): RoomDesi
       category: requiredItem.label,
       url: "",
       group: classifyBoardGroup(requiredItem.label),
-      quantity: 1,
+      quantity: roomDesignInitialQuantity(requiredItem.label),
       notes: "",
     })),
     linksRoomName: roomName,
@@ -191,6 +194,40 @@ export function reconcileRoomDesignChecklist(
       )
     : [];
   const missingLinks = [...missingTub, ...missingPowderBathroomLinks];
+  const newBathroomCategories = new Set([
+    "Recessed lighting",
+    "Exhaust fan",
+    "Toilet paper holder",
+    "Hand towel holder",
+    "Towel bar",
+    "Shower glass / enclosure",
+    "Shower glass hardware",
+    "Shower niche",
+    "Shower bench",
+    "Shower curb / threshold",
+    "Shower rough-in valve",
+  ]);
+  const upgradedRoom =
+    !isPrimaryBathroom &&
+    !isPowderBathroom &&
+    /bath|restroom|washroom|laundry|utility|mud.?room|built.?in|fireplace|project.?wide|whole.?home|whole.?house/i.test(
+      roomName,
+    );
+  const additions = createDefaultRoomDesignWorkflowState(roomName).links.filter(
+    (link) =>
+      (upgradedRoom ||
+        [
+          "Ceiling fan",
+          "Stair runner",
+          "Exterior paint touch-ups",
+          "Tile installation defaults",
+        ].includes(link.category) ||
+        ((isPrimaryBathroom || isPowderBathroom) && newBathroomCategories.has(link.category))) &&
+      !ids.has(link.id) &&
+      !categories.has(normalizedCategory(link.category)) &&
+      !missingLinks.some((other) => other.id === link.id),
+  );
+  missingLinks.push(...additions);
   const links = [...renamedLinks, ...missingLinks];
   const linkBySelectionId = new Map(links.map((link) => [`link-${link.id}`, link]));
   const selections = state.selections.map((selection) => {
@@ -239,7 +276,7 @@ export function addCustomRoomDesignProductType({
     category,
     url: "",
     group: classifyBoardGroup(category),
-    quantity: 1,
+    quantity: roomDesignInitialQuantity(category),
     notes: "",
     custom: true,
     saveToTemplate: false,
@@ -664,7 +701,10 @@ export function mergeRoomDesignSelectionsIntoBoard({
 }) {
   const base = normalizeBoardState(boardState);
   const usableSelections = selections.filter(
-    (selection) => selection.state !== "draft" && Boolean(selection.imageUrl),
+    (selection) =>
+      selection.state !== "draft" &&
+      roomItemStatus(selection) !== "Not needed" &&
+      (Boolean(selection.imageUrl) || roomItemStatus(selection) !== "Choose product"),
   );
   const count = Math.max(
     1,
@@ -703,6 +743,25 @@ export function mergeRoomDesignSelectionsIntoBoard({
         const id = generatedElementId(roomId, selection.id);
         const existing = priorElements.get(id);
         const stockPlacement = placement(index, pageSelections.length, selection.category);
+        if (!selection.imageUrl) {
+          return {
+            ...(existing ?? {}),
+            id,
+            type: "text" as const,
+            x: existing?.x ?? stockPlacement.x,
+            y: existing?.y ?? stockPlacement.y,
+            width: existing?.width ?? stockPlacement.width,
+            height: existing?.height ?? stockPlacement.height,
+            zIndex: existing?.zIndex ?? 10 + index,
+            fontSize: 14,
+            color: "#171511",
+            text: `${selection.category}\n${roomItemStatus(selection)}\n${selection.notes || ""}`,
+            label: selection.category,
+            notes: selection.notes || null,
+            visible: true,
+            materialExcludeFromMaterials: true,
+          };
+        }
         const originalSrc = selection.originalImageUrl || selection.imageUrl;
         const hasPreparedCutout = Boolean(
           selection.originalImageUrl && selection.originalImageUrl !== selection.imageUrl,
@@ -751,7 +810,8 @@ export function mergeRoomDesignSelectionsIntoBoard({
           materialItemId: null,
           materialRoomId: roomId,
           materialCategory: selection.category,
-          materialQuantity: selection.quantity === null ? null : positiveNumber(selection.quantity, 1),
+          materialQuantity:
+            selection.quantity === null ? null : positiveNumber(selection.quantity, 1),
           materialQuantityTbd: selection.quantity === null,
           materialQuantityUnit:
             selection.quantityUnit || roomDesignDefaultQuantityUnit(selection.category),
@@ -760,7 +820,10 @@ export function mergeRoomDesignSelectionsIntoBoard({
           materialDimensions: selection.dimensions || null,
           materialInfoNotNeeded: false,
           materialInfoSkipApproved: false,
-          materialExcludeFromMaterials: false,
+          materialExcludeFromMaterials:
+            existing?.materialExcludeFromMaterials === true ||
+            roomItemStatus(selection) === "Instructions only" ||
+            roomItemStatus(selection) === "TBD",
         };
       }),
     );

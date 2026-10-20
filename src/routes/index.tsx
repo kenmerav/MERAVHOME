@@ -14,7 +14,7 @@ import { PRESET_ROOMS, templateForRoomName } from "@/lib/roomTemplates";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { canManageStudio, canViewFinancials, isClientRole, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
+import { canUseRoomDesign, canViewFinancials, isClientRole, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { ServiceInvoiceCreator } from "@/components/ServiceInvoiceCreator";
 import { TimelineCreator } from "@/components/TimelineCreator";
 import { formatMoney } from "@/lib/money";
@@ -1307,7 +1307,7 @@ export function NewProjectDialog() {
   const { data: roomDesignFlag } = useQuery({
     queryKey: ["studioFeatureFlag", "room_design_v2"],
     queryFn: () => db.getStudioFeatureFlag("room_design_v2"),
-    enabled: open && canManageStudio(profile as UserProfile | null),
+    enabled: open && canUseRoomDesign(profile as UserProfile | null),
   });
   const { data: unattachedInvoices = [] } = useQuery({
     queryKey: ["financialInvoices", "unattached"],
@@ -1331,6 +1331,7 @@ export function NewProjectDialog() {
     if (!name.trim() || !client.trim()) return toast.error("Project name and client are required");
     const roomNames = [...selected, ...others.map(o => o.trim()).filter(Boolean)];
     if (roomNames.length === 0) return toast.error("Select at least one room");
+    const selectedWorkflow = canUseRoomDesign(profile as UserProfile | null) ? designWorkflow : "legacy";
 
     setBusy(true);
     try {
@@ -1339,7 +1340,7 @@ export function NewProjectDialog() {
         client_name: client.trim(),
         project_type: "Whole Home",
         design_notes: notes.trim() || undefined,
-        design_workflow_version: designWorkflow,
+        design_workflow_version: selectedWorkflow,
       });
       if (!p) throw new Error("Could not create project");
       if (invoiceId) {
@@ -1359,7 +1360,7 @@ export function NewProjectDialog() {
         if (!firstRoomId) firstRoomId = room.id;
         await db.updateRoom(room.id, { sort_order: i });
         const tpl = templateForRoomName(rn);
-        if (designWorkflow === "legacy" && tpl.length > 0) {
+        if (selectedWorkflow === "legacy" && tpl.length > 0) {
           await db.bulkInsertMaterialItems(
             tpl.map((t, idx) => ({
               room_id: room.id,
@@ -1392,7 +1393,7 @@ export function NewProjectDialog() {
       qc.invalidateQueries({ queryKey: ["projectTimelines", p.id] });
       setOpen(false);
       reset();
-      if (designWorkflow === "room_design_v2" && firstRoomId) {
+      if (selectedWorkflow === "room_design_v2" && firstRoomId) {
         await navigate({
           to: "/projects/$id/room-design",
           params: { id: p.id },
@@ -1433,7 +1434,7 @@ export function NewProjectDialog() {
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Client priorities, scope, references…" />
           </div>
 
-          {canManageStudio(profile as UserProfile | null) && roomDesignFlag?.enabled === true && (
+          {canUseRoomDesign(profile as UserProfile | null) && roomDesignFlag?.enabled === true && (
             <div className="space-y-3 border border-border bg-bone/25 p-4">
               <Label className="eyebrow">Design process</Label>
               <div className="grid gap-2 sm:grid-cols-2">

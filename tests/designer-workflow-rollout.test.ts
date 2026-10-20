@@ -159,7 +159,13 @@ describe("designer workflow round trip", () => {
     expect(roomDesignOrderReady({ ...product, quantity: null })).toBe(false);
     expect(roomDesignOrderReady({ ...product, sku: undefined })).toBe(false);
     expect(roomDesignOrderReady(product)).toBe(false);
-    expect(roomDesignOrderReady({ ...product, notes: "Grout color: MAPEI Avalanche. Grout joint width: 1/8 inch. Tile layout: Vertical straight set." })).toBe(true);
+    expect(
+      roomDesignOrderReady({
+        ...product,
+        notes:
+          "Grout color: MAPEI Avalanche. Grout joint width: 1/8 inch. Tile layout: Vertical straight set.",
+      }),
+    ).toBe(true);
   });
   it("assigns wall tile an area unit without misclassifying paint", () => {
     expect(productAwareQuantityUnit("Wall finish", product.productName)).toBe("sq ft");
@@ -189,11 +195,23 @@ describe("designer workflow round trip", () => {
     expect(handoff.instructions.join(" ")).toContain("Critical missing measurements block");
     expect(handoff.instructions.join(" ")).toContain("shower enclosure glass");
   });
-  it("enables active designers while keeping external users and private Rendering Studio excluded", () => {
+  it("keeps Room Design available to the team and Rendering Studio private to Ken", () => {
+    expect(canUseRoomDesign({ role: "Admin", is_active: true })).toBe(true);
     expect(canUseRoomDesign({ role: "Employee", is_active: true })).toBe(true);
+    expect(
+      canUseRenderingStudio({ role: "Admin", is_active: true, email: "ken@meravinteriors.com" }),
+    ).toBe(true);
+    expect(
+      canUseRenderingStudio({
+        role: "Employee",
+        is_active: true,
+        email: "brynn@meravinteriors.com",
+      }),
+    ).toBe(false);
     expect(canUseRoomDesign({ role: "Client", is_active: true })).toBe(false);
     expect(canUseRoomDesign({ role: "Contractor", is_active: true })).toBe(false);
-    expect(canUseRoomDesign({ role: "Employee", is_active: false })).toBe(false);
+    expect(canUseRoomDesign({ role: "Admin", is_active: false })).toBe(false);
+    expect(canUseRoomDesign(null)).toBe(false);
     expect(
       canUseRenderingStudio({ role: "Employee", is_active: true, email: "designer@example.com" }),
     ).toBe(false);

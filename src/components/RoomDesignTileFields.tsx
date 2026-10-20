@@ -33,7 +33,11 @@ export function RoomDesignTileFields({
   const item = { category, productName, notes };
   const surface = roomDesignTileSurface(item);
   if (surface === "unrelated") return null;
+  // Generic wall/floor rows should wait for the gathered product before asking
+  // whether it needs tile installation details. Explicit tile rows still open immediately.
+  if (surface === "unknown" && !productName?.trim()) return null;
   const fields = roomDesignTileFields(notes);
+  const isProjectDefault = /tile installation defaults/i.test(category);
   const issues = roomDesignTileIssues(item);
   const chooseSurface = roomDesignTileSurface({ ...item, notes: "" }) === "unknown";
   if (surface === "other" && !chooseSurface) return null;
@@ -48,16 +52,26 @@ export function RoomDesignTileFields({
         aria-label={`${category} installation details`}
       >
         <span className="min-w-0">
-          <span className="font-medium">Tile installation details</span>
+          <span className="font-medium">
+            {surface === "tile" ? "Tile installation details" : "Material type"}
+          </span>
           <span className={issues.length ? "ml-2 text-amber-800" : "ml-2 text-muted-foreground"}>
             {issues.length
               ? `${issues.length} ${issues.length === 1 ? "decision" : "decisions"} needed`
-              : surface === "other"
-                ? "Not tile"
-                : "Complete"}
+              : isProjectDefault
+                ? "Shared defaults"
+                : surface === "other"
+                  ? "Not tile"
+                  : "Complete"}
           </span>
           <span className="mt-1 block truncate text-muted-foreground">
-            {[fields.groutColor, fields.jointWidth, fields.layout, fields.direction]
+            {[
+              fields.groutColor,
+              fields.jointWidth,
+              fields.layout,
+              fields.direction,
+              fields.edgeTreatment,
+            ]
               .filter(Boolean)
               .join(" · ") ||
               (surface === "unknown"
@@ -102,39 +116,93 @@ export function RoomDesignTileFields({
                   ["layout", "Tile layout / pattern", "e.g. Stacked or 1/3 running bond"],
                   ["direction", "Tile lay direction", "e.g. Vertical or parallel to hallway"],
                 ] as const
-              ).map(([field, label, placeholder]) => (
-                <label key={field} className="block text-xs">
-                  {label}
-                  <Input
-                    aria-label={`${category} ${label}`}
-                    value={fields[field]}
-                    disabled={disabled}
-                    maxLength={500}
-                    placeholder={
-                      field === "location" && roomDesignTileLocation(item)
-                        ? `${roomDesignTileLocation(item)} (from item type)`
-                        : placeholder
-                    }
-                    onChange={(e) =>
-                      onChange(updateRoomDesignTileNotes(notes, field, e.target.value))
-                    }
-                    className="mt-1"
-                  />
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onChange(updateRoomDesignTileNotes(notes, field, "TBD"))}
-                    className="mt-1 text-[10px] underline underline-offset-2 disabled:opacity-50"
-                    aria-label={`${category} mark ${label} TBD`}
-                  >
-                    Decide later · TBD
-                  </button>
-                </label>
-              ))}
+              )
+                .filter(([field]) => !isProjectDefault || field !== "location")
+                .map(([field, label, placeholder]) => (
+                  <label key={field} className="block text-xs">
+                    {label}
+                    <Input
+                      aria-label={`${category} ${label}`}
+                      value={field === "location" ? roomDesignTileLocation(item) : fields[field]}
+                      disabled={disabled}
+                      maxLength={500}
+                      placeholder={placeholder}
+                      onChange={(e) =>
+                        onChange(updateRoomDesignTileNotes(notes, field, e.target.value))
+                      }
+                      className="mt-1"
+                    />
+                    {field === "location" && !fields.location && roomDesignTileLocation(item) ? (
+                      <span className="mt-1 block text-[10px] text-muted-foreground">
+                        From item type
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onChange(updateRoomDesignTileNotes(notes, field, "TBD"))}
+                        className="mt-1 text-[10px] underline underline-offset-2 disabled:opacity-50"
+                        aria-label={`${category} mark ${label} TBD`}
+                      >
+                        Decide later · TBD
+                      </button>
+                    )}
+                  </label>
+                ))}
             </div>
+            <label className="block text-xs">
+              Exposed tile edges
+              <select
+                aria-label={`${category} tile edge treatment`}
+                disabled={disabled}
+                value={fields.edgeTreatment}
+                onChange={(event) =>
+                  onChange(updateRoomDesignTileNotes(notes, "edgeTreatment", event.target.value))
+                }
+                className="mt-1 block h-9 w-full border border-border bg-background px-2"
+              >
+                <option value="">Choose if applicable</option>
+                {[
+                  "No exposed edges",
+                  "Metal trim",
+                  "Pencil / bullnose",
+                  "Mitered edges",
+                  "Factory-finished edge",
+                  "TBD",
+                ].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            {["Metal trim", "Pencil / bullnose"].includes(fields.edgeTreatment) && (
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(
+                  [
+                    ["edgeProduct", "Edge product / profile", "Exact trim product or profile"],
+                    ["edgeFinish", "Edge finish / color", "Exact selected trim finish"],
+                    ["edgeSize", "Edge size", "Match tile thickness / profile"],
+                  ] as const
+                ).map(([field, label, placeholder]) => (
+                  <label key={field} className="block text-xs">
+                    {label}
+                    <Input
+                      aria-label={`${category} ${label}`}
+                      disabled={disabled}
+                      value={fields[field]}
+                      placeholder={placeholder}
+                      onChange={(event) =>
+                        onChange(updateRoomDesignTileNotes(notes, field, event.target.value))
+                      }
+                      className="mt-1"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
-              You can keep gathering products with TBD decisions. They stay flagged until confirmed.
-              An approved drawing or marked reference can define the layout and direction.
+              {isProjectDefault
+                ? "Set only the choices shared across the project. Each room can keep its own exceptions."
+                : "You can keep gathering products with TBD decisions. They stay flagged until confirmed. An approved drawing or marked reference can define the layout and direction."}
             </p>
             {notes && (
               <details className="text-xs text-muted-foreground">

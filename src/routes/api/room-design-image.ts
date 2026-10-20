@@ -45,6 +45,9 @@ export const Route = createFileRoute("/api/room-design-image")({
           const access = await requireRoomDesignPilotAccess(request, {
             projectId: body.projectId,
             roomId: body.roomId,
+            rendering: ["room-photo", "floor-plan", "sketchup-view", "completed-render"].includes(
+              body.kind,
+            ),
           });
           if ("error" in access) return access.error;
           if (!IMAGE_KINDS.includes(body.kind)) {

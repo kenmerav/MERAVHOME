@@ -35,6 +35,8 @@ it("keeps an extension flooring import when the open page saves an unrelated bac
 });
 it("keeps a locally edited quantity while adopting the imported link for the same slot", () => {
   const base = createDefaultRoomDesignWorkflowState("Kitchen");
+  // The imported quantity is unchanged from the user's saved base quantity.
+  base.links.find((x) => x.id === "flooring")!.quantity = 1;
   const local = structuredClone(base);
   local.links.find((x) => x.id === "flooring")!.quantity = 100;
   const remote = mergeExtensionProductIntoRoomDesignWorkflow({
@@ -45,6 +47,17 @@ it("keeps a locally edited quantity while adopting the imported link for the sam
   expect(
     mergeRoomDesignEdits(base, local, remote).links.find((x) => x.id === "flooring")?.quantity,
   ).toBe(100);
+});
+it("rejects a simultaneous quantity choice when an extension changes TBD to a number", () => {
+  const base = createDefaultRoomDesignWorkflowState("Kitchen");
+  const local = structuredClone(base);
+  local.links.find((x) => x.id === "flooring")!.quantity = 100;
+  const remote = mergeExtensionProductIntoRoomDesignWorkflow({
+    state: base,
+    itemKey: "flooring",
+    product,
+  }).state;
+  expect(() => mergeRoomDesignEdits(base, local, remote)).toThrow("flooring: quantity");
 });
 it("rejects conflicting product choices instead of overwriting either silently", () => {
   const base = createDefaultRoomDesignWorkflowState("Kitchen");

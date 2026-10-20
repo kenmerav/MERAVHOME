@@ -49,6 +49,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RoomDesignTileFields } from "@/components/RoomDesignTileFields";
+import { RoomDesignItemDetails } from "@/components/RoomDesignItemDetails";
+import {
+  roomDesignInitialQuantity,
+  roomItemStatus,
+  roomItemNeedsProduct,
+  roomDetailValue,
+  roomScopeValue,
+  updateRoomScope,
+  isRoomScopeItem,
+  synchronizeRoomSelectionDetails,
+  roomItemShowsTileFields,
+  roomProjectDefaults,
+  markRoomRelatedChanges,
+  roomDesignScrapedNotes,
+} from "@/lib/roomDesignDetails";
 import { RoomDesignQuantityInput } from "@/components/RoomDesignQuantityInput";
 import { roomDesignQuantityLabel } from "@/lib/roomDesignQuantity";
 import { Label } from "@/components/ui/label";
@@ -99,11 +114,13 @@ import {
   roomDesignGeneratedPageCount,
   type RoomDesignWorkflowState,
 } from "@/lib/roomDesignWorkflow";
-import { canUseRoomDesign } from "@/lib/permissions";
+import { canUseRoomDesign, canUseRenderingStudio } from "@/lib/permissions";
 import { cleanProductDetail } from "@/lib/productDetails";
 import {
   productAwareQuantityUnit,
   roomDesignSelectionIssues,
+  roomDesignProductGaps,
+  roomDesignStepForAccess,
   roomDesignOrderReady,
   retainRoomDesignMeasurements,
 } from "@/lib/roomDesignReview";
@@ -130,16 +147,7 @@ type StartMethod = "manual" | "links" | "concept";
 type SelectionSource = "Manual board" | "Product link" | "Product catalog" | "Concept match";
 type SelectionState = "draft" | "selected" | "locked";
 type QuantityUnit =
-  | "each"
-  | "pair"
-  | "set"
-  | "sq ft"
-  | "linear ft"
-  | "box"
-  | "carton"
-  | "slab"
-  | "roll"
-  | "gallon";
+  "each" | "pair" | "set" | "sq ft" | "linear ft" | "box" | "carton" | "slab" | "roll" | "gallon";
 
 const QUANTITY_UNITS: Array<{ value: QuantityUnit; label: string }> = [
   { value: "each", label: "Each" },
@@ -316,7 +324,7 @@ function linksForRoom(roomName: string): DemoLink[] {
       category,
       url: "",
       group: classifyBoardGroup(category),
-      quantity: 1,
+      quantity: roomDesignInitialQuantity(category),
       notes: "",
     };
   });
@@ -628,28 +636,29 @@ function RoomDesignPage() {
   const { data: workflows = [], isLoading: workflowsLoading } = useQuery({
     queryKey: ["roomDesignWorkflows", id],
     queryFn: async () => (await db.listRoomDesignWorkflows(id)) ?? [],
-    enabled: project?.design_workflow_version === "room_design_v2",
+    enabled: canUseRoomDesign(profile) && project?.design_workflow_version === "room_design_v2",
     refetchInterval: 5000,
     refetchOnWindowFocus: "always",
   });
   const { data: roomImages = [] } = useQuery({
     queryKey: ["projectRoomImages", id],
     queryFn: async () => (await db.listProjectRoomImages(id)) ?? [],
-    enabled: project?.design_workflow_version === "room_design_v2",
+    enabled: canUseRoomDesign(profile) && project?.design_workflow_version === "room_design_v2",
   });
   const { data: materialItems = [] } = useQuery({
     queryKey: ["materialItems", id],
     queryFn: async () => (await db.listMaterialItemsByProject(id)) ?? [],
-    enabled: project?.design_workflow_version === "room_design_v2",
+    enabled: canUseRoomDesign(profile) && project?.design_workflow_version === "room_design_v2",
   });
   const { data: featureFlag } = useQuery({
     queryKey: ["studioFeatureFlag", "room_design_v2"],
     queryFn: () => db.getStudioFeatureFlag("room_design_v2"),
+    enabled: canUseRoomDesign(profile),
   });
   const { data: designBoard } = useQuery({
     queryKey: ["designBoard", id],
     queryFn: () => db.getDesignBoard(id),
-    enabled: project?.design_workflow_version === "room_design_v2",
+    enabled: canUseRoomDesign(profile) && project?.design_workflow_version === "room_design_v2",
   });
 
   if (profileLoading || projectLoading || roomsLoading || workflowsLoading) {
@@ -675,7 +684,7 @@ function RoomDesignPage() {
       <AppShell>
         <div className="page-pad">
           <div className="eyebrow">Room Design Pilot</div>
-          <h1 className="mt-3 font-display text-5xl">Admin access required</h1>
+          <h1 className="mt-3 font-display text-5xl">Studio team access required</h1>
           <p className="mt-4 text-sm text-muted-foreground">
             Room Design is available to active Studio designers and administrators on their
             projects.
@@ -757,14 +766,22 @@ function RoomDesignWorkflow({
     initialRoom.id,
   );
   const projectId = project.id;
+  const renderingEnabled = canUseRenderingStudio(profile);
   const [rooms, setRooms] = useState(initialRooms);
   const [roomId, setRoomId] = useState(initialRoom.id);
   const [method, setMethod] = useState<StartMethod>(initialDraft.method);
-  const [step, setStep] = useState(() => {
-    if (search.stage === "render") return 3;
+  const [step, setRawStep] = useState(() => {
+    if (search.stage === "render") return roomDesignStepForAccess(3, renderingEnabled);
     const savedStage = workflowByRoom.get(initialRoom.id)?.state?.stage;
-    return typeof savedStage === "number" ? Math.min(5, Math.max(0, savedStage)) : 0;
+    return roomDesignStepForAccess(
+      typeof savedStage === "number" ? Math.min(5, Math.max(0, savedStage)) : 0,
+      renderingEnabled,
+    );
   });
+  const setStep = (next: number) => setRawStep(roomDesignStepForAccess(next, renderingEnabled));
+  useEffect(() => {
+    if (!renderingEnabled && step === 3) setRawStep(4);
+  }, [renderingEnabled, step]);
   const [links, setLinks] = useState(initialDraft.links);
   const [linksRoomName, setLinksRoomName] = useState(initialDraft.linksRoomName);
   const [selections, setSelections] = useState<DemoSelection[]>(initialDraft.selections);
@@ -806,29 +823,56 @@ function RoomDesignWorkflow({
   );
   const [newRoomName, setNewRoomName] = useState("");
   const activeRoom = rooms.find((room) => room.id === roomId);
+  const defaultsRoom = rooms.find((room) =>
+    /^(?:project.?wide finishes|materials throughout|whole.?home finishes)$/i.test(
+      room.name.trim(),
+    ),
+  );
+  const projectDefaultLinks =
+    defaultsRoom && defaultsRoom.id !== roomId ? (roomDrafts[defaultsRoom.id]?.links ?? []) : [];
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const [saveError, setSaveError] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualBoardHydratedRef = useRef(false);
-  const workflowBases = useRef(new Map(initialRooms.map(room => {
-    const saved = workflowByRoom.get(room.id);
-    return [room.id, {updatedAt:saved?.updated_at ?? null,state:serializeRoomWorkflowDraft(
-      createSavedRoomWorkflowDraft(room.name,saved?.state,roomImages,room.id),savedRoomWorkflowStage(saved?.state))}] as const;
-  })));
+  const workflowBases = useRef(
+    new Map(
+      initialRooms.map((room) => {
+        const saved = workflowByRoom.get(room.id);
+        return [
+          room.id,
+          {
+            updatedAt: saved?.updated_at ?? null,
+            state: serializeRoomWorkflowDraft(
+              createSavedRoomWorkflowDraft(room.name, saved?.state, roomImages, room.id),
+              savedRoomWorkflowStage(saved?.state),
+            ),
+          },
+        ] as const;
+      }),
+    ),
+  );
 
   useEffect(() => {
     if (!linkedCatalogIdsKey) return;
     let cancelled = false;
     void db.listCatalog().then((catalog) => {
       if (cancelled || !catalog) return;
-      const catalogNames = new Map(catalog.map((product) => [product.id, product.name]));
+      const catalogProducts = new Map(catalog.map((product) => [product.id, product]));
       setLinks((current) => {
         let changed = false;
         const next = current.map((link) => {
-          const currentName = link.productId ? catalogNames.get(link.productId) : undefined;
-          if (!currentName || currentName === link.catalogProductName) return link;
+          const product = link.productId ? catalogProducts.get(link.productId) : undefined;
+          if (!product) return link;
+          const currentName = product.name;
+          const notes = roomDesignScrapedNotes(
+            link.notes,
+            link.category,
+            product.name,
+            product.finish || "",
+          );
+          if (currentName === link.catalogProductName && notes === link.notes) return link;
           changed = true;
-          return { ...link, catalogProductName: currentName };
+          return { ...link, catalogProductName: currentName, notes };
         });
         return changed ? next : current;
       });
@@ -856,18 +900,41 @@ function RoomDesignWorkflow({
   const persistDraft = async (targetRoomId: string, draft: RoomWorkflowDraft, stage = step) => {
     setSaveStatus("saving");
     try {
-      const local = serializeRoomWorkflowDraft(draft,stage);
-      const base = workflowBases.current.get(targetRoomId)?.state ?? serializeRoomWorkflowDraft(createRoomWorkflowDraft(draft.linksRoomName),0);
+      const local = serializeRoomWorkflowDraft(draft, stage);
+      const base =
+        workflowBases.current.get(targetRoomId)?.state ??
+        serializeRoomWorkflowDraft(createRoomWorkflowDraft(draft.linksRoomName), 0);
       let confirmed = false;
-      for (let attempt=0;attempt<3;attempt++) {
-        const latest = await db.getRoomDesignWorkflow(projectId,targetRoomId);
-        const remote = serializeRoomWorkflowDraft(createSavedRoomWorkflowDraft(draft.linksRoomName,latest?.state,roomImages,targetRoomId),savedRoomWorkflowStage(latest?.state));
-        const merged = mergeRoomDesignEdits(base,local,remote);
-        if (latest && roomDesignStatesEqual(merged,remote)) {confirmed=true;break;}
-        const saved = await db.saveRoomDesignWorkflowIfFresh(projectId,targetRoomId,merged,profile.id,latest?.updated_at ?? null);
-        if (saved) {confirmed=true;break;}
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const latest = await db.getRoomDesignWorkflow(projectId, targetRoomId);
+        const remote = serializeRoomWorkflowDraft(
+          createSavedRoomWorkflowDraft(
+            draft.linksRoomName,
+            latest?.state,
+            roomImages,
+            targetRoomId,
+          ),
+          savedRoomWorkflowStage(latest?.state),
+        );
+        const merged = mergeRoomDesignEdits(base, local, remote);
+        if (latest && roomDesignStatesEqual(merged, remote)) {
+          confirmed = true;
+          break;
+        }
+        const saved = await db.saveRoomDesignWorkflowIfFresh(
+          projectId,
+          targetRoomId,
+          merged,
+          profile.id,
+          latest?.updated_at ?? null,
+        );
+        if (saved) {
+          confirmed = true;
+          break;
+        }
       }
-      if (!confirmed) throw new Error("The room changed during saving. Refresh it before continuing.");
+      if (!confirmed)
+        throw new Error("The room changed during saving. Refresh it before continuing.");
       setSaveStatus("saved");
       setSaveError("");
       queryClient.invalidateQueries({ queryKey: ["roomDesignWorkflows", projectId] });
@@ -973,7 +1040,8 @@ function RoomDesignWorkflow({
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const draft = currentRoomDraft();
     const baseline = workflowBases.current.get(roomId)?.state;
-    if (baseline && roomDesignStatesEqual(serializeRoomWorkflowDraft(draft,step),baseline)) return;
+    if (baseline && roomDesignStatesEqual(serializeRoomWorkflowDraft(draft, step), baseline))
+      return;
     saveTimer.current = setTimeout(() => void persistDraft(roomId, draft, step), 800);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -1016,7 +1084,7 @@ function RoomDesignWorkflow({
         url: item.product_url || item.product?.product_url || undefined,
         imageUrl: item.image_url || item.product?.image_url || undefined,
         group: classifyBoardGroup(item.item_label),
-        quantity: item.quantity_tbd || item.quantity === null ? null : item.quantity ?? 1,
+        quantity: item.quantity_tbd || item.quantity === null ? null : (item.quantity ?? 1),
         quantityUnit: selectionQuantityUnitFromSpec(item.quantity_unit),
         wastePercent: item.waste_percent || 0,
         notes: item.notes || undefined,
@@ -1058,28 +1126,43 @@ function RoomDesignWorkflow({
   useEffect(() => {
     if (gathering || sourcing) return;
     for (const saved of workflows) {
-      const room = rooms.find(item=>item.id===saved.room_id);
+      const room = rooms.find((item) => item.id === saved.room_id);
       if (!room) continue;
       const base = workflowBases.current.get(room.id);
       if (base?.updatedAt === saved.updated_at) continue;
-      const remote = serializeRoomWorkflowDraft(createSavedRoomWorkflowDraft(room.name,saved.state,roomImages,room.id),savedRoomWorkflowStage(saved.state));
-      const localDraft = room.id===roomId ? currentRoomDraft() : roomDrafts[room.id];
-      const local = localDraft ? serializeRoomWorkflowDraft(localDraft,room.id===roomId ? step : base?.state.stage ?? 0) : remote;
+      const remote = serializeRoomWorkflowDraft(
+        createSavedRoomWorkflowDraft(room.name, saved.state, roomImages, room.id),
+        savedRoomWorkflowStage(saved.state),
+      );
+      const localDraft = room.id === roomId ? currentRoomDraft() : roomDrafts[room.id];
+      const local = localDraft
+        ? serializeRoomWorkflowDraft(
+            localDraft,
+            room.id === roomId ? step : (base?.state.stage ?? 0),
+          )
+        : remote;
       try {
-        const merged = base ? mergeRoomDesignEdits(base.state,local,remote) : remote;
-        const draft = createSavedRoomWorkflowDraft(room.name,merged,roomImages,room.id);
-        workflowBases.current.set(room.id,{updatedAt:saved.updated_at,state:remote});
-        setRoomDrafts(current=>({...current,[room.id]:draft}));
-        if (room.id===roomId) {applyRoomDraft(draft);setStep(step);}
+        const merged = base ? mergeRoomDesignEdits(base.state, local, remote) : remote;
+        const draft = createSavedRoomWorkflowDraft(room.name, merged, roomImages, room.id);
+        workflowBases.current.set(room.id, { updatedAt: saved.updated_at, state: remote });
+        setRoomDrafts((current) => ({ ...current, [room.id]: draft }));
+        if (room.id === roomId) {
+          applyRoomDraft(draft);
+          setStep(step);
+        }
       } catch (error) {
-        console.error("Room Design changed while editing",error);
+        console.error("Room Design changed while editing", error);
         setSaveStatus("error");
-        setSaveError(error instanceof Error ? error.message : "The saved room changed. Your edits are still on this page.");
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : "The saved room changed. Your edits are still on this page.",
+        );
       }
     }
     // Read current edits when a new saved version arrives; typing must not reset the editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[workflows,roomId,gathering,sourcing]);
+  }, [workflows, roomId, gathering, sourcing]);
 
   const changeRoom = (nextRoomId: string) => {
     if (nextRoomId === roomId) return;
@@ -1128,7 +1211,10 @@ function RoomDesignWorkflow({
   };
 
   const renderableRooms = rooms.filter(
-    (room) => !/^(materials throughout|appliance package)$/i.test(room.name.trim()),
+    (room) =>
+      !/^(materials throughout|appliance package|project.?wide finishes|whole.?home finishes)$/i.test(
+        room.name.trim(),
+      ),
   );
   const projectRenderRooms: ProjectRenderRoom[] = renderableRooms.map((room, index) => ({
     id: room.id,
@@ -1253,12 +1339,54 @@ function RoomDesignWorkflow({
   };
 
   const gatherLinks = async (failedOnly = false) => {
+    const instructions: DemoSelection[] = failedOnly
+      ? []
+      : links
+          .filter(
+            (link) =>
+              !/tile installation defaults/i.test(link.category) &&
+              !roomItemNeedsProduct(link) &&
+              (link.notes.trim() || roomItemStatus(link) === "TBD"),
+          )
+          .map((link) => {
+            const previous = selections.find((selection) => selection.id === `link-${link.id}`);
+            return {
+              ...previous,
+              id: `link-${link.id}`,
+              category: link.category,
+              productName: link.catalogProductName || previous?.productName || link.category,
+              vendor: previous?.vendor || "",
+              finish:
+                roomDetailValue(link.notes, "Selected color / finish") || previous?.finish || "",
+              dimensions:
+                roomDetailValue(link.notes, "Selected size / dimensions") || previous?.dimensions,
+              source: "Manual board",
+              state: "selected",
+              swatch: swatchForGroup(link.group),
+              group: link.group,
+              quantity: link.quantity,
+              notes: link.notes,
+              url: link.url || undefined,
+              productId: link.productId || null,
+              scrapeStatus: "complete",
+            };
+          });
     const linkedItems = links.filter(
       (link) =>
+        roomItemNeedsProduct(link) &&
         (link.url.trim() || link.productId) &&
         (!failedOnly || linkScrapeStates[link.id]?.status === "failed"),
     );
-    if (!linkedItems.length) return;
+    if (!linkedItems.length) {
+      if (instructions.length) {
+        addSelections(instructions);
+        setBoardReady(false);
+        setRenderReady(false);
+        setCompletedRenderPreview("");
+        setStep(1);
+      }
+      return;
+    }
 
     setGathering(true);
     try {
@@ -1406,7 +1534,9 @@ function RoomDesignWorkflow({
           category: link.category,
           productName: scraped.name || `${link.category} selection`,
           vendor: scraped.vendor || fallbackVendor,
-          finish: cleanProductDetail(scraped.finish || scraped.color),
+          finish:
+            roomDetailValue(link.notes, "Selected color / finish") ||
+            cleanProductDetail(scraped.finish || scraped.color),
           source: link.productId ? ("Product catalog" as const) : ("Product link" as const),
           state: "selected" as const,
           swatch: swatchForGroup(link.group),
@@ -1418,19 +1548,25 @@ function RoomDesignWorkflow({
             productAwareQuantityUnit(link.category, scraped.name) === "sq ft"
               ? 10
               : defaultWastePercent(link.category),
-          notes: link.notes,
+          notes: roomDesignScrapedNotes(
+            link.notes,
+            link.category,
+            scraped.name || "",
+            scraped.finish || "",
+          ),
           savedToTemplate: link.saveToTemplate,
           imageUrl: scraped.image_url,
           price: scraped.price,
           sku: scraped.sku,
-          dimensions: scraped.dimensions,
+          dimensions:
+            roomDetailValue(link.notes, "Selected size / dimensions") || scraped.dimensions,
           scrapeStatus,
           scrapeError: scrapeError || undefined,
           productId,
         });
       }
 
-      addSelections(gathered);
+      addSelections([...gathered, ...instructions]);
       setBoardReady(false);
       setRenderReady(false);
       setCompletedRenderPreview("");
@@ -1540,17 +1676,58 @@ function RoomDesignWorkflow({
     return updated;
   };
 
+  const applyLinks = (proposed: DemoLink[]) => {
+    const next = markRoomRelatedChanges(links, proposed);
+    setLinks(next);
+    setSelections((current) =>
+      current.map((selection) => {
+        const link = next.find((item) => `link-${item.id}` === selection.id);
+        if (!link) return selection;
+        const priorLink = links.find((item) => item.id === link.id);
+        const sourceChanged =
+          priorLink && (priorLink.url !== link.url || priorLink.productId !== link.productId);
+        if (!sourceChanged && link.notes === (selection.notes || "")) return selection;
+        return {
+          ...selection,
+          ...synchronizeRoomSelectionDetails(selection, { notes: link.notes }),
+          state: "selected" as const,
+          ...(sourceChanged
+            ? {
+                state: "draft" as const,
+                scrapeStatus: "partial" as const,
+                scrapeError: "Gather the updated product link to review this selection.",
+              }
+            : {}),
+          ...(materialsSent ? { materialsSyncStatus: "changed" as const } : {}),
+        };
+      }),
+    );
+    setBoardReady(false);
+    setRenderReady(false);
+    setCompletedRenderPreview("");
+  };
+
   const updateSelection = (id: string, patch: Partial<DemoSelection>) => {
-    if ("quantity" in patch || "notes" in patch)
-      setLinks((items) =>
-        items.map((item) =>
-          `link-${item.id}` === id ? {
-            ...item,
-            ...("quantity" in patch ? { quantity: patch.quantity ?? null } : {}),
-            ...("notes" in patch ? { notes: patch.notes ?? "" } : {}),
-          } : item,
-        ),
-      );
+    const previous = selections.find((selection) => selection.id === id);
+    if (previous) patch = synchronizeRoomSelectionDetails(previous, patch);
+    if (previous && "url" in patch && patch.url !== previous.url)
+      patch = { ...patch, productId: null };
+    const nextLinks = markRoomRelatedChanges(
+      links,
+      links.map((item) =>
+        `link-${item.id}` === id
+          ? {
+              ...item,
+              ...("quantity" in patch ? { quantity: patch.quantity ?? null } : {}),
+              ...("notes" in patch ? { notes: patch.notes ?? "" } : {}),
+              ...("url" in patch
+                ? { url: patch.url || "", productId: undefined, catalogProductName: undefined }
+                : {}),
+            }
+          : item,
+      ),
+    );
+    setLinks(nextLinks);
     const detailsChanged = Object.keys(patch).some((key) =>
       ["productName", "vendor", "finish", "url", "imageUrl", "sku", "dimensions", "price"].includes(
         key,
@@ -1586,7 +1763,17 @@ function RoomDesignWorkflow({
                 ? { materialsSyncStatus: "changed" as const }
                 : {}),
             }
-          : selection,
+          : (() => {
+              const link = nextLinks.find((item) => `link-${item.id}` === selection.id);
+              return link && link.notes !== (selection.notes || "")
+                ? {
+                    ...selection,
+                    notes: link.notes,
+                    state: "selected" as const,
+                    ...(materialsSent ? { materialsSyncStatus: "changed" as const } : {}),
+                  }
+                : selection;
+            })(),
       ),
     );
   };
@@ -1661,8 +1848,8 @@ function RoomDesignWorkflow({
   };
 
   const prepareRender = () => {
-    setRenderReady(true);
-    setStep(3);
+    if (renderingEnabled) setRenderReady(true);
+    setStep(renderingEnabled ? 3 : 4);
   };
 
   const approveAll = async () => {
@@ -1726,7 +1913,8 @@ function RoomDesignWorkflow({
             <h1 className="editorial-hero text-5xl lg:text-7xl">Room Design</h1>
             <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
               Begin manually, from product links, or from a concept. Every path builds one room
-              selection set for the board, render, approval, Materials, Specs, and Procurement.
+              selection set for the board, {renderingEnabled ? "render, " : ""}approval, Materials,
+              Specs, and Procurement.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -1753,7 +1941,11 @@ function RoomDesignWorkflow({
           </p>
         )}
 
-        {saveStatus === "error" && saveError && <p role="alert" className="mb-5 text-sm text-destructive">{saveError}</p>}
+        {saveStatus === "error" && saveError && (
+          <p role="alert" className="mb-5 text-sm text-destructive">
+            {saveError}
+          </p>
+        )}
 
         <section className="mb-5 grid gap-3 border border-border bg-bone/25 p-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -1803,16 +1995,23 @@ function RoomDesignWorkflow({
           </div>
         </section>
 
-        <WorkflowRail step={step} onStep={setStep} />
+        <WorkflowRail step={step} onStep={setStep} renderingEnabled={renderingEnabled} />
 
         <div>
           <div className="min-w-0 border border-border bg-background">
             {step === 0 && (
               <StartStep
+                renderingEnabled={renderingEnabled}
                 method={method}
                 onMethod={chooseMethod}
                 links={links}
-                onLinks={setLinks}
+                onLinks={applyLinks}
+                projectDefaultLinks={projectDefaultLinks}
+                onOpenDefaults={
+                  defaultsRoom && defaultsRoom.id !== roomId
+                    ? () => changeRoom(defaultsRoom.id)
+                    : undefined
+                }
                 gathering={gathering}
                 gatherProgress={gatherProgress}
                 linkScrapeStates={linkScrapeStates}
@@ -1863,6 +2062,7 @@ function RoomDesignWorkflow({
             )}
             {step === 2 && (
               <BoardStep
+                renderingEnabled={renderingEnabled}
                 selections={selections}
                 projectRooms={projectRenderRooms}
                 ready={boardReady}
@@ -1881,7 +2081,7 @@ function RoomDesignWorkflow({
                 onContinue={prepareRender}
               />
             )}
-            {step === 3 && (
+            {step === 3 && renderingEnabled && (
               <RenderStep
                 boardState={designBoardState}
                 selections={selections}
@@ -1914,12 +2114,13 @@ function RoomDesignWorkflow({
             {step === 4 && (
               <ApprovalStep
                 selections={selections}
-                onBack={() => setStep(3)}
+                onBack={() => setStep(renderingEnabled ? 3 : 2)}
                 onContinue={() => void approveAll()}
               />
             )}
             {step === 5 && (
               <MaterialsStep
+                renderingEnabled={renderingEnabled}
                 materialItems={materialItems.filter(
                   (item) => item.room_id === roomId && !item.not_needed,
                 )}
@@ -1939,11 +2140,22 @@ function RoomDesignWorkflow({
   );
 }
 
-function WorkflowRail({ step, onStep }: { step: number; onStep: (step: number) => void }) {
+function WorkflowRail({
+  step,
+  onStep,
+  renderingEnabled,
+}: {
+  step: number;
+  onStep: (step: number) => void;
+  renderingEnabled: boolean;
+}) {
+  const visibleSteps = STEPS.map((label, index) => ({ label, index })).filter(
+    ({ index }) => renderingEnabled || index !== 3,
+  );
   return (
     <div className="mobile-card-scroll mb-5 border-y border-border bg-background">
       <div className="flex min-w-[900px] items-center px-4 py-3">
-        {STEPS.map((label, index) => (
+        {visibleSteps.map(({ label, index }, position) => (
           <div key={label} className="flex flex-1 items-center">
             <button type="button" onClick={() => onStep(index)} className="flex items-center gap-2">
               <span
@@ -1956,7 +2168,7 @@ function WorkflowRail({ step, onStep }: { step: number; onStep: (step: number) =
                       : "border-border text-muted-foreground",
                 )}
               >
-                {index < step ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                {index < step ? <Check className="h-3.5 w-3.5" /> : position + 1}
               </span>
               <span
                 className={cn(
@@ -1964,10 +2176,10 @@ function WorkflowRail({ step, onStep }: { step: number; onStep: (step: number) =
                   index === step ? "font-medium text-ink" : "text-muted-foreground",
                 )}
               >
-                {label}
+                {index === 3 ? "*TESTING* Render" : label}
               </span>
             </button>
-            {index < STEPS.length - 1 && <div className="mx-3 h-px flex-1 bg-border" />}
+            {position < visibleSteps.length - 1 && <div className="mx-3 h-px flex-1 bg-border" />}
           </div>
         ))}
       </div>
@@ -2121,9 +2333,12 @@ function CatalogPickerButton({
 }
 
 function StartStep(props: {
+  renderingEnabled: boolean;
   method: StartMethod;
   onMethod: (method: StartMethod) => void;
   links: DemoLink[];
+  projectDefaultLinks: DemoLink[];
+  onOpenDefaults?: () => void;
   onLinks: (links: DemoLink[]) => void;
   gathering: boolean;
   gatherProgress: GatherProgress;
@@ -2149,10 +2364,14 @@ function StartStep(props: {
   const [addingSelection, setAddingSelection] = useState(false);
   const [newSelectionName, setNewSelectionName] = useState("");
   const [newSelectionGroup, setNewSelectionGroup] = useState<BoardGroup>("Architecture / Other");
-  const [newSelectionQuantity, setNewSelectionQuantity] = useState(1);
+  const [newSelectionQuantity, setNewSelectionQuantity] = useState<number | null>(null);
   const [newSelectionNotes, setNewSelectionNotes] = useState("");
+  const [showNotNeeded, setShowNotNeeded] = useState(false);
   const sortedLinks = [...props.links].sort((left, right) =>
     left.category.localeCompare(right.category, "en", { sensitivity: "base", numeric: true }),
+  );
+  const visibleLinks = sortedLinks.filter(
+    (item) => showNotNeeded || roomItemStatus(item) !== "Not needed",
   );
 
   const addCustomSelection = () => {
@@ -2165,7 +2384,7 @@ function StartStep(props: {
         category,
         url: "",
         group: newSelectionGroup,
-        quantity: Math.max(1, newSelectionQuantity),
+        quantity: newSelectionQuantity,
         notes: newSelectionNotes.trim(),
         custom: true,
         saveToTemplate: false,
@@ -2173,7 +2392,7 @@ function StartStep(props: {
     ]);
     setNewSelectionName("");
     setNewSelectionGroup("Architecture / Other");
-    setNewSelectionQuantity(1);
+    setNewSelectionQuantity(null);
     setNewSelectionNotes("");
     setAddingSelection(false);
   };
@@ -2343,11 +2562,10 @@ function StartStep(props: {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Quantity</Label>
-                  <Input
-                    type="number"
-                    min={1}
+                  <RoomDesignQuantityInput
+                    aria-label="New selection quantity"
                     value={newSelectionQuantity}
-                    onChange={(event) => setNewSelectionQuantity(Number(event.target.value) || 1)}
+                    onValueChange={setNewSelectionQuantity}
                   />
                 </div>
               </div>
@@ -2366,8 +2584,73 @@ function StartStep(props: {
               </div>
             </div>
           )}
-          <div className="mt-5 divide-y divide-border border-y border-border">
-            {sortedLinks.map((item) => (
+          {props.onOpenDefaults && (
+            <details className="mt-5 border border-border bg-bone/25 p-3 text-xs">
+              <summary className="cursor-pointer font-medium">
+                Project-wide defaults & room exceptions
+              </summary>
+              <p className="mt-3 text-muted-foreground">
+                Save shared paint, cabinetry and tile details once in Project-wide finishes. Each
+                matching item offers “Use project-wide details” to fill blank fields while keeping
+                its room-specific choices.
+              </p>
+              <button
+                type="button"
+                onClick={props.onOpenDefaults}
+                className="mt-3 underline underline-offset-2"
+              >
+                Edit project-wide defaults
+              </button>
+            </details>
+          )}
+          {/bath|restroom|washroom/i.test(props.roomName) && (
+            <details className="mt-5 border border-border bg-bone/25 p-3 text-xs">
+              <summary className="cursor-pointer font-medium">Room scope · shower & tub</summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {(["Shower", "Tub"] as const)
+                  .filter((scope) =>
+                    props.links.some((link) => isRoomScopeItem(link.category, scope)),
+                  )
+                  .map((scope) => {
+                    return (
+                      <label key={scope}>
+                        {scope} in this room?
+                        <select
+                          aria-label={`${scope} in this room`}
+                          value={roomScopeValue(props.links, scope)}
+                          disabled={props.gathering}
+                          onChange={(event) =>
+                            props.onLinks(updateRoomScope(props.links, scope, event.target.value))
+                          }
+                          className="mt-1 block h-9 w-full border border-border bg-background px-2"
+                        >
+                          <option value="">Confirm scope</option>
+                          <option>Included</option>
+                          <option>Not included</option>
+                        </select>
+                      </label>
+                    );
+                  })}
+              </div>
+              <p className="mt-3 text-muted-foreground">
+                Marking a feature not included keeps its rows saved as “Not needed.” Existing links
+                and details are preserved.
+              </p>
+            </details>
+          )}
+          <div className="mt-4 flex justify-end">
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={showNotNeeded}
+                onChange={(event) => setShowNotNeeded(event.target.checked)}
+              />
+              Show not needed (
+              {props.links.filter((link) => roomItemStatus(link) === "Not needed").length})
+            </label>
+          </div>
+          <div className="mt-3 divide-y divide-border border-y border-border">
+            {visibleLinks.map((item) => (
               <div
                 key={item.id}
                 className="grid gap-2 py-3 md:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px] md:items-center"
@@ -2394,58 +2677,72 @@ function StartStep(props: {
                     </div>
                   )}
                 </div>
-                <RoomDesignQuantityInput
-                  aria-label={`${item.category} quantity`}
-                  value={item.quantity}
-                  disabled={props.gathering}
-                  onValueChange={(quantity) =>
-                    props.onLinks(
-                      props.links.map((link) =>
-                        link.id === item.id
-                          ? { ...link, quantity }
-                          : link,
-                      ),
-                    )
-                  }
-                />
-                <Input
-                  aria-label={`${item.category} product link`}
-                  value={item.url}
-                  disabled={props.gathering}
-                  onChange={(event) =>
-                    props.onLinks(
-                      props.links.map((link) =>
-                        link.id === item.id
-                          ? {
-                              ...link,
-                              url: event.target.value,
-                              productId: undefined,
-                              catalogProductName: undefined,
-                            }
-                          : link,
-                      ),
-                    )
-                  }
-                  placeholder="Paste product link"
-                />
-                <CatalogPickerButton
-                  item={item}
-                  disabled={props.gathering}
-                  onSelect={(product) =>
-                    props.onLinks(
-                      props.links.map((link) =>
-                        link.id === item.id
-                          ? {
-                              ...link,
-                              productId: product.id,
-                              catalogProductName: product.name,
-                              url: product.product_url || "",
-                            }
-                          : link,
-                      ),
-                    )
-                  }
-                />
+                {/tile installation defaults/i.test(item.category) ? (
+                  <span className="text-xs text-muted-foreground">Shared</span>
+                ) : (
+                  <RoomDesignQuantityInput
+                    aria-label={`${item.category} quantity`}
+                    value={item.quantity}
+                    disabled={props.gathering}
+                    onValueChange={(quantity) =>
+                      props.onLinks(
+                        props.links.map((link) =>
+                          link.id === item.id ? { ...link, quantity } : link,
+                        ),
+                      )
+                    }
+                  />
+                )}
+                {/tile installation defaults/i.test(item.category) ? (
+                  <span className="text-xs text-muted-foreground md:col-span-2">
+                    Shared grout, layout and tile edge choices below
+                  </span>
+                ) : (
+                  <>
+                    <Input
+                      aria-label={`${item.category} product link`}
+                      value={item.url}
+                      disabled={props.gathering || roomItemStatus(item) === "Not needed"}
+                      onChange={(event) =>
+                        props.onLinks(
+                          props.links.map((link) =>
+                            link.id === item.id
+                              ? {
+                                  ...link,
+                                  url: event.target.value,
+                                  productId: undefined,
+                                  catalogProductName: undefined,
+                                }
+                              : link,
+                          ),
+                        )
+                      }
+                      placeholder={
+                        roomItemNeedsProduct(item)
+                          ? "Paste product link"
+                          : "Product link (optional for this item)"
+                      }
+                    />
+                    <CatalogPickerButton
+                      item={item}
+                      disabled={props.gathering || roomItemStatus(item) === "Not needed"}
+                      onSelect={(product) =>
+                        props.onLinks(
+                          props.links.map((link) =>
+                            link.id === item.id
+                              ? {
+                                  ...link,
+                                  productId: product.id,
+                                  catalogProductName: product.name,
+                                  url: product.product_url || "",
+                                }
+                              : link,
+                          ),
+                        )
+                      }
+                    />
+                  </>
+                )}
                 {item.custom ? (
                   <button
                     type="button"
@@ -2458,47 +2755,99 @@ function StartStep(props: {
                 ) : (
                   <span />
                 )}
-                <div className="md:col-span-full">
-                  <RoomDesignTileFields category={item.category} productName={item.catalogProductName} notes={item.notes} disabled={props.gathering} productSource={[item.productId, item.url].filter(Boolean).join("|")}
-                    onChange={notes => props.onLinks(props.links.map(link => link.id === item.id ? { ...link, notes } : link))} />
+                <div className="space-y-2 md:col-span-full">
+                  {!/tile installation defaults/i.test(item.category) && (
+                    <RoomDesignItemDetails
+                      category={item.category}
+                      productName={item.catalogProductName}
+                      notes={item.notes}
+                      defaultNotes={
+                        roomProjectDefaults(
+                          {
+                            category: item.category,
+                            notes: item.notes,
+                            productName: item.catalogProductName,
+                          },
+                          props.projectDefaultLinks,
+                        ).notes
+                      }
+                      defaultCount={
+                        roomProjectDefaults(
+                          {
+                            category: item.category,
+                            notes: item.notes,
+                            productName: item.catalogProductName,
+                          },
+                          props.projectDefaultLinks,
+                        ).count
+                      }
+                      disabled={props.gathering}
+                      productSource={[item.productId, item.url].filter(Boolean).join("|")}
+                      onChange={(notes) =>
+                        props.onLinks(
+                          props.links.map((link) =>
+                            link.id === item.id ? { ...link, notes } : link,
+                          ),
+                        )
+                      }
+                    />
+                  )}
+                  {roomItemShowsTileFields(item) && (
+                    <RoomDesignTileFields
+                      category={item.category}
+                      productName={item.catalogProductName}
+                      notes={item.notes}
+                      disabled={props.gathering}
+                      productSource={[item.productId, item.url].filter(Boolean).join("|")}
+                      onChange={(notes) =>
+                        props.onLinks(
+                          props.links.map((link) =>
+                            link.id === item.id ? { ...link, notes } : link,
+                          ),
+                        )
+                      }
+                    />
+                  )}
                 </div>
               </div>
             ))}
           </div>
-          <div className="mt-6 border border-border bg-bone/25 p-4">
-            <div className="eyebrow">Room inputs for rendering</div>
-            <div className="mt-1 text-sm font-medium">
-              Add the existing space before you gather products
+          {props.renderingEnabled && (
+            <div className="mt-6 border border-border bg-bone/25 p-4">
+              <div className="eyebrow">*TESTING* · Room inputs for rendering</div>
+              <div className="mt-1 text-sm font-medium">
+                Add the existing space before you gather products
+              </div>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+                The room photo preserves the architecture and camera angle. A floor plan is optional
+                but helps when the layout is changing. Both files are included in the AI rendering
+                handoff.
+              </p>
+              <div className="mt-4 grid max-w-5xl gap-3 sm:grid-cols-3">
+                <UploadTile
+                  label="Room photo"
+                  helper="Used to preserve the room layout"
+                  value={props.roomPreview}
+                  onChange={props.onRoom}
+                  icon={<ImagePlus />}
+                />
+                <UploadTile
+                  label="Floor plan"
+                  helper="Optional layout reference"
+                  value={props.planPreview}
+                  onChange={props.onPlan}
+                  icon={<FileImage />}
+                />
+                <UploadTile
+                  label="CAD / SketchUp view"
+                  helper="Shown with the finished render"
+                  value={props.sketchupPreview}
+                  onChange={props.onSketchup}
+                  icon={<LayoutTemplate />}
+                />
+              </div>
             </div>
-            <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-              The room photo preserves the architecture and camera angle. A floor plan is optional
-              but helps when the layout is changing. Both files are included in the AI rendering
-              handoff.
-            </p>
-            <div className="mt-4 grid max-w-5xl gap-3 sm:grid-cols-3">
-              <UploadTile
-                label="Room photo"
-                helper="Used to preserve the room layout"
-                value={props.roomPreview}
-                onChange={props.onRoom}
-                icon={<ImagePlus />}
-              />
-              <UploadTile
-                label="Floor plan"
-                helper="Optional layout reference"
-                value={props.planPreview}
-                onChange={props.onPlan}
-                icon={<FileImage />}
-              />
-              <UploadTile
-                label="CAD / SketchUp view"
-                helper="Shown with the finished render"
-                value={props.sketchupPreview}
-                onChange={props.onSketchup}
-                icon={<LayoutTemplate />}
-              />
-            </div>
-          </div>
+          )}
           {props.gatherProgress.total > 0 && (
             <div className="mt-5 border border-border bg-bone/30 p-4" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -2535,7 +2884,13 @@ function StartStep(props: {
             <Button
               onClick={props.onGather}
               disabled={
-                props.gathering || !props.links.some((item) => item.url.trim() || item.productId)
+                props.gathering ||
+                !props.links.some(
+                  (item) =>
+                    item.url.trim() ||
+                    item.productId ||
+                    (!roomItemNeedsProduct(item) && item.notes.trim()),
+                )
               }
             >
               {props.gathering ? <RefreshCw className="animate-spin" /> : <Sparkles />}
@@ -2561,33 +2916,39 @@ function StartStep(props: {
               onChange={props.onConcept}
               icon={<Palette />}
             />
-            <UploadTile
-              label="Room photo"
-              helper="Used for the render"
-              value={props.roomPreview}
-              onChange={props.onRoom}
-              icon={<ImagePlus />}
-            />
-            <UploadTile
-              label="Floor plan"
-              helper="Optional layout control"
-              value={props.planPreview}
-              onChange={props.onPlan}
-              icon={<FileImage />}
-            />
-            <UploadTile
-              label="CAD / SketchUp view"
-              helper="Presentation design model"
-              value={props.sketchupPreview}
-              onChange={props.onSketchup}
-              icon={<LayoutTemplate />}
-            />
+            {props.renderingEnabled && (
+              <>
+                <UploadTile
+                  label="Room photo"
+                  helper="Used for the render"
+                  value={props.roomPreview}
+                  onChange={props.onRoom}
+                  icon={<ImagePlus />}
+                />
+                <UploadTile
+                  label="Floor plan"
+                  helper="Optional layout control"
+                  value={props.planPreview}
+                  onChange={props.onPlan}
+                  icon={<FileImage />}
+                />
+                <UploadTile
+                  label="CAD / SketchUp view"
+                  helper="Presentation design model"
+                  value={props.sketchupPreview}
+                  onChange={props.onSketchup}
+                  icon={<LayoutTemplate />}
+                />
+              </>
+            )}
           </div>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
             <p className="max-w-xl text-xs leading-5 text-muted-foreground">
               Studio matches real saved catalog products to this room's categories. Review each
-              product's style and finish against the concept before locking it. The concept image is
-              also included in the rendering handoff.
+              product's style and finish against the concept before locking it.
+              {props.renderingEnabled
+                ? " The concept image is also included in the rendering handoff."
+                : ""}
             </p>
             <Button onClick={props.onSource} disabled={props.sourcing || !props.conceptPreview}>
               {props.sourcing ? <RefreshCw className="animate-spin" /> : <WandSparkles />}
@@ -2696,6 +3057,9 @@ function SelectionsStep({
   onContinue: () => void;
 }) {
   const failedCount = selections.filter((selection) => selection.scrapeStatus === "failed").length;
+  const missingProductCount = selections.filter(
+    (selection) => roomDesignProductGaps(selection).length,
+  ).length;
   return (
     <StepFrame
       eyebrow="Shared room selection set"
@@ -2721,32 +3085,52 @@ function SelectionsStep({
           body="Return to Start and use any of the three design methods. Their products will appear here together."
         />
       ) : (
-        <div className="divide-y divide-border border-y border-border">
-          {selections.map((selection) => (
-            <SelectionRow
-              key={selection.id}
-              selection={selection}
-              action={
-                <div className="flex flex-wrap items-end justify-end gap-2">
-                  <QuantityEditor selection={selection} onUpdate={onUpdate} compact />
-                  <ProductDetailsEditor selection={selection} onUpdate={onUpdate} />
-                  <Button
-                    size="sm"
-                    variant={selection.state === "locked" ? "default" : "outline"}
-                    onClick={() => onToggle(selection.id)}
-                    disabled={
-                      roomDesignSelectionIssues(selection).length > 0 ||
-                      selection.scrapeStatus !== "complete"
-                    }
-                    title={roomDesignSelectionIssues(selection).join(" ")}
-                  >
-                    {selection.state === "locked" ? <Lock /> : <Check />}{" "}
-                    {selection.state === "locked" ? "Reviewed" : "Mark reviewed"}
-                  </Button>
-                </div>
-              }
-            />
-          ))}
+        <div>
+          {missingProductCount > 0 && (
+            <div
+              role="status"
+              className="mb-5 border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+            >
+              <p className="font-medium">
+                Missing product information on {missingProductCount}{" "}
+                {missingProductCount === 1 ? "item" : "items"}
+              </p>
+              <p className="mt-1">
+                Some information wasn’t available from the links. Fill in the highlighted fields
+                below. Each callout clears when its missing information is entered.
+              </p>
+            </div>
+          )}
+          <div className="divide-y divide-border border-y border-border">
+            {selections.map((selection) => (
+              <SelectionRow
+                key={selection.id}
+                selection={selection}
+                stackAction
+                action={
+                  <div className="flex flex-wrap items-end justify-end gap-2">
+                    {roomItemNeedsProduct(selection) && (
+                      <QuantityEditor selection={selection} onUpdate={onUpdate} compact />
+                    )}
+                    <ProductDetailsEditor selection={selection} onUpdate={onUpdate} />
+                    <Button
+                      size="sm"
+                      variant={selection.state === "locked" ? "default" : "outline"}
+                      onClick={() => onToggle(selection.id)}
+                      disabled={
+                        roomDesignSelectionIssues(selection).length > 0 ||
+                        selection.scrapeStatus !== "complete"
+                      }
+                      title={roomDesignSelectionIssues(selection).join(" ")}
+                    >
+                      {selection.state === "locked" ? <Lock /> : <Check />}{" "}
+                      {selection.state === "locked" ? "Reviewed" : "Mark reviewed"}
+                    </Button>
+                  </div>
+                }
+              />
+            ))}
+          </div>
         </div>
       )}
     </StepFrame>
@@ -2892,6 +3276,7 @@ function FullProjectBoardOverview({
 }
 
 function BoardStep({
+  renderingEnabled,
   selections,
   projectRooms,
   ready,
@@ -2909,6 +3294,7 @@ function BoardStep({
   onBack,
   onContinue,
 }: {
+  renderingEnabled: boolean;
   selections: DemoSelection[];
   projectRooms: ProjectRenderRoom[];
   ready: boolean;
@@ -3289,7 +3675,7 @@ function BoardStep({
       onBack={onBack}
       action={
         <Button onClick={onContinue} disabled={!selections.length}>
-          Use board for render <ArrowRight />
+          {renderingEnabled ? "Use board for *TESTING* render" : "Review selections"} <ArrowRight />
         </Button>
       }
     >
@@ -3619,7 +4005,8 @@ function BoardStep({
                     {selection.category}
                   </div>
                   <div className="mt-1 text-[8px] text-stone-500">
-                    Qty {roomDesignQuantityLabel(selection.quantity)} {selectionQuantityUnit(selection)}
+                    Qty {roomDesignQuantityLabel(selection.quantity)}{" "}
+                    {selectionQuantityUnit(selection)}
                   </div>
                 </button>
               ))}
@@ -3793,7 +4180,8 @@ function StudioCutoutBoard({
                   {selection.category}
                 </div>
                 <div className="mt-0.5 text-[5px] text-stone-500 sm:text-[6px]">
-                  Qty {roomDesignQuantityLabel(selection.quantity)} {selectionQuantityUnit(selection)}
+                  Qty {roomDesignQuantityLabel(selection.quantity)}{" "}
+                  {selectionQuantityUnit(selection)}
                 </div>
               </div>
             </button>
@@ -3878,7 +4266,12 @@ function RenderStep({
         "Content-Type": "application/json",
         Authorization: `Bearer ${data.session.access_token}`,
       },
-      body: JSON.stringify({ projectId, roomId: targetRoomId, imageUrl }),
+      body: JSON.stringify({
+        projectId,
+        roomId: targetRoomId,
+        imageUrl,
+        purpose: "render-handoff",
+      }),
     });
     const result = await response.json();
     if (!response.ok || !result.sourceDataUrl)
@@ -4160,7 +4553,7 @@ function RenderStep({
             </div>
             <div>
               <div className="eyebrow">Use a ChatGPT / Codex plan</div>
-              <h3 className="mt-1 font-display text-2xl">Prepare the render handoff</h3>
+              <h3 className="mt-1 font-display text-2xl">*TESTING* · Prepare the render handoff</h3>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 The package includes a ready-to-run assignment, product links, a structured
                 manifest, and any uploaded room, plan, or concept images. Preparing it sends no paid
@@ -4420,6 +4813,7 @@ function ApprovalStep({
 }
 
 function MaterialsStep({
+  renderingEnabled,
   selections,
   materialItems,
   sent,
@@ -4429,6 +4823,7 @@ function MaterialsStep({
   projectId,
   onBack,
 }: {
+  renderingEnabled: boolean;
   selections: DemoSelection[];
   materialItems: MaterialItem[];
   sent: boolean;
@@ -4488,9 +4883,11 @@ function MaterialsStep({
           icon={<LayoutTemplate />}
           title="Presentation"
           body={
-            completedRenderPreview
-              ? "The imported room render is included with the approved selection summary."
-              : "The board can be included after saving it to Studio; the render remains flagged as missing."
+            !renderingEnabled
+              ? "The saved Design Board and approved selections can be included in the project presentation."
+              : completedRenderPreview
+                ? "The imported room render is included with the approved selection summary."
+                : "The board can be included after saving it to Studio; the render remains flagged as missing."
           }
           complete={sent}
         />
@@ -4686,38 +5083,91 @@ function ProductDetailsEditor({
   onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
 }) {
   const issues = roomDesignSelectionIssues(selection);
+  const gaps = roomDesignProductGaps(selection);
+  const gapKey = gaps.map((gap) => gap.field).join("|");
+  const [expanded, setExpanded] = useState(gaps.length > 0);
+  useEffect(() => {
+    if (gapKey) setExpanded(true);
+  }, [selection.id, gapKey]);
   return (
-    <details className="w-full min-w-[220px] max-w-xl border border-border p-2 text-xs">
+    <details
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      className={cn(
+        "w-full min-w-[220px] border p-3 text-xs",
+        gaps.length ? "border-amber-300 bg-amber-50/40" : "border-border",
+      )}
+    >
       <summary className="cursor-pointer">
-        Review product details {issues.length ? `(${issues.length} to resolve)` : ""}
+        {gaps.length
+          ? `Fix missing product info (${gaps.length})`
+          : `Review ${roomItemNeedsProduct(selection) ? "product" : "item"} details${issues.length ? ` (${issues.length} to resolve)` : ""}`}
       </summary>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {(
-          [
-            ["productName", "Product name"],
-            ["vendor", "Vendor"],
-            ["finish", "Color / finish"],
-            ["sku", "SKU / model"],
-            ["dimensions", "Product dimensions"],
-            ["price", "Price"],
-            ["url", "Exact product link"],
-            ["imageUrl", "Selected image URL"],
-          ] as const
-        ).map(([key, label]) => (
-          <label key={key}>
-            {label}
-            <Input
-              aria-label={`${selection.category} ${label}`}
-              value={selection[key] || ""}
-              onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
-            />
-          </label>
-        ))}
-      </div>
+      {gaps.length > 0 && (
+        <div role="status" className="mt-3 border-l-2 border-amber-500 pl-3 text-amber-950">
+          <p className="font-medium">{selection.category}: missing or unconfirmed information</p>
+          <p className="mt-1">
+            {gaps.map((gap) => gap.label).join(" · ")}. Enter the selected product’s details below.
+          </p>
+          {selection.url && (
+            <a
+              className="mt-2 inline-block underline underline-offset-2"
+              href={selection.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open product link ↗
+            </a>
+          )}
+        </div>
+      )}
+      {roomItemNeedsProduct(selection) && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              ["productName", "Product name"],
+              ["vendor", "Vendor"],
+              ["finish", "Color / finish"],
+              ["sku", "SKU / model"],
+              ["dimensions", "Product dimensions"],
+              ["price", "Price"],
+              ["url", "Exact product link"],
+              ["imageUrl", "Selected image URL"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key}>
+              {label}
+              <Input
+                aria-label={`${selection.category} ${label}`}
+                aria-invalid={gaps.some((gap) => gap.field === key) || undefined}
+                className={
+                  gaps.some((gap) => gap.field === key) ? "border-amber-500 bg-amber-50" : undefined
+                }
+                value={selection[key] || ""}
+                onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
+              />
+            </label>
+          ))}
+        </div>
+      )}
       <div className="mt-3">
-        <RoomDesignTileFields category={selection.category} productName={selection.productName} notes={selection.notes}
+        <RoomDesignItemDetails
+          category={selection.category}
+          itemStatus={roomItemStatus(selection)}
+          productName={selection.productName}
+          notes={selection.notes}
           productSource={[selection.productId, selection.url].filter(Boolean).join("|")}
-          onChange={notes => onUpdate(selection.id, { notes })} />
+          onChange={(notes) => onUpdate(selection.id, { notes })}
+        />
+        {roomItemShowsTileFields(selection) && (
+          <RoomDesignTileFields
+            category={selection.category}
+            productName={selection.productName}
+            notes={selection.notes}
+            productSource={[selection.productId, selection.url].filter(Boolean).join("|")}
+            onChange={(notes) => onUpdate(selection.id, { notes })}
+          />
+        )}
       </div>
       {!!issues.length && (
         <ul className="my-3 list-disc space-y-1 pl-4 text-amber-800">
@@ -4732,7 +5182,7 @@ function ProductDetailsEditor({
         disabled={issues.length > 0}
         onClick={() => onUpdate(selection.id, { scrapeStatus: "complete", scrapeError: undefined })}
       >
-        Confirm product details
+        Confirm {roomItemNeedsProduct(selection) ? "product" : "item"} details
       </Button>
     </details>
   );
@@ -4748,12 +5198,15 @@ function QuantityEditor({
   compact?: boolean;
 }) {
   const unit = selection.quantityUnit ?? defaultQuantityUnit(selection.category);
-  const quantity = selection.quantity === null ? null : selection.quantity ?? 1;
+  const quantity = selection.quantity === null ? null : (selection.quantity ?? 1);
   const wastePercent = selection.wastePercent ?? defaultWastePercent(selection.category);
   const showWaste = quantityUnitUsesWaste(unit);
-  const orderQuantity = quantity === null ? null : showWaste
-    ? Math.round(quantity * (1 + wastePercent / 100) * 100) / 100
-    : quantity;
+  const orderQuantity =
+    quantity === null
+      ? null
+      : showWaste
+        ? Math.round(quantity * (1 + wastePercent / 100) * 100) / 100
+        : quantity;
 
   return (
     <div>
@@ -4830,17 +5283,25 @@ function QuantityEditor({
   );
 }
 
-function SelectionRow({ selection, action }: { selection: DemoSelection; action: ReactNode }) {
+function SelectionRow({
+  selection,
+  action,
+  stackAction = false,
+}: {
+  selection: DemoSelection;
+  action: ReactNode;
+  stackAction?: boolean;
+}) {
   return (
     <div className="grid gap-3 py-3 sm:grid-cols-[56px_minmax(0,1fr)_auto] sm:items-center">
       <SelectionVisual selection={selection} className="h-14 w-14 border border-border" />
-      <div className="min-w-0">
+      <div className={cn("min-w-0", stackAction && "sm:col-span-2")}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{selection.category}</span>
           <span className="border border-border bg-bone/30 px-2 py-0.5 text-[9px] uppercase tracking-[.1em] text-muted-foreground">
-            {selection.source}
+            {roomItemNeedsProduct(selection) ? selection.source : roomItemStatus(selection)}
           </span>
-          {selection.scrapeStatus && (
+          {roomItemNeedsProduct(selection) && selection.scrapeStatus && (
             <span
               title={selection.scrapeError}
               className={cn(
@@ -4861,14 +5322,22 @@ function SelectionRow({ selection, action }: { selection: DemoSelection; action:
           )}
         </div>
         <div className="mt-1 text-sm text-muted-foreground">
-          {selection.productName} · {selection.vendor} · {selection.finish}
-          {selection.quantity !== undefined
-            ? ` · Qty ${roomDesignQuantityLabel(selection.quantity)} ${selection.quantityUnit ?? defaultQuantityUnit(selection.category)}`
-            : ""}
-          {quantityUnitUsesWaste(selection.quantityUnit ?? defaultQuantityUnit(selection.category))
-            ? ` · ${selection.wastePercent ?? defaultWastePercent(selection.category)}% waste`
-            : ""}
-          {selection.savedToTemplate ? " · Saved to room template" : ""}
+          {!roomItemNeedsProduct(selection) ? (
+            selection.notes || "Add item instructions"
+          ) : (
+            <>
+              {selection.productName} · {selection.vendor} · {selection.finish}
+              {selection.quantity !== undefined
+                ? ` · Qty ${roomDesignQuantityLabel(selection.quantity)} ${selection.quantityUnit ?? defaultQuantityUnit(selection.category)}`
+                : ""}
+              {quantityUnitUsesWaste(
+                selection.quantityUnit ?? defaultQuantityUnit(selection.category),
+              )
+                ? ` · ${selection.wastePercent ?? defaultWastePercent(selection.category)}% waste`
+                : ""}
+              {selection.savedToTemplate ? " · Saved to room template" : ""}
+            </>
+          )}
         </div>
         {(selection.price || selection.sku || selection.dimensions) && (
           <div className="mt-1 text-xs text-muted-foreground">
@@ -4888,7 +5357,7 @@ function SelectionRow({ selection, action }: { selection: DemoSelection; action:
           </div>
         )}
       </div>
-      <div>{action}</div>
+      <div className={stackAction ? "sm:col-span-full" : undefined}>{action}</div>
     </div>
   );
 }

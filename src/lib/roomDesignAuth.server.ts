@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { UserProfile } from "@/lib/db";
-import { canUseRoomDesign } from "@/lib/permissions";
+import { canUseRoomDesign, canUseRenderingStudio } from "@/lib/permissions";
 
 function json(error: string, status: number) {
   return Response.json({ error }, { status });
@@ -8,7 +8,7 @@ function json(error: string, status: number) {
 
 export async function requireRoomDesignPilotAccess(
   request: Request,
-  scope?: { projectId?: string | null; roomId?: string | null },
+  scope?: { projectId?: string | null; roomId?: string | null; rendering?: boolean },
 ) {
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
@@ -29,6 +29,17 @@ export async function requireRoomDesignPilotAccess(
       error: json("Room Design is available to active Studio designers and administrators.", 403),
     };
   }
+  if (
+    scope?.rendering &&
+    (!canUseRenderingStudio(profile as UserProfile | null) ||
+      userData.user.email?.trim().toLowerCase() !== "ken@meravinteriors.com")
+  )
+    return {
+      error: json(
+        "Rendering testing is currently available only to Ken’s active Studio account.",
+        403,
+      ),
+    };
 
   const { data: flag, error: flagError } = await supabaseAdmin
     // Generated client types are updated only after the reviewed migration is applied.

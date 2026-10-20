@@ -88,6 +88,7 @@ export const SUBCATEGORIES: Record<ProductCategory, string[]> = {
     "Mosaic",
     "Zellige",
     "Stone Tile",
+    "Grout",
     "Trim",
   ],
   Countertops: [

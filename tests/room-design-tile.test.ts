@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   roomDesignTileFields,
   roomDesignTileIssues,
+  roomDesignTileLocation,
   roomDesignTileSurface,
   updateRoomDesignTileNotes,
 } from "@/lib/roomDesignTile";
@@ -82,6 +83,13 @@ it("requires both a pattern and a direction, with explicit TBD taking precedence
 });
 
 it("keeps surface-specific installation areas without requiring the same location twice", () => {
+  const backsplash = { ...selected(installationNotes()), category: "Backsplash" };
+  expect(roomDesignTileLocation(backsplash)).toBe("Backsplash");
+  expect(roomDesignTileIssues(backsplash)).toEqual([]);
+  expect(roomDesignTileLocation({
+    ...backsplash,
+    notes: updateRoomDesignTileNotes(backsplash.notes, "location", "Range wall only"),
+  })).toBe("Range wall only");
   expect(roomDesignTileIssues({ ...selected(installationNotes()), category: "Tile" })).toContain(
     "Confirm where this tile is used.",
   );
