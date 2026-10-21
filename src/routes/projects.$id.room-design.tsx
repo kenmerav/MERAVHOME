@@ -2491,10 +2491,12 @@ function StartStep(props: {
         <div className="p-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="eyebrow">{props.roomName} checklist</div>
-              <h3 className="mt-2 font-display text-3xl">
-                Paste a product link or choose from the catalog
+              <h3 className="text-2xl font-bold sm:text-3xl">
+                {props.roomName} checklist
               </h3>
+              <p className="mt-2 text-sm font-normal text-muted-foreground">
+                Paste a product link or choose from the catalog
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground">
