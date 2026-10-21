@@ -19,6 +19,7 @@ export function RoomDesignItemDetails({
   defaultNotes,
   defaultCount = 0,
   disabled = false,
+  showFitConfirmationAction = true,
   onChange,
 }: {
   category: string;
@@ -29,6 +30,7 @@ export function RoomDesignItemDetails({
   defaultNotes?: string;
   defaultCount?: number;
   disabled?: boolean;
+  showFitConfirmationAction?: boolean;
   onChange: (notes: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -85,14 +87,18 @@ export function RoomDesignItemDetails({
         >
           <p className="font-medium">Confirm fit after a related change</p>
           <p className="mt-1">{roomDetailValue(notes, "Related change review")}</p>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(updateRoomDetail(notes, "Related change review", ""))}
-            className="mt-3 border border-amber-300 bg-background px-3 py-2 font-medium"
-          >
-            Confirm related fit checked
-          </button>
+          {showFitConfirmationAction ? (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(updateRoomDetail(notes, "Related change review", ""))}
+              className="mt-3 border border-amber-300 bg-background px-3 py-2 font-medium"
+            >
+              Confirm related fit checked
+            </button>
+          ) : (
+            <p className="mt-2">Included when you click Confirm &amp; mark reviewed.</p>
+          )}
         </div>
       )}
       {fields.length > 0 && (

@@ -51,6 +51,7 @@ import { Input } from "@/components/ui/input";
 import { RoomDesignTileFields } from "@/components/RoomDesignTileFields";
 import { RoomDesignItemDetails } from "@/components/RoomDesignItemDetails";
 import { RoomDesignDisclosure } from "@/components/RoomDesignDisclosure";
+import { mergeAutomaticRoomProduct, roomDesignLinkSourceKey } from "@/lib/roomDesignAutoScrape";
 import {
   roomDesignInitialQuantity,
   roomItemStatus,
@@ -126,6 +127,8 @@ import {
   retainRoomDesignMeasurements,
   roomDesignConfirmationMessage,
   ROOM_DESIGN_REVIEW_FIELDS,
+  roomDesignReviewBlockers,
+  confirmRoomDesignSelection,
 } from "@/lib/roomDesignReview";
 import { selectionQuantityUnitFromSpec } from "@/lib/specQuantity";
 import { mergeRoomDesignEdits, roomDesignStatesEqual } from "@/lib/roomDesignSync";
@@ -791,6 +794,20 @@ function RoomDesignWorkflow({
   const [links, setLinks] = useState(initialDraft.links);
   const [linksRoomName, setLinksRoomName] = useState(initialDraft.linksRoomName);
   const [selections, setSelections] = useState<DemoSelection[]>(initialDraft.selections);
+  const latestRoomInputs = useRef({ roomId, links, selections, method });
+  latestRoomInputs.current = { roomId, links, selections, method };
+  const autoLinkTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const autoLinkVersions = useRef(new Map<string, number>());
+  const autoLinkSequence = useRef(0);
+  useEffect(() => {
+    const timers = autoLinkTimers.current;
+    const versions = autoLinkVersions.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+      versions.clear();
+    };
+  }, [roomId]);
   const [conceptPreview, setConceptPreview] = useState(initialDraft.conceptPreview);
   const [roomPreview, setRoomPreview] = useState(initialDraft.roomPreview);
   const [planPreview, setPlanPreview] = useState(initialDraft.planPreview);
@@ -1340,46 +1357,62 @@ function RoomDesignWorkflow({
   };
 
   const chooseMethod = (next: StartMethod) => {
+    for (const timer of autoLinkTimers.current.values()) clearTimeout(timer);
+    autoLinkTimers.current.clear();
+    autoLinkVersions.current.clear();
+    setLinkScrapeStates({});
     setMethod(next);
     setConceptSourceMessage("");
     setStep(0);
     setMaterialsSent(false);
   };
 
-  const gatherLinks = async (failedOnly = false) => {
-    const instructions: DemoSelection[] = failedOnly
-      ? []
-      : links
-          .filter(
-            (link) =>
-              !/tile installation defaults/i.test(link.category) &&
-              !roomItemNeedsProduct(link) &&
-              (link.notes.trim() || roomItemStatus(link) === "TBD"),
-          )
-          .map((link) => {
-            const previous = selections.find((selection) => selection.id === `link-${link.id}`);
-            return {
-              ...previous,
-              id: `link-${link.id}`,
-              category: link.category,
-              productName: link.catalogProductName || previous?.productName || link.category,
-              vendor: previous?.vendor || "",
-              finish:
-                roomDetailValue(link.notes, "Selected color / finish") || previous?.finish || "",
-              dimensions:
-                roomDetailValue(link.notes, "Selected size / dimensions") || previous?.dimensions,
-              source: "Manual board",
-              state: "selected",
-              swatch: swatchForGroup(link.group),
-              group: link.group,
-              quantity: link.quantity,
-              notes: link.notes,
-              url: link.url || undefined,
-              productId: link.productId || null,
-              scrapeStatus: "complete",
-            };
-          });
-    const linkedItems = links.filter(
+  const gatherLinks = async (
+    failedOnly = false,
+    automaticLink?: DemoLink,
+    isCurrent = () => true,
+  ) => {
+    const automatic = Boolean(automaticLink);
+    const beforeSelections = latestRoomInputs.current.selections;
+    if (!automatic) {
+      for (const timer of autoLinkTimers.current.values()) clearTimeout(timer);
+      autoLinkTimers.current.clear();
+      autoLinkVersions.current.clear();
+    }
+    const instructions: DemoSelection[] =
+      failedOnly || automatic
+        ? []
+        : links
+            .filter(
+              (link) =>
+                !/tile installation defaults/i.test(link.category) &&
+                !roomItemNeedsProduct(link) &&
+                (link.notes.trim() || roomItemStatus(link) === "TBD"),
+            )
+            .map((link) => {
+              const previous = selections.find((selection) => selection.id === `link-${link.id}`);
+              return {
+                ...previous,
+                id: `link-${link.id}`,
+                category: link.category,
+                productName: link.catalogProductName || previous?.productName || link.category,
+                vendor: previous?.vendor || "",
+                finish:
+                  roomDetailValue(link.notes, "Selected color / finish") || previous?.finish || "",
+                dimensions:
+                  roomDetailValue(link.notes, "Selected size / dimensions") || previous?.dimensions,
+                source: "Manual board",
+                state: "selected",
+                swatch: swatchForGroup(link.group),
+                group: link.group,
+                quantity: link.quantity,
+                notes: link.notes,
+                url: link.url || undefined,
+                productId: link.productId || null,
+                scrapeStatus: "complete",
+              };
+            });
+    const linkedItems = (automaticLink ? [automaticLink] : links).filter(
       (link) =>
         roomItemNeedsProduct(link) &&
         (link.url.trim() || link.productId) &&
@@ -1396,12 +1429,17 @@ function RoomDesignWorkflow({
       return;
     }
 
-    setGathering(true);
+    if (!automatic) setGathering(true);
     try {
-      setGatherProgress({ ...EMPTY_GATHER_PROGRESS, total: linkedItems.length });
+      if (!automatic) setGatherProgress({ ...EMPTY_GATHER_PROGRESS, total: linkedItems.length });
       setLinkScrapeStates((current) => ({
-        ...(failedOnly ? current : {}),
-        ...Object.fromEntries(linkedItems.map((link) => [link.id, { status: "waiting" as const }])),
+        ...(failedOnly || automatic ? current : {}),
+        ...Object.fromEntries(
+          linkedItems.map((link) => [
+            link.id,
+            { status: automatic ? ("scraping" as const) : ("waiting" as const) },
+          ]),
+        ),
       }));
 
       const catalogPairs = await Promise.all(
@@ -1416,26 +1454,50 @@ function RoomDesignWorkflow({
         ),
       );
       const catalogByLinkId = new Map(catalogPairs.filter((entry) => Boolean(entry[1])));
+      const savedByLinkId = new Map(
+        !automatic && !failedOnly
+          ? linkedItems.flatMap((link) => {
+              const saved = selections.find(
+                (item) =>
+                  item.id === `link-${link.id}` &&
+                  item.url?.trim() === link.url.trim() &&
+                  item.state !== "draft" &&
+                  item.scrapeStatus !== "failed",
+              );
+              return saved ? [[link.id, saved] as const] : [];
+            })
+          : [],
+      );
       const linksNeedingScrape = linkedItems.filter(
-        (link) => link.url.trim() && !catalogByLinkId.has(link.id),
+        (link) =>
+          link.url.trim() &&
+          !savedByLinkId.has(link.id) &&
+          (!catalogByLinkId.has(link.id) || (automatic && !link.productId)),
       );
       let batchResults: Awaited<ReturnType<typeof scrapeProductUrlsBatch>> = [];
       let batchError = "";
       if (linksNeedingScrape.length) {
         try {
           const requestOptions = await pilotRequestOptions();
-          batchResults = await scrapeProductUrlsBatch(
-            linksNeedingScrape.map((link) => link.url),
-            fetch,
-            {
-              ...requestOptions,
-              onProgress: ({ completed }) =>
-                setGatherProgress((current) => ({
-                  ...current,
-                  completed: Math.max(current.completed, Math.min(completed, current.total)),
-                })),
-            },
-          );
+          batchResults = automatic
+            ? [
+                {
+                  url: linksNeedingScrape[0].url,
+                  product: await scrapeProductUrl(linksNeedingScrape[0].url, fetch, requestOptions),
+                },
+              ]
+            : await scrapeProductUrlsBatch(
+                linksNeedingScrape.map((link) => link.url),
+                fetch,
+                {
+                  ...requestOptions,
+                  onProgress: ({ completed }) =>
+                    setGatherProgress((current) => ({
+                      ...current,
+                      completed: Math.max(current.completed, Math.min(completed, current.total)),
+                    })),
+                },
+              );
         } catch (error) {
           batchError =
             error instanceof Error ? error.message : "The batch queue could not be completed.";
@@ -1445,6 +1507,7 @@ function RoomDesignWorkflow({
 
       const gathered: DemoSelection[] = [];
       for (const [index, link] of linkedItems.entries()) {
+        if (!isCurrent()) return;
         const fallbackVendor = inferVendorFromUrl(link.url) || "Linked vendor";
         setLinkScrapeStates((current) => ({
           ...current,
@@ -1453,22 +1516,37 @@ function RoomDesignWorkflow({
 
         const batchResult = batchByUrl.get(link.url.trim());
         const catalogProduct = catalogByLinkId.get(link.id);
-        let scraped: ScrapedProductData = catalogProduct
+        const saved = savedByLinkId.get(link.id);
+        let scraped: ScrapedProductData = saved
           ? {
-              name: catalogProduct.name,
-              vendor: catalogProduct.vendor || undefined,
-              sku: catalogProduct.sku || undefined,
-              finish: catalogProduct.finish || undefined,
-              dimensions: catalogProduct.dimensions || undefined,
-              size_options: catalogProduct.size_options || undefined,
-              selected_size: catalogProduct.selected_size || undefined,
-              price: catalogProduct.price || undefined,
-              image_url: catalogProduct.image_url || undefined,
+              name: saved.productName,
+              vendor: saved.vendor,
+              finish: saved.finish,
+              dimensions: saved.dimensions,
+              size_options: saved.sizeOptions,
+              selected_size: saved.selectedSize,
+              price: saved.price,
+              sku: saved.sku,
+              image_url: saved.imageUrl,
             }
-          : (batchResult?.product ?? {});
+          : batchResult?.product
+            ? batchResult.product
+            : catalogProduct
+              ? {
+                  name: catalogProduct.name,
+                  vendor: catalogProduct.vendor || undefined,
+                  sku: catalogProduct.sku || undefined,
+                  finish: catalogProduct.finish || undefined,
+                  dimensions: catalogProduct.dimensions || undefined,
+                  size_options: catalogProduct.size_options || undefined,
+                  selected_size: catalogProduct.selected_size || undefined,
+                  price: catalogProduct.price || undefined,
+                  image_url: catalogProduct.image_url || undefined,
+                }
+              : (batchResult?.product ?? {});
         let scrapeStatus: "complete" | "partial" | "failed" = "failed";
         let scrapeError = batchResult?.error || batchError;
-        if (!catalogProduct && !batchResult?.product) {
+        if (!saved && !catalogProduct && !batchResult?.product) {
           try {
             scraped = await scrapeProductUrl(link.url, fetch, {
               maxAttempts: 4,
@@ -1480,6 +1558,7 @@ function RoomDesignWorkflow({
               error instanceof Error ? error.message : "Product page could not be scraped.";
           }
         }
+        if (!isCurrent()) return;
         if (Object.keys(scraped).length) scrapeStatus = scrapedProductStatus(scraped);
         scraped = {
           ...scraped,
@@ -1487,7 +1566,7 @@ function RoomDesignWorkflow({
           color: cleanProductDetail(scraped.color),
         };
         const reviewMessage =
-          Object.keys(scraped).length && !link.productId
+          Object.keys(scraped).length && !link.productId && !saved
             ? productScrapeReviewMessage(link.url, link.category, scraped)
             : "";
         if (reviewMessage) {
@@ -1495,7 +1574,7 @@ function RoomDesignWorkflow({
           scrapeError = reviewMessage;
         }
 
-        let productId = catalogProduct?.id ?? null;
+        let productId = saved?.productId ?? catalogProduct?.id ?? null;
         if (!productId && scraped.name) {
           const category = toProductCategory(
             inferMaterialCategory(`${link.category} ${scraped.name}`, link.url),
@@ -1516,6 +1595,7 @@ function RoomDesignWorkflow({
           });
           productId = created?.id ?? null;
         }
+        if (!isCurrent()) return;
 
         const gatheredSelection: DemoSelection = {
           id: `link-${link.id}`,
@@ -1526,7 +1606,7 @@ function RoomDesignWorkflow({
             roomDetailValue(link.notes, "Selected color / finish") ||
             cleanProductDetail(scraped.finish || scraped.color),
           source: link.productId ? ("Product catalog" as const) : ("Product link" as const),
-          state: "selected" as const,
+          state: saved?.state ?? ("selected" as const),
           swatch: swatchForGroup(link.group),
           url: link.url || catalogProduct?.product_url || undefined,
           group: link.group,
@@ -1551,7 +1631,8 @@ function RoomDesignWorkflow({
           sizeOptions: scraped.size_options,
           selectedSize: scraped.selected_size,
           scrapeStatus,
-          scrapeError: scrapeError || undefined,
+          scrapeError: saved?.scrapeError || scrapeError || undefined,
+          reviewFields: saved?.reviewFields,
           productId,
         };
         const missing = roomDesignProductGaps(gatheredSelection);
@@ -1574,29 +1655,123 @@ function RoomDesignWorkflow({
                 .join(" ") || undefined,
           },
         }));
-        setGatherProgress((current) => ({
-          ...current,
-          completed: Math.max(current.completed, index + 1),
-          successful: current.successful + (gatheredSelection.scrapeStatus === "complete" ? 1 : 0),
-          partial: current.partial + (gatheredSelection.scrapeStatus === "partial" ? 1 : 0),
-          failed: current.failed + (gatheredSelection.scrapeStatus === "failed" ? 1 : 0),
-        }));
+        if (!automatic)
+          setGatherProgress((current) => ({
+            ...current,
+            completed: Math.max(current.completed, index + 1),
+            successful:
+              current.successful + (gatheredSelection.scrapeStatus === "complete" ? 1 : 0),
+            partial: current.partial + (gatheredSelection.scrapeStatus === "partial" ? 1 : 0),
+            failed: current.failed + (gatheredSelection.scrapeStatus === "failed" ? 1 : 0),
+          }));
       }
 
-      addSelections([...gathered, ...instructions]);
+      if (!isCurrent()) return;
+      if (automaticLink) {
+        const latest = latestRoomInputs.current;
+        const latestLink = latest.links.find((link) => link.id === automaticLink.id);
+        if (!latestLink || !gathered[0]) return;
+        const next = mergeAutomaticRoomProduct(
+          gathered[0],
+          beforeSelections.find((item) => item.id === gathered[0].id),
+          latest.selections.find((item) => item.id === gathered[0].id),
+          latestLink,
+        );
+        if (!next) return;
+        setSelections((current) =>
+          current.some((item) => item.id === next.id)
+            ? current.map((item) => (item.id === next.id ? next : item))
+            : [...current, next],
+        );
+        const missing = roomDesignProductGaps(next);
+        const confirmation = roomDesignConfirmationMessage(next);
+        setLinkScrapeStates((current) => ({
+          ...current,
+          [automaticLink.id]: {
+            status:
+              next.scrapeStatus === "failed"
+                ? "failed"
+                : missing.length || confirmation
+                  ? "partial"
+                  : "complete",
+            message:
+              [
+                missing.length ? `Missing: ${missing.map((gap) => gap.label).join(", ")}.` : "",
+                confirmation,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined,
+          },
+        }));
+      } else addSelections([...gathered, ...instructions]);
       setBoardReady(false);
       setRenderReady(false);
       setCompletedRenderPreview("");
-      setStep(1);
+      if (!automatic) setStep(1);
     } catch (error) {
+      if (!isCurrent()) return;
+      if (automaticLink) {
+        setLinkScrapeStates((current) => ({
+          ...current,
+          [automaticLink.id]: {
+            status: "failed",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Could not read this product link. You can enter its details manually.",
+          },
+        }));
+      }
       setReviewError(
         error instanceof Error
           ? error.message
           : "Product gathering failed. Your saved selections are still available.",
       );
     } finally {
-      setGathering(false);
+      if (!automatic) setGathering(false);
     }
+  };
+
+  const queueLinkLookup = (link: DemoLink) => {
+    const prior = autoLinkTimers.current.get(link.id);
+    if (prior) clearTimeout(prior);
+    const version = ++autoLinkSequence.current;
+    autoLinkVersions.current.set(link.id, version);
+    const requestedRoom = roomId;
+    const source = roomDesignLinkSourceKey(link);
+    if (
+      (!link.productId && !/^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(link.url.trim())) ||
+      !roomItemNeedsProduct(link)
+    ) {
+      setLinkScrapeStates((current) => {
+        const next = { ...current };
+        delete next[link.id];
+        return next;
+      });
+      return;
+    }
+    setLinkScrapeStates((current) => ({ ...current, [link.id]: { status: "waiting" } }));
+    autoLinkTimers.current.set(
+      link.id,
+      setTimeout(() => {
+        autoLinkTimers.current.delete(link.id);
+        const isCurrent = () => {
+          const latest = latestRoomInputs.current;
+          const currentLink = latest.links.find((item) => item.id === link.id);
+          return (
+            latest.roomId === requestedRoom &&
+            latest.method === "links" &&
+            autoLinkVersions.current.get(link.id) === version &&
+            Boolean(
+              currentLink &&
+              roomDesignLinkSourceKey(currentLink) === source &&
+              roomItemNeedsProduct(currentLink),
+            )
+          );
+        };
+        if (isCurrent()) void gatherLinks(false, link, isCurrent);
+      }, 1000),
+    );
   };
 
   const retryFailedLinks = () => {
@@ -1698,6 +1873,16 @@ function RoomDesignWorkflow({
   const applyLinks = (proposed: DemoLink[]) => {
     const next = markRoomRelatedChanges(links, proposed);
     setLinks(next);
+    setLinkScrapeStates((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) =>
+          next.some(
+            (link) =>
+              link.id === id && roomItemNeedsProduct(link) && (link.url.trim() || link.productId),
+          ),
+        ),
+      ),
+    );
     setSelections((current) =>
       current.map((selection) => {
         const link = next.find((item) => `link-${item.id}` === selection.id);
@@ -1705,9 +1890,15 @@ function RoomDesignWorkflow({
         const priorLink = links.find((item) => item.id === link.id);
         const sourceChanged =
           priorLink && (priorLink.url !== link.url || priorLink.productId !== link.productId);
-        if (!sourceChanged && link.notes === (selection.notes || "")) return selection;
+        if (
+          !sourceChanged &&
+          link.notes === (selection.notes || "") &&
+          link.quantity === selection.quantity
+        )
+          return selection;
         return {
           ...selection,
+          quantity: link.quantity,
           ...synchronizeRoomSelectionDetails(selection, { notes: link.notes }),
           state: "selected" as const,
           ...(sourceChanged
@@ -1862,6 +2053,27 @@ function RoomDesignWorkflow({
       );
     } finally {
       setSourcing(false);
+    }
+  };
+
+  const reviewSelection = (id: string) => {
+    const selection = selections.find((item) => item.id === id);
+    if (!selection) return;
+    try {
+      const reviewed = confirmRoomDesignSelection(selection);
+      setSelections((current) => current.map((item) => (item.id === id ? reviewed : item)));
+      setLinks((current) =>
+        current.map((link) =>
+          `link-${link.id}` === id ? { ...link, notes: reviewed.notes || "" } : link,
+        ),
+      );
+      setReviewError("");
+    } catch (error) {
+      setReviewError(
+        error instanceof Error
+          ? error.message
+          : "Complete the missing details before reviewing this item.",
+      );
     }
   };
 
@@ -2033,7 +2245,9 @@ function RoomDesignWorkflow({
                 method={method}
                 onMethod={chooseMethod}
                 links={links}
+                loadedProducts={selections}
                 onLinks={applyLinks}
+                onLookupLink={queueLinkLookup}
                 projectDefaultLinks={projectDefaultLinks}
                 onOpenDefaults={
                   defaultsRoom && defaultsRoom.id !== roomId
@@ -2072,18 +2286,7 @@ function RoomDesignWorkflow({
                 gathering={gathering}
                 onRetryFailed={retryFailedLinks}
                 onUpdate={updateSelection}
-                onToggle={(id) =>
-                  setSelections((current) =>
-                    current.map((selection) =>
-                      selection.id === id
-                        ? {
-                            ...selection,
-                            state: selection.state === "locked" ? "selected" : "locked",
-                          }
-                        : selection,
-                    ),
-                  )
-                }
+                onReview={reviewSelection}
                 onBack={() => setStep(0)}
                 onContinue={composeBoard}
               />
@@ -2101,6 +2304,7 @@ function RoomDesignWorkflow({
                 onReplaceProduct={replaceSelectionFromUrl}
                 onReplaceImage={replaceSelectionImage}
                 onUpdate={updateSelection}
+                onReview={reviewSelection}
                 onPopulateBoard={populateStudioDesignBoard}
                 onRemoveBackground={removeSelectionBackground}
                 initialStudioPageCount={roomDesignGeneratedPageCount(designBoardState, roomId)}
@@ -2365,9 +2569,11 @@ function StartStep(props: {
   method: StartMethod;
   onMethod: (method: StartMethod) => void;
   links: DemoLink[];
+  loadedProducts: DemoSelection[];
   projectDefaultLinks: DemoLink[];
   onOpenDefaults?: () => void;
   onLinks: (links: DemoLink[]) => void;
+  onLookupLink: (link: DemoLink) => void;
   gathering: boolean;
   gatherProgress: GatherProgress;
   linkScrapeStates: Record<string, LinkScrapeState>;
@@ -2521,7 +2727,8 @@ function StartStep(props: {
             <div>
               <h3 className="text-2xl font-bold sm:text-3xl">{props.roomName} checklist</h3>
               <p className="mt-2 text-sm font-normal text-muted-foreground">
-                Paste a product link or choose from the catalog
+                Paste a product link or choose from the catalog. Links fill product details
+                automatically; prices can stay blank.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -2731,20 +2938,18 @@ function StartStep(props: {
                       aria-label={`${item.category} product link`}
                       value={item.url}
                       disabled={props.gathering || roomItemStatus(item) === "Not needed"}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const next = {
+                          ...item,
+                          url: event.target.value,
+                          productId: undefined,
+                          catalogProductName: undefined,
+                        };
                         props.onLinks(
-                          props.links.map((link) =>
-                            link.id === item.id
-                              ? {
-                                  ...link,
-                                  url: event.target.value,
-                                  productId: undefined,
-                                  catalogProductName: undefined,
-                                }
-                              : link,
-                          ),
-                        )
-                      }
+                          props.links.map((link) => (link.id === item.id ? next : link)),
+                        );
+                        props.onLookupLink(next);
+                      }}
                       placeholder={
                         roomItemNeedsProduct(item)
                           ? "Paste product link"
@@ -2754,20 +2959,18 @@ function StartStep(props: {
                     <CatalogPickerButton
                       item={item}
                       disabled={props.gathering || roomItemStatus(item) === "Not needed"}
-                      onSelect={(product) =>
+                      onSelect={(product) => {
+                        const next = {
+                          ...item,
+                          productId: product.id,
+                          catalogProductName: product.name,
+                          url: product.product_url || "",
+                        };
                         props.onLinks(
-                          props.links.map((link) =>
-                            link.id === item.id
-                              ? {
-                                  ...link,
-                                  productId: product.id,
-                                  catalogProductName: product.name,
-                                  url: product.product_url || "",
-                                }
-                              : link,
-                          ),
-                        )
-                      }
+                          props.links.map((link) => (link.id === item.id ? next : link)),
+                        );
+                        props.onLookupLink(next);
+                      }}
                     />
                   </>
                 )}
@@ -2784,6 +2987,46 @@ function StartStep(props: {
                   <span />
                 )}
                 <div className="space-y-2 md:col-span-full">
+                  {props.loadedProducts
+                    .filter(
+                      (selection) =>
+                        selection.id === `link-${item.id}` &&
+                        (selection.url || "").trim() === item.url.trim() &&
+                        selection.state !== "draft",
+                    )
+                    .map((selection) => (
+                      <div
+                        key={selection.id}
+                        className="flex items-start gap-3 border-l-2 border-border py-2 pl-3"
+                      >
+                        <SelectionVisual
+                          selection={selection}
+                          className="h-12 w-12 shrink-0 border border-border"
+                        />
+                        <div className="min-w-0 text-xs">
+                          <p className="font-semibold">{selection.productName}</p>
+                          <p className="mt-1 text-muted-foreground">
+                            {[
+                              selection.vendor,
+                              cleanProductDetail(selection.finish),
+                              selection.dimensions,
+                              selection.price,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                          {roomDesignProductGaps(selection).length > 0 && (
+                            <p className="mt-1 text-amber-800">
+                              To finish:{" "}
+                              {roomDesignProductGaps(selection)
+                                .map((gap) => gap.label)
+                                .join(", ")}
+                              . Open Review products to fill these in.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   {!/tile installation defaults/i.test(item.category) && (
                     <RoomDesignItemDetails
                       category={item.category}
@@ -2913,6 +3156,9 @@ function StartStep(props: {
               onClick={props.onGather}
               disabled={
                 props.gathering ||
+                Object.values(props.linkScrapeStates).some(
+                  (state) => state.status === "waiting" || state.status === "scraping",
+                ) ||
                 !props.links.some(
                   (item) =>
                     item.url.trim() ||
@@ -2924,7 +3170,11 @@ function StartStep(props: {
               {props.gathering ? <RefreshCw className="animate-spin" /> : <Sparkles />}
               {props.gathering
                 ? "Gathering product details..."
-                : "Gather products into selection set"}
+                : Object.values(props.linkScrapeStates).some(
+                      (state) => state.status === "waiting" || state.status === "scraping",
+                    )
+                  ? "Reading product links..."
+                  : "Review products"}
             </Button>
           </div>
         </div>
@@ -3072,7 +3322,7 @@ function SelectionsStep({
   gathering,
   onRetryFailed,
   onUpdate,
-  onToggle,
+  onReview,
   onBack,
   onContinue,
 }: {
@@ -3080,7 +3330,7 @@ function SelectionsStep({
   gathering: boolean;
   onRetryFailed: () => void;
   onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
-  onToggle: (id: string) => void;
+  onReview: (id: string) => void;
   onBack: () => void;
   onContinue: () => void;
 }) {
@@ -3140,25 +3390,11 @@ function SelectionsStep({
                     {roomItemNeedsProduct(selection) && (
                       <QuantityEditor selection={selection} onUpdate={onUpdate} compact />
                     )}
-                    <ProductDetailsEditor selection={selection} onUpdate={onUpdate} />
-                    <Button
-                      size="sm"
-                      variant={selection.state === "locked" ? "default" : "outline"}
-                      onClick={() => onToggle(selection.id)}
-                      disabled={
-                        roomDesignSelectionIssues(selection).length > 0 ||
-                        Boolean(roomDesignConfirmationMessage(selection))
-                      }
-                      title={[
-                        ...roomDesignSelectionIssues(selection),
-                        roomDesignConfirmationMessage(selection),
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {selection.state === "locked" ? <Lock /> : <Check />}{" "}
-                      {selection.state === "locked" ? "Reviewed" : "Mark reviewed"}
-                    </Button>
+                    <ProductDetailsEditor
+                      selection={selection}
+                      onUpdate={onUpdate}
+                      onReview={onReview}
+                    />
                   </div>
                 }
               />
@@ -3320,6 +3556,7 @@ function BoardStep({
   onReplaceProduct,
   onReplaceImage,
   onUpdate,
+  onReview,
   onPopulateBoard,
   onRemoveBackground,
   initialStudioPageCount,
@@ -3338,6 +3575,7 @@ function BoardStep({
   onReplaceProduct: (id: string, url: string) => Promise<DemoSelection>;
   onReplaceImage: (id: string, imageUrl: string) => Promise<DemoSelection>;
   onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
+  onReview: (id: string) => void;
   onPopulateBoard: (pageCount: number, selections: DemoSelection[]) => Promise<void>;
   onRemoveBackground: (imageUrl: string) => Promise<string>;
   initialStudioPageCount: number;
@@ -3876,7 +4114,11 @@ function BoardStep({
               Room Selection Set quantity
             </div>
             <QuantityEditor selection={selectedSelection} onUpdate={onUpdate} />
-            <ProductDetailsEditor selection={selectedSelection} onUpdate={onUpdate} />
+            <ProductDetailsEditor
+              selection={selectedSelection}
+              onUpdate={onUpdate}
+              onReview={onReview}
+            />
             <p className="mt-2 text-xs text-muted-foreground">
               This quantity follows the product into Materials, Specs, and Procurement. The board
               still shows one representative image.
@@ -5111,11 +5353,13 @@ function SelectionVisual({
 function ProductDetailsEditor({
   selection,
   onUpdate,
+  onReview,
 }: {
   selection: DemoSelection;
   onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
+  onReview: (id: string) => void;
 }) {
-  const issues = roomDesignSelectionIssues(selection);
+  const blockers = roomDesignReviewBlockers(selection);
   const gaps = roomDesignProductGaps(selection);
   const confirmation = roomDesignConfirmationMessage(selection);
   const gapKey = gaps.map((gap) => gap.field).join("|");
@@ -5183,6 +5427,7 @@ function ProductDetailsEditor({
               ).map(([key, label]) => (
                 <label key={key}>
                   {label}
+                  {key === "price" ? " (optional)" : ""}
                   <Input
                     aria-label={`${selection.category} ${label}`}
                     aria-invalid={gaps.some((gap) => gap.field === key) || undefined}
@@ -5213,6 +5458,7 @@ function ProductDetailsEditor({
           productName={selection.productName}
           notes={selection.notes}
           productSource={[selection.productId, selection.url].filter(Boolean).join("|")}
+          showFitConfirmationAction={false}
           onChange={(notes) => onUpdate(selection.id, { notes })}
         />
         {roomItemShowsTileFields(selection) && (
@@ -5228,25 +5474,16 @@ function ProductDetailsEditor({
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
         <Button
           size="sm"
-          disabled={roomItemNeedsProduct(selection) ? gaps.length > 0 : issues.length > 0}
-          onClick={() =>
-            onUpdate(selection.id, {
-              scrapeStatus: "complete",
-              scrapeError: undefined,
-              reviewFields: undefined,
-              state: selection.state === "locked" ? "locked" : "selected",
-            })
-          }
+          disabled={blockers.length > 0 || selection.state === "locked"}
+          title={blockers.join(" ")}
+          onClick={() => onReview(selection.id)}
         >
-          {confirmation
-            ? "Confirm changes"
-            : `Confirm ${roomItemNeedsProduct(selection) ? "product" : "item"} details`}
+          {selection.state === "locked" ? <CheckCircle2 /> : <Check />}
+          {selection.state === "locked" ? "Reviewed" : "Confirm & mark reviewed"}
         </Button>
-        {!!issues.length && (
+        {!!blockers.length && (
           <p role="status" className="text-amber-800">
-            {roomItemNeedsProduct(selection) && !gaps.length
-              ? "Product details can be confirmed. Resolve the remaining item decisions before marking reviewed."
-              : "Resolve the flagged details above to confirm."}
+            Complete the missing details listed above to mark this item reviewed.
           </p>
         )}
       </div>

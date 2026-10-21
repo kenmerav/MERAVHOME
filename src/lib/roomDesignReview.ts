@@ -1,7 +1,5 @@
 import { cleanProductDetail } from "./productDetails";
 import { exactProductPrice } from "./productPricing";
-import { allowsMissingMaterialPrice } from "./specCompletion";
-import type { MaterialItem } from "./db";
 import { parseSpecQuantity, specQuantityUnitFromSelection } from "./specQuantity";
 import type { RoomDesignSelection } from "./roomDesignWorkflow";
 import { roomDesignTileIssues } from "./roomDesignTile";
@@ -13,6 +11,7 @@ import {
   roomDetailValue,
   roomItemStatus,
   roomDecisionIssues,
+  updateRoomDetail,
 } from "./roomDesignDetails";
 
 /** Other designers go straight from the board to approval during render testing. */
@@ -97,20 +96,11 @@ export function roomDesignProductGaps(item: RoomDesignSelection): RoomDesignProd
       label: "Selected size",
       message: `Choose the selected size (${[...sizeChoices].join(" / ")}) and enter it in Product dimensions.`,
     });
-  const pricingOptional =
-    !/hardware|hooks?|towel|holder|fan|outlet|power|shelf rails|lighting|pendant|sconce|appliance|refrigerator|range|oven/i.test(
-      item.category,
-    ) &&
-    allowsMissingMaterialPrice({
-      item_label: item.category,
-      product_url: item.url,
-      product: { name: item.productName },
-    } as MaterialItem);
-  if (!pricingOptional && !exactProductPrice(item.price))
+  if (cleanProductDetail(item.price) && !exactProductPrice(item.price))
     gaps.push({
       field: "price",
       label: "Price",
-      message: "Confirm the exact selected product price.",
+      message: "Enter a single price or leave Price blank.",
     });
   return gaps;
 }
@@ -183,6 +173,29 @@ export function roomDesignSelectionIssues(item: RoomDesignSelection): string[] {
     }
   }
   return issues;
+}
+
+/** The final review click acknowledges displayed fit checks as well as product edits. */
+export function roomDesignReviewBlockers(item: RoomDesignSelection): string[] {
+  return roomDesignSelectionIssues({
+    ...item,
+    notes: updateRoomDetail(item.notes, "Related change review", ""),
+  });
+}
+
+export function confirmRoomDesignSelection<T extends RoomDesignSelection>(item: T): T {
+  const blockers = roomDesignReviewBlockers(item);
+  if (blockers.length) throw new Error(blockers.join(" "));
+  return {
+    ...item,
+    notes: roomDetailValue(item.notes, "Related change review")
+      ? updateRoomDetail(item.notes, "Related change review", "")
+      : item.notes,
+    state: "locked",
+    scrapeStatus: "complete",
+    scrapeError: undefined,
+    reviewFields: undefined,
+  };
 }
 
 export function roomDesignOrderReady(item: RoomDesignSelection) {

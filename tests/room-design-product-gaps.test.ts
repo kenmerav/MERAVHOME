@@ -5,6 +5,8 @@ import {
   roomDesignStepForAccess,
   roomDesignConfirmationMessage,
   roomDesignOrderReady,
+  confirmRoomDesignSelection,
+  roomDesignReviewBlockers,
 } from "@/lib/roomDesignReview";
 import {
   createDefaultRoomDesignWorkflowState,
@@ -147,6 +149,44 @@ it("persists the exact confirmation fields and published size choices in saved r
   expect(roomDesignConfirmationMessage(saved)).toBe("Confirm changes: Price.");
 });
 
+it("confirms changes, acknowledges displayed fit checks and marks reviewed in one saved update", () => {
+  const changed = product({
+    scrapeStatus: "partial",
+    scrapeError: "Review the edited product details.",
+    reviewFields: ["finish", "price"],
+    notes:
+      "Keep the existing mounting location.\nRelated change review: Recheck fit after Vanity layout changed.",
+  });
+  expect(roomDesignReviewBlockers(changed)).toEqual([]);
+  const reviewed = confirmRoomDesignSelection(changed);
+  expect(reviewed.state).toBe("locked");
+  expect(reviewed.scrapeStatus).toBe("complete");
+  expect(reviewed.reviewFields).toBeUndefined();
+  expect(reviewed.scrapeError).toBeUndefined();
+  expect(reviewed.notes).toBe("Keep the existing mounting location.");
+  expect(roomDesignConfirmationMessage(reviewed)).toBe("");
+  expect(roomDesignSelectionIssues(reviewed)).toEqual([]);
+  expect(changed.notes).toContain("Related change review");
+  const state = createDefaultRoomDesignWorkflowState("Bathroom");
+  state.selections = [reviewed];
+  expect(
+    normalizeRoomDesignWorkflowState(JSON.parse(JSON.stringify(state)), state).selections[0].state,
+  ).toBe("locked");
+});
+
+it("keeps required product, quantity and tile decisions blocking the combined confirmation", () => {
+  for (const item of [
+    product({ imageUrl: "" }),
+    product({ quantity: null }),
+    product({ category: "Shower wall tile", productName: "Ceramic tile", quantityUnit: "sq ft" }),
+    product({ notes: "Measurement status: Field measurement needed" }),
+  ]) {
+    expect(roomDesignReviewBlockers(item).length).toBeGreaterThan(0);
+    expect(() => confirmRoomDesignSelection(item)).toThrow();
+    expect(item.state).toBe("selected");
+  }
+});
+
 it("detects missing names, vendor, link and image even if the scrape claims completion", () => {
   expect(
     roomDesignProductGaps(
@@ -161,30 +201,30 @@ it("detects missing names, vendor, link and image even if the scrape claims comp
   ).toEqual(["productName", "vendor", "url", "imageUrl"]);
 });
 
-it("uses existing pricing exemptions and does not demand optional SKU or every dimension", () => {
-  for (const category of ["Countertop", "Wall paint", "Cabinet finish"]) {
+it("allows blank prices for all room products without treating them as zero", () => {
+  for (const category of [
+    "Countertop",
+    "Wall paint",
+    "Cabinet finish",
+    "Cabinet hardware",
+    "Hooks",
+    "Cabinet interior lighting",
+    "Toilet",
+    "Mirror",
+  ]) {
     expect(
       roomDesignProductGaps(
         product({ category, productName: category, price: "", dimensions: "" }),
       ),
     ).toEqual([]);
+    const reviewed = confirmRoomDesignSelection(
+      product({ category, productName: category, price: "" }),
+    );
+    expect(reviewed.price).toBe("");
+    expect(reviewed.state).toBe("locked");
+    expect(roomDesignOrderReady(reviewed)).toBe(false);
   }
-  expect(
-    roomDesignProductGaps(product({ category: "Cabinet hardware", price: "" })).map(
-      (gap) => gap.field,
-    ),
-  ).toContain("price");
-  expect(
-    roomDesignProductGaps(
-      product({ category: "Hooks", productName: "Hooks for within cabinets", price: "" }),
-    ).map((gap) => gap.field),
-  ).toContain("price");
   expect(roomDesignProductGaps(product({ sku: "" }))).toEqual([]);
-  expect(
-    roomDesignProductGaps(product({ category: "Cabinet interior lighting", price: "" })).map(
-      (gap) => gap.field,
-    ),
-  ).toContain("price");
   expect(roomDesignProductGaps(product({ category: "Towel hook", dimensions: "" }))).toEqual([]);
 });
 
