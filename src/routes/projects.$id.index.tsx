@@ -80,6 +80,7 @@ import {
   isClientRole,
   isContractorRole,
   isSharedProjectRole,
+  isStudioTeamRole,
 } from "@/lib/permissions";
 import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
@@ -330,6 +331,15 @@ function ProjectDetailPage() {
               >
                 <BookOpen className="w-4 h-4" /> Spec Book
               </Link>
+              {profile?.is_active && isStudioTeamRole(profile.role) && (
+                <Link
+                  to="/projects/$id/renderings"
+                  params={{ id }}
+                  className="inline-flex flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 border border-ink text-ink text-sm hover:bg-ink hover:text-primary-foreground transition-colors"
+                >
+                  <ImageIcon className="w-4 h-4" /> Renderings
+                </Link>
+              )}
               {canUseRenderingStudio(profile) && (
                 <Link
                   to="/projects/$id/rendering-studio"
