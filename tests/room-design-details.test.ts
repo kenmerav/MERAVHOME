@@ -21,6 +21,7 @@ import {
   markRoomRelatedChanges,
   roomDesignScrapedNotes,
   roomRelatedFitReview,
+  roomItemSummaryNotes,
 } from "@/lib/roomDesignDetails";
 import { roomDesignOrderReady, roomDesignSelectionIssues } from "@/lib/roomDesignReview";
 import { mergeRoomDesignEdits } from "@/lib/roomDesignSync";
@@ -202,6 +203,20 @@ it("omits saved fit warnings for backsplash, countertops and sink drains", () =>
     expect(roomDecisionIssues({ category, notes }), category).toEqual([]);
   }
   expect(roomRelatedFitReview({ category: "Shower drain", notes })).toContain("Recheck fit");
+});
+
+it("hides obsolete fit notes under item names while preserving the actual installation notes", () => {
+  const fit = "Related change review: Recheck fit after Appliance layout changed.";
+  const notes = `Material thickness: 3 cm\n${fit}\nEdge profile: Eased`;
+  for (const category of ["Countertop", "Backsplash", "Faucet", "Sink drain"]) {
+    expect(roomItemSummaryNotes({ category, notes })).toBe(
+      "Material thickness: 3 cm\nEdge profile: Eased",
+    );
+    expect(roomItemSummaryNotes({ category, notes: fit })).toBe("");
+  }
+  expect(roomItemSummaryNotes({ category: "Cabinet layout", notes })).toBe(notes);
+  expect(roomItemSummaryNotes({ category: "Countertop" })).toBe("");
+  expect(notes).toContain(fit);
 });
 
 it("removes hardware and dishwasher installation forms without losing saved instructions", () => {

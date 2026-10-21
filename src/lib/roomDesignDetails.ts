@@ -85,6 +85,17 @@ export function roomRelatedFitReview(item: { category: string; notes?: string })
     ? ""
     : roomDetailValue(item.notes, "Related change review");
 }
+
+/** Hide obsolete fit tasks in the checklist summary without changing saved notes. */
+export function roomItemSummaryNotes(item: { category: string; notes?: string }) {
+  const notes = item.notes || "";
+  return omitRelatedFitReview(item.category)
+    ? notes
+        .split(/\r?\n/)
+        .filter((line) => !/^Related change review:/i.test(line.trim()))
+        .join("\n")
+    : notes;
+}
 export function roomItemDetailFields(
   category: string,
   context: { notes?: string; productName?: string } = {},

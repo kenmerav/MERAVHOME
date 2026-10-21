@@ -56,6 +56,7 @@ import {
   roomDesignInitialQuantity,
   roomItemStatus,
   roomItemNeedsProduct,
+  roomItemSummaryNotes,
   roomDetailValue,
   roomScopeValue,
   updateRoomScope,
@@ -2810,7 +2811,7 @@ function StartStep(props: {
                   </div>
                   <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
                     {item.group}
-                    {item.notes ? ` · ${item.notes}` : ""}
+                    {roomItemSummaryNotes(item) ? ` · ${roomItemSummaryNotes(item)}` : ""}
                   </div>
                   {item.productId && item.catalogProductName && (
                     <div className="mt-1 truncate text-[10px] font-medium text-amber-800">
