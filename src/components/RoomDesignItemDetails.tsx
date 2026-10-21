@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { RoomDesignDisclosure } from "@/components/RoomDesignDisclosure";
 import { Input } from "@/components/ui/input";
 import {
   roomDetailValue,
@@ -77,42 +77,30 @@ export function RoomDesignItemDetails({
     </label>
   );
   return (
-    <details
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-      className="group border border-border bg-bone/25"
+    <RoomDesignDisclosure
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      label={`${category} item details`}
+      title={
+        fields.filter((field) => !field.section).length === 1
+          ? "Notes"
+          : /paint|wall finish|ceiling finish/i.test(category) && !/tile/i.test(productName || "")
+            ? "Paint details"
+            : "Installation details"
+      }
+      attention={pending}
+      status={
+        pending ? "Decisions needed" : saved.length ? `${saved.length} details added` : "Optional"
+      }
+      description={
+        saved.join(" · ") ||
+        fields
+          .slice(0, 3)
+          .map((field) => field.label)
+          .join(" · ")
+      }
     >
-      <summary
-        aria-label={`${category} item details`}
-        className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-xs [&::-webkit-details-marker]:hidden"
-      >
-        <span className="min-w-0">
-          <span className="font-medium">
-            {fields.filter((field) => !field.section).length === 1
-              ? "Notes"
-              : /paint|wall finish|ceiling finish/i.test(category) &&
-                  !/tile/i.test(productName || "")
-                ? "Paint details"
-                : "Installation details"}
-          </span>
-          <span className={pending ? "ml-2 text-amber-800" : "ml-2 text-muted-foreground"}>
-            {pending
-              ? "Decisions needed"
-              : saved.length
-                ? `${saved.length} details added`
-                : "Optional"}
-          </span>
-          <span className="mt-1 block truncate text-muted-foreground">
-            {saved.join(" · ") ||
-              fields
-                .slice(0, 3)
-                .map((field) => field.label)
-                .join(" · ")}
-          </span>
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="space-y-3 border-t border-border p-3">
+      <div className="space-y-3">
         {status !== "Not needed" && (
           <>
             {defaultCount > 0 && defaultNotes && (
@@ -171,15 +159,7 @@ export function RoomDesignItemDetails({
             </p>
           </>
         )}
-        <button
-          type="button"
-          className="text-xs underline underline-offset-2"
-          aria-label={`Collapse ${category} item details`}
-          onClick={() => setExpanded(false)}
-        >
-          Collapse details
-        </button>
       </div>
-    </details>
+    </RoomDesignDisclosure>
   );
 }

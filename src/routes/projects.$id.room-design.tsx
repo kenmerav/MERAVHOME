@@ -50,6 +50,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { RoomDesignTileFields } from "@/components/RoomDesignTileFields";
 import { RoomDesignItemDetails } from "@/components/RoomDesignItemDetails";
+import { RoomDesignDisclosure } from "@/components/RoomDesignDisclosure";
 import {
   roomDesignInitialQuantity,
   roomItemStatus,
@@ -2491,9 +2492,7 @@ function StartStep(props: {
         <div className="p-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h3 className="text-2xl font-bold sm:text-3xl">
-                {props.roomName} checklist
-              </h3>
+              <h3 className="text-2xl font-bold sm:text-3xl">{props.roomName} checklist</h3>
               <p className="mt-2 text-sm font-normal text-muted-foreground">
                 Paste a product link or choose from the catalog
               </p>
@@ -3110,7 +3109,7 @@ function SelectionsStep({
                 selection={selection}
                 stackAction
                 action={
-                  <div className="flex flex-wrap items-end justify-end gap-2">
+                  <div className="space-y-4">
                     {roomItemNeedsProduct(selection) && (
                       <QuantityEditor selection={selection} onUpdate={onUpdate} compact />
                     )}
@@ -5092,67 +5091,72 @@ function ProductDetailsEditor({
     if (gapKey) setExpanded(true);
   }, [selection.id, gapKey]);
   return (
-    <details
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-      className={cn(
-        "w-full min-w-[220px] border p-3 text-xs",
-        gaps.length ? "border-amber-300 bg-amber-50/40" : "border-border",
-      )}
-    >
-      <summary className="cursor-pointer">
-        {gaps.length
-          ? `Fix missing product info (${gaps.length})`
-          : `Review ${roomItemNeedsProduct(selection) ? "product" : "item"} details${issues.length ? ` (${issues.length} to resolve)` : ""}`}
-      </summary>
-      {gaps.length > 0 && (
-        <div role="status" className="mt-3 border-l-2 border-amber-500 pl-3 text-amber-950">
-          <p className="font-medium">{selection.category}: missing or unconfirmed information</p>
-          <p className="mt-1">
-            {gaps.map((gap) => gap.label).join(" · ")}. Enter the selected product’s details below.
-          </p>
-          {selection.url && (
-            <a
-              className="mt-2 inline-block underline underline-offset-2"
-              href={selection.url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open product link ↗
-            </a>
-          )}
-        </div>
-      )}
+    <div className="w-full min-w-0 space-y-3 text-xs">
       {roomItemNeedsProduct(selection) && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {(
-            [
-              ["productName", "Product name"],
-              ["vendor", "Vendor"],
-              ["finish", "Color / finish"],
-              ["sku", "SKU / model"],
-              ["dimensions", "Product dimensions"],
-              ["price", "Price"],
-              ["url", "Exact product link"],
-              ["imageUrl", "Selected image URL"],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key}>
-              {label}
-              <Input
-                aria-label={`${selection.category} ${label}`}
-                aria-invalid={gaps.some((gap) => gap.field === key) || undefined}
-                className={
-                  gaps.some((gap) => gap.field === key) ? "border-amber-500 bg-amber-50" : undefined
-                }
-                value={selection[key] || ""}
-                onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
-              />
-            </label>
-          ))}
-        </div>
+        <RoomDesignDisclosure
+          title="Product details"
+          label={`${selection.category} product details`}
+          status={gaps.length ? `${gaps.length} missing details` : "Ready to review"}
+          description="Name, vendor, color, dimensions, price and links"
+          attention={gaps.length > 0}
+          expanded={expanded}
+          onExpandedChange={setExpanded}
+        >
+          {gaps.length > 0 && (
+            <div role="status" className="mt-3 border-l-2 border-amber-500 pl-3 text-amber-950">
+              <p className="font-medium">
+                {selection.category}: missing or unconfirmed information
+              </p>
+              <p className="mt-1">
+                {gaps.map((gap) => gap.label).join(" · ")}. Enter the selected product’s details
+                below.
+              </p>
+              {selection.url && (
+                <a
+                  className="mt-2 inline-block underline underline-offset-2"
+                  href={selection.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open product link ↗
+                </a>
+              )}
+            </div>
+          )}
+          {roomItemNeedsProduct(selection) && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {(
+                [
+                  ["productName", "Product name"],
+                  ["vendor", "Vendor"],
+                  ["finish", "Color / finish"],
+                  ["sku", "SKU / model"],
+                  ["dimensions", "Product dimensions"],
+                  ["price", "Price"],
+                  ["url", "Exact product link"],
+                  ["imageUrl", "Selected image URL"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key}>
+                  {label}
+                  <Input
+                    aria-label={`${selection.category} ${label}`}
+                    aria-invalid={gaps.some((gap) => gap.field === key) || undefined}
+                    className={
+                      gaps.some((gap) => gap.field === key)
+                        ? "border-amber-500 bg-amber-50"
+                        : undefined
+                    }
+                    value={selection[key] || ""}
+                    onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+        </RoomDesignDisclosure>
       )}
-      <div className="mt-3">
+      <div className="space-y-3">
         <RoomDesignItemDetails
           category={selection.category}
           itemStatus={roomItemStatus(selection)}
@@ -5171,22 +5175,23 @@ function ProductDetailsEditor({
           />
         )}
       </div>
-      {!!issues.length && (
-        <ul className="my-3 list-disc space-y-1 pl-4 text-amber-800">
-          {issues.map((issue) => (
-            <li key={issue}>{issue}</li>
-          ))}
-        </ul>
-      )}
-      <Button
-        size="sm"
-        className="mt-2"
-        disabled={issues.length > 0}
-        onClick={() => onUpdate(selection.id, { scrapeStatus: "complete", scrapeError: undefined })}
-      >
-        Confirm {roomItemNeedsProduct(selection) ? "product" : "item"} details
-      </Button>
-    </details>
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
+        <Button
+          size="sm"
+          disabled={issues.length > 0}
+          onClick={() =>
+            onUpdate(selection.id, { scrapeStatus: "complete", scrapeError: undefined })
+          }
+        >
+          Confirm {roomItemNeedsProduct(selection) ? "product" : "item"} details
+        </Button>
+        {!!issues.length && (
+          <p role="status" className="text-amber-800">
+            Resolve the flagged details above to confirm.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { RoomDesignDisclosure } from "@/components/RoomDesignDisclosure";
 import {
   roomDesignTileFields,
   roomDesignTileIssues,
@@ -42,51 +42,39 @@ export function RoomDesignTileFields({
   const chooseSurface = roomDesignTileSurface({ ...item, notes: "" }) === "unknown";
   if (surface === "other" && !chooseSurface) return null;
   return (
-    <details
-      className="group border border-border bg-bone/25"
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    <RoomDesignDisclosure
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      label={`${category} installation details`}
+      title={surface === "tile" ? "Tile installation" : "Material type"}
+      attention={issues.length > 0}
+      status={
+        issues.length
+          ? `${issues.length} ${issues.length === 1 ? "decision" : "decisions"} needed`
+          : isProjectDefault
+            ? "Shared defaults"
+            : surface === "other"
+              ? "Not tile"
+              : "Complete"
+      }
+      description={
+        [
+          fields.groutColor,
+          fields.jointWidth,
+          fields.layout,
+          fields.direction,
+          fields.edgeTreatment,
+        ]
+          .filter(Boolean)
+          .join(" · ") ||
+        (surface === "unknown"
+          ? "Choose tile or another material"
+          : surface === "other"
+            ? "Grout and tile layout are not required"
+            : "Add grout, pattern and lay direction")
+      }
     >
-      <summary
-        className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 text-xs [&::-webkit-details-marker]:hidden"
-        aria-label={`${category} installation details`}
-      >
-        <span className="min-w-0">
-          <span className="font-medium">
-            {surface === "tile" ? "Tile installation details" : "Material type"}
-          </span>
-          <span className={issues.length ? "ml-2 text-amber-800" : "ml-2 text-muted-foreground"}>
-            {issues.length
-              ? `${issues.length} ${issues.length === 1 ? "decision" : "decisions"} needed`
-              : isProjectDefault
-                ? "Shared defaults"
-                : surface === "other"
-                  ? "Not tile"
-                  : "Complete"}
-          </span>
-          <span className="mt-1 block truncate text-muted-foreground">
-            {[
-              fields.groutColor,
-              fields.jointWidth,
-              fields.layout,
-              fields.direction,
-              fields.edgeTreatment,
-            ]
-              .filter(Boolean)
-              .join(" · ") ||
-              (surface === "unknown"
-                ? "Choose tile or another material"
-                : surface === "other"
-                  ? "Grout and tile layout are not required"
-                  : "Add grout, pattern and lay direction")}
-          </span>
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
-        />
-      </summary>
-      <div className="space-y-3 border-t border-border p-3">
+      <div className="space-y-3">
         {chooseSurface && (
           <label className="block text-xs">
             Surface material
@@ -217,15 +205,7 @@ export function RoomDesignTileFields({
             {issues.join(" ")}
           </p>
         )}
-        <button
-          type="button"
-          className="text-xs underline underline-offset-2"
-          onClick={() => setExpanded(false)}
-          aria-label={`Collapse ${category} installation details`}
-        >
-          Collapse details
-        </button>
       </div>
-    </details>
+    </RoomDesignDisclosure>
   );
 }
