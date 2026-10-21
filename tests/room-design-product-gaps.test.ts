@@ -3,6 +3,8 @@ import {
   roomDesignProductGaps,
   roomDesignSelectionIssues,
   roomDesignStepForAccess,
+  roomDesignConfirmationMessage,
+  roomDesignOrderReady,
 } from "@/lib/roomDesignReview";
 import {
   createDefaultRoomDesignWorkflowState,
@@ -34,7 +36,12 @@ it("skips rendering for the team while keeping Ken’s render navigation and oth
 });
 
 it("keeps precise repair callouts until the corresponding product information is filled", () => {
-  const missing = product({ finish: "TBD", price: "$100–$200", dimensions: "" });
+  const missing = product({
+    finish: "TBD",
+    price: "$100–$200",
+    dimensions: "",
+    sizeOptions: ["24 x 36 inches", "30 x 40 inches"],
+  });
   expect(roomDesignProductGaps(missing).map((gap) => gap.field)).toEqual([
     "finish",
     "dimensions",
@@ -50,6 +57,94 @@ it("keeps precise repair callouts until the corresponding product information is
       normalizeRoomDesignWorkflowState(JSON.parse(JSON.stringify(state)), state).selections[0],
     ),
   ).toEqual([]);
+});
+
+it("does not require dimensions without an unresolved published size choice", () => {
+  expect(roomDesignProductGaps(product({ dimensions: "" }))).toEqual([]);
+  expect(roomDesignProductGaps(product({ dimensions: "", sizeOptions: ["Large"] }))).toEqual([]);
+  expect(
+    roomDesignProductGaps(product({ dimensions: "", sizeOptions: ["Large", "LARGE"] })),
+  ).toEqual([]);
+  expect(
+    roomDesignProductGaps(
+      product({ dimensions: "", sizeOptions: ["Small", "Large"], selectedSize: "Large" }),
+    ),
+  ).toEqual([]);
+  expect(
+    roomDesignProductGaps(product({ dimensions: "", sizeOptions: ["Small", "Large"] })).map(
+      (gap) => gap.label,
+    ),
+  ).toEqual(["Selected size"]);
+});
+
+it("ignores stale partial scrape warnings once all actual requirements are met", () => {
+  const complete = product({
+    category: "Wall paint",
+    productName: "Paint",
+    price: "",
+    dimensions: "",
+    scrapeStatus: "partial",
+    scrapeError: "Color/finish needs review.",
+  });
+  expect(roomDesignSelectionIssues(complete)).toEqual([]);
+  expect(roomDesignConfirmationMessage(complete)).toBe("");
+  expect(
+    roomDesignProductGaps(
+      product({
+        category: "Countertop",
+        productName: "Quartz",
+        price: "",
+        dimensions: "",
+        scrapeStatus: "partial",
+      }),
+    ),
+  ).toEqual([]);
+  expect(
+    roomDesignOrderReady(product({ state: "locked", sku: "M-1", scrapeStatus: "partial" })),
+  ).toBe(true);
+});
+
+it("keeps changed fields and uncertain product matches explicit until confirmed", () => {
+  const changed = product({ scrapeStatus: "partial", reviewFields: ["finish", "price"] });
+  expect(roomDesignProductGaps(changed)).toEqual([]);
+  expect(roomDesignConfirmationMessage(changed)).toBe("Confirm changes: Color / finish, Price.");
+  expect(roomDesignOrderReady({ ...changed, state: "locked", sku: "M-1" })).toBe(false);
+  expect(
+    roomDesignConfirmationMessage({
+      ...changed,
+      reviewFields: undefined,
+      scrapeError: undefined,
+      scrapeStatus: "complete",
+    }),
+  ).toBe("");
+  expect(
+    roomDesignConfirmationMessage(
+      product({ scrapeError: "This is a collection page. Use the exact product page." }),
+    ),
+  ).toContain("collection page");
+  expect(roomDesignConfirmationMessage(product({ scrapeStatus: "failed" }))).toContain(
+    "automatic lookup did not finish",
+  );
+  expect(
+    roomDesignConfirmationMessage(product({ scrapeError: "Review the edited product details." })),
+  ).toBe("Confirm the edited product details.");
+  expect(
+    roomDesignConfirmationMessage(
+      product({ notes: "Selection responsibility: Not needed", reviewFields: ["price"] }),
+    ),
+  ).toBe("");
+});
+
+it("persists the exact confirmation fields and published size choices in saved reviews", () => {
+  const state = createDefaultRoomDesignWorkflowState("Kitchen");
+  state.selections = [
+    product({ sizeOptions: ["Small", "Large"], selectedSize: "Large", reviewFields: ["price"] }),
+  ];
+  const saved = normalizeRoomDesignWorkflowState(JSON.parse(JSON.stringify(state)), state)
+    .selections[0];
+  expect(saved.sizeOptions).toEqual(["Small", "Large"]);
+  expect(saved.selectedSize).toBe("Large");
+  expect(roomDesignConfirmationMessage(saved)).toBe("Confirm changes: Price.");
 });
 
 it("detects missing names, vendor, link and image even if the scrape claims completion", () => {
@@ -85,6 +180,11 @@ it("uses existing pricing exemptions and does not demand optional SKU or every d
     ).map((gap) => gap.field),
   ).toContain("price");
   expect(roomDesignProductGaps(product({ sku: "" }))).toEqual([]);
+  expect(
+    roomDesignProductGaps(product({ category: "Cabinet interior lighting", price: "" })).map(
+      (gap) => gap.field,
+    ),
+  ).toContain("price");
   expect(roomDesignProductGaps(product({ category: "Towel hook", dimensions: "" }))).toEqual([]);
 });
 

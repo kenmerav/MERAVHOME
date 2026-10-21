@@ -18,6 +18,7 @@ import {
   type RoomDesignSelection,
 } from "@/lib/roomDesignWorkflow";
 import { tileDetailConfirmed } from "@/lib/tileInstallation";
+import { tileJointWidthConfirmed } from "@/lib/tileManualAnswers";
 
 function selected(notes = ""): RoomDesignSelection {
   return {
@@ -62,6 +63,42 @@ it("requires installation choices before a tiled selection can be reviewed or or
   ).toEqual([]);
 });
 
+it("accepts explicit manual layout and direction without requiring a keyword match", () => {
+  let notes = updateRoomDesignTileNotes("", "groutColor", "white");
+  notes = updateRoomDesignTileNotes(notes, "jointWidth", "1 mm");
+  notes = updateRoomDesignTileNotes(
+    notes,
+    "layout",
+    "Custom arrangement on approved elevation A-12",
+  );
+  notes = updateRoomDesignTileNotes(notes, "direction", "Along the vanity wall");
+  expect(roomDesignTileIssues(selected(notes))).toEqual([]);
+  expect(tileDetailConfirmed("grout", notes)).toBe(true);
+  expect(tileDetailConfirmed("tile_layout", notes)).toBe(true);
+  expect(roomDesignOrderReady(selected(notes))).toBe(true);
+  notes = updateRoomDesignTileNotes(notes, "layout", "TEST");
+  notes = updateRoomDesignTileNotes(notes, "direction", "TEST DIRECTION");
+  expect(roomDesignTileIssues(selected(notes))).toEqual([]);
+});
+
+it("points to a missing grout width unit instead of claiming filled answers are empty", () => {
+  let notes = updateRoomDesignTileNotes("", "groutColor", "white");
+  notes = updateRoomDesignTileNotes(notes, "jointWidth", "1");
+  notes = updateRoomDesignTileNotes(notes, "layout", "TEST");
+  notes = updateRoomDesignTileNotes(notes, "direction", "TEST DIRECTION");
+  expect(roomDesignTileIssues(selected(notes))).toEqual([
+    "Add a unit to the grout joint width, for example 1 mm or 1/8 inch.",
+  ]);
+  expect(tileDetailConfirmed("grout", notes)).toBe(false);
+  expect(tileJointWidthConfirmed("1")).toBe(false);
+  expect(tileJointWidthConfirmed("0 mm")).toBe(false);
+  expect(tileJointWidthConfirmed("1/0 inch")).toBe(false);
+  expect(tileJointWidthConfirmed("1 mm")).toBe(true);
+  expect(tileJointWidthConfirmed("1/8 inch")).toBe(true);
+  notes = updateRoomDesignTileNotes(notes, "jointWidth", "1 mm");
+  expect(roomDesignTileIssues(selected(notes))).toEqual([]);
+});
+
 it("requires both a pattern and a direction, with explicit TBD taking precedence over an older combined layout", () => {
   const patternOnly = updateRoomDesignTileNotes(installationNotes(), "layout", "Running bond");
   expect(roomDesignTileIssues(selected(patternOnly))).toContain(
@@ -86,10 +123,12 @@ it("keeps surface-specific installation areas without requiring the same locatio
   const backsplash = { ...selected(installationNotes()), category: "Backsplash" };
   expect(roomDesignTileLocation(backsplash)).toBe("Backsplash");
   expect(roomDesignTileIssues(backsplash)).toEqual([]);
-  expect(roomDesignTileLocation({
-    ...backsplash,
-    notes: updateRoomDesignTileNotes(backsplash.notes, "location", "Range wall only"),
-  })).toBe("Range wall only");
+  expect(
+    roomDesignTileLocation({
+      ...backsplash,
+      notes: updateRoomDesignTileNotes(backsplash.notes, "location", "Range wall only"),
+    }),
+  ).toBe("Range wall only");
   expect(roomDesignTileIssues({ ...selected(installationNotes()), category: "Tile" })).toContain(
     "Confirm where this tile is used.",
   );

@@ -25,6 +25,9 @@ export type RoomDesignSelection = {
   price?: string;
   sku?: string;
   dimensions?: string;
+  sizeOptions?: string[];
+  selectedSize?: string;
+  reviewFields?: string[];
   productId?: string | null;
   scrapeStatus?: "complete" | "partial" | "failed";
   scrapeError?: string;
@@ -312,6 +315,8 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     price: string;
     sku: string;
     dimensions: string;
+    sizeOptions?: string[];
+    selectedSize?: string;
     quantity: number | null;
   };
 }) {
@@ -343,6 +348,9 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     price: product.price || undefined,
     sku: product.sku || undefined,
     dimensions: product.dimensions || undefined,
+    sizeOptions: product.sizeOptions,
+    selectedSize: product.selectedSize,
+    reviewFields: undefined,
     productId: product.id,
     scrapeStatus: product.finish ? "complete" : "partial",
     scrapeError: product.finish ? undefined : "Color/finish needs review.",
@@ -475,6 +483,13 @@ export function normalizeRoomDesignWorkflowState(
             price: optionalString(item.price),
             sku: optionalString(item.sku),
             dimensions: optionalString(item.dimensions),
+            sizeOptions: Array.isArray(item.sizeOptions)
+              ? item.sizeOptions.filter((value): value is string => typeof value === "string")
+              : undefined,
+            selectedSize: optionalString(item.selectedSize),
+            reviewFields: Array.isArray(item.reviewFields)
+              ? item.reviewFields.filter((value): value is string => typeof value === "string")
+              : undefined,
             productId: typeof item.productId === "string" ? item.productId : null,
             scrapeStatus:
               item.scrapeStatus === "complete" ||

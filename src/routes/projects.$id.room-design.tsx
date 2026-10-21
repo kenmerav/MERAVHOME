@@ -124,6 +124,8 @@ import {
   roomDesignStepForAccess,
   roomDesignOrderReady,
   retainRoomDesignMeasurements,
+  roomDesignConfirmationMessage,
+  ROOM_DESIGN_REVIEW_FIELDS,
 } from "@/lib/roomDesignReview";
 import { selectionQuantityUnitFromSpec } from "@/lib/specQuantity";
 import { mergeRoomDesignEdits, roomDesignStatesEqual } from "@/lib/roomDesignSync";
@@ -216,6 +218,9 @@ type DemoSelection = {
   price?: string;
   sku?: string;
   dimensions?: string;
+  sizeOptions?: string[];
+  selectedSize?: string;
+  reviewFields?: string[];
   scrapeStatus?: "complete" | "partial" | "failed";
   scrapeError?: string;
   materialsSyncStatus?: "current" | "changed";
@@ -1092,6 +1097,8 @@ function RoomDesignWorkflow({
         price: item.product?.price || undefined,
         sku: item.product?.sku || undefined,
         dimensions: item.product?.dimensions || undefined,
+        sizeOptions: item.product?.size_options || undefined,
+        selectedSize: item.product?.selected_size || undefined,
         productId: item.product_id,
         scrapeStatus: item.scrape_status === "failed" ? "failed" : "complete",
         scrapeError: item.scrape_error || undefined,
@@ -1488,26 +1495,6 @@ function RoomDesignWorkflow({
           scrapeError = reviewMessage;
         }
 
-        setLinkScrapeStates((current) => ({
-          ...current,
-          [link.id]: {
-            status: scrapeStatus,
-            message:
-              scrapeStatus === "partial"
-                ? "Some details need review"
-                : scrapeStatus === "failed"
-                  ? scrapeError
-                  : undefined,
-          },
-        }));
-        setGatherProgress((current) => ({
-          ...current,
-          completed: Math.max(current.completed, index + 1),
-          successful: current.successful + (scrapeStatus === "complete" ? 1 : 0),
-          partial: current.partial + (scrapeStatus === "partial" ? 1 : 0),
-          failed: current.failed + (scrapeStatus === "failed" ? 1 : 0),
-        }));
-
         let productId = catalogProduct?.id ?? null;
         if (!productId && scraped.name) {
           const category = toProductCategory(
@@ -1530,7 +1517,7 @@ function RoomDesignWorkflow({
           productId = created?.id ?? null;
         }
 
-        gathered.push({
+        const gatheredSelection: DemoSelection = {
           id: `link-${link.id}`,
           category: link.category,
           productName: scraped.name || `${link.category} selection`,
@@ -1561,10 +1548,39 @@ function RoomDesignWorkflow({
           sku: scraped.sku,
           dimensions:
             roomDetailValue(link.notes, "Selected size / dimensions") || scraped.dimensions,
+          sizeOptions: scraped.size_options,
+          selectedSize: scraped.selected_size,
           scrapeStatus,
           scrapeError: scrapeError || undefined,
           productId,
-        });
+        };
+        const missing = roomDesignProductGaps(gatheredSelection);
+        const confirmation = roomDesignConfirmationMessage(gatheredSelection);
+        if (scrapeStatus !== "failed") {
+          gatheredSelection.scrapeStatus = missing.length || confirmation ? "partial" : "complete";
+          if (!confirmation) gatheredSelection.scrapeError = undefined;
+        }
+        gathered.push(gatheredSelection);
+        setLinkScrapeStates((current) => ({
+          ...current,
+          [link.id]: {
+            status: gatheredSelection.scrapeStatus!,
+            message:
+              [
+                missing.length ? `Missing: ${missing.map((gap) => gap.label).join(", ")}.` : "",
+                confirmation,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined,
+          },
+        }));
+        setGatherProgress((current) => ({
+          ...current,
+          completed: Math.max(current.completed, index + 1),
+          successful: current.successful + (gatheredSelection.scrapeStatus === "complete" ? 1 : 0),
+          partial: current.partial + (gatheredSelection.scrapeStatus === "partial" ? 1 : 0),
+          failed: current.failed + (gatheredSelection.scrapeStatus === "failed" ? 1 : 0),
+        }));
       }
 
       addSelections([...gathered, ...instructions]);
@@ -1641,10 +1657,12 @@ function RoomDesignWorkflow({
       price: scraped.price,
       sku: scraped.sku,
       dimensions: scraped.dimensions,
+      sizeOptions: scraped.size_options,
+      selectedSize: scraped.selected_size,
+      reviewFields: undefined,
       state: "selected",
       scrapeStatus: "partial",
-      scrapeError:
-        reviewMessage || "Confirm the replacement product's exact variant and dimensions.",
+      scrapeError: reviewMessage || "Confirm the replacement product and selected variant.",
       materialsSyncStatus: materialsSent ? "changed" : current.materialsSyncStatus,
       productId,
     };
@@ -1729,15 +1747,19 @@ function RoomDesignWorkflow({
       ),
     );
     setLinks(nextLinks);
-    const detailsChanged = Object.keys(patch).some((key) =>
-      ["productName", "vendor", "finish", "url", "imageUrl", "sku", "dimensions", "price"].includes(
-        key,
-      ),
+    const changedFields = Object.keys(ROOM_DESIGN_REVIEW_FIELDS).filter(
+      (key) =>
+        key in patch &&
+        previous?.[key as keyof DemoSelection] !== patch[key as keyof DemoSelection],
     );
+    const detailsChanged = changedFields.length > 0;
+    if ("dimensions" in patch) patch = { ...patch, selectedSize: patch.dimensions || undefined };
     const invalidatesReview =
       detailsChanged ||
-      Object.keys(patch).some((key) =>
-        ["quantity", "quantityUnit", "wastePercent", "notes"].includes(key),
+      Object.keys(patch).some(
+        (key) =>
+          ["quantity", "quantityUnit", "wastePercent", "notes"].includes(key) &&
+          previous?.[key as keyof DemoSelection] !== patch[key as keyof DemoSelection],
       );
     if (invalidatesReview) {
       setBoardReady(false);
@@ -1758,6 +1780,9 @@ function RoomDesignWorkflow({
                 ? {
                     scrapeStatus: "partial" as const,
                     scrapeError: "Review the edited product details.",
+                    reviewFields: [
+                      ...new Set([...(selection.reviewFields ?? []), ...changedFields]),
+                    ],
                   }
                 : {}),
               ...(materialsSent && materialFieldsChanged
@@ -1815,6 +1840,8 @@ function RoomDesignWorkflow({
             price: product.price || undefined,
             sku: product.sku || undefined,
             dimensions: product.dimensions || undefined,
+            sizeOptions: product.size_options || undefined,
+            selectedSize: product.selected_size || undefined,
             productId: product.id,
             scrapeStatus: "complete" as const,
           },
@@ -1855,7 +1882,7 @@ function RoomDesignWorkflow({
 
   const approveAll = async () => {
     const unresolved = selections.filter(
-      (item) => roomDesignSelectionIssues(item).length || item.scrapeStatus !== "complete",
+      (item) => roomDesignSelectionIssues(item).length || roomDesignConfirmationMessage(item),
     );
     if (!selections.length || unresolved.length) {
       setReviewError(
@@ -3120,9 +3147,14 @@ function SelectionsStep({
                       onClick={() => onToggle(selection.id)}
                       disabled={
                         roomDesignSelectionIssues(selection).length > 0 ||
-                        selection.scrapeStatus !== "complete"
+                        Boolean(roomDesignConfirmationMessage(selection))
                       }
-                      title={roomDesignSelectionIssues(selection).join(" ")}
+                      title={[
+                        ...roomDesignSelectionIssues(selection),
+                        roomDesignConfirmationMessage(selection),
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                     >
                       {selection.state === "locked" ? <Lock /> : <Check />}{" "}
                       {selection.state === "locked" ? "Reviewed" : "Mark reviewed"}
@@ -4751,7 +4783,7 @@ function ApprovalStep({
   const unresolved = selections.filter(
     (item) =>
       item.state === "draft" ||
-      item.scrapeStatus !== "complete" ||
+      roomDesignConfirmationMessage(item) ||
       roomDesignSelectionIssues(item).length,
   );
   return (
@@ -5085,6 +5117,7 @@ function ProductDetailsEditor({
 }) {
   const issues = roomDesignSelectionIssues(selection);
   const gaps = roomDesignProductGaps(selection);
+  const confirmation = roomDesignConfirmationMessage(selection);
   const gapKey = gaps.map((gap) => gap.field).join("|");
   const [expanded, setExpanded] = useState(gaps.length > 0);
   useEffect(() => {
@@ -5096,7 +5129,13 @@ function ProductDetailsEditor({
         <RoomDesignDisclosure
           title="Product details"
           label={`${selection.category} product details`}
-          status={gaps.length ? `${gaps.length} missing details` : "Ready to review"}
+          status={
+            gaps.length
+              ? `${gaps.length} missing ${gaps.length === 1 ? "detail" : "details"}`
+              : confirmation
+                ? "Confirm changes"
+                : "Complete"
+          }
           description="Name, vendor, color, dimensions, price and links"
           attention={gaps.length > 0}
           expanded={expanded}
@@ -5122,6 +5161,11 @@ function ProductDetailsEditor({
                 </a>
               )}
             </div>
+          )}
+          {confirmation && (
+            <p role="status" className="mt-3 text-sm text-ink">
+              {confirmation}
+            </p>
           )}
           {roomItemNeedsProduct(selection) && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -5154,6 +5198,12 @@ function ProductDetailsEditor({
               ))}
             </div>
           )}
+          {(selection.sizeOptions?.length ?? 0) > 1 && (
+            <p className="mt-3 text-muted-foreground">
+              Published sizes: {selection.sizeOptions!.join(" · ")}. Enter the selected size in
+              Product dimensions.
+            </p>
+          )}
         </RoomDesignDisclosure>
       )}
       <div className="space-y-3">
@@ -5178,16 +5228,25 @@ function ProductDetailsEditor({
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
         <Button
           size="sm"
-          disabled={issues.length > 0}
+          disabled={roomItemNeedsProduct(selection) ? gaps.length > 0 : issues.length > 0}
           onClick={() =>
-            onUpdate(selection.id, { scrapeStatus: "complete", scrapeError: undefined })
+            onUpdate(selection.id, {
+              scrapeStatus: "complete",
+              scrapeError: undefined,
+              reviewFields: undefined,
+              state: selection.state === "locked" ? "locked" : "selected",
+            })
           }
         >
-          Confirm {roomItemNeedsProduct(selection) ? "product" : "item"} details
+          {confirmation
+            ? "Confirm changes"
+            : `Confirm ${roomItemNeedsProduct(selection) ? "product" : "item"} details`}
         </Button>
         {!!issues.length && (
           <p role="status" className="text-amber-800">
-            Resolve the flagged details above to confirm.
+            {roomItemNeedsProduct(selection) && !gaps.length
+              ? "Product details can be confirmed. Resolve the remaining item decisions before marking reviewed."
+              : "Resolve the flagged details above to confirm."}
           </p>
         )}
       </div>
@@ -5299,6 +5358,11 @@ function SelectionRow({
   action: ReactNode;
   stackAction?: boolean;
 }) {
+  const gaps = roomDesignProductGaps(selection);
+  const issues = roomDesignSelectionIssues(selection);
+  const confirmation = roomDesignConfirmationMessage(selection);
+  const otherIssues = issues.filter((issue) => !gaps.some((gap) => gap.message === issue));
+  const flagged = issues.length > 0 || Boolean(confirmation);
   return (
     <div className="grid gap-3 py-3 sm:grid-cols-[56px_minmax(0,1fr)_auto] sm:items-center">
       <SelectionVisual selection={selection} className="h-14 w-14 border border-border" />
@@ -5308,23 +5372,29 @@ function SelectionRow({
           <span className="border border-border bg-bone/30 px-2 py-0.5 text-[9px] uppercase tracking-[.1em] text-muted-foreground">
             {roomItemNeedsProduct(selection) ? selection.source : roomItemStatus(selection)}
           </span>
-          {roomItemNeedsProduct(selection) && selection.scrapeStatus && (
+          {roomItemNeedsProduct(selection) && (
             <span
-              title={selection.scrapeError}
+              title={[...issues, confirmation].filter(Boolean).join(" ")}
               className={cn(
                 "border px-2 py-0.5 text-[9px] uppercase tracking-[.1em]",
-                selection.scrapeStatus === "complete" &&
-                  "border-emerald-300 bg-emerald-50 text-emerald-800",
-                selection.scrapeStatus === "partial" &&
-                  "border-amber-300 bg-amber-50 text-amber-800",
-                selection.scrapeStatus === "failed" && "border-red-300 bg-red-50 text-red-800",
+                issues.length
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : confirmation
+                    ? "border-border bg-bone/30 text-ink"
+                    : selection.state === "locked"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                      : "border-border text-muted-foreground",
               )}
             >
-              {selection.scrapeStatus === "complete"
-                ? "Scraped"
-                : selection.scrapeStatus === "partial"
-                  ? "Needs review"
-                  : "Scrape failed"}
+              {gaps.length
+                ? "Missing information"
+                : issues.length
+                  ? "Decisions needed"
+                  : confirmation
+                    ? "Confirm changes"
+                    : selection.state === "locked"
+                      ? "Reviewed"
+                      : "Ready to review"}
             </span>
           )}
         </div>
@@ -5353,14 +5423,17 @@ function SelectionRow({
               .join(" · ")}
           </div>
         )}
-        {selection.scrapeError && (
-          <div
-            className={cn(
-              "mt-1 text-xs",
-              selection.scrapeStatus === "partial" ? "text-amber-800" : "text-red-700",
+        {flagged && (
+          <div className="mt-2 space-y-1 text-xs" role="status">
+            {gaps.length > 0 && (
+              <p className="text-amber-800">Missing: {gaps.map((gap) => gap.label).join(", ")}.</p>
             )}
-          >
-            {selection.scrapeError}
+            {otherIssues.map((issue) => (
+              <p key={issue} className="text-amber-800">
+                {issue}
+              </p>
+            ))}
+            {confirmation && <p className="text-ink">{confirmation}</p>}
           </div>
         )}
       </div>

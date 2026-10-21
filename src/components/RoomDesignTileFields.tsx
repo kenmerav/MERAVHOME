@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { RoomDesignDisclosure } from "@/components/RoomDesignDisclosure";
+import { tileJointWidthConfirmed, tileJointWidthNeedsUnit } from "@/lib/tileManualAnswers";
 import {
   roomDesignTileFields,
   roomDesignTileIssues,
@@ -111,6 +112,12 @@ export function RoomDesignTileFields({
                     {label}
                     <Input
                       aria-label={`${category} ${label}`}
+                      aria-invalid={
+                        (field === "jointWidth" &&
+                          Boolean(fields.jointWidth.trim()) &&
+                          !tileJointWidthConfirmed(fields.jointWidth)) ||
+                        undefined
+                      }
                       value={field === "location" ? roomDesignTileLocation(item) : fields[field]}
                       disabled={disabled}
                       maxLength={500}
@@ -120,6 +127,36 @@ export function RoomDesignTileFields({
                       }
                       className="mt-1"
                     />
+                    {field === "jointWidth" && tileJointWidthNeedsUnit(fields.jointWidth) && (
+                      <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-800">
+                        Choose unit:
+                        {(
+                          [
+                            ["mm", "mm"],
+                            ["inch", "inches"],
+                          ] as const
+                        ).map(([unit, label]) => (
+                          <button
+                            type="button"
+                            key={unit}
+                            disabled={disabled}
+                            className="border border-amber-300 bg-background px-3 py-1.5 font-medium"
+                            aria-label={`${category} use ${label} for grout joint width`}
+                            onClick={() =>
+                              onChange(
+                                updateRoomDesignTileNotes(
+                                  notes,
+                                  "jointWidth",
+                                  `${fields.jointWidth.trim()} ${unit}`,
+                                ),
+                              )
+                            }
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </span>
+                    )}
                     {field === "location" && !fields.location && roomDesignTileLocation(item) ? (
                       <span className="mt-1 block text-[10px] text-muted-foreground">
                         From item type

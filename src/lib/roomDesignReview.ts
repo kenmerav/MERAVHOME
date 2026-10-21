@@ -85,19 +85,20 @@ export function roomDesignProductGaps(item: RoomDesignSelection): RoomDesignProd
       label: "Color / finish",
       message: "Confirm the selected color / finish.",
     });
+  const sizeChoices = new Set((item.sizeOptions ?? []).map(cleanProductDetail).filter(Boolean));
+  const distinctSizes = new Set([...sizeChoices].map((value) => value.toLowerCase()));
   if (
-    /vanity|mirror|tub(?! filler)|toilet(?! paper| seat)|sink(?! drain| flange)|appliance|refrigerator|range|oven|lighting|pendant|sconce|cabinet hardware/i.test(
-      item.category,
-    ) &&
-    !/\d/.test(cleanProductDetail(item.dimensions))
+    distinctSizes.size > 1 &&
+    !cleanProductDetail(item.selectedSize) &&
+    !cleanProductDetail(item.dimensions)
   )
     gaps.push({
       field: "dimensions",
-      label: "Dimensions",
-      message: "Confirm the selected product dimensions.",
+      label: "Selected size",
+      message: `Choose the selected size (${[...sizeChoices].join(" / ")}) and enter it in Product dimensions.`,
     });
   const pricingOptional =
-    !/hardware|hooks?|towel|holder|fan|outlet|power|shelf rails|appliance|refrigerator|range|oven/i.test(
+    !/hardware|hooks?|towel|holder|fan|outlet|power|shelf rails|lighting|pendant|sconce|appliance|refrigerator|range|oven/i.test(
       item.category,
     ) &&
     allowsMissingMaterialPrice({
@@ -112,6 +113,38 @@ export function roomDesignProductGaps(item: RoomDesignSelection): RoomDesignProd
       message: "Confirm the exact selected product price.",
     });
   return gaps;
+}
+
+export const ROOM_DESIGN_REVIEW_FIELDS = {
+  productName: "Product name",
+  vendor: "Vendor",
+  finish: "Color / finish",
+  url: "Product link",
+  imageUrl: "Product image",
+  sku: "SKU / model",
+  dimensions: "Dimensions",
+  price: "Price",
+} as const;
+
+/** Scrape completeness is diagnostic; only unresolved requirements or explicit changes block review. */
+export function roomDesignConfirmationMessage(item: RoomDesignSelection): string {
+  if (!roomItemNeedsProduct(item)) return "";
+  const fields = (item.reviewFields ?? []).filter((key) => key in ROOM_DESIGN_REVIEW_FIELDS);
+  if (fields.length)
+    return `Confirm changes: ${fields.map((key) => ROOM_DESIGN_REVIEW_FIELDS[key as keyof typeof ROOM_DESIGN_REVIEW_FIELDS]).join(", ")}.`;
+  const message = item.scrapeError || "";
+  if (/Review the edited product details/i.test(message))
+    return "Confirm the edited product details.";
+  if (/replacement image/i.test(message))
+    return "Confirm the replacement image matches the selected product variant.";
+  if (/replacement product/i.test(message))
+    return "Confirm the replacement product and selected variant.";
+  if (/Gather the updated product link/i.test(message))
+    return "Confirm the updated link matches the selected product, or gather the updated link.";
+  if (/collection page|does not appear to match|retailer redirected/i.test(message)) return message;
+  if (item.scrapeStatus === "failed")
+    return "Confirm the product against its link; the automatic lookup did not finish.";
+  return "";
 }
 
 /** Selection review is separate from room completeness and procurement readiness. */
@@ -156,7 +189,7 @@ export function roomDesignOrderReady(item: RoomDesignSelection) {
   return (
     roomItemCanOrder(item) &&
     item.state === "locked" &&
-    item.scrapeStatus === "complete" &&
+    !roomDesignConfirmationMessage(item) &&
     !roomDesignSelectionIssues(item).length &&
     Boolean(cleanProductDetail(item.sku) && exactProductPrice(item.price))
   );

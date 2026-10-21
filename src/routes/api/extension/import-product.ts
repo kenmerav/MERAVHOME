@@ -700,6 +700,8 @@ export const Route = createFileRoute("/api/extension/import-product")({
                 price: price || "",
                 sku,
                 dimensions,
+                sizeOptions: (product as any).size_options || undefined,
+                selectedSize: (product as any).selected_size || undefined,
                 quantity,
               },
             });

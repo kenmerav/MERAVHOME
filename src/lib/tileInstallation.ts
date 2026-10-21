@@ -3,6 +3,7 @@ import type { CompletionFinding } from "./specCompletion";
 import { materialVisibleInProcurement } from "./materialSelection";
 import { drawingMatchItems, nativeDrawingMatches, drawingRoomHeadings } from "./specDrawingMatches";
 import { drawingNameEvidence } from "./specDrawingNameMatches";
+import { tileManualAnswerConfirmed, tileJointWidthConfirmed } from "./tileManualAnswers";
 
 export const TILE_REVIEW_VERSION = "tile-installation-v1";
 export type TileField = "grout" | "tile_layout";
@@ -61,6 +62,17 @@ export function tileDetailConfirmed(field: TileField, value: string) {
   const labelled = value.replace(/\\n/g, "\n").split("\n").filter(line =>
     (field === "grout" ? /^\s*Grout(?: color| joint width)?\s*:/i : /^\s*Tile (?:layout|lay direction)\s*:/i).test(line));
   if (labelled.some(line => /:\s*(?:$|(?:tbd|tbc|pending|unknown|unsure|undecided|not sure|n\/a|none|not applicable)\b)/i.test(line))) return false;
+  const explicit = (label: string) => value.replace(/\\n/g, "\n").split("\n")
+    .find(line => new RegExp(`^\\s*${label}\\s*:`, "i").test(line))?.split(":").slice(1).join(":").trim();
+  if (field === "tile_layout") {
+    const pattern = explicit("Tile layout"), direction = explicit("Tile lay direction");
+    if (pattern !== undefined) return tileManualAnswerConfirmed(pattern) && (direction === undefined || tileManualAnswerConfirmed(direction));
+  }
+  if (field === "grout") {
+    const groutColor = explicit("Grout color"), jointWidth = explicit("Grout joint width");
+    if (groutColor !== undefined || jointWidth !== undefined) return tileManualAnswerConfirmed(groutColor || "") &&
+      !/^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test((groutColor || "").trim()) && tileJointWidthConfirmed(jointWidth || "");
+  }
   if (field === "grout" && confirmedSegments(value).some(s => /\b(no grout(?: is)? (?:required|needed)|grout(?: is)? not (?:required|needed)|groutless|dry[ -]stack)\b/i.test(s))) return true;
   if (field === "grout") { const p = groutParts(value); return p.color && p.width; }
   return confirmedSegments(value).some(s => layout.test(s) || /\b(?:tile lay|tile layout|installation|laid|lay).{0,30}(?:like|per|as shown|see).{0,35}(?:example|photo|image|board|drawing|reference)\b/i.test(s));

@@ -1,4 +1,9 @@
 import { needsTileInstallation, tileDetailConfirmed } from "./tileInstallation";
+import {
+  tileManualAnswerConfirmed as roomDesignTileAnswerConfirmed,
+  tileJointWidthConfirmed as roomDesignJointWidthConfirmed,
+  tileJointWidthNeedsUnit,
+} from "./tileManualAnswers";
 
 type TileSelection = {
   category: string;
@@ -47,7 +52,13 @@ export function roomDesignTileFields(notes = "") {
     surface: read("surface"),
     location: read("location"),
     groutColor: read("groutColor") || legacyParts?.[1] || "",
-    jointWidth: read("jointWidth") || legacyParts?.[2]?.replace(/\s+joints?\.?$/i, "") || "",
+    jointWidth:
+      read("jointWidth") ||
+      legacyParts?.[2]?.match(
+        /^(.+?(?:["″]|\b(?:inch(?:es)?|in|mm|millimet(?:er|re)s?)\b))/i,
+      )?.[1] ||
+      legacyParts?.[2]?.replace(/\s+joints?\.?$/i, "") ||
+      "",
     layout: read("layout"),
     direction: read("direction"),
     edgeTreatment: read("edgeTreatment"),
@@ -61,6 +72,7 @@ const pending =
   /\b(tbd|tbc|pending|unknown|unsure|undecided|not sure|to be (?:confirmed|selected|determined))\b/i;
 const drawingReference =
   /\b(?:layout|installation|lay|direction).{0,40}(?:like|per|as shown|see).{0,40}(?:example|photo|image|board|drawing|reference)\b/i;
+
 export function roomDesignTileLocation(item: TileSelection) {
   const location = roomDesignTileFields(item.notes).location;
   if (location) return location;
@@ -75,7 +87,7 @@ export function roomDesignTileLocation(item: TileSelection) {
 export function roomDesignTileDirectionConfirmed(notes = "") {
   const fields = roomDesignTileFields(notes);
   const text = fields.direction || notes;
-  if (fields.direction && pending.test(text)) return false;
+  if (fields.direction) return roomDesignTileAnswerConfirmed(fields.direction);
   return lines(text).some(
     (line) =>
       !pending.test(line) &&
@@ -178,16 +190,31 @@ export function roomDesignTileIssues(item: TileSelection) {
   }
   const location = roomDesignTileLocation(item);
   if (!location.trim() || pending.test(location)) issues.push("Confirm where this tile is used.");
-  const incompleteGrout =
-    [fields.groutColor, fields.jointWidth].some(
-      (value) => pending.test(value) || /^(?:n\/a|na|none|not applicable)$/i.test(value.trim()),
-    ) || /^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test(fields.groutColor.trim());
-  if (incompleteGrout || !tileDetailConfirmed("grout", item.notes || ""))
+  const explicitGrout = Boolean(fields.groutColor || fields.jointWidth);
+  if (explicitGrout) {
+    if (
+      !roomDesignTileAnswerConfirmed(fields.groutColor) ||
+      /^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test(fields.groutColor.trim())
+    )
+      issues.push("Enter the grout color and joint width.");
+    else if (!roomDesignJointWidthConfirmed(fields.jointWidth))
+      issues.push(
+        tileJointWidthNeedsUnit(fields.jointWidth)
+          ? "Add a unit to the grout joint width, for example 1 mm or 1/8 inch."
+          : fields.jointWidth.trim() && !pending.test(fields.jointWidth)
+            ? "Enter a valid grout joint width with units, for example 1 mm or 1/8 inch."
+            : "Enter the grout color and joint width.",
+      );
+  } else if (!tileDetailConfirmed("grout", item.notes || ""))
     issues.push("Enter the grout color and joint width.");
   const patternNotes = lines(item.notes)
     .filter((line) => !/^\s*Tile lay direction\s*:/i.test(line))
     .join("\n");
-  if (!tileDetailConfirmed("tile_layout", patternNotes))
+  if (
+    fields.layout
+      ? !roomDesignTileAnswerConfirmed(fields.layout)
+      : !tileDetailConfirmed("tile_layout", patternNotes)
+  )
     issues.push("Enter the tile layout / pattern or approved drawing reference.");
   if (!roomDesignTileDirectionConfirmed(item.notes))
     issues.push("Enter the tile lay direction or approved drawing reference.");
