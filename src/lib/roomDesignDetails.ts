@@ -74,9 +74,14 @@ const choice = (label: string, options: string[], section?: string): RoomDetailF
   options,
   section,
 });
-/** Faucets do not need a separate related-fit task in the room checklist. */
+const omitRelatedFitReview = (category: string) =>
+  /\bfaucets?\b|\bbacksplash(?:es)?\b|\bcounter\s?tops?\b|\bsinks?\b.*\b(?:drains?|strainers?)\b/i.test(
+    category,
+  );
+
+/** Simple selections do not need a separate related-fit task in the room checklist. */
 export function roomRelatedFitReview(item: { category: string; notes?: string }) {
-  return /\bfaucets?\b/i.test(item.category)
+  return omitRelatedFitReview(item.category)
     ? ""
     : roomDetailValue(item.notes, "Related change review");
 }
@@ -84,7 +89,10 @@ export function roomItemDetailFields(
   category: string,
   context: { notes?: string; productName?: string } = {},
 ): RoomDetailField[] {
-  if (/^(?:door hardware|decorative ceiling lighting|doors?|exhaust fans?)$/i.test(category.trim()))
+  if (
+    /^(?:door hardware|decorative ceiling lighting|doors?|exhaust fans?)$/i.test(category.trim()) ||
+    /\b(?:cabinet|vanity) hardware\b|\bdishwashers?\b/i.test(category)
+  )
     return [];
   const value = (label: string) => roomDetailValue(context.notes, label);
   const tile = roomDesignTileSurface({ category, ...context }) === "tile";
@@ -100,17 +108,7 @@ export function roomItemDetailFields(
       f("Edge profile", "e.g. Eased"),
       f("Overhang", "If applicable; e.g. 12 in at seating"),
     ];
-  else if (/(?:cabinet|vanity) hardware/i.test(category)) {
-    fields = [f("Hardware assignment", "e.g. Knobs on uppers; pulls on drawers")];
-    // Keep earlier explicit drawer decisions editable without prompting every
-    // hardware selection for a new drawer-by-drawer schedule.
-    if (value("Pulls per drawer"))
-      fields.push(choice("Pulls per drawer", ["One", "Two", "Varies by drawer", "TBD"]));
-    if (value("Pulls per drawer") === "Varies by drawer")
-      fields.push(
-        f("Drawer hardware exceptions", "Which drawers need a different pull count or size"),
-      );
-  } else if (/(?:cabinet|vanity) finish/i.test(category)) fields = [];
+  else if (/(?:cabinet|vanity) finish/i.test(category)) fields = [];
   else if (/shelv|shelf rails/i.test(category))
     fields = [
       f("Shelf dimensions / spacing", "Custom shelf dimensions and spacing"),
@@ -227,12 +225,6 @@ export function roomDecisionIssues(item: { category: string; notes?: string }) {
   if (roomItemStatus(item) === "Not needed") return [];
   const issues: string[] = [];
   const value = (label: string) => roomDetailValue(item.notes, label);
-  if (
-    /(?:cabinet|vanity) hardware/i.test(item.category) &&
-    value("Pulls per drawer") === "Varies by drawer" &&
-    !value("Drawer hardware exceptions")
-  )
-    issues.push("Confirm the pull count and size exceptions for each drawer.");
   if (["Inspiration only", "Proposed", "Needs confirmation"].includes(value("Selection decision")))
     issues.push("Confirm the final selection before marking it reviewed.");
   if (/^Approved for /.test(value("Selection decision")) && !value("Decision approved by / date"))
@@ -380,7 +372,7 @@ const coordinationSource = (category: string) =>
     category,
   );
 const coordinationTarget = (category: string) =>
-  !/\bfaucets?\b/i.test(category) &&
+  !omitRelatedFitReview(category) &&
   /cabinet|vanity|countertop|sink|backsplash|hood|appliance|refrigerator|range|oven|dishwasher|freezer|microwave/i.test(
     category,
   );

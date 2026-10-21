@@ -187,6 +187,41 @@ it("ignores saved faucet fit warnings while retaining real pending selection dec
   expect(roomDecisionIssues({ category: "Sink", notes })).toHaveLength(1);
 });
 
+it("omits saved fit warnings for backsplash, countertops and sink drains", () => {
+  const notes = "Related change review: Recheck fit after Cabinet layout changed.";
+  for (const category of [
+    "Backsplash",
+    "Kitchen backsplash",
+    "Countertop",
+    "Island countertop",
+    "Counter top",
+    "Sink drain",
+    "Kitchen sink drain and strainer",
+  ]) {
+    expect(roomRelatedFitReview({ category, notes }), category).toBe("");
+    expect(roomDecisionIssues({ category, notes }), category).toEqual([]);
+  }
+  expect(roomRelatedFitReview({ category: "Shower drain", notes })).toContain("Recheck fit");
+});
+
+it("removes hardware and dishwasher installation forms without losing saved instructions", () => {
+  const notes =
+    "Hardware assignment: TBD\nPulls per drawer: Varies by drawer\nPanel requirements: TBD\nAdditional instructions: Keep this saved note";
+  for (const category of [
+    "Cabinet hardware",
+    "Vanity hardware",
+    "Kitchen cabinet hardware",
+    "Dishwasher",
+    "Panel-ready dishwasher",
+  ]) {
+    expect(roomItemDetailFields(category, { notes }), category).toEqual([]);
+    expect(roomDecisionIssues({ category, notes }), category).toEqual([]);
+    const state = createDefaultRoomDesignWorkflowState("Kitchen");
+    state.links[0] = { ...state.links[0], category, notes };
+    expect(normalizeRoomDesignWorkflowState(state, state).links[0].notes).toBe(notes);
+  }
+});
+
 it("limits fresh detail sections to historical custom-work callouts and tile choices", () => {
   for (const category of [
     "Backsplash",
@@ -365,9 +400,7 @@ it("shows follow-ups only for the applicable item and current answer", () => {
   expect(labels("Cabinet hardware")).not.toContain("Pulls per drawer");
   expect(labels("Shower glass hardware")).not.toContain("Pulls per drawer");
   expect(labels("Cabinet hardware")).not.toContain("Drawer hardware exceptions");
-  expect(labels("Cabinet hardware", "Pulls per drawer: Varies by drawer")).toContain(
-    "Drawer hardware exceptions",
-  );
+  expect(labels("Cabinet hardware", "Pulls per drawer: Varies by drawer")).toEqual([]);
   expect(labels("Shower system")).not.toContain("Existing / committed model");
   expect(labels("Shower system")).toEqual([]);
   expect(labels("Faucet")).not.toContain("Fan diameter / downrod");
@@ -488,6 +521,8 @@ it("flags related selected items after fit-affecting changes without changing th
     row("cab", "Cabinet layout", "Cabinet configuration: Keep these bases"),
     row("hardware", "Cabinet hardware"),
     row("top", "Countertop"),
+    row("backsplash", "Backsplash"),
+    row("drain", "Sink drain"),
     row("sink", "Sink"),
     row("faucet", "Faucet(s)"),
     row("kitchen-faucet", "Kitchen faucet"),
@@ -500,7 +535,7 @@ it("flags related selected items after fit-affecting changes without changing th
       item.id === "fridge" ? { ...item, notes: "Selected size / dimensions: 30 inches" } : item,
     ),
   );
-  for (const id of ["cab", "hardware", "top", "sink"]) {
+  for (const id of ["cab", "hardware", "sink"]) {
     const item = after.find((item) => item.id === id)!;
     expect(roomDetailValue(item.notes, "Related change review")).toContain("Refrigerator changed");
     expect(item.url).toBe(before.find((item) => item.id === id)!.url);
@@ -511,7 +546,7 @@ it("flags related selected items after fit-affecting changes without changing th
     before.find((item) => item.id === "light"),
   );
   expect(after.find((item) => item.id === "skip")).toBe(before.find((item) => item.id === "skip"));
-  for (const id of ["faucet", "kitchen-faucet"])
+  for (const id of ["faucet", "kitchen-faucet", "top", "backsplash", "drain"])
     expect(after.find((item) => item.id === id)).toBe(before.find((item) => item.id === id));
   const noFitChange = markRoomRelatedChanges(
     after,
