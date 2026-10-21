@@ -5437,6 +5437,7 @@ function ProductDetailsEditor({
                         : undefined
                     }
                     value={selection[key] || ""}
+                    placeholder={key === "finish" ? "Selected color / finish or TBD" : undefined}
                     onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
                   />
                 </label>

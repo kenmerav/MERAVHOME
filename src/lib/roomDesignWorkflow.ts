@@ -1,5 +1,5 @@
 import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
-import { cleanProductDetail } from "./productDetails";
+import { cleanRoomDesignFinish } from "./productDetails";
 import { productAwareQuantityUnit } from "./roomDesignReview";
 import { roomDesignInitialQuantity, roomItemStatus } from "./roomDesignDetails";
 
@@ -465,7 +465,7 @@ export function normalizeRoomDesignWorkflowState(
             category,
             productName: string(item.productName) || category,
             vendor: string(item.vendor),
-            finish: cleanProductDetail(item.finish),
+            finish: cleanRoomDesignFinish(item.finish),
             source: string(item.source) || "Product link",
             state: selectionState,
             swatch: string(item.swatch),

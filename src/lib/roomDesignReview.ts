@@ -1,4 +1,4 @@
-import { cleanProductDetail } from "./productDetails";
+import { cleanProductDetail, cleanRoomDesignFinish } from "./productDetails";
 import { exactProductPrice } from "./productPricing";
 import { parseSpecQuantity, specQuantityUnitFromSelection } from "./specQuantity";
 import type { RoomDesignSelection } from "./roomDesignWorkflow";
@@ -35,7 +35,7 @@ export function retainRoomDesignMeasurements<T extends RoomDesignSelection>(
     notes: next.notes || previous.notes,
     quantityUnit: previous.quantityUnit,
     wastePercent: previous.wastePercent,
-    finish: cleanProductDetail(next.finish) || cleanProductDetail(previous.finish),
+    finish: cleanRoomDesignFinish(next.finish) || cleanRoomDesignFinish(previous.finish),
   };
 }
 
@@ -78,7 +78,7 @@ export function roomDesignProductGaps(item: RoomDesignSelection): RoomDesignProd
       label: "Product image",
       message: "Add the selected product image.",
     });
-  if (!cleanProductDetail(item.finish))
+  if (!cleanRoomDesignFinish(item.finish))
     gaps.push({
       field: "finish",
       label: "Color / finish",
@@ -204,6 +204,10 @@ export function roomDesignOrderReady(item: RoomDesignSelection) {
     item.state === "locked" &&
     !roomDesignConfirmationMessage(item) &&
     !roomDesignSelectionIssues(item).length &&
-    Boolean(cleanProductDetail(item.sku) && exactProductPrice(item.price))
+    Boolean(
+      cleanProductDetail(item.finish) &&
+      cleanProductDetail(item.sku) &&
+      exactProductPrice(item.price),
+    )
   );
 }

@@ -7,7 +7,9 @@ import {
   roomDesignOrderReady,
   confirmRoomDesignSelection,
   roomDesignReviewBlockers,
+  retainRoomDesignMeasurements,
 } from "@/lib/roomDesignReview";
+import { cleanProductDetail } from "@/lib/productDetails";
 import {
   createDefaultRoomDesignWorkflowState,
   normalizeRoomDesignWorkflowState,
@@ -39,7 +41,7 @@ it("skips rendering for the team while keeping Ken’s render navigation and oth
 
 it("keeps precise repair callouts until the corresponding product information is filled", () => {
   const missing = product({
-    finish: "TBD",
+    finish: "",
     price: "$100–$200",
     dimensions: "",
     sizeOptions: ["24 x 36 inches", "30 x 40 inches"],
@@ -59,6 +61,31 @@ it("keeps precise repair callouts until the corresponding product information is
       normalizeRoomDesignWorkflowState(JSON.parse(JSON.stringify(state)), state).selections[0],
     ),
   ).toEqual([]);
+});
+
+it("accepts an explicit TBD color for review and preserves it through saves and blank refreshes", () => {
+  for (const finish of ["TBD", "tbd", " TBD "]) {
+    const item = product({ finish, sku: "M-1" });
+    expect(roomDesignProductGaps(item)).toEqual([]);
+    const reviewed = confirmRoomDesignSelection(item);
+    expect(reviewed.state).toBe("locked");
+    expect(roomDesignOrderReady(reviewed)).toBe(false);
+    const state = createDefaultRoomDesignWorkflowState("Kitchen");
+    state.selections = [reviewed];
+    const saved = normalizeRoomDesignWorkflowState(JSON.parse(JSON.stringify(state)), state)
+      .selections[0];
+    expect(saved.finish).toBe("TBD");
+    expect(roomDesignProductGaps(saved)).toEqual([]);
+    expect(retainRoomDesignMeasurements({ ...saved, finish: "" }, saved).finish).toBe("TBD");
+  }
+  expect(roomDesignProductGaps(product({ finish: "" })).map((gap) => gap.field)).toContain(
+    "finish",
+  );
+  expect(
+    roomDesignProductGaps(product({ finish: "Select color" })).map((gap) => gap.field),
+  ).toContain("finish");
+  expect(cleanProductDetail("TBD")).toBe("");
+  expect(roomDesignOrderReady(product({ state: "locked", sku: "M-1" }))).toBe(true);
 });
 
 it("does not require dimensions without an unresolved published size choice", () => {

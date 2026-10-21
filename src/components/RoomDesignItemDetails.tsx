@@ -6,6 +6,7 @@ import {
   roomItemDetailFields,
   roomItemStatus,
   roomDecisionIssues,
+  roomRelatedFitReview,
   updateRoomDetail,
   type RoomItemStatus,
 } from "@/lib/roomDesignDetails";
@@ -40,7 +41,8 @@ export function RoomDesignItemDetails({
     prior.current = productSource;
   }, [productSource]);
   const fields = roomItemDetailFields(category, { notes, productName });
-  if (!fields.length && !roomDetailValue(notes, "Related change review")) return null;
+  const fitReview = roomRelatedFitReview({ category, notes });
+  if (!fields.length && !fitReview) return null;
   const status = itemStatus ?? roomItemStatus({ category, notes, url: productSource });
   const saved = fields.map((field) => roomDetailValue(notes, field.label)).filter(Boolean);
   const pending =
@@ -80,13 +82,13 @@ export function RoomDesignItemDetails({
   );
   return (
     <div className="space-y-3">
-      {roomDetailValue(notes, "Related change review") && (
+      {fitReview && (
         <div
           role="status"
           className="border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"
         >
           <p className="font-medium">Confirm fit after a related change</p>
-          <p className="mt-1">{roomDetailValue(notes, "Related change review")}</p>
+          <p className="mt-1">{fitReview}</p>
           {showFitConfirmationAction ? (
             <button
               type="button"
@@ -107,7 +109,8 @@ export function RoomDesignItemDetails({
           onExpandedChange={setExpanded}
           label={`${category} item details`}
           title={
-            fields.filter((field) => !field.section).length === 1
+            fields.filter((field) => !field.section).length === 1 &&
+            fields.find((field) => !field.section)?.label === "Additional instructions"
               ? "Notes"
               : /paint|wall finish|ceiling finish/i.test(category) &&
                   !/tile/i.test(productName || "")

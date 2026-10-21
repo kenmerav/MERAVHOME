@@ -20,6 +20,7 @@ import {
   roomProjectDefaults,
   markRoomRelatedChanges,
   roomDesignScrapedNotes,
+  roomRelatedFitReview,
 } from "@/lib/roomDesignDetails";
 import { roomDesignOrderReady, roomDesignSelectionIssues } from "@/lib/roomDesignReview";
 import { mergeRoomDesignEdits } from "@/lib/roomDesignSync";
@@ -136,6 +137,54 @@ it("omits extra details for straightforward door and ceiling fixture selections"
     state.links[0] = { ...state.links[0], category, notes };
     expect(normalizeRoomDesignWorkflowState(state, state).links[0].notes).toBe(notes);
   }
+});
+
+it("does not reopen Notes for sinks, drains, faucets, refrigerators or freezers with saved notes", () => {
+  const notes =
+    "Additional instructions: Keep existing location\nRelated change review: Recheck fit after Cabinet layout changed.";
+  for (const category of [
+    "Sink drain",
+    "Kitchen sink drain and strainer",
+    "Sink",
+    "Sink(s)",
+    "Kitchen sink",
+    "Faucet",
+    "Faucet(s)",
+    "Kitchen faucet",
+    "Fridge",
+    "Refrigerator",
+    "Freezer",
+    "Appliance freezer",
+  ]) {
+    const fields = roomItemDetailFields(category, { notes });
+    expect(
+      fields.map((field) => field.label),
+      category,
+    ).not.toContain("Additional instructions");
+    const state = createDefaultRoomDesignWorkflowState("Kitchen");
+    state.links[0] = { ...state.links[0], category, notes };
+    expect(normalizeRoomDesignWorkflowState(state, state).links[0].notes).toBe(notes);
+  }
+  expect(roomItemDetailFields("Refrigerator", { notes }).map((field) => field.label)).toEqual([
+    "Panel requirements",
+  ]);
+  expect(roomItemDetailFields("Countertop", { notes }).map((field) => field.label)).toContain(
+    "Additional instructions",
+  );
+});
+
+it("ignores saved faucet fit warnings while retaining real pending selection decisions", () => {
+  const notes = "Related change review: Recheck fit after Cabinet layout changed.";
+  for (const category of ["Faucet", "Faucet(s)", "Kitchen faucet", "Shower faucet"]) {
+    expect(roomRelatedFitReview({ category, notes })).toBe("");
+    expect(roomDecisionIssues({ category, notes })).toEqual([]);
+    expect(roomItemDetailFields(category, { notes })).toEqual([]);
+    expect(
+      roomDecisionIssues({ category, notes: `${notes}\nSubstitution status: Awaiting approval` }),
+    ).toEqual(["The proposed substitution still needs approval."]);
+  }
+  expect(roomRelatedFitReview({ category: "Sink", notes })).toContain("Recheck fit");
+  expect(roomDecisionIssues({ category: "Sink", notes })).toHaveLength(1);
 });
 
 it("limits fresh detail sections to historical custom-work callouts and tile choices", () => {
@@ -439,6 +488,9 @@ it("flags related selected items after fit-affecting changes without changing th
     row("cab", "Cabinet layout", "Cabinet configuration: Keep these bases"),
     row("hardware", "Cabinet hardware"),
     row("top", "Countertop"),
+    row("sink", "Sink"),
+    row("faucet", "Faucet(s)"),
+    row("kitchen-faucet", "Kitchen faucet"),
     row("light", "Island pendants"),
     { ...row("skip", "Sink"), notes: "Selection responsibility: Not needed" },
   ];
@@ -448,7 +500,7 @@ it("flags related selected items after fit-affecting changes without changing th
       item.id === "fridge" ? { ...item, notes: "Selected size / dimensions: 30 inches" } : item,
     ),
   );
-  for (const id of ["cab", "hardware", "top"]) {
+  for (const id of ["cab", "hardware", "top", "sink"]) {
     const item = after.find((item) => item.id === id)!;
     expect(roomDetailValue(item.notes, "Related change review")).toContain("Refrigerator changed");
     expect(item.url).toBe(before.find((item) => item.id === id)!.url);
@@ -459,6 +511,8 @@ it("flags related selected items after fit-affecting changes without changing th
     before.find((item) => item.id === "light"),
   );
   expect(after.find((item) => item.id === "skip")).toBe(before.find((item) => item.id === "skip"));
+  for (const id of ["faucet", "kitchen-faucet"])
+    expect(after.find((item) => item.id === id)).toBe(before.find((item) => item.id === id));
   const noFitChange = markRoomRelatedChanges(
     after,
     after.map((item) =>

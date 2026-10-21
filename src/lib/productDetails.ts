@@ -8,3 +8,10 @@ export function cleanProductDetail(value: unknown): string {
     ? ""
     : text;
 }
+
+/** An explicit undecided color is a saved room decision, not scraped product data. */
+export function cleanRoomDesignFinish(value: unknown): string {
+  return typeof value === "string" && /^tbd$/i.test(value.trim())
+    ? "TBD"
+    : cleanProductDetail(value);
+}

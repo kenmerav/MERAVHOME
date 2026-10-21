@@ -74,6 +74,12 @@ const choice = (label: string, options: string[], section?: string): RoomDetailF
   options,
   section,
 });
+/** Faucets do not need a separate related-fit task in the room checklist. */
+export function roomRelatedFitReview(item: { category: string; notes?: string }) {
+  return /\bfaucets?\b/i.test(item.category)
+    ? ""
+    : roomDetailValue(item.notes, "Related change review");
+}
 export function roomItemDetailFields(
   category: string,
   context: { notes?: string; productName?: string } = {},
@@ -152,7 +158,8 @@ export function roomItemDetailFields(
           line.trim(),
         ),
     );
-  if (fields.length || tile || hasProjectNotes)
+  const omitNotes = /\b(?:sinks?|faucets?|fridges?|refrigerators?|freezers?)\b/i.test(category);
+  if (!omitNotes && (fields.length || tile || hasProjectNotes))
     fields.push(f("Additional instructions", "Optional installation notes or drawing reference"));
 
   // Previously saved decisions remain editable without asking every item for
@@ -248,7 +255,8 @@ export function roomDecisionIssues(item: { category: string; notes?: string }) {
     issues.push("Field measurements still need confirmation.");
   if (value("Measurement status") === "Field verified" && !value("Field verified by / date"))
     issues.push("Record who verified the measurements and when.");
-  if (value("Related change review")) issues.push(value("Related change review"));
+  const fitReview = roomRelatedFitReview(item);
+  if (fitReview) issues.push(fitReview);
   return issues;
 }
 export function roomItemInstructionIssues(item: { category: string; notes?: string }) {
@@ -372,7 +380,8 @@ const coordinationSource = (category: string) =>
     category,
   );
 const coordinationTarget = (category: string) =>
-  /cabinet|vanity|countertop|sink|faucet|backsplash|hood|appliance|refrigerator|range|oven|dishwasher|freezer|microwave/i.test(
+  !/\bfaucets?\b/i.test(category) &&
+  /cabinet|vanity|countertop|sink|backsplash|hood|appliance|refrigerator|range|oven|dishwasher|freezer|microwave/i.test(
     category,
   );
 const fitLabels = [
