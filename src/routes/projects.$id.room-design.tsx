@@ -2788,15 +2788,17 @@ function StartStep(props: {
               {props.links.filter((link) => roomItemStatus(link) === "Not needed").length})
             </label>
           </div>
-          <div className="mt-3 divide-y divide-border border-y border-border">
+          <div className="mt-3 space-y-4 bg-bone/35 p-3 sm:p-4">
             {visibleLinks.map((item) => (
               <div
                 key={item.id}
-                className="grid gap-2 py-3 md:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px] md:items-center"
+                role="group"
+                aria-label={`${item.category} selection`}
+                className="grid gap-x-3 gap-y-4 border border-stone-300 bg-background p-4 shadow-[0_1px_2px_rgb(0_0_0/0.03)] md:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px] md:items-center"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-sm font-medium">{item.category}</span>
+                    <span className="text-base font-semibold text-ink">{item.category}</span>
                     {item.saveToTemplate && (
                       <span className="border border-brass/40 bg-brass/10 px-1.5 py-0.5 text-[8px] uppercase tracking-[.12em] text-amber-800">
                         Template
@@ -2888,7 +2890,7 @@ function StartStep(props: {
                 ) : (
                   <span />
                 )}
-                <div className="space-y-2 md:col-span-full">
+                <div className="space-y-3 border-t border-border bg-bone/20 p-3 empty:hidden md:col-span-full">
                   {props.loadedProducts
                     .filter(
                       (selection) =>
