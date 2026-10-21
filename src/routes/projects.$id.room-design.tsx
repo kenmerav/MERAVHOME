@@ -2794,9 +2794,9 @@ function StartStep(props: {
                 key={item.id}
                 role="group"
                 aria-label={`${item.category} selection`}
-                className="grid gap-x-3 gap-y-4 border border-stone-300 bg-background p-4 shadow-[0_1px_2px_rgb(0_0_0/0.03)] md:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px] md:items-center"
+                className="grid gap-x-3 gap-y-4 border border-stone-300 bg-background p-4 shadow-[0_1px_2px_rgb(0_0_0/0.03)] md:grid-cols-[76px_minmax(0,1fr)_120px_32px] md:items-center xl:grid-cols-[220px_76px_minmax(0,1fr)_120px_32px]"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 md:col-span-full xl:col-span-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-base font-semibold text-ink">{item.category}</span>
                     {item.saveToTemplate && (
