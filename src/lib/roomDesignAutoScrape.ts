@@ -1,6 +1,6 @@
 import type { RoomDesignLink, RoomDesignSelection } from "./roomDesignWorkflow";
 import { retainRoomDesignMeasurements, ROOM_DESIGN_REVIEW_FIELDS } from "./roomDesignReview";
-import { synchronizeRoomSelectionDetails } from "./roomDesignDetails";
+import { roomDesignScrapedNotes, synchronizeRoomSelectionDetails } from "./roomDesignDetails";
 
 export function roomDesignLinkSourceKey(link: Pick<RoomDesignLink, "id" | "url" | "productId">) {
   return JSON.stringify([link.id, link.url.trim(), link.productId || ""]);
@@ -34,6 +34,7 @@ export function mergeAutomaticRoomProduct<T extends RoomDesignSelection>(
     next,
     synchronizeRoomSelectionDetails<RoomDesignSelection>(before ?? scraped, { notes: link.notes }),
   );
+  next.notes = roomDesignScrapedNotes(next.notes, next.category, next.productName, next.finish);
   if (changed.length) {
     next.reviewFields = [...new Set([...(current?.reviewFields ?? []), ...changed])];
     next.scrapeStatus = "partial";

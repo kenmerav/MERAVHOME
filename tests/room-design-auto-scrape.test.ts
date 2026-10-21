@@ -72,3 +72,18 @@ it("does not restore cleared choices or invent a missing price", () => {
   expect(next.price).toBe("");
   expect(next.reviewFields).toContain("finish");
 });
+
+it("keeps a published paint sheen in the gathered review without replacing manual installation notes", () => {
+  for (const [notes, expected] of [
+    ["", "Eggshell"],
+    ["Paint sheen: Satin", "Satin"],
+  ]) {
+    const next = mergeAutomaticRoomProduct(
+      item({ category: "Wall finish", productName: "Interior paint", finish: "White / Eggshell" }),
+      undefined,
+      undefined,
+      { ...link, notes },
+    )!;
+    expect(next.notes).toBe(`Paint sheen: ${expected}`);
+  }
+});

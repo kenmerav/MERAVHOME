@@ -796,18 +796,13 @@ function RoomDesignWorkflow({
   const [selections, setSelections] = useState<DemoSelection[]>(initialDraft.selections);
   const latestRoomInputs = useRef({ roomId, links, selections, method });
   latestRoomInputs.current = { roomId, links, selections, method };
-  const autoLinkTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const autoLinkVersions = useRef(new Map<string, number>());
-  const autoLinkSequence = useRef(0);
-  useEffect(() => {
-    const timers = autoLinkTimers.current;
-    const versions = autoLinkVersions.current;
-    return () => {
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
-      versions.clear();
-    };
-  }, [roomId]);
+  const gatherVersion = useRef(0);
+  useEffect(
+    () => () => {
+      gatherVersion.current++;
+    },
+    [],
+  );
   const [conceptPreview, setConceptPreview] = useState(initialDraft.conceptPreview);
   const [roomPreview, setRoomPreview] = useState(initialDraft.roomPreview);
   const [planPreview, setPlanPreview] = useState(initialDraft.planPreview);
@@ -1130,6 +1125,7 @@ function RoomDesignWorkflow({
   }, [materialItems, roomId, search.manualBoard, search.stage]);
 
   const applyRoomDraft = (draft: RoomWorkflowDraft) => {
+    gatherVersion.current++;
     setGathering(false);
     setGatherProgress(EMPTY_GATHER_PROGRESS);
     setLinkScrapeStates({});
@@ -1357,9 +1353,8 @@ function RoomDesignWorkflow({
   };
 
   const chooseMethod = (next: StartMethod) => {
-    for (const timer of autoLinkTimers.current.values()) clearTimeout(timer);
-    autoLinkTimers.current.clear();
-    autoLinkVersions.current.clear();
+    gatherVersion.current++;
+    setGathering(false);
     setLinkScrapeStates({});
     setMethod(next);
     setConceptSourceMessage("");
@@ -1367,52 +1362,47 @@ function RoomDesignWorkflow({
     setMaterialsSent(false);
   };
 
-  const gatherLinks = async (
-    failedOnly = false,
-    automaticLink?: DemoLink,
-    isCurrent = () => true,
-  ) => {
-    const automatic = Boolean(automaticLink);
+  const gatherLinks = async (failedOnly = false) => {
+    const version = ++gatherVersion.current;
+    const isCurrent = () =>
+      gatherVersion.current === version &&
+      latestRoomInputs.current.roomId === roomId &&
+      latestRoomInputs.current.method === method;
     const beforeSelections = latestRoomInputs.current.selections;
-    if (!automatic) {
-      for (const timer of autoLinkTimers.current.values()) clearTimeout(timer);
-      autoLinkTimers.current.clear();
-      autoLinkVersions.current.clear();
-    }
-    const instructions: DemoSelection[] =
-      failedOnly || automatic
-        ? []
-        : links
-            .filter(
-              (link) =>
-                !/tile installation defaults/i.test(link.category) &&
-                !roomItemNeedsProduct(link) &&
-                (link.notes.trim() || roomItemStatus(link) === "TBD"),
-            )
-            .map((link) => {
-              const previous = selections.find((selection) => selection.id === `link-${link.id}`);
-              return {
-                ...previous,
-                id: `link-${link.id}`,
-                category: link.category,
-                productName: link.catalogProductName || previous?.productName || link.category,
-                vendor: previous?.vendor || "",
-                finish:
-                  roomDetailValue(link.notes, "Selected color / finish") || previous?.finish || "",
-                dimensions:
-                  roomDetailValue(link.notes, "Selected size / dimensions") || previous?.dimensions,
-                source: "Manual board",
-                state: "selected",
-                swatch: swatchForGroup(link.group),
-                group: link.group,
-                quantity: link.quantity,
-                notes: link.notes,
-                url: link.url || undefined,
-                productId: link.productId || null,
-                scrapeStatus: "complete",
-              };
-            });
-    const linkedItems = (automaticLink ? [automaticLink] : links).filter(
+    setReviewError("");
+    const instructions: DemoSelection[] = failedOnly
+      ? []
+      : links
+          .filter(
+            (link) =>
+              !/tile installation defaults/i.test(link.category) &&
+              !roomItemNeedsProduct(link) &&
+              (link.notes.trim() || roomItemStatus(link) === "TBD"),
+          )
+          .map((link) => {
+            const previous = selections.find((selection) => selection.id === `link-${link.id}`);
+            return {
+              ...previous,
+              id: `link-${link.id}`,
+              category: link.category,
+              productName: link.catalogProductName || previous?.productName || link.category,
+              vendor: previous?.vendor || "",
+              finish:
+                roomDetailValue(link.notes, "Selected color / finish") || previous?.finish || "",
+              dimensions:
+                roomDetailValue(link.notes, "Selected size / dimensions") || previous?.dimensions,
+              source: "Manual board",
+              state: "selected",
+              swatch: swatchForGroup(link.group),
+              group: link.group,
+              quantity: link.quantity,
+              notes: link.notes,
+              url: link.url || undefined,
+              productId: link.productId || null,
+              scrapeStatus: "complete",
+            };
+          });
+    const linkedItems = links.filter(
       (link) =>
         roomItemNeedsProduct(link) &&
         (link.url.trim() || link.productId) &&
@@ -1429,17 +1419,12 @@ function RoomDesignWorkflow({
       return;
     }
 
-    if (!automatic) setGathering(true);
+    setGathering(true);
     try {
-      if (!automatic) setGatherProgress({ ...EMPTY_GATHER_PROGRESS, total: linkedItems.length });
+      setGatherProgress({ ...EMPTY_GATHER_PROGRESS, total: linkedItems.length });
       setLinkScrapeStates((current) => ({
-        ...(failedOnly || automatic ? current : {}),
-        ...Object.fromEntries(
-          linkedItems.map((link) => [
-            link.id,
-            { status: automatic ? ("scraping" as const) : ("waiting" as const) },
-          ]),
-        ),
+        ...(failedOnly ? current : {}),
+        ...Object.fromEntries(linkedItems.map((link) => [link.id, { status: "waiting" as const }])),
       }));
 
       const catalogPairs = await Promise.all(
@@ -1454,8 +1439,9 @@ function RoomDesignWorkflow({
         ),
       );
       const catalogByLinkId = new Map(catalogPairs.filter((entry) => Boolean(entry[1])));
+      if (!isCurrent()) return;
       const savedByLinkId = new Map(
-        !automatic && !failedOnly
+        !failedOnly
           ? linkedItems.flatMap((link) => {
               const saved = selections.find(
                 (item) =>
@@ -1472,32 +1458,26 @@ function RoomDesignWorkflow({
         (link) =>
           link.url.trim() &&
           !savedByLinkId.has(link.id) &&
-          (!catalogByLinkId.has(link.id) || (automatic && !link.productId)),
+          (!catalogByLinkId.has(link.id) || !link.productId),
       );
       let batchResults: Awaited<ReturnType<typeof scrapeProductUrlsBatch>> = [];
       let batchError = "";
       if (linksNeedingScrape.length) {
         try {
           const requestOptions = await pilotRequestOptions();
-          batchResults = automatic
-            ? [
-                {
-                  url: linksNeedingScrape[0].url,
-                  product: await scrapeProductUrl(linksNeedingScrape[0].url, fetch, requestOptions),
-                },
-              ]
-            : await scrapeProductUrlsBatch(
-                linksNeedingScrape.map((link) => link.url),
-                fetch,
-                {
-                  ...requestOptions,
-                  onProgress: ({ completed }) =>
-                    setGatherProgress((current) => ({
-                      ...current,
-                      completed: Math.max(current.completed, Math.min(completed, current.total)),
-                    })),
-                },
-              );
+          batchResults = await scrapeProductUrlsBatch(
+            linksNeedingScrape.map((link) => link.url),
+            fetch,
+            {
+              ...requestOptions,
+              onProgress: ({ completed }) =>
+                isCurrent() &&
+                setGatherProgress((current) => ({
+                  ...current,
+                  completed: Math.max(current.completed, Math.min(completed, current.total)),
+                })),
+            },
+          );
         } catch (error) {
           batchError =
             error instanceof Error ? error.message : "The batch queue could not be completed.";
@@ -1655,123 +1635,49 @@ function RoomDesignWorkflow({
                 .join(" ") || undefined,
           },
         }));
-        if (!automatic)
-          setGatherProgress((current) => ({
-            ...current,
-            completed: Math.max(current.completed, index + 1),
-            successful:
-              current.successful + (gatheredSelection.scrapeStatus === "complete" ? 1 : 0),
-            partial: current.partial + (gatheredSelection.scrapeStatus === "partial" ? 1 : 0),
-            failed: current.failed + (gatheredSelection.scrapeStatus === "failed" ? 1 : 0),
-          }));
+        setGatherProgress((current) => ({
+          ...current,
+          completed: Math.max(current.completed, index + 1),
+          successful: current.successful + (gatheredSelection.scrapeStatus === "complete" ? 1 : 0),
+          partial: current.partial + (gatheredSelection.scrapeStatus === "partial" ? 1 : 0),
+          failed: current.failed + (gatheredSelection.scrapeStatus === "failed" ? 1 : 0),
+        }));
       }
 
       if (!isCurrent()) return;
-      if (automaticLink) {
-        const latest = latestRoomInputs.current;
-        const latestLink = latest.links.find((link) => link.id === automaticLink.id);
-        if (!latestLink || !gathered[0]) return;
-        const next = mergeAutomaticRoomProduct(
-          gathered[0],
-          beforeSelections.find((item) => item.id === gathered[0].id),
-          latest.selections.find((item) => item.id === gathered[0].id),
-          latestLink,
+      const latest = latestRoomInputs.current;
+      const currentGathered = gathered.flatMap((item) => {
+        const link = latest.links.find((link) => `link-${link.id}` === item.id);
+        const original = linkedItems.find((link) => `link-${link.id}` === item.id);
+        if (
+          !link ||
+          !original ||
+          roomDesignLinkSourceKey(link) !== roomDesignLinkSourceKey(original)
+        )
+          return [];
+        const merged = mergeAutomaticRoomProduct(
+          item,
+          beforeSelections.find((saved) => saved.id === item.id),
+          latest.selections.find((saved) => saved.id === item.id),
+          link,
         );
-        if (!next) return;
-        setSelections((current) =>
-          current.some((item) => item.id === next.id)
-            ? current.map((item) => (item.id === next.id ? next : item))
-            : [...current, next],
-        );
-        const missing = roomDesignProductGaps(next);
-        const confirmation = roomDesignConfirmationMessage(next);
-        setLinkScrapeStates((current) => ({
-          ...current,
-          [automaticLink.id]: {
-            status:
-              next.scrapeStatus === "failed"
-                ? "failed"
-                : missing.length || confirmation
-                  ? "partial"
-                  : "complete",
-            message:
-              [
-                missing.length ? `Missing: ${missing.map((gap) => gap.label).join(", ")}.` : "",
-                confirmation,
-              ]
-                .filter(Boolean)
-                .join(" ") || undefined,
-          },
-        }));
-      } else addSelections([...gathered, ...instructions]);
+        return merged ? [merged] : [];
+      });
+      addSelections([...currentGathered, ...instructions]);
       setBoardReady(false);
       setRenderReady(false);
       setCompletedRenderPreview("");
-      if (!automatic) setStep(1);
+      setStep(1);
     } catch (error) {
       if (!isCurrent()) return;
-      if (automaticLink) {
-        setLinkScrapeStates((current) => ({
-          ...current,
-          [automaticLink.id]: {
-            status: "failed",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Could not read this product link. You can enter its details manually.",
-          },
-        }));
-      }
       setReviewError(
         error instanceof Error
           ? error.message
           : "Product gathering failed. Your saved selections are still available.",
       );
     } finally {
-      if (!automatic) setGathering(false);
+      if (isCurrent()) setGathering(false);
     }
-  };
-
-  const queueLinkLookup = (link: DemoLink) => {
-    const prior = autoLinkTimers.current.get(link.id);
-    if (prior) clearTimeout(prior);
-    const version = ++autoLinkSequence.current;
-    autoLinkVersions.current.set(link.id, version);
-    const requestedRoom = roomId;
-    const source = roomDesignLinkSourceKey(link);
-    if (
-      (!link.productId && !/^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(link.url.trim())) ||
-      !roomItemNeedsProduct(link)
-    ) {
-      setLinkScrapeStates((current) => {
-        const next = { ...current };
-        delete next[link.id];
-        return next;
-      });
-      return;
-    }
-    setLinkScrapeStates((current) => ({ ...current, [link.id]: { status: "waiting" } }));
-    autoLinkTimers.current.set(
-      link.id,
-      setTimeout(() => {
-        autoLinkTimers.current.delete(link.id);
-        const isCurrent = () => {
-          const latest = latestRoomInputs.current;
-          const currentLink = latest.links.find((item) => item.id === link.id);
-          return (
-            latest.roomId === requestedRoom &&
-            latest.method === "links" &&
-            autoLinkVersions.current.get(link.id) === version &&
-            Boolean(
-              currentLink &&
-              roomDesignLinkSourceKey(currentLink) === source &&
-              roomItemNeedsProduct(currentLink),
-            )
-          );
-        };
-        if (isCurrent()) void gatherLinks(false, link, isCurrent);
-      }, 1000),
-    );
   };
 
   const retryFailedLinks = () => {
@@ -2247,7 +2153,6 @@ function RoomDesignWorkflow({
                 links={links}
                 loadedProducts={selections}
                 onLinks={applyLinks}
-                onLookupLink={queueLinkLookup}
                 projectDefaultLinks={projectDefaultLinks}
                 onOpenDefaults={
                   defaultsRoom && defaultsRoom.id !== roomId
@@ -2573,7 +2478,6 @@ function StartStep(props: {
   projectDefaultLinks: DemoLink[];
   onOpenDefaults?: () => void;
   onLinks: (links: DemoLink[]) => void;
-  onLookupLink: (link: DemoLink) => void;
   gathering: boolean;
   gatherProgress: GatherProgress;
   linkScrapeStates: Record<string, LinkScrapeState>;
@@ -2727,8 +2631,8 @@ function StartStep(props: {
             <div>
               <h3 className="text-2xl font-bold sm:text-3xl">{props.roomName} checklist</h3>
               <p className="mt-2 text-sm font-normal text-muted-foreground">
-                Paste a product link or choose from the catalog. Links fill product details
-                automatically; prices can stay blank.
+                Paste product links or choose from the catalog, then click Review products to gather
+                details and see what still needs review. Prices can stay blank.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -2948,7 +2852,6 @@ function StartStep(props: {
                         props.onLinks(
                           props.links.map((link) => (link.id === item.id ? next : link)),
                         );
-                        props.onLookupLink(next);
                       }}
                       placeholder={
                         roomItemNeedsProduct(item)
@@ -2969,7 +2872,6 @@ function StartStep(props: {
                         props.onLinks(
                           props.links.map((link) => (link.id === item.id ? next : link)),
                         );
-                        props.onLookupLink(next);
                       }}
                     />
                   </>
@@ -3156,9 +3058,6 @@ function StartStep(props: {
               onClick={props.onGather}
               disabled={
                 props.gathering ||
-                Object.values(props.linkScrapeStates).some(
-                  (state) => state.status === "waiting" || state.status === "scraping",
-                ) ||
                 !props.links.some(
                   (item) =>
                     item.url.trim() ||
@@ -3168,13 +3067,7 @@ function StartStep(props: {
               }
             >
               {props.gathering ? <RefreshCw className="animate-spin" /> : <Sparkles />}
-              {props.gathering
-                ? "Gathering product details..."
-                : Object.values(props.linkScrapeStates).some(
-                      (state) => state.status === "waiting" || state.status === "scraping",
-                    )
-                  ? "Reading product links..."
-                  : "Review products"}
+              {props.gathering ? "Gathering product details..." : "Review products"}
             </Button>
           </div>
         </div>
