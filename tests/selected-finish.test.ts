@@ -89,6 +89,9 @@ it("does not verify a default swatch or evidence for a different link", () => {
     suggested: "",
   });
 });
+it("does not count a sheen alone as a verified color", () => {
+  expect(reviewSelectedFinishes([selection("Matte")], [observation("Matte")]).findings[0].finish_check).toBe("unverified");
+});
 
 const shopify = {
   options: ["Color", "Size"],

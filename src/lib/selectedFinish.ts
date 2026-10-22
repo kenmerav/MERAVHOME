@@ -221,7 +221,8 @@ export function reviewSelectedFinishes(items: MaterialItem[], observations: Fini
     if (!/^https?:\/\//i.test(url)) continue; // The existing link check handles missing/invalid links.
     const observed = observations.find((row) => row.item_id === item.id && row.source_url === url);
     const current = item.color?.trim() || item.product?.finish?.trim() || "";
-    const selected = observed?.status === "verified" ? selectedFinishLabel(observed) : "";
+    const linkedFinish = observed?.status === "verified" ? selectedFinishLabel(observed) : "";
+    const selected = /^(?:(?:matte|flat|eggshell|satin|polished|brushed|honed|glossy?|smooth|textured|unfinished|silgranit|roman clay)[\s/,-]*)+$/i.test(linkedFinish) ? "" : linkedFinish;
     const ambiguous = ambiguousFinish(current);
     if (!ambiguous && selected && finishMatches(current, selected)) {
       verified++;

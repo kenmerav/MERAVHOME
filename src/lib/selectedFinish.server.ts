@@ -14,9 +14,6 @@ export function signFinishObservation(
 ) {
   if (!secret) return undefined;
   const observation: FinishObservation = {
-    item_id: itemId,
-    source_url: url,
-    checked_at: new Date().toISOString(),
     ...(evidence ?? {
       status: "unverified",
       color: "",
@@ -24,6 +21,9 @@ export function signFinishObservation(
       basis: "unconfirmed",
       evidence: "The product page could not confirm the selected color / finish.",
     }),
+    item_id: itemId,
+    source_url: url,
+    checked_at: new Date().toISOString(),
   };
   const payload = Buffer.from(JSON.stringify({ project_id: projectId, observation })).toString(
     "base64url",
