@@ -3,11 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Sparkles,
   Plus,
   Trash2,
   Star,
-  RefreshCw,
   Download,
   Eye,
   CheckCircle2,
@@ -15,7 +13,6 @@ import {
   AlertCircle,
   Circle,
   Clock,
-  GitBranch,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -24,8 +21,6 @@ import {
   type RoomImage,
   type RenderingStatus,
   type RenderingReviewStatus,
-  type RoomProduct,
-  type MaterialItem,
   type RenderingStudioElevation,
 } from "@/lib/db";
 import {
@@ -37,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -45,23 +39,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { normalizeSupabaseImageUrl, resolveImage } from "@/lib/local-assets";
-import {
-  fileToCompressedDataUrl,
-  prepareRenderingImageSource,
-  type PreparedRenderingImage,
-  type RenderingFidelityMode,
-} from "@/lib/imagePayload";
-import { materialImageUrl } from "@/lib/materialImages";
+import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
+import { fileToCompressedDataUrl } from "@/lib/imagePayload";
 import { resolveStaleRenderingJobs } from "@/lib/renderingJobs";
 import { toast } from "sonner";
 import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
 import { MeasuredRenderingWorkspace } from "@/components/MeasuredRenderingWorkspace";
 import { CodexRenderingBatch } from "@/components/CodexRenderingBatch";
 import { ExternalRenderingDownload } from "@/components/ExternalRenderingDownload";
-import { isStudioTeamRole } from "@/lib/permissions";
+import { canUseRenderingStudio, isStudioTeamRole } from "@/lib/permissions";
 import { ImportRenderingPdfDialog } from "@/components/ImportRenderingPdfDialog";
 import { ImportRenderingPackageDialog } from "@/components/ImportRenderingPackageDialog";
 import {
@@ -122,10 +109,12 @@ export function ProjectRenderingStudio({
   projectId: id,
   initialRoomId,
   initialGalleryOpen = false,
+  libraryOnly = false,
 }: {
   projectId: string;
   initialRoomId?: string;
   initialGalleryOpen?: boolean;
+  libraryOnly?: boolean;
 }) {
   const qc = useQueryClient();
   const { data: profile } = useQuery({
@@ -134,9 +123,9 @@ export function ProjectRenderingStudio({
   });
   const canUseStudio = profile?.is_active === true && isStudioTeamRole(profile.role);
   const [renderingMethod, setRenderingMethod] = useState<"codex" | "api">("codex");
-  const [galleryOpen, setGalleryOpen] = useState(initialGalleryOpen);
+  const [galleryOpen, setGalleryOpen] = useState(libraryOnly || initialGalleryOpen);
   const galleryVisible = galleryOpen || (profile !== undefined && !canUseStudio);
-  const [galleryRoomId, setGalleryRoomId] = useState("");
+  const [galleryRoomId, setGalleryRoomId] = useState(libraryOnly ? initialRoomId || "" : "");
   const galleryRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (initialGalleryOpen) setGalleryOpen(true);
@@ -177,8 +166,6 @@ export function ProjectRenderingStudio({
     queryFn: () => db.listRenderingStudioElevations(id),
   });
 
-  const [busy, setBusy] = useState(false);
-  const [renderingMode, setRenderingMode] = useState<RenderingFidelityMode>("standard");
   const [savingStudioSlideKey, setSavingStudioSlideKey] = useState<string | null>(null);
 
   // Build per-room data
@@ -197,24 +184,6 @@ export function ProjectRenderingStudio({
     () => new Map(rooms.map((room) => [room.id, byRoom.get(room.id)?.sketchups ?? []])),
     [rooms, byRoom],
   );
-
-  const totals = useMemo(() => {
-    let sk = 0,
-      done = 0,
-      pending = 0,
-      failed = 0;
-    for (const r of rooms) {
-      const { sketchups } = byRoom.get(r.id) || { sketchups: [], renderings: [] };
-      for (const s of sketchups) {
-        sk++;
-        const st = sketchupStatus(s.id, byRoom.get(r.id)!.renderings);
-        if (st === "complete") done++;
-        else if (st === "failed") failed++;
-        else if (st !== "not_generated") pending++;
-      }
-    }
-    return { sk, done, pending, failed };
-  }, [rooms, byRoom]);
 
   const approvedPresentationSlideKeys = useMemo(
     () => buildApprovedRenderingSlideKeys(rooms, byRoom),
@@ -446,41 +415,12 @@ export function ProjectRenderingStudio({
     }
   };
 
-  const generateAll = async () => {
-    if (busy) return;
-    setBusy(true);
-    // Collect all sketchups that don't have a successful rendering
-    const tasks: { roomId: string; sk: RoomImage }[] = [];
-    for (const r of rooms) {
-      const { sketchups, renderings } = byRoom.get(r.id) || { sketchups: [], renderings: [] };
-      for (const sk of sketchups) {
-        const hasComplete = renderings.some(
-          (rn) => rn.linked_sketchup_id === sk.id && rn.status === "complete",
-        );
-        if (!hasComplete) tasks.push({ roomId: r.id, sk });
-      }
-    }
-    if (!tasks.length) {
-      toast.info("Nothing to generate");
-      setBusy(false);
-      return;
-    }
-    toast.success(`Queueing ${tasks.length} rendering${tasks.length === 1 ? "" : "s"}…`);
-    for (const t of tasks) {
-      await generateRendering(t.roomId, t.sk, qc, id, { renderingMode });
-    }
-    setBusy(false);
-    toast.success("Batch queued");
-  };
-
   if (!project)
     return (
       <AppShell>
         <div className="p-16 text-muted-foreground">Loading…</div>
       </AppShell>
     );
-
-  const progress = totals.sk === 0 ? 0 : Math.round((totals.done / totals.sk) * 100);
 
   return (
     <AppShell>
@@ -498,10 +438,13 @@ export function ProjectRenderingStudio({
             <div className="eyebrow mb-3">
               {project.client_name} · {project.name}
             </div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">Rendering Studio</h1>
+            <h1 className="editorial-hero text-5xl lg:text-7xl">
+              {libraryOnly ? "Renderings" : "Rendering Studio"}
+            </h1>
             <p className="text-sm text-muted-foreground mt-3 max-w-2xl">
-              Choose a room and drawing, create your rendering, then make adjustments and save the
-              finished image. Approved renderings are available in your project presentation.
+              {libraryOnly
+                ? "View and upload SketchUp images and finished renderings. Approve images and choose their pages in the project presentation."
+                : "Choose a room and drawing, create your rendering, then make adjustments and save the finished image. Approved renderings are available in your project presentation."}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -512,9 +455,24 @@ export function ProjectRenderingStudio({
                 images={allImages}
               />
             )}
-            <button className="border border-ink px-4 py-2 text-sm" onClick={() => openGallery()}>
-              Saved renderings
-            </button>
+            {!libraryOnly && (
+              <Link
+                to="/projects/$id/renderings"
+                params={{ id }}
+                className="border border-ink px-4 py-2 text-sm"
+              >
+                Renderings & uploads
+              </Link>
+            )}
+            {libraryOnly && canUseRenderingStudio(profile) && (
+              <Link
+                to="/projects/$id/rendering-studio"
+                params={{ id }}
+                className="border border-ink px-4 py-2 text-sm"
+              >
+                Rendering Studio
+              </Link>
+            )}
             <Link
               to="/projects/$id/presentation"
               params={{ id }}
@@ -525,7 +483,7 @@ export function ProjectRenderingStudio({
           </div>
         </div>
 
-        {canUseStudio && (
+        {!libraryOnly && canUseStudio && (
           <div className="flex flex-wrap gap-3 mb-6" aria-label="Rendering method">
             <button
               className="border px-4 py-2"
@@ -543,10 +501,10 @@ export function ProjectRenderingStudio({
             </button>
           </div>
         )}
-        {canUseStudio && renderingMethod === "codex" && (
+        {!libraryOnly && canUseStudio && renderingMethod === "codex" && (
           <CodexRenderingBatch projectId={id} initialRoomId={initialRoomId} />
         )}
-        {canUseStudio && renderingMethod === "api" && (
+        {!libraryOnly && canUseStudio && renderingMethod === "api" && (
           <MeasuredRenderingWorkspace
             key={`${id}:${initialRoomId || ""}`}
             projectId={id}
@@ -565,11 +523,11 @@ export function ProjectRenderingStudio({
             aria-expanded={galleryVisible}
             aria-controls={`saved-renderings-${id}`}
             onClick={() => setGalleryOpen(!galleryOpen)}
-            disabled={!canUseStudio}
+            disabled={libraryOnly || !canUseStudio}
             className="font-display text-3xl inline-flex items-center gap-3 text-left"
           >
             <span aria-hidden="true" className="text-lg">
-              {galleryVisible ? "▾" : "▸"}
+              {!libraryOnly && (galleryVisible ? "▾" : "▸")}
             </span>
             Saved & imported renderings
           </button>
@@ -579,58 +537,9 @@ export function ProjectRenderingStudio({
                 Review saved images, manage approvals and arrange presentation pages. Existing
                 images and imported elevations remain available here.
               </p>
-              <div className="flex flex-col items-end gap-3 mb-6">
-                <div
-                  className="inline-flex border border-border text-xs"
-                  role="group"
-                  aria-label="Rendering fidelity"
-                >
-                  {(["standard", "high_fidelity"] as RenderingFidelityMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setRenderingMode(mode)}
-                      className={cn(
-                        "px-3 py-2",
-                        renderingMode === mode
-                          ? "bg-ink text-primary-foreground"
-                          : "bg-background text-muted-foreground hover:text-ink",
-                      )}
-                    >
-                      {mode === "standard" ? "Standard" : "High Fidelity"}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap justify-end gap-3">
-                  <ImportRenderingPackageDialog projectId={id} />
-                  <button
-                    disabled={busy || totals.sk === 0}
-                    onClick={generateAll}
-                    className={cn(
-                      "px-5 py-3 text-sm inline-flex items-center gap-2",
-                      busy || totals.sk === 0
-                        ? "bg-bone text-muted-foreground cursor-not-allowed"
-                        : "bg-ink text-primary-foreground hover:opacity-90",
-                    )}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {busy ? "Generating…" : `Generate All Renderings (${totals.sk - totals.done})`}
-                  </button>
-                </div>
+              <div className="flex justify-end mb-6">
+                <ImportRenderingPackageDialog projectId={id} />
               </div>
-              {/* Progress strip */}
-              <div className="border border-border bg-bone/40 p-5 mb-12">
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="eyebrow">Project Progress</span>
-                  <span className="text-muted-foreground">
-                    {totals.done} of {totals.sk} renderings complete
-                    {totals.pending > 0 && ` · ${totals.pending} in progress`}
-                    {totals.failed > 0 && ` · ${totals.failed} failed`}
-                  </span>
-                </div>
-                <Progress value={progress} />
-              </div>
-
               {renderingStudioElevations.length > 0 && (
                 <RenderingStudioElevationsSection
                   elevations={renderingStudioElevations}
@@ -658,8 +567,6 @@ export function ProjectRenderingStudio({
                       projectId={id}
                       sketchups={byRoom.get(r.id)?.sketchups ?? []}
                       renderings={byRoom.get(r.id)?.renderings ?? []}
-                      disableActions={busy}
-                      renderingMode={renderingMode}
                       allRooms={rooms}
                       sketchupsByRoom={sketchupsByRoom}
                       presentationPageBySlideKey={presentationPageBySlideKey}
@@ -913,8 +820,6 @@ function RoomRenderingSection({
   projectId,
   sketchups,
   renderings,
-  disableActions,
-  renderingMode,
   allRooms,
   sketchupsByRoom,
   presentationPageBySlideKey,
@@ -925,8 +830,6 @@ function RoomRenderingSection({
   projectId: string;
   sketchups: RoomImage[];
   renderings: RoomImage[];
-  disableActions: boolean;
-  renderingMode: RenderingFidelityMode;
   allRooms: Array<{ id: string; name: string }>;
   sketchupsByRoom: Map<string, RoomImage[]>;
   presentationPageBySlideKey: Map<string, number>;
@@ -934,11 +837,12 @@ function RoomRenderingSection({
   onSetPresentationPage: (slideKey: string, pageNumber: number) => void;
 }) {
   const qc = useQueryClient();
-  const done = sketchups.filter((s) =>
-    renderings.some((r) => r.linked_sketchup_id === s.id && r.status === "complete"),
-  ).length;
+  const sketchupIds = new Set(sketchups.map((image) => image.id));
   const standaloneRenderings = [...renderings]
-    .filter((rendering) => !rendering.linked_sketchup_id)
+    .filter(
+      (rendering) =>
+        !rendering.linked_sketchup_id || !sketchupIds.has(rendering.linked_sketchup_id),
+    )
     .sort((a, b) => {
       const sortDifference = (a.sort_order ?? 0) - (b.sort_order ?? 0);
       return (
@@ -951,7 +855,8 @@ function RoomRenderingSection({
       <div className="flex items-end justify-between mb-5 border-b border-border pb-3 flex-wrap gap-3">
         <div>
           <div className="eyebrow">
-            {done} of {sketchups.length} renderings complete
+            {sketchups.length} SketchUp ·{" "}
+            {renderings.filter((image) => image.status === "complete").length} renderings
           </div>
           <h2 className="font-display text-3xl mt-1">{room.name}</h2>
         </div>
@@ -992,8 +897,6 @@ function RoomRenderingSection({
               roomId={room.id}
               projectId={projectId}
               renderings={sortRenderings(renderings.filter((r) => r.linked_sketchup_id === sk.id))}
-              disableActions={disableActions}
-              renderingMode={renderingMode}
               presentationPageBySlideKey={presentationPageBySlideKey}
               presentationPageOptions={presentationPageOptions}
               onSetPresentationPage={onSetPresentationPage}
@@ -1012,10 +915,8 @@ function RoomRenderingSection({
                 key={rendering.id}
                 rendering={rendering}
                 sketchup={null}
-                renderings={standaloneRenderings}
                 projectId={projectId}
                 roomId={room.id}
-                renderingMode={renderingMode}
                 presentationOrderControl={
                   renderingCanShowInPresentation(rendering)
                     ? {
@@ -1045,8 +946,6 @@ function SketchupCard({
   roomId,
   projectId,
   renderings,
-  disableActions,
-  renderingMode,
   presentationPageBySlideKey,
   presentationPageOptions,
   onSetPresentationPage,
@@ -1056,23 +955,13 @@ function SketchupCard({
   roomId: string;
   projectId: string;
   renderings: RoomImage[];
-  disableActions: boolean;
-  renderingMode: RenderingFidelityMode;
   presentationPageBySlideKey: Map<string, number>;
   presentationPageOptions: number[];
   onSetPresentationPage: (slideKey: string, pageNumber: number) => void;
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const status: RenderingStatus = sketchupStatus(sk.id, renderings);
-  const [busy, setBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-
-  const run = async () => {
-    if (busy || disableActions) return;
-    setBusy(true);
-    await generateRendering(roomId, sk, qc, projectId, { renderingMode });
-    setBusy(false);
-  };
 
   const removeSk = async () => {
     if (!confirm("Delete this SketchUp image and its renderings?")) return;
@@ -1104,7 +993,7 @@ function SketchupCard({
           className="w-full h-full object-cover"
           loading="lazy"
         />
-        <StatusPill status={status} />
+        {status !== "not_generated" && <StatusPill status={status} />}
         <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
           <DialogTrigger asChild>
             <button
@@ -1149,36 +1038,13 @@ function SketchupCard({
         <div className="flex items-center gap-2">
           {(status === "processing" || status === "queued") && (
             <button
-              disabled={disableActions}
               onClick={cancelActiveJobs}
-              className={cn(
-                "px-3 py-1.5 text-xs inline-flex items-center gap-1.5 border border-destructive text-destructive",
-                disableActions
-                  ? "opacity-50 cursor-not-allowed"
-                  : "hover:bg-destructive hover:text-destructive-foreground",
-              )}
+              className="px-3 py-1.5 text-xs inline-flex items-center gap-1.5 border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
             >
               <X className="w-3 h-3" />
               Stop
             </button>
           )}
-          <button
-            disabled={busy || disableActions || status === "processing" || status === "queued"}
-            onClick={run}
-            className={cn(
-              "px-3 py-1.5 text-xs inline-flex items-center gap-1.5",
-              busy || disableActions || status === "processing" || status === "queued"
-                ? "bg-bone text-muted-foreground"
-                : "bg-ink text-primary-foreground hover:opacity-90",
-            )}
-          >
-            {status === "complete" ? (
-              <RefreshCw className="w-3 h-3" />
-            ) : (
-              <Sparkles className="w-3 h-3" />
-            )}
-            {busy ? "Generating…" : status === "complete" ? "Regenerate" : "Generate"}
-          </button>
         </div>
       </div>
 
@@ -1189,10 +1055,8 @@ function SketchupCard({
               key={r.id}
               rendering={r}
               sketchup={sk}
-              renderings={renderings}
               projectId={projectId}
               roomId={roomId}
-              renderingMode={renderingMode}
               presentationOrderControl={
                 renderingCanShowInPresentation(r)
                   ? {
@@ -1216,27 +1080,19 @@ function SketchupCard({
 function RenderingTile({
   rendering,
   sketchup,
-  renderings,
   projectId,
   roomId,
-  renderingMode,
   presentationOrderControl,
   qc,
 }: {
   rendering: RoomImage;
   sketchup?: RoomImage | null;
-  renderings: RoomImage[];
   projectId: string;
   roomId: string;
-  renderingMode: RenderingFidelityMode;
   presentationOrderControl?: PresentationOrderControl;
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const [open, setOpen] = useState(false);
-  const [revisionNotes, setRevisionNotes] = useState("");
-  const [revisionReferenceUrl, setRevisionReferenceUrl] = useState("");
-  const [revisionReferenceName, setRevisionReferenceName] = useState("");
-  const [revising, setRevising] = useState(false);
   const version = rendering.revision_number || 1;
   const reviewStatus = rendering.review_status || (rendering.is_approved ? "approved" : "draft");
 
@@ -1299,29 +1155,6 @@ function RenderingTile({
     const pageNumber = Number(value);
     if (!presentationOrderControl || !Number.isFinite(pageNumber)) return;
     presentationOrderControl.onChange(presentationOrderControl.slideKey, pageNumber);
-  };
-  const createRevision = async () => {
-    if (revising) return;
-    if (!sketchup) return toast.error("Link a SketchUp source before creating an AI revision");
-    const notes = revisionNotes.trim();
-    if (!notes) return toast.error("Add the revision notes first");
-    setRevising(true);
-    try {
-      await generateRendering(roomId, sketchup, qc, projectId, {
-        baseRendering: rendering,
-        revisionNotes: notes,
-        revisionReferenceUrl,
-        revisionNumber: nextRevisionNumber(renderings),
-        renderingMode,
-      });
-      setRevisionNotes("");
-      setRevisionReferenceUrl("");
-      setRevisionReferenceName("");
-      setOpen(false);
-      toast.success("Revision started");
-    } finally {
-      setRevising(false);
-    }
   };
 
   if (rendering.status !== "complete") {
@@ -1521,49 +1354,8 @@ function RenderingTile({
                 notes={rendering.team_notes}
                 onSave={(notes) => update({ team_notes: notes })}
               />
-              {sketchup && (
-                <div className="border border-border p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="w-4 h-4" />
-                    <div>
-                      <div className="eyebrow">Create Revision</div>
-                      <p className="text-xs text-muted-foreground">
-                        Keep this version, then generate a new one with only the correction notes
-                        below.
-                      </p>
-                    </div>
-                  </div>
-                  <Textarea
-                    value={revisionNotes}
-                    onChange={(e) => setRevisionNotes(e.target.value)}
-                    placeholder="Example: make the pendant scale slightly smaller, keep cabinetry and camera angle unchanged, warm up the wall color..."
-                    rows={4}
-                  />
-                  <RevisionReferenceDropzone
-                    imageUrl={revisionReferenceUrl}
-                    fileName={revisionReferenceName}
-                    onChange={(nextUrl, nextName) => {
-                      setRevisionReferenceUrl(nextUrl);
-                      setRevisionReferenceName(nextName);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={revising}
-                    onClick={createRevision}
-                    className="px-4 py-2 bg-ink text-primary-foreground text-sm disabled:opacity-50"
-                  >
-                    {revising ? "Starting revision..." : "Create Revision"}
-                  </button>
-                </div>
-              )}
             </DialogContent>
           </Dialog>
-          {sketchup && (
-            <button title="Revise" onClick={() => setOpen(true)} className="bg-background/95 p-1.5">
-              <GitBranch className="w-3 h-3" />
-            </button>
-          )}
           <button
             title="Favorite"
             onClick={() => update({ is_favorite: !rendering.is_favorite })}
@@ -2102,329 +1894,9 @@ function reviewLabel(status: RenderingReviewStatus) {
   return labels[status];
 }
 
-function buildReferenceMetadata(
-  mode: RenderingFidelityMode,
-  references: Array<PreparedRenderingImage | undefined>,
-) {
-  return {
-    mode,
-    references: references.filter(Boolean).map((reference, index) => ({
-      index,
-      compressed: reference.compressed,
-      width: reference.width,
-      height: reference.height,
-      originalBytes: reference.originalBytes,
-      preparedBytes: reference.preparedBytes,
-    })),
-  };
-}
-
-const MAX_ADDITIONAL_REFERENCE_IMAGES = 3;
-
-type GenerateOptions = {
-  baseRendering?: RoomImage;
-  revisionNotes?: string;
-  revisionReferenceUrl?: string;
-  revisionNumber?: number;
-  renderingMode?: RenderingFidelityMode;
-};
-
 type PresentationOrderControl = {
   slideKey: string;
   pageNumber: number;
   pageOptions: number[];
   onChange: (slideKey: string, pageNumber: number) => void;
 };
-
-async function generateRendering(
-  roomId: string,
-  sk: RoomImage,
-  qc: ReturnType<typeof useQueryClient>,
-  projectId: string,
-  options: GenerateOptions = {},
-) {
-  const isRevision = Boolean(options.baseRendering);
-  const renderingMode = options.renderingMode ?? "standard";
-  try {
-    // Build minimal context (room-level data) — fetch fresh
-    const [room, selections, projectMaterials, project] = await Promise.all([
-      db.getRoom(roomId),
-      db.listRoomProducts(roomId),
-      db.listMaterialItemsByProject(projectId),
-      db.getProject(projectId),
-    ]);
-    const roomMaterials = (projectMaterials ?? []).filter(
-      (material) => material.room_id === roomId && !material.not_needed,
-    );
-    const ctx = buildContext(room, project, selections ?? [], roomMaterials);
-    const resolvedUrl = resolveImage(sk.url);
-    let sketchupReference = await prepareRenderingImageSource(resolvedUrl || sk.url, renderingMode);
-    if (sk.url?.startsWith("/src-assets/") && resolvedUrl) {
-      const blob = await (await fetch(resolvedUrl)).blob();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(
-          new File([blob], "sketchup-reference.png", { type: blob.type || "image/png" }),
-        );
-      });
-      sketchupReference = await prepareRenderingImageSource(dataUrl, renderingMode);
-    }
-    const previousReference = options.baseRendering?.url
-      ? await prepareRenderingImageSource(options.baseRendering.url, renderingMode)
-      : undefined;
-    const revisionReference = options.revisionReferenceUrl
-      ? await prepareRenderingImageSource(options.revisionReferenceUrl, renderingMode)
-      : undefined;
-    const maxMaterialReferences = Math.max(
-      0,
-      MAX_ADDITIONAL_REFERENCE_IMAGES - (revisionReference ? 1 : 0),
-    );
-    const materialReferences =
-      renderingMode === "high_fidelity"
-        ? await prepareMaterialReferenceImages(roomMaterials, maxMaterialReferences)
-        : [];
-    const revisionContext = options.revisionNotes
-      ? [
-          "REVISION REQUEST",
-          "Create a new version that corrects only the requested issues.",
-          "The original SketchUp reference remains the architectural source of truth for camera angle, crop, wall openings, cabinetry, ceiling beams, windows, doors, arches, fireplace, and all fixed elements.",
-          "Do not use the previous AI rendering as permission to keep architectural mistakes. If the previous rendering drifted from SketchUp, correct it back to the SketchUp layout.",
-          "Keep unchanged materials and styling from the previous rendering only where they do not conflict with the SketchUp architecture.",
-          options.revisionNotes,
-          options.revisionReferenceUrl
-            ? "An additional uploaded reference image is included for the specific material, finish, tile, wallpaper, fabric, or detail described in the notes."
-            : "",
-        ].join("\n")
-      : "";
-    const extraContext = [sk.caption, ctx, revisionContext].filter(Boolean).join("\n\n");
-    const additionalReferences = [revisionReference, ...materialReferences].filter(
-      Boolean,
-    ) as PreparedRenderingImage[];
-    const res = await fetch("/api/generate-rendering", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode: "enqueue",
-        roomId,
-        sketchupId: sk.id,
-        sketchupCaption: sk.caption,
-        placeholderUrl: sk.url,
-        sketchupUrl: sketchupReference.url,
-        referenceImageUrl: previousReference?.url,
-        referenceImageUrls: additionalReferences.map((reference) => reference.url),
-        renderingMode,
-        referenceMetadata: buildReferenceMetadata(renderingMode, [
-          sketchupReference,
-          previousReference,
-          ...additionalReferences,
-        ]),
-        extraContext,
-        revisionParentId: options.baseRendering?.id ?? null,
-        revisionNumber: options.revisionNumber || 1,
-        revisionNotes: options.revisionNotes || null,
-      }),
-    });
-    if (!res.ok) {
-      const message = res.headers.get("content-type")?.includes("application/json")
-        ? ((await res.json()) as { error?: string }).error
-        : await res.text();
-      throw new Error(message || "Rendering generation failed");
-    }
-    const { placeholder } = (await res.json()) as { placeholder?: RoomImage };
-    if (placeholder) {
-      qc.setQueryData<RoomImage[]>(["projectRoomImages", projectId], (current = []) => [
-        placeholder,
-        ...current,
-      ]);
-      qc.setQueryData<RoomImage[]>(["roomImages", roomId], (current = []) => [
-        placeholder,
-        ...current,
-      ]);
-    }
-  } catch (e: any) {
-    toast.error(e?.message || "Generation failed");
-  } finally {
-    qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
-    qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
-  }
-}
-
-async function prepareMaterialReferenceImages(materials: MaterialItem[], limit: number) {
-  if (limit <= 0) return [];
-  const references = materials
-    .map((material) => {
-      const url = materialImageUrl(material);
-      return url ? { material, url } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => materialReferencePriority(b!.material) - materialReferencePriority(a!.material))
-    .slice(0, limit);
-
-  const prepared: PreparedRenderingImage[] = [];
-  for (const reference of references) {
-    if (!reference) continue;
-    try {
-      const url = resolveImage(reference.url) || reference.url;
-      prepared.push(await prepareRenderingImageSource(url, "high_fidelity"));
-    } catch {
-      // A broken product image should not block rendering generation.
-    }
-  }
-  return prepared;
-}
-
-function materialReferencePriority(material: MaterialItem) {
-  const text = [
-    material.item_label,
-    material.cad_label,
-    material.category,
-    material.client_product_name,
-    material.color,
-    material.notes,
-    material.product?.name,
-    material.product?.category,
-    material.product?.subcategory,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  let score = 0;
-  if (materialImageUrl(material)) score += 10;
-  if (material.cad_label) score += 4;
-  if (material.item_label) score += 3;
-  if (material.color || material.product?.finish) score += 2;
-  if (
-    /\b(tile|stone|slab|marble|quartz|backsplash|floor|flooring|wallpaper|fabric|textile|sconce|lighting|fixture|plumbing|hardware|cabinet|vanity|countertop|shower)\b/.test(
-      text,
-    )
-  )
-    score += 6;
-  return score;
-}
-
-function RevisionReferenceDropzone({
-  imageUrl,
-  fileName,
-  onChange,
-}: {
-  imageUrl: string;
-  fileName: string;
-  onChange: (imageUrl: string, fileName: string) => void;
-}) {
-  const onFile = async (file?: File | null) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return toast.error("Please use an image file");
-    if (file.size > 8 * 1024 * 1024) return toast.error("Reference image too large (max 8MB)");
-    const dataUrl = await fileToCompressedDataUrl(file);
-    onChange(dataUrl, file.name || "Reference image");
-  };
-
-  return (
-    <div
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        onFile(e.dataTransfer.files?.[0]);
-      }}
-      className="border border-dashed border-border bg-bone/30 p-3"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <Label className="eyebrow">Optional Reference Image</Label>
-          <p className="text-xs text-muted-foreground mt-1">
-            Drop tile, wallpaper, fabric, or finish inspiration here.
-          </p>
-        </div>
-        <Input
-          className="max-w-[220px]"
-          type="file"
-          accept="image/*"
-          onChange={(e) => onFile(e.target.files?.[0])}
-        />
-      </div>
-      {imageUrl && (
-        <div className="mt-3 flex items-center gap-3">
-          <div className="h-20 w-20 bg-background overflow-hidden border border-border">
-            <img
-              src={normalizeSupabaseImageUrl(imageUrl)}
-              alt={fileName || "Revision reference"}
-              className="h-full w-full object-cover"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm truncate">{fileName || "Reference image"}</p>
-            <p className="text-xs text-muted-foreground">
-              This will be sent with the revision request.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onChange("", "")}
-            className="text-xs underline text-muted-foreground hover:text-ink"
-          >
-            Remove
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function buildContext(
-  room: any,
-  project: any,
-  selections: RoomProduct[],
-  materials: MaterialItem[],
-) {
-  if (!room || !project) return "";
-  const lines: string[] = [
-    "PROJECT SELECTIONS",
-    "",
-    `Room: ${room.name}`,
-    `Project: ${project.name}`,
-  ];
-  if (project.client_name) lines.push(`Client: ${project.client_name}`);
-  lines.push("");
-  if (materials.length) {
-    lines.push(
-      "ROOM MATERIALS",
-      "Use only these Materials page items for this room. SketchUp controls architecture, camera, crop, geometry, and placement. These room materials control finish, product appearance, and styling. Item labels and CAD labels indicate where each material belongs.",
-    );
-    for (const m of materials) {
-      const bits = [`Label: ${m.item_label}`];
-      if (m.cad_label) bits.push(`CAD label: ${m.cad_label}`);
-      if (m.client_product_name) bits.push(`Client product name: ${m.client_product_name}`);
-      if (m.category) bits.push(`Category: ${m.category}`);
-      if (m.color) bits.push(`Color/Finish: ${m.color}`);
-      if (m.quantity) bits.push(`Quantity: ${m.quantity}`);
-      if (m.notes) bits.push(`Notes: ${m.notes}`);
-      if (m.product?.name) bits.push(`Product: ${m.product.name}`);
-      if (m.product?.vendor) bits.push(`Vendor: ${m.product.vendor}`);
-      if (m.product?.sku) bits.push(`SKU: ${m.product.sku}`);
-      if (m.product?.finish) bits.push(`Product finish: ${m.product.finish}`);
-      const imageUrl = materialImageUrl(m);
-      if (imageUrl) bits.push(`Reference image: ${imageUrl}`);
-      lines.push("- " + bits.join(" | "));
-    }
-    lines.push("Do not borrow material references from other rooms.", "");
-  }
-  if (selections.length) {
-    lines.push("PRODUCT SELECTIONS");
-    for (const s of selections) {
-      const p = s.product!;
-      const bits = [p.name];
-      if (p.subcategory) bits.push(`(${p.subcategory})`);
-      if (p.vendor) bits.push(`Vendor: ${p.vendor}`);
-      if (p.finish) bits.push(`Finish: ${p.finish}`);
-      lines.push("- " + bits.join(" | "));
-    }
-    lines.push("");
-  }
-  if (room.design_concept) lines.push("DESIGN CONCEPT", room.design_concept, "");
-  if (room.design_notes) lines.push("DESIGN NOTES", room.design_notes, "");
-  if (project.design_concept) lines.push("PROJECT CONCEPT", project.design_concept, "");
-  return lines.join("\n");
-}

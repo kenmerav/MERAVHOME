@@ -51,6 +51,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
   },
 } }));
 import { checkSpecCompletion } from "@/lib/specCompletion.server";
+import { signFinishObservation } from "@/lib/selectedFinish.server";
 import { savedSpecCompletionRequest } from "@/lib/savedSpecCompletionApi.server";
 import { completionSourceSignature, pollCompletionSave, failCompletionSave } from "@/lib/savedSpecCompletion.server";
 import { saveSpecCompletionInBackground } from "@/workflows/specCompletionSave";
@@ -73,6 +74,24 @@ it("prepares only active current selections without refreshing PDFs, saving find
   const response = await checkSpecCompletion(request({ project_id: projectId, action: "prepare" }));
   expect(await response.json()).toMatchObject({ material_item_ids: ["sink"], board_updated_at: null, board_refresh: { issues: [] } });
   expect(state.refresh).not.toHaveBeenCalled(); expect(state.fetch).not.toHaveBeenCalled(); expect(state.saved).toBeNull();
+});
+
+it("saves verified link finishes, flags alternatives and rejects evidence after the linked variant changes", async () => {
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+  state.documents = [];
+  const link = "https://vendor.test/faucet?variant=123";
+  state.items = [{ ...state.items[0], color: "Bronze or Black", product_url: link }];
+  const proof = signFinishObservation(projectId, "sink", link, { status: "verified", color: "Bronze", finish: "", basis: "url_variant", evidence: "URL-selected variant 123: Bronze" });
+  const response = await checkSpecCompletion(request({ project_id: projectId, finish_checks: [proof] }));
+  const report = await response.json();
+  expect(report.findings.find((finding: any) => finding.finish_check)).toMatchObject({ finish_check: "ambiguous", suggested: "Bronze" });
+  expect(state.saved.report.finish_review.observations[0].color).toBe("Bronze");
+  expect(state.items[0].color).toBe("Bronze or Black");
+  state.items[0].product_url = link.replace("123", "456");
+  state.items[0].color = "Black";
+  const changed = await (await checkSpecCompletion(request({ project_id: projectId, finish_checks: [proof] }))).json();
+  expect(changed.findings.find((finding: any) => finding.finish_check)).toMatchObject({ finish_check: "unverified", suggested: "" });
+  expect(state.fetch).not.toHaveBeenCalled();
 });
 
 it("checks staff and project access before preparing a product refresh", async () => {

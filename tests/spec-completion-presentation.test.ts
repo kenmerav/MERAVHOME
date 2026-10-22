@@ -9,6 +9,18 @@ import { SpecCompletionResults } from '@/components/SpecCompletionReview';
 import type { MaterialItem } from '@/lib/db';
 import type { CompletionFinding } from '@/lib/specCompletion';
 import { completionMaterialsLink } from '@/lib/specCompletionPresentation';
+it('shows selected-finish coverage, source evidence and the linked finish as a reviewable correction', () => {
+  const finding = { id: 'finish', item_id: 'faucet', room_id: 'bath', item_label: 'Faucet', source: 'details', field: 'color',
+    finish_check: 'ambiguous', current: 'Bronze or Black', suggested: 'Bronze', evidence: 'URL variant 123: Bronze', message: 'Color / finish lists alternatives.' } as CompletionFinding;
+  const html = renderToStaticMarkup(createElement(SpecCompletionResults, { projectId: 'project', rooms: [{ id: 'bath', name: 'Bath' }], findings: [finding],
+    items: [{ id: 'faucet', room_id: 'bath', color: 'Bronze or Black' } as MaterialItem], onSaveDetail: async () => {}, itemCount: 1, document: null, message: 'Ready',
+    finishReview: { version: 1, checked_at: 'now', verified_count: 0, review_count: 1, observations: [] } }));
+  expect(html).toContain('Selected finishes checked against product links');
+  expect(html).toContain('Actual two-tone finishes are allowed');
+  expect(html).toContain('Product link evidence: URL variant 123: Bronze');
+  expect(html).toContain('Use linked finish');
+  expect(html).toContain('The product link identifies Bronze');
+});
 it('offers catalog selection and possible-room-items review inside a saved missing-item check', () => {
   const finding = { id: 'missing', item_id: null, room_id: 'bath', item_label: 'Shower Drain', source: 'plans', field: 'missing_item' } as CompletionFinding;
   const issue = { key: 'missing', finding, status: 'open' as const, room_name: 'Bath', document: null, first_seen_at: 'now', last_seen_at: 'now', status_updated_at: null, status_updated_by: null };

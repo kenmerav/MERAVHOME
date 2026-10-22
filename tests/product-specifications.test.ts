@@ -48,6 +48,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
 }));
 import { Route } from "../src/routes/api/scrape-materials";
+import { readFinishObservations } from "../src/lib/selectedFinish.server";
 type Handler = (context: { request: Request }) => Promise<Response>;
 const handlers = (
   Route.options as unknown as { server: { handlers: { POST: Handler; PUT: Handler } } }
@@ -75,6 +76,31 @@ afterEach(() => {
 });
 
 describe("source-grounded product specifications", () => {
+  it("rechecks populated selections for completion and signs the exact URL-selected finish", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url,
+      product_id: product, color: "Bronze or Black", scrape_status: "scraped",
+      product: { id: product, price: "$100", finish: "Bronze", dimensions: "10 in", image_url: "https://cdn.test/product.png" } }], error: null });
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ title: "Sconce", options: ["Color", "Finish", "Size"],
+      variants: [{ id: 123, price: 10000, options: ["Bronze", "Brushed", "10 in"] }, { id: 456, price: 10000, options: ["Black", "Matte", "10 in"] }],
+    }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project, material_item_ids: [item], verify_selected_finishes: true }) });
+    const result = await response.json();
+    expect(result.rows).toHaveLength(1);
+    expect(readFinishObservations([result.rows[0].finish_check_token], project)[0]).toMatchObject({ item_id: item, source_url: url, status: "verified", color: "Bronze", finish: "Brushed" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("returns an unverified result when only a generic color or a default option is scraped", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => String(input).includes(".js")
+      ? new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } })
+      : Response.json({ data: { markdown: "Available: Bronze, Black", json: { name: "Sconce", color: "Bronze", price: "$100" } } })));
+    const response = await handlers.POST({ request: request("POST", { action: "fallback", project_id: project,
+      verify_selected_finishes: true, candidates: [{ material_item_id: item, url, existing_product_id: product }] }) });
+    const result = await response.json();
+    expect(readFinishObservations([result.rows[0].finish_check_token], project)[0].status).toBe("unverified");
+  });
   it("denies unauthenticated scraping and saves before accessing material rows", async () => {
     mock.denied = Response.json({ error: "Sign in" }, { status: 401 });
     expect((await handlers.POST({ request: request("POST", { project_id: project }) })).status).toBe(401);

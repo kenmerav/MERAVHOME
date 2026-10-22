@@ -3,6 +3,9 @@ import type { SavedCompletionIssue } from "@/lib/savedSpecCompletion";
 import type { MaterialItem } from "@/lib/db";
 
 export function completionSolution(finding: CompletionFinding, item?: MaterialItem, suggestion?: SavedCompletionIssue["suggestion"]) {
+  if (finding.finish_check) return finding.suggested
+    ? `The product link identifies ${finding.suggested}. Confirm that selected variant and save its exact color / finish here. A genuine two-tone finish is allowed; do not save a list of alternatives.`
+    : "Open the exact product link and confirm its selected color / finish. The page could not verify a selected variant, so this item needs review. Genuine two-tone finishes are allowed; a default swatch or list of available colors is not a confirmed selection.";
   if (finding.field === "grout") return "Confirm grout color and joint width for this exact tiled area. Check the linked construction callout or installation reference, then save both here. Existing selection notes are preserved.";
   if (finding.field === "tile_layout") return "Confirm the tile pattern and direction for this exact surface (for example, vertical straight set or horizontal running bond), or cite the approved installation reference. Save it here in the item's project notes.";
   if (suggestion?.kind === "color" && finding.field === "color" && suggestion.value.status === "suggested")

@@ -14,6 +14,7 @@ import type { SavedCompletionIssue, SavedSpecCompletionReview, CompletionIssueSt
 import { groundedSavedCompletion, drawingEvidenceKey } from "./specDrawingEvidence.server";
 import { publicSpecCompletionReport } from "./specCompletion";
 import { TILE_REVIEW_VERSION, reviewTileInstallation, isTileInstallationLabel } from "./tileInstallation";
+import { reviewSelectedFinishes } from "./selectedFinish";
 
 const admin = supabaseAdmin as any;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -59,7 +60,8 @@ export function completionFindingKey(finding: CompletionFinding, item: MaterialI
       item.source_board_id, item.source_board_page_id, item.source_board_element_id] : null,
     fieldValue ?? null, finding.source === "plans" ? [document, item?.item_label, item?.category, item?.cad_label,
       item?.color, item?.product?.finish, item?.product?.dimensions] : null,
-    finding.field === "color" && finding.source === "details" && item ? linkedBoardImage(item, boardState)?.image_url ?? null : null]);
+    finding.field === "color" && finding.source === "details" && item ? linkedBoardImage(item, boardState)?.image_url ?? null : null,
+    ...(finding.finish_check ? [finding.finish_check] : [])]);
 }
 
 export function completionIssueRecords(report: SpecCompletionReport, items: MaterialItem[], rooms: CompletionRoom[], boardState?: unknown) {
@@ -246,6 +248,7 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
     // requiring another paid plan scan.
     if (issue.status !== "open" || issue.finding.source !== "details") return true;
     const item = byItem.get(issue.finding.item_id ?? "");
+    if (issue.finding.finish_check) return !!item && reviewSelectedFinishes([item], saved.report.finish_review?.observations ?? []).findings.length > 0;
     if (issue.finding.field === "price") return !!item && needsCompletionPrice(item);
     if (issue.finding.field === "price_unit") return !!item && needsCompletionPriceUnit(item);
     if (issue.finding.field === "dimensions") return !!item && needsCompletionDimensions(item);

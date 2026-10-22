@@ -162,6 +162,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
           checkedAt={activeReport?.checked_at}
           message={error || progress || activeReport?.plan_message || (viewSaved ? "Loading the saved review…" : "Sending the full board to Materials, scraping product info, then running the spec check…")}
           documentRefresh={activeReport?.document_refresh}
+          finishReview={activeReport?.finish_review}
           stale={!checking && (!!saved?.stale || reviewedSignature !== signature)} />
         <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4">
           <p className="text-xs text-muted-foreground">{saved ? "Issue decisions are saved for the team. Edit Materials to change product information." : "No quantities or selections have been changed."}</p>
@@ -173,10 +174,11 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   </>;
 }
 
-export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSaveDetail, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, stale = false }: {
+export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSaveDetail, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, finishReview, stale = false }: {
   projectId: string; rooms: CompletionRoom[]; findings: CompletionFinding[]; itemCount: number;
   items?: MaterialItem[];
   documentRefresh?: SpecCompletionReport["document_refresh"];
+  finishReview?: SpecCompletionReport["finish_review"];
   issues?: SavedCompletionIssue[]; onStatusChange?: (issue: SavedCompletionIssue, status: CompletionIssueStatus) => Promise<void>;
   savingIssue?: string; checkedAt?: string;
   onSaveDetail?: (issue: SavedCompletionIssue, item: MaterialItem, draft: CompletionDetailDraft) => Promise<void>;
@@ -206,6 +208,8 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
     </div>
     <div className={`shrink-0 border px-4 py-3 text-sm leading-6 ${planStatus === "unavailable" || stale ? "bg-amber-50 border-amber-200" : "bg-bone/30"}`} role="status" aria-live="polite">
       {checking && <Loader2 className="inline mr-2 h-4 w-4 animate-spin" />}{message}
+      {finishReview && <p className="mt-1 text-xs">Selected finishes checked against product links: {finishReview.verified_count} matched; {finishReview.review_count} need confirmation. Actual two-tone finishes are allowed.</p>}
+      {!finishReview && checkedAt && <p className="mt-1 text-xs">Selected finishes were not verified from product links in this saved check. Run a new completion check to include finish verification.</p>}
       {documentRefresh && <p className={`mt-1 text-xs ${documentRefresh.status !== "checked" ? "font-medium text-amber-800" : ""}`}>{documentRefresh.message} Checked {new Date(documentRefresh.checked_at).toLocaleString()}.</p>}
       {document && <a className="block text-xs underline underline-offset-4 mt-1" href={`/projects/${projectId}/construction-docs`}>Source: {document.title}</a>}
       {issues && checkedAt && <p className="text-xs mt-1">Saved check: {new Date(checkedAt).toLocaleString()}</p>}
@@ -217,7 +221,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
           className={`border px-3 py-2 text-xs ${statusFilter === value ? "bg-ink text-white" : "text-muted-foreground"}`}>{label}</button>)}
     </div>}
     <div className="flex shrink-0 flex-wrap gap-2" aria-label="Filter completion findings">
-      {([ ["all", "All findings"], ["details", "Missing details"], ["plans", "From construction plans"] ] as const).map(([value, label]) =>
+      {([ ["all", "All findings"], ["details", "Selection details"], ["plans", "From construction plans"] ] as const).map(([value, label]) =>
         <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}
           className={`border px-3 py-2 text-xs ${filter === value ? "bg-ink text-white" : "text-muted-foreground"}`}>{label}</button>)}
       {onStatusChange && <SpecCompletionPossibleItems projectId={projectId} rooms={rooms} items={items} issues={rows} checkedAt={checkedAt} document={document} disabled={checking || !!savingIssue} onAdded={catalogSaved} />}
@@ -286,6 +290,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                       <p className="font-medium">{row.dimension_scope === "proposed_layout" ? "Planned dimensions" : fieldLabels[row.field]}{row.source === "plans" ? ` · Plan suggests: ${row.suggested}` : ""}</p>
                       {row.source === "details" && <p className="text-xs text-muted-foreground mt-1">{row.message || "Needs confirmation."}</p>}
                       {row.current && <p className="text-xs text-muted-foreground mt-1">Current at check: {row.current}</p>}
+                      {row.finish_check && row.evidence && <p className="text-xs text-muted-foreground mt-1">Product link evidence: {row.evidence}</p>}
                       {earlier && <p className="text-xs text-amber-800 mt-1">From an earlier check. Review whether this still applies.</p>}
                     </div>
                     {onStatusChange && <div className="flex flex-wrap gap-2 text-xs">
@@ -345,7 +350,8 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
   const suggestion = dimensions
     ? issue.suggestion?.kind === "dimensions" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.dimensions
       : issue.finding.source === "plans" && hasCompletionValue(issue.finding.suggested) ? issue.finding.suggested : null
-    : issue.suggestion?.kind === "color" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.color : null;
+    : issue.finding.finish_check && hasCompletionValue(issue.finding.suggested) ? issue.finding.suggested
+      : issue.suggestion?.kind === "color" && issue.suggestion.value.status === "suggested" ? issue.suggestion.value.color : null;
   if (price && item.product?.markup_percent != null) return <p className="mt-3 text-xs text-muted-foreground">This price uses markup. Use Review in Materials to edit its pricing settings.</p>;
   const save = async () => {
     if (lock.current || disabled) return;
@@ -371,7 +377,7 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
         </select>
       </label>}
       <button type="submit" className="h-10 bg-ink px-4 text-sm text-white disabled:opacity-50">{saving ? "Saving…" : "Save & complete"}</button>
-      {!price && suggestion && <button type="button" className="text-xs underline" onClick={() => setValue(suggestion)}>{dimensions ? "Use suggested dimensions" : "Use suggested color"}</button>}
+      {!price && suggestion && <button type="button" className="text-xs underline" onClick={() => setValue(suggestion)}>{dimensions ? "Use suggested dimensions" : issue.finding.finish_check ? "Use linked finish" : "Use suggested color"}</button>}
     </fieldset>
     <p className="mt-2 text-xs text-muted-foreground">Saves to Materials and the Spec Book, then completes this issue.</p>
     {dimensions && <p className="mt-1 text-xs text-muted-foreground">Include units. Confirm the selected product matches the planned size before saving.</p>}

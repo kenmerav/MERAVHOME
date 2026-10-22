@@ -48,6 +48,27 @@ it('updates only price and basis with a product version guard', async () => {
   expect(state.filters).toContainEqual(['products', 'updated_at', stamp]);
   expect(state.status).toHaveBeenCalledOnce();
 });
+it('rejects a finish correction that disagrees with the checked linked variant', async () => {
+  issue.finding.finish_check = 'mismatch'; body.value = 'Black';
+  state.responses.spec_completion_reviews[0].data.report.finish_review = { observations: [{ item_id: 'item', source_url: 'https://vendor.test/bronze', status: 'verified', color: 'Bronze', finish: '' }] };
+  state.responses.material_items[0].data = { ...item, product_url: 'https://vendor.test/bronze' };
+  const response = await request();
+  expect(response.status).toBe(400); expect((await response.json()).error).toContain('selected Bronze');
+  expect(state.writes).toEqual([]); expect(state.status).not.toHaveBeenCalled();
+});
+it('accepts a confirmed two-tone correction', async () => {
+  issue.finding.finish_check = 'ambiguous'; body.value = 'Black with brass accents';
+  state.responses.spec_completion_reviews[0].data.report.finish_review = { observations: [{ item_id: 'item', source_url: 'https://vendor.test/two-tone', status: 'verified', color: 'Black / Brass', finish: '' }] };
+  state.responses.material_items[0].data = { ...item, product_url: 'https://vendor.test/two-tone' };
+  expect((await request()).status).toBe(200);
+  expect(state.writes[0]).toEqual(['material_items', 'update', { color: 'Black with brass accents' }]);
+});
+it('requires another check after the selected product link changes', async () => {
+  issue.finding.finish_check = 'mismatch'; body.value = 'Bronze';
+  state.responses.spec_completion_reviews[0].data.report.finish_review = { observations: [{ item_id: 'item', source_url: 'https://vendor.test/old', status: 'verified', color: 'Bronze', finish: '' }] };
+  state.responses.material_items[0].data = { ...item, product_url: 'https://vendor.test/new' };
+  expect((await request()).status).toBe(409); expect(state.writes).toEqual([]);
+});
 it('saves dimensions without changing pricing or markup, then completes only that issue', async () => {
   issue.finding.field = 'dimensions'; body.value = '30" W × 36" H';
   state.responses.material_items[0] = { data: { ...item, product: { ...item.product, markup_percent: 20 } }, error: null };
