@@ -275,6 +275,7 @@ export interface RoomImage {
   revision_number: number;
   error_message: string | null;
   created_at?: string;
+  rendering_source?: "external" | "generated" | "imported" | null;
 }
 
 export interface RenderingStudioAsset {
@@ -883,6 +884,7 @@ export const db = {
     revision_notes?: string | null;
     revision_parent_id?: string | null;
     revision_number?: number;
+    rendering_source?: RoomImage["rendering_source"];
   }) => (await supabase.from("room_images").insert(img).select().single()).data as RoomImage | null,
   updateRoomImage: async (id: string, patch: Partial<RoomImage>) =>
     (

@@ -450,6 +450,7 @@ async function confirmImport(
           sort_order: sortOrder,
           status: "complete",
           role: "single_hero",
+          rendering_source: "imported",
           is_favorite: false,
           is_approved: approved,
           presentation_visible: presentationVisible,

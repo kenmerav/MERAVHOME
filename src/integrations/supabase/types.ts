@@ -754,6 +754,7 @@ export type Database = {
       }
       room_images: {
         Row: {
+          rendering_source: string | null
           caption: string | null
           created_at: string
           error_message: string | null
@@ -774,6 +775,7 @@ export type Database = {
           url: string
         }
         Insert: {
+          rendering_source?: string | null
           caption?: string | null
           created_at?: string
           error_message?: string | null
@@ -794,6 +796,7 @@ export type Database = {
           url: string
         }
         Update: {
+          rendering_source?: string | null
           caption?: string | null
           created_at?: string
           error_message?: string | null

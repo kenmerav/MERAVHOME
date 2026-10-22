@@ -60,6 +60,7 @@ import { toast } from "sonner";
 import { RenderingTeamNotes } from "@/components/RenderingTeamNotes";
 import { MeasuredRenderingWorkspace } from "@/components/MeasuredRenderingWorkspace";
 import { CodexRenderingBatch } from "@/components/CodexRenderingBatch";
+import { ExternalRenderingDownload } from "@/components/ExternalRenderingDownload";
 import { isStudioTeamRole } from "@/lib/permissions";
 import { ImportRenderingPdfDialog } from "@/components/ImportRenderingPdfDialog";
 import { ImportRenderingPackageDialog } from "@/components/ImportRenderingPackageDialog";
@@ -504,6 +505,13 @@ export function ProjectRenderingStudio({
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            {canUseStudio && (
+              <ExternalRenderingDownload
+                projectName={project.name}
+                rooms={rooms}
+                images={allImages}
+              />
+            )}
             <button className="border border-ink px-4 py-2 text-sm" onClick={() => openGallery()}>
               Saved renderings
             </button>
@@ -1791,21 +1799,25 @@ function AddExternalRenderingDialog({
         url.trim(),
         fileName || caption || "rendering-image",
       );
-      await db.addRoomImage({
+      const saved = await db.addRoomImage({
         room_id: roomId,
         kind: "rendering",
         url: storedUrl,
         caption: caption.trim() || "Uploaded rendering",
+        rendering_source: "external",
         linked_sketchup_id: linkedId,
         status: "complete",
         is_approved: true,
         review_status: "approved",
         revision_number: siblingVersions.length ? nextRevisionNumber(siblingVersions) : 1,
       });
+      if (!saved) throw new Error("Could not save this external rendering. Please try again.");
       qc.invalidateQueries({ queryKey: ["projectRoomImages", projectId] });
       qc.invalidateQueries({ queryKey: ["roomImages", roomId] });
       toast.success("Rendering added to this room and presentation flow");
       reset();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save this rendering.");
     } finally {
       setSaving(false);
     }

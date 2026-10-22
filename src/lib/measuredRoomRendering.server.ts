@@ -51,6 +51,7 @@ export async function saveMeasuredRoomRendering(
       id: job.id,
       room_id: roomId,
       kind: "rendering",
+      rendering_source: "generated",
       url: asset.publicUrl,
       caption,
       status: "complete",

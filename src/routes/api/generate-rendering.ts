@@ -431,6 +431,7 @@ export const Route = createFileRoute("/api/generate-rendering")({
                   : `Rendering from ${sketchupCaption || "SketchUp"}`,
                 linked_sketchup_id: sketchupId,
                 status: "queued",
+                rendering_source: "generated",
                 is_approved: false,
                 review_status: "draft",
                 revision_parent_id: revisionParentId ?? null,
