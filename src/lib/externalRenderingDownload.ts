@@ -17,7 +17,7 @@ export function safeRenderingFilename(value: string, fallback: string) {
   return safe || fallback;
 }
 
-/** Unknown older records require explicit selection; approval is not evidence of origin. */
+/** Approval controls this export, including older images without recorded provenance. */
 export function externalRenderingCandidates(images: RoomImage[], rooms: DownloadRoom[]) {
   const roomIds = new Set(rooms.map((room) => room.id));
   return images.filter(
@@ -26,7 +26,7 @@ export function externalRenderingCandidates(images: RoomImage[], rooms: Download
       image.kind === "rendering" &&
       image.status === "complete" &&
       image.url &&
-      (image.rendering_source == null || image.rendering_source === "external"),
+      (image.is_approved === true || image.review_status === "approved"),
   );
 }
 
@@ -34,7 +34,7 @@ export function renderingDownloadEntries(
   projectName: string,
   rooms: DownloadRoom[],
   images: RoomImage[],
-  selected: Set<string>,
+  selected?: Set<string>,
 ) {
   const counters = new Map<string, number>();
   return [...rooms]
@@ -46,7 +46,7 @@ export function renderingDownloadEntries(
     )
     .flatMap((room) =>
       externalRenderingCandidates(images, [room])
-        .filter((image) => selected.has(image.id))
+        .filter((image) => !selected || selected.has(image.id))
         .sort(
           (a, b) =>
             (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
@@ -78,7 +78,7 @@ export async function buildExternalRenderingZip(
   onProgress: (done: number) => void,
   fetcher: typeof fetch = fetch,
 ) {
-  if (!entries.length) throw new Error("Select at least one external rendering.");
+  if (!entries.length) throw new Error("No approved renderings to download.");
   const files: Record<string, Uint8Array> = {};
   const controller = new AbortController();
   let index = 0,
@@ -96,7 +96,7 @@ export async function buildExternalRenderingZip(
       } catch {
         controller.abort();
         throw new Error(
-          `Could not download ${entry.filenameStem}. No ZIP was downloaded. Check this image or deselect it and try again.`,
+          `Could not download ${entry.filenameStem}. No ZIP was downloaded. Check this saved image and try again.`,
         );
       }
     }
@@ -106,6 +106,6 @@ export async function buildExternalRenderingZip(
   const zip = zipSync(files, { level: 0 });
   return {
     blob: new Blob([new Uint8Array(zip).buffer], { type: "application/zip" }),
-    filename: `${safeRenderingFilename(projectName, "Project")} External Renderings.zip`,
+    filename: `${safeRenderingFilename(projectName, "Project")} Approved Renderings.zip`,
   };
 }

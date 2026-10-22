@@ -20,11 +20,12 @@ const image = (id: string, patch: Partial<RoomImage> = {}): RoomImage =>
     url: `https://example.com/${id}`,
     caption: id,
     rendering_source: "external",
+    is_approved: true,
     sort_order: 0,
     ...patch,
   }) as RoomImage;
 
-it("only offers completed external or unclassified images in project rooms", () => {
+it("exports only approved complete renderings in project rooms, including older and generated images", () => {
   expect(
     externalRenderingCandidates(
       [
@@ -32,16 +33,19 @@ it("only offers completed external or unclassified images in project rooms", () 
         image("older", { rendering_source: null }),
         image("generated", { rendering_source: "generated", is_approved: true }),
         image("imported", { rendering_source: "imported" }),
+        image("draft", { is_approved: false, review_status: "draft" }),
+        image("needs-review", { is_approved: false, review_status: "needs_revision" }),
+        image("approved-status", { is_approved: false, review_status: "approved" }),
         image("queued", { status: "queued" }),
         image("sketchup", { kind: "sketchup" }),
         image("other-project", { room_id: "elsewhere" }),
       ],
       rooms,
     ).map((item) => item.id),
-  ).toEqual(["external", "older"]);
+  ).toEqual(["external", "older", "generated", "imported", "approved-status"]);
 });
 
-it("numbers selected originals per room in a stable order and requires selection of older images", () => {
+it("automatically includes approved older images and numbers originals per room in a stable order", () => {
   const images = [
     image("two", { sort_order: 2 }),
     image("one", { sort_order: 1 }),
@@ -61,6 +65,9 @@ it("numbers selected originals per room in a stable order and requires selection
   ]);
   expect(renderingDownloadEntries("Project", rooms, images, new Set(["old"]))[0].image.id).toBe(
     "old",
+  );
+  expect(renderingDownloadEntries("Project", rooms, images).map((entry) => entry.image.id)).toEqual(
+    ["old", "one", "two", "bath"],
   );
 });
 
@@ -94,7 +101,7 @@ it("keeps original image bytes and extensions instead of renaming every file PNG
     fetcher,
   );
   const files = unzipSync(new Uint8Array(await result.blob.arrayBuffer()));
-  expect(result.filename).toBe("Project External Renderings.zip");
+  expect(result.filename).toBe("Project Approved Renderings.zip");
   expect(files["Project Kitchen 1.png"]).toEqual(png);
   expect(files["Project Kitchen 2.jpg"]).toEqual(jpg);
   expect(progress.sort()).toEqual([1, 2]);
