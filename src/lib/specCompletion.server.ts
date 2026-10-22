@@ -17,6 +17,8 @@ import { SpecBoardSyncConflict, specBoardSelectionEvidence } from "@/lib/specBoa
 import { startCompletionSaveWorker } from "@/lib/specCompletionBackground.server";
 import { analyzeFullSpecWithEvidence, drawingEvidenceKey, DrawingEvidencePending, type FullPlanReview } from "./specDrawingEvidence.server";
 import { checkTileInstallation } from "./tileInstallation.server";
+import { FINISH_REVIEW_VERSION, reviewSelectedFinishes } from "./selectedFinish";
+import { readFinishObservations } from "./selectedFinish.server";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -123,9 +125,12 @@ export async function authorizeCompletionProject(request: Request, allowedKeys =
 }
 
 export async function checkSpecCompletion(request: Request) {
-  const access = await authorizeCompletionProject(request, ["project_id", "action", "expected_board_updated_at"]);
+  const access = await authorizeCompletionProject(request, ["project_id", "action", "expected_board_updated_at", "finish_checks"]);
   if (access instanceof Response) return access;
   const { projectId, userId, body } = access;
+  if (body.finish_checks !== undefined && (!Array.isArray(body.finish_checks) || body.finish_checks.length > 2000 ||
+      body.finish_checks.some((token: unknown) => typeof token !== "string" || token.length > 8000)))
+    return json({ error: "Finish verification results are incomplete. Run the completion check again." }, 400);
   if (body.action !== undefined && body.action !== "prepare") return json({ error: "Choose a valid completion action." }, 400);
   if (body.expected_board_updated_at !== undefined && body.expected_board_updated_at !== null &&
       (typeof body.expected_board_updated_at !== "string" || body.expected_board_updated_at.length > 80))
@@ -199,6 +204,14 @@ export async function checkSpecCompletion(request: Request) {
     plan_status: "no_document", document: document ? { id: document.id, title: document.title, updated_at: document.updated_at } : null,
     plan_message: "No current construction document is attached. Missing-detail checks are complete; plan quantities and items have not been checked.",
   };
+  const observations = readFinishObservations(body.finish_checks, projectId)
+    .filter(row => items.some(item => item.id === row.item_id && (item.product_url?.trim() || item.product?.product_url?.trim()) === row.source_url));
+  const finishReview = reviewSelectedFinishes(completionItems(items), observations);
+  const reviewedColorIds = new Set(finishReview.findings.map(finding => finding.item_id));
+  report.findings = report.findings.filter(finding => finding.field !== "color" || !reviewedColorIds.has(finding.item_id));
+  report.findings.push(...finishReview.findings);
+  report.finish_review = { version: FINISH_REVIEW_VERSION, checked_at: report.checked_at,
+    verified_count: finishReview.verified_count, review_count: finishReview.review_count, observations };
   report.tile_review = await checkTileInstallation(projectId, items, rooms, boardResult.data?.board_state, document || null, refresh.status === "checked");
   report.findings.push(...report.tile_review.findings);
   if (refresh.status !== "checked") {

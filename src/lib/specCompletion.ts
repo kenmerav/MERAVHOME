@@ -7,6 +7,7 @@ import { inferMaterialCategory } from "@/lib/roomTemplates";
 import { sharedCompletionCoversMissing, sharedCompletionSelections, sharedCompletionQuantity } from "@/lib/specSharedMaterials";
 import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { isTileInstallationLabel } from "./tileInstallation";
+import { ambiguousFinish } from "./selectedFinish";
 
 export type CompletionRoom = { id: string; name: string };
 export type CompletionField = "quantity" | "color" | "finish" | "dimensions" | "price" | "price_unit" | "product" | "link" | "missing_item" | "grout" | "tile_layout";
@@ -16,8 +17,10 @@ export type CompletionFinding = {
   current: string; suggested: string; page: number | null; sheet: string; evidence: string;
   dimension_scope?: "proposed_layout" | "product_specification";
   shared_quantity_reviewed?: boolean;
+  finish_check?: "ambiguous" | "mismatch" | "unverified";
 };
 export type SpecCompletionReport = {
+  finish_review?: import("./selectedFinish").FinishReview;
   tile_review?: import("./tileInstallation").TileInstallationReview;
   board_refresh?: import("@/lib/specBoardSync").SpecBoardSyncSummary;
   catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
@@ -50,6 +53,7 @@ export function completionItems(items: MaterialItem[]) {
 }
 
 export function needsCompletionColor(item: MaterialItem) {
+  if (ambiguousFinish(item.color || item.product?.finish)) return true;
   if (hasCompletionValue(item.color)) return false;
   const finish = item.product?.finish?.trim() || "";
   // A sheen alone ("Matte") does not supply a color; "Matte Black" can supply both.
@@ -114,7 +118,9 @@ export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[])
       (specQuantityUnit(item) === "count" && !Number.isInteger(item.quantity)))
       add("quantity", "Quantity needs confirmation.", item.quantity_tbd ? "TBD" : String(item.quantity ?? ""));
     if (!item.product_id || !item.product) add("product", "No catalog product is assigned. This item does not appear in the Spec Book yet.");
-    if (needsCompletionColor(item)) add("color", "Color / finish needs confirmation.");
+    if (needsCompletionColor(item)) add("color", ambiguousFinish(item.color || item.product?.finish)
+      ? "Color / finish lists alternatives. Confirm the selected finish from the product link."
+      : "Color / finish needs confirmation.", item.color || item.product?.finish || "");
     if (needsCompletionDimensions(item)) add("dimensions", "This product has multiple sizes. Confirm the selected size.");
     const price = item.product?.price?.trim() || "";
     // Zero is a reviewed price; placeholders, invalid values and ranges still need confirmation.

@@ -6,6 +6,7 @@ type ScrapedRow = {
   url: string;
   existing_product_id?: string | null;
   scraped: Record<string, unknown> & { error?: string };
+  finish_check_token?: string;
 };
 type ScrapeBatch = {
   status: "started" | "processing" | "completed" | "failed";
@@ -17,7 +18,7 @@ type ScrapeBatch = {
   total_count?: number;
   remaining_count?: number;
 };
-export type MaterialProductRefresh = { saved: number; failed: number; priceMissing: number };
+export type MaterialProductRefresh = { saved: number; failed: number; priceMissing: number; finishChecks?: string[] };
 
 async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, request: StudioSessionRequest): Promise<T> {
   const response = await request("/api/scrape-materials", {
@@ -37,6 +38,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
   authorization?: string;
   onProgress?: (message: string) => void;
   force?: boolean;
+  verifySelectedFinishes?: boolean;
   request?: StudioSessionRequest;
 }): Promise<MaterialProductRefresh> {
   const scope = [...new Set(materialItemIds.map(cleanUuid).filter((id): id is string => !!id))];
@@ -53,6 +55,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
       action: "start", project_id: projectId, material_item_ids: scope,
       exclude_material_item_ids: [...processed],
       ...(options.force ? { force: true } : {}),
+      ...(options.verifySelectedFinishes ? { verify_selected_finishes: true } : {}),
     }, request);
     let completed = batch;
     if (batch.status === "started") {
@@ -63,6 +66,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
         const result = await scrapeRequest<ScrapeBatch>("POST", {
           action: fallback ? "fallback" : "poll", project_id: projectId,
           ...(!fallback ? { batch_id: batch.batch_id } : {}), candidates: batch.candidates,
+          ...(options.verifySelectedFinishes ? { verify_selected_finishes: true } : {}),
         }, request);
         if (result.status === "processing" && !fallback) {
           options.onProgress?.(`Refreshing product info · batch ${batchNumber} (${result.completed_count ?? 0} of ${result.total_count ?? batch.candidates.length})…`);
@@ -77,6 +81,10 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
     const rows = completed.rows.filter(row => scopeIds.has(row.material_item_id) && !processed.has(row.material_item_id));
     const uniqueRows = [...new Map(rows.map(row => [row.material_item_id, row])).values()];
     uniqueRows.forEach(row => processed.add(row.material_item_id));
+    if (options.verifySelectedFinishes) {
+      const tokens = uniqueRows.map(row => row.finish_check_token).filter((token): token is string => typeof token === "string" && token.length <= 8000);
+      if (tokens.length) summary.finishChecks = [...(summary.finishChecks ?? []), ...tokens];
+    }
     const successful = uniqueRows.filter(row => row.scraped && !row.scraped.error);
     summary.failed += uniqueRows.length - successful.length;
     if (successful.length) {

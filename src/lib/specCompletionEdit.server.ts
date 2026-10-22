@@ -4,6 +4,7 @@ import { normalizeItemCategory, toProductCategory } from "@/lib/roomTemplates";
 import { CATALOG_NAME_PENDING_NOTE } from "@/lib/catalogProductName";
 import { materialPriceUnit } from "@/lib/productPriceUnit";
 import { readSavedCompletionReview, setCompletionIssueStatus, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
+import { finishMatches, selectedFinishLabel } from "./selectedFinish";
 
 const admin = supabaseAdmin as any;
 export class CompletionDetailInputError extends Error {}
@@ -36,6 +37,13 @@ export async function saveCompletionDetailForStaff(projectId: string, userId: st
   catch (error) { throw new CompletionDetailInputError((error as Error).message); }
   if ("price" in patch && item.product?.markup_percent != null)
     throw new CompletionDetailInputError("This price uses markup. Edit its pricing settings in Materials to preserve the calculation.");
+  if (issue.finding.finish_check) {
+    const source = saved.report.finish_review?.observations?.find((row: any) => row.item_id === item.id);
+    if (source && source.source_url !== (item.product_url?.trim() || item.product?.product_url?.trim()))
+      throw new CompletionReviewConflict("The product link changed after its finish was checked. Run a new completion check before saving this correction.");
+    if (source?.status === "verified" && !finishMatches(String(body.value ?? ""), selectedFinishLabel(source)))
+      throw new CompletionDetailInputError(`The product link selected ${selectedFinishLabel(source)}. Save that finish, or update the link to the intended variant and run the completion check again.`);
+  }
   let written = false;
   try {
     if ("color" in patch || "notes" in patch) {

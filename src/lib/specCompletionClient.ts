@@ -57,13 +57,13 @@ export async function fetchSpecCompletion(projectId: string, options: {
   if (!Array.isArray(prepared.material_item_ids)) throw new Error("Could not confirm current selections. Please retry.");
   if (prepared.board_refresh) await options.onBoardRefreshed?.(prepared.board_refresh);
   const summary = await refreshMaterialProductInfo(projectId, prepared.material_item_ids, {
-    request, onProgress: options.onProgress,
+    request, onProgress: options.onProgress, verifySelectedFinishes: true,
   });
   await options.onProductsRefreshed?.(summary);
   options.onProgress?.("Checking construction PDFs and Spec Book…");
   const response = await request("/api/check-spec-completion", {
     method: "POST", headers,
-    body: JSON.stringify({ project_id: projectId, ...(prepared.board_updated_at !== undefined
+    body: JSON.stringify({ project_id: projectId, finish_checks: summary.finishChecks ?? [], ...(prepared.board_updated_at !== undefined
       ? { expected_board_updated_at: prepared.board_updated_at } : {}) }),
   });
   return completionResponse(response, "Could not check completion.");

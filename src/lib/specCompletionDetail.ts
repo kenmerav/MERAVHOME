@@ -1,13 +1,14 @@
 import { hasCompletionValue } from "@/lib/specCompletion";
 import { productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 import { tileInstallationNote } from "./tileInstallation";
+import { ambiguousFinish } from "./selectedFinish";
 
 export type CompletionDetailDraft = { value: string; priceUnit?: ProductPriceUnit | "" };
 export function completionDetailValue(field: string, draft: CompletionDetailDraft, existingNotes: string | null = null) {
   const value = draft.value.trim();
   if (field === "grout" || field === "tile_layout") return { notes: tileInstallationNote(field, value, existingNotes) };
   if (field === "color" || field === "finish") {
-    if (!hasCompletionValue(value) || value.length > 200) throw new Error("Enter a confirmed color / finish.");
+    if (!hasCompletionValue(value) || ambiguousFinish(value) || value.length > 200) throw new Error("Enter one confirmed color / finish. Actual two-tone finishes are allowed; alternatives such as bronze or black are unresolved.");
     return { color: value };
   }
   if (field === "dimensions") {

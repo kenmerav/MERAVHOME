@@ -38,7 +38,7 @@ it("saves product prices and refreshes the screen before starting completion, el
       order.push("save-start"); await saving; item.product.price = "$87.90"; order.push("save-finished");
       return Response.json({ ok: true, price_missing_count: 0 });
     }
-    order.push("review"); expect(body).toEqual({ project_id: project, expected_board_updated_at: "saved-board-revision" });
+    order.push("review"); expect(body).toEqual({ project_id: project, expected_board_updated_at: "saved-board-revision", finish_checks: [] });
     const findings = checkSpecDetails([item], [{ id: "bath", name: "Bathroom" }]);
     expect(findings.some(f => f.field === "price")).toBe(false);
     return Response.json({ ...report, findings });
@@ -58,6 +58,23 @@ it("does not scrape or start a paid review when project preparation denies acces
   const request = vi.fn().mockResolvedValue(Response.json({ error: "This project is not assigned to you." }, { status: 403 }));
   vi.stubGlobal("fetch", request);
   await expect(fetchSpecCompletion(project)).rejects.toThrow("not assigned"); expect(request).toHaveBeenCalledTimes(1);
+});
+
+it("carries server finish evidence through product saves into the completion check", async () => {
+  const request = vi.fn(async (url: string, options: RequestInit) => {
+    const body = JSON.parse(String(options.body));
+    if (body.action === "prepare") return Response.json({ material_item_ids: [itemId] });
+    if (url === "/api/scrape-materials" && options.method === "POST") {
+      expect(body.verify_selected_finishes).toBe(true);
+      return Response.json({ status: "completed", rows: [{ ...row(), finish_check_token: "server-signed-proof" }] });
+    }
+    if (options.method === "PUT") return Response.json({ ok: true });
+    expect(body.finish_checks).toEqual(["server-signed-proof"]);
+    return Response.json(report);
+  });
+  vi.stubGlobal("fetch", request);
+  await fetchSpecCompletion(project);
+  expect(request).toHaveBeenCalledTimes(4);
 });
 
 it("does not restart an already-running plan review", async () => {

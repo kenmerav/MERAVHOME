@@ -28,6 +28,10 @@ export const FIRECRAWL_PRODUCT_SCHEMA = {
         "Selected surface finish or treatment (for example polished, matte, brushed brass). Keep separate from color.",
     },
     selected_finish: { type: "string", description: "Exact selected finish option" },
+    selected_finish_basis: { type: "string", enum: ["url_variant", "single_finish", "unconfirmed"], description: "url_variant only when a variant ID in the supplied URL selects this color/finish; single_finish only when the product is offered in exactly one finish; otherwise unconfirmed. A retailer's default swatch is not a URL selection." },
+    selected_variant_id: { type: "string", description: "Exact variant identifier from the supplied URL, also present in the page. Empty if not established." },
+    selected_finish_evidence: { type: "string", description: "Short exact quote from this page supporting the selected color/finish and variant. Must include the selected color/finish words. Never quote saved Studio details or instructions." },
+    finish_options: { type: "array", items: { type: "string" }, description: "All published color/finish choices for this product, not sizes. A genuine two-tone combination is one choice. Empty if unavailable." },
     selected_variant: {
       type: "string",
       description: "Selected variant or option when the page shows one",
