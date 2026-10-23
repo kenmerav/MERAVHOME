@@ -87,3 +87,29 @@ it("keeps a published paint sheen in the gathered review without replacing manua
     expect(next.notes).toBe(`Paint sheen: ${expected}`);
   }
 });
+
+it("carries new page facts into versioned cards while preserving existing designer choices", () => {
+  const current = item({
+    accuracySource: { id: "sink", version: 1 },
+    finish: "Ivory",
+    dimensions: undefined,
+  });
+  const result = mergeAutomaticRoomProduct(
+    item({
+      finish: "White",
+      manufacturer: "Sink Maker",
+      dimensions: "24 in W",
+      colorOptions: ["White", "Ivory"],
+    }),
+    current,
+    current,
+    link,
+  )!;
+  expect(result.finish).toBe("Ivory");
+  expect(result.scrapeFacts).toMatchObject({
+    manufacturer: "Sink Maker",
+    finish: "White",
+    dimensions: "24 in W",
+  });
+  expect(result.colorOptions).toEqual(["White", "Ivory"]);
+});

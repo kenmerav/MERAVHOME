@@ -61,6 +61,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PublishedProductColorInput } from "@/components/PublishedProductColorInput";
 import { RoomDesignTileFields } from "@/components/RoomDesignTileFields";
 import { RoomDesignItemDetails } from "@/components/RoomDesignItemDetails";
 import { RoomDesignDisclosure } from "@/components/RoomDesignDisclosure";
@@ -130,9 +131,10 @@ import {
   reconcileRoomDesignChecklist,
   roomDesignGeneratedPageCount,
   type RoomDesignWorkflowState,
+  type RoomDesignSelection,
 } from "@/lib/roomDesignWorkflow";
 import { canUseRoomDesign, canUseRenderingStudio } from "@/lib/permissions";
-import { cleanProductDetail } from "@/lib/productDetails";
+import { cleanProductDetail, productColorFinish } from "@/lib/productDetails";
 import {
   productAwareQuantityUnit,
   roomDesignSelectionIssues,
@@ -216,6 +218,11 @@ function selectionOrderQuantity(selection: DemoSelection) {
 }
 
 type DemoSelection = {
+  colorOptions?: string[];
+  colorOptionImages?: Record<string, string>;
+  surfaceFinish?: string;
+  manufacturer?: string;
+  scrapeFacts?: RoomDesignSelection["scrapeFacts"];
   accuracySource?: { id: string; version: number };
   id: string;
   category: string;
@@ -660,6 +667,8 @@ function LocalLinkFirstRoomDesign() {
   const [roomId, setRoomId] = useState("kitchen");
   const [step, setStep] = useState(0);
   const [method, setMethod] = useState<StartMethod>("links");
+  const [gathering, setGathering] = useState(false);
+  const [lookupError, setLookupError] = useState("");
   const [drafts, setDrafts] = useState<
     Record<string, { links: DemoLink[]; selections: DemoSelection[] }>
   >({});
@@ -680,39 +689,83 @@ function LocalLinkFirstRoomDesign() {
     updateDraft({
       selections: draft.selections.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     });
-  const gather = () => {
-    const selections: DemoSelection[] = draft.links
-      .filter((link) => link.url.trim() || link.custom)
-      .map((link) => {
-        const existing = draft.selections.find((s) => s.id === link.id && s.url === link.url);
-        if (existing) return existing;
-        const item = room?.items.find(
-          (i) =>
-            i.category.toLowerCase() === link.category.toLowerCase() &&
-            (!i.selectionId || i.selectionId === link.id),
-        );
-        const sample = link.url.startsWith("https://example.com/");
-        return {
-          id: link.id,
-          category: link.category,
-          productName:
-            sample && item ? String(valueOf(item, "productName") || link.category) : link.category,
-          vendor: "",
-          finish: sample && item ? String(valueOf(item, "color") || "") : "",
-          url: link.url,
-          sku: sample && item ? String(valueOf(item, "sku") || "") : "",
-          source: "Product link",
-          state: "selected",
-          swatch: "#d8cbbb",
-          group: link.group,
-          quantity: link.quantity,
-          quantityUnit: defaultQuantityUnit(link.category),
-          notes: link.notes,
-          scrapeStatus: "partial",
-        };
-      });
-    updateDraft({ selections });
-    setStep(1);
+  const gather = async () => {
+    setGathering(true);
+    setLookupError("");
+    try {
+      const selections: DemoSelection[] = await Promise.all(
+        draft.links
+          .filter((link) => link.url.trim() || link.custom)
+          .map(async (link): Promise<DemoSelection> => {
+            const existing = draft.selections.find((s) => s.id === link.id && s.url === link.url);
+            if (existing?.dimensions && existing.finish) return existing;
+            if (/^https?:\/\//i.test(link.url) && !link.url.startsWith("https://example.com/")) {
+              const scraped = await scrapeProductUrl(link.url, fetch, {
+                fresh: true,
+                maxAttempts: 1,
+              });
+              return {
+                id: link.id,
+                category: link.category,
+                productName: scraped.name || link.category,
+                vendor: scraped.vendor || "",
+                manufacturer: scraped.manufacturer,
+                finish: productColorFinish(scraped),
+                surfaceFinish: scraped.finish,
+                colorOptions: scraped.color_options,
+                colorOptionImages: scraped.color_option_images,
+                dimensions: scraped.dimensions,
+                selectedSize: scraped.selected_size,
+                sizeOptions: scraped.size_options,
+                sku: scraped.sku,
+                imageUrl: scraped.image_url,
+                price: scraped.price,
+                url: link.url,
+                source: "Product link",
+                state: "selected",
+                swatch: "#d8cbbb",
+                group: link.group,
+                quantity: link.quantity,
+                quantityUnit: defaultQuantityUnit(link.category),
+                notes: link.notes,
+                scrapeStatus: "partial",
+              };
+            }
+            const item = room?.items.find(
+              (i) =>
+                i.category.toLowerCase() === link.category.toLowerCase() &&
+                (!i.selectionId || i.selectionId === link.id),
+            );
+            const sample = link.url.startsWith("https://example.com/");
+            return {
+              id: link.id,
+              category: link.category,
+              productName:
+                sample && item
+                  ? String(valueOf(item, "productName") || link.category)
+                  : link.category,
+              vendor: "",
+              finish: sample && item ? String(valueOf(item, "color") || "") : "",
+              url: link.url,
+              sku: sample && item ? String(valueOf(item, "sku") || "") : "",
+              source: "Product link",
+              state: "selected",
+              swatch: "#d8cbbb",
+              group: link.group,
+              quantity: link.quantity,
+              quantityUnit: defaultQuantityUnit(link.category),
+              notes: link.notes,
+              scrapeStatus: "partial",
+            };
+          }),
+      );
+      updateDraft({ selections });
+      setStep(1);
+    } catch (error) {
+      setLookupError(error instanceof Error ? error.message : "Product lookup did not finish.");
+    } finally {
+      setGathering(false);
+    }
   };
   return (
     <RoomDesignAccuracyRoom roomId={roomId}>
@@ -721,14 +774,15 @@ function LocalLinkFirstRoomDesign() {
         <h1 className="mt-3 font-display text-5xl">Room Design</h1>
         <p className="my-4 max-w-3xl text-sm text-muted-foreground">
           Start with your product links, then fill in the required details on each item. This
-          kitchen and bathroom preview saves locally. Example products are test data; live product
-          lookup is available in the authenticated project workflow.
+          kitchen and bathroom preview saves locally. Real product links use Studio’s scraping
+          connection. Example.com products are test data.
         </p>
         <label className="mb-5 block max-w-sm text-sm">
           Room
           <select
             className="mt-2 block w-full border border-border bg-background p-3"
             value={roomId}
+            disabled={gathering}
             onChange={(e) => {
               setRoomId(e.target.value);
               setStep(0);
@@ -747,6 +801,11 @@ function LocalLinkFirstRoomDesign() {
           </Button>
         </div>
         <RoomDesignAccuracyNotice />
+        {lookupError && (
+          <p role="alert" className="mb-4 text-sm text-amber-900">
+            {lookupError}
+          </p>
+        )}
         <RoomDesignAccuracyProjectOptions projectId={ACCURACY_FIXTURE_ID} roomId={roomId} fixture />
         <RoomDesignAccuracySync roomId={roomId} selections={draft.selections} />
         <div className="min-w-0 border border-border bg-background">
@@ -759,7 +818,7 @@ function LocalLinkFirstRoomDesign() {
               loadedProducts={draft.selections}
               projectDefaultLinks={[]}
               onLinks={(links) => updateDraft({ links })}
-              gathering={false}
+              gathering={gathering}
               gatherProgress={{ completed: 0, total: 0, successful: 0, partial: 0, failed: 0 }}
               linkScrapeStates={{}}
               onGather={gather}
@@ -783,7 +842,7 @@ function LocalLinkFirstRoomDesign() {
           ) : step === 1 ? (
             <SelectionsStep
               selections={draft.selections}
-              gathering={false}
+              gathering={gathering}
               onRetryFailed={gather}
               onUpdate={updateSelection}
               onReview={() => {}}
@@ -1590,7 +1649,9 @@ function RoomDesignWorkflow({
       (link) =>
         roomItemNeedsProduct(link) &&
         (link.url.trim() || link.productId) &&
-        (!failedOnly || linkScrapeStates[link.id]?.status === "failed"),
+        (!failedOnly ||
+          ["failed", "partial"].includes(linkScrapeStates[link.id]?.status ?? "") ||
+          selections.some((s) => s.id === `link-${link.id}` && (!s.dimensions || !s.finish))),
     );
     if (!linkedItems.length) {
       if (instructions.length) {
@@ -1632,7 +1693,8 @@ function RoomDesignWorkflow({
                   item.id === `link-${link.id}` &&
                   item.url?.trim() === link.url.trim() &&
                   item.state !== "draft" &&
-                  item.scrapeStatus !== "failed",
+                  item.scrapeStatus !== "failed" &&
+                  Boolean(item.dimensions && item.finish),
               );
               return saved ? [[link.id, saved] as const] : [];
             })
@@ -1654,6 +1716,7 @@ function RoomDesignWorkflow({
             fetch,
             {
               ...requestOptions,
+              fresh: failedOnly,
               onProgress: ({ completed }) =>
                 isCurrent() &&
                 setGatherProgress((current) => ({
@@ -1685,7 +1748,11 @@ function RoomDesignWorkflow({
           ? {
               name: saved.productName,
               vendor: saved.vendor,
-              finish: saved.finish,
+              manufacturer: saved.manufacturer,
+              finish: saved.surfaceFinish || saved.finish,
+              color: saved.finish,
+              color_options: saved.colorOptions,
+              color_option_images: saved.colorOptionImages,
               dimensions: saved.dimensions,
               size_options: saved.sizeOptions,
               selected_size: saved.selectedSize,
@@ -1710,10 +1777,11 @@ function RoomDesignWorkflow({
               : (batchResult?.product ?? {});
         let scrapeStatus: "complete" | "partial" | "failed" = "failed";
         let scrapeError = batchResult?.error || batchError;
-        if (!saved && !catalogProduct && !batchResult?.product) {
+        if (!saved && (!catalogProduct || !link.productId) && !batchResult?.product) {
           try {
             scraped = await scrapeProductUrl(link.url, fetch, {
               maxAttempts: 4,
+              fresh: failedOnly,
               ...(await pilotRequestOptions()),
             });
             scrapeError = "";
@@ -1749,7 +1817,7 @@ function RoomDesignWorkflow({
             vendor: scraped.vendor || fallbackVendor,
             product_url: link.url,
             image_url: scraped.image_url || null,
-            finish: scraped.finish || null,
+            finish: productColorFinish(scraped) || null,
             sku: scraped.sku || null,
             dimensions: scraped.dimensions || null,
             size_options: scraped.size_options?.length ? scraped.size_options : null,
@@ -1766,9 +1834,12 @@ function RoomDesignWorkflow({
           category: link.category,
           productName: scraped.name || `${link.category} selection`,
           vendor: scraped.vendor || fallbackVendor,
+          manufacturer: scraped.manufacturer,
+          colorOptions: scraped.color_options,
+          colorOptionImages: scraped.color_option_images,
+          surfaceFinish: scraped.finish,
           finish:
-            roomDetailValue(link.notes, "Selected color / finish") ||
-            cleanProductDetail(scraped.finish || scraped.color),
+            roomDetailValue(link.notes, "Selected color / finish") || productColorFinish(scraped),
           source: link.productId ? ("Product catalog" as const) : ("Product link" as const),
           state: saved?.state ?? ("selected" as const),
           swatch: swatchForGroup(link.group),
@@ -1784,7 +1855,7 @@ function RoomDesignWorkflow({
             link.notes,
             link.category,
             scraped.name || "",
-            scraped.finish || "",
+            productColorFinish(scraped),
           ),
           savedToTemplate: link.saveToTemplate,
           imageUrl: scraped.image_url,
@@ -1900,7 +1971,7 @@ function RoomDesignWorkflow({
         vendor: scraped.vendor || inferVendorFromUrl(url) || null,
         product_url: url,
         image_url: scraped.image_url || null,
-        finish: scraped.finish || null,
+        finish: productColorFinish(scraped) || null,
         sku: scraped.sku || null,
         dimensions: scraped.dimensions || null,
         size_options: scraped.size_options?.length ? scraped.size_options : null,
@@ -1916,7 +1987,11 @@ function RoomDesignWorkflow({
       ...current,
       productName: scraped.name || current.productName,
       vendor: scraped.vendor || inferVendorFromUrl(url) || current.vendor,
-      finish: cleanProductDetail(scraped.finish || scraped.color),
+      manufacturer: scraped.manufacturer,
+      colorOptions: scraped.color_options,
+      colorOptionImages: scraped.color_option_images,
+      surfaceFinish: scraped.finish,
+      finish: productColorFinish(scraped),
       url,
       imageUrl: scraped.image_url || current.imageUrl,
       price: scraped.price,
@@ -3460,7 +3535,12 @@ function SelectionsStep({
 }) {
   const accuracy = useRoomDesignAccuracy();
   const accuracyRoomId = useRoomDesignAccuracyRoom();
-  const failedCount = selections.filter((selection) => selection.scrapeStatus === "failed").length;
+  const failedCount = selections.filter(
+    (selection) =>
+      ["failed", "partial"].includes(selection.scrapeStatus ?? "") ||
+      !selection.dimensions ||
+      !selection.finish,
+  ).length;
   const missingProductCount = selections.filter((selection) => {
     const item = accuracy?.state?.rooms
       .find((r) => r.id === accuracyRoomId)
@@ -3478,7 +3558,8 @@ function SelectionsStep({
         <div className="flex flex-wrap gap-2">
           {failedCount > 0 && (
             <Button variant="outline" onClick={onRetryFailed} disabled={gathering}>
-              <RefreshCw className={cn(gathering && "animate-spin")} /> Retry {failedCount} failed
+              <RefreshCw className={cn(gathering && "animate-spin")} /> Retry {failedCount}{" "}
+              incomplete
             </Button>
           )}
           <Button onClick={onContinue} disabled={!selections.length || gathering}>
@@ -5579,18 +5660,41 @@ function LegacyProductDetailsEditor({
                 <label key={key}>
                   {label}
                   {key === "price" ? " (optional)" : ""}
-                  <Input
-                    aria-label={`${selection.category} ${label}`}
-                    aria-invalid={gaps.some((gap) => gap.field === key) || undefined}
-                    className={
-                      gaps.some((gap) => gap.field === key)
-                        ? "border-amber-500 bg-amber-50"
-                        : undefined
-                    }
-                    value={selection[key] || ""}
-                    placeholder={key === "finish" ? "Selected color / finish or TBD" : undefined}
-                    onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
-                  />
+                  {key === "finish" && selection.colorOptions?.length ? (
+                    <PublishedProductColorInput
+                      label={`${selection.category} ${label}`}
+                      value={selection.finish}
+                      options={selection.colorOptions.map((color) =>
+                        productColorFinish({ color, finish: selection.surfaceFinish }),
+                      )}
+                      onChange={(finish) => {
+                        const color = selection.colorOptions?.find(
+                          (color) =>
+                            productColorFinish({ color, finish: selection.surfaceFinish }) ===
+                            finish,
+                        );
+                        onUpdate(selection.id, {
+                          finish,
+                          ...(color && selection.colorOptionImages?.[color]
+                            ? { imageUrl: selection.colorOptionImages[color] }
+                            : {}),
+                        });
+                      }}
+                    />
+                  ) : (
+                    <Input
+                      aria-label={`${selection.category} ${label}`}
+                      aria-invalid={gaps.some((gap) => gap.field === key) || undefined}
+                      className={
+                        gaps.some((gap) => gap.field === key)
+                          ? "border-amber-500 bg-amber-50"
+                          : undefined
+                      }
+                      value={selection[key] || ""}
+                      placeholder={key === "finish" ? "Selected color / finish or TBD" : undefined}
+                      onChange={(event) => onUpdate(selection.id, { [key]: event.target.value })}
+                    />
+                  )}
                 </label>
               ))}
             </div>

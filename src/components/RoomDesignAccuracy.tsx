@@ -6,6 +6,7 @@ import { accuracyImportCommands, accuracyRoomSelections } from "@/lib/designAccu
 import { accuracyItemIssues, type AccuracySource, type AccuracyState } from "@/lib/designAccuracy";
 import type { RoomDesignSelection } from "@/lib/roomDesignWorkflow";
 import { updateRoomDetail } from "@/lib/roomDesignDetails";
+import { productColorFinish } from "@/lib/productDetails";
 import type { AccuracyCommand } from "@/lib/designAccuracy";
 import {
   RoomDesignAccuracyContext,
@@ -313,6 +314,15 @@ export function RoomDesignAccuracyItem({
             mutate={controller.mutate}
             materials={[]}
             compact
+            colorOptions={selection.colorOptions?.map((color) =>
+              productColorFinish({ color, finish: selection.surfaceFinish }),
+            )}
+            colorOptionImages={Object.fromEntries(
+              Object.entries(selection.colorOptionImages ?? {}).map(([color, image]) => [
+                productColorFinish({ color, finish: selection.surfaceFinish }),
+                image,
+              ]),
+            )}
             confirmationReady={reference.trim().length >= 8}
             onSaved={apply}
             source={() => ({

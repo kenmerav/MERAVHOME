@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PublishedProductColorInput } from "./PublishedProductColorInput";
 import { supabase } from "@/integrations/supabase/client";
 import { db } from "@/lib/db";
 import {
@@ -76,6 +77,7 @@ const ACCURACY_FIELD_LABELS: Record<string, string> = {
   sharedProductId: "Shared total selection ID",
   quantityRole: "independent / shared-total / allocation",
   notes: "Design notes",
+  surfaceFinish: "Published surface finish",
 };
 const SELECT_LABELS: [Disposition, string][] = [
   ["unresolved", "Unresolved / TBD"],
@@ -945,6 +947,8 @@ export function AccuracyItemEditor({
   onSaved,
   compact = false,
   confirmationReady = true,
+  colorOptions = [],
+  colorOptionImages = {},
 }: {
   state: AccuracyState;
   room: AccuracyRoom;
@@ -956,6 +960,8 @@ export function AccuracyItemEditor({
   onSaved?: (state: AccuracyState) => void;
   compact?: boolean;
   confirmationReady?: boolean;
+  colorOptions?: string[];
+  colorOptionImages?: Record<string, string>;
 }) {
   const [edits, setEdits] = useState<Record<string, AccuracyValue>>({});
   const [owner, setOwner] = useState(item.decision?.owner ?? "");
@@ -996,7 +1002,21 @@ export function AccuracyItemEditor({
   const input = (key: string) => (
     <label key={key} className="block min-w-0 text-xs">
       {ACCURACY_FIELD_LABELS[key] ?? key}
-      {["quantityUnit", "purchaseUnit", "coverageUnit"].includes(key) ? (
+      {key === "color" && colorOptions.length > 0 ? (
+        <PublishedProductColorInput
+          label={ACCURACY_FIELD_LABELS.color}
+          value={String(edits.color ?? valueOf(item, "color") ?? "")}
+          options={colorOptions}
+          disabled={busy}
+          onChange={(color) =>
+            setEdits({
+              ...edits,
+              color,
+              ...(colorOptionImages[color] ? { imageUrl: colorOptionImages[color] } : {}),
+            })
+          }
+        />
+      ) : ["quantityUnit", "purchaseUnit", "coverageUnit"].includes(key) ? (
         <select
           className="mt-1 block w-full border border-border bg-background p-2"
           value={String(edits[key] ?? valueOf(item, key) ?? "")}

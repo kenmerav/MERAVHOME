@@ -55,16 +55,19 @@ export function accuracyImportCommands(
     if (!item?.selectionId && (!item?.decision || item.decision.disposition === "unresolved"))
       commands.push({ type: "decision", roomId, itemId: id, disposition: "select" });
     const tile = roomDesignTileFields(selection.notes);
+    const facts = { ...selection, ...selection.scrapeFacts };
     const values = {
-      productName: selection.productName,
-      sku: selection.sku || null,
-      color: selection.finish || null,
+      productName: facts.productName,
+      manufacturer: facts.manufacturer || null,
+      surfaceFinish: selection.surfaceFinish || null,
+      sku: facts.sku || null,
+      color: facts.finish || null,
       url: selection.url || null,
-      imageUrl: selection.imageUrl || null,
+      imageUrl: facts.imageUrl || null,
       quantity: selection.quantity ?? null,
       quantityUnit: selection.quantityUnit || null,
-      selectedSize: selection.selectedSize || null,
-      overallDimensions: selection.dimensions || null,
+      selectedSize: facts.selectedSize || null,
+      overallDimensions: facts.dimensions || null,
       notes: selection.notes || null,
       grout: tile.groutColor || null,
       joint: tile.jointWidth || null,
@@ -106,6 +109,7 @@ export function accuracyRoomSelections(
     if (!row) return { ...selection, state: "draft" as const };
     return {
       ...selection,
+      scrapeFacts: undefined,
       productName: row.productName || selection.productName,
       vendor: row.manufacturer || selection.vendor,
       finish: row.color,

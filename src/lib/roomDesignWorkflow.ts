@@ -11,6 +11,22 @@ export type RoomDesignSelection = {
   category: string;
   productName: string;
   vendor: string;
+  manufacturer?: string;
+  colorOptions?: string[];
+  colorOptionImages?: Record<string, string>;
+  surfaceFinish?: string;
+  scrapeFacts?: Partial<
+    Record<
+      | "productName"
+      | "manufacturer"
+      | "finish"
+      | "dimensions"
+      | "selectedSize"
+      | "sku"
+      | "imageUrl",
+      string
+    >
+  >;
   finish: string;
   source: string;
   state: "draft" | "selected" | "locked";
@@ -326,7 +342,10 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
 
   const selectionId = `link-${target.id}`;
   const existingSelection = state.selections.find((selection) => selection.id === selectionId);
-  if (existingSelection?.accuracySource) throw new Error("This selection has versioned design decisions. Import as a new selection or review the replacement in Room Design first.");
+  if (existingSelection?.accuracySource)
+    throw new Error(
+      "This selection has versioned design decisions. Import as a new selection or review the replacement in Room Design first.",
+    );
   const nextSelection: RoomDesignSelection = {
     ...existingSelection,
     id: selectionId,
@@ -466,8 +485,40 @@ export function normalizeRoomDesignWorkflowState(
             id,
             category,
             productName: string(item.productName) || category,
-            accuracySource: typeof object(item.accuracySource).id === "string" && typeof object(item.accuracySource).version === "number" ? item.accuracySource as RoomDesignSelection["accuracySource"] : undefined,
+            accuracySource:
+              typeof object(item.accuracySource).id === "string" &&
+              typeof object(item.accuracySource).version === "number"
+                ? (item.accuracySource as RoomDesignSelection["accuracySource"])
+                : undefined,
             vendor: string(item.vendor),
+            manufacturer: optionalString(item.manufacturer),
+            colorOptions: Array.isArray(item.colorOptions)
+              ? item.colorOptions.filter((value): value is string => typeof value === "string")
+              : undefined,
+            colorOptionImages: item.colorOptionImages
+              ? (Object.fromEntries(
+                  Object.entries(object(item.colorOptionImages)).filter(
+                    ([, value]) => typeof value === "string" && /^https?:\/\//i.test(value),
+                  ),
+                ) as Record<string, string>)
+              : undefined,
+            surfaceFinish: optionalString(item.surfaceFinish),
+            scrapeFacts: item.scrapeFacts
+              ? Object.fromEntries(
+                  [
+                    "productName",
+                    "manufacturer",
+                    "finish",
+                    "dimensions",
+                    "selectedSize",
+                    "sku",
+                    "imageUrl",
+                  ].flatMap((key) => {
+                    const value = optionalString(object(item.scrapeFacts)[key]);
+                    return value ? [[key, value]] : [];
+                  }),
+                )
+              : undefined,
             finish: cleanRoomDesignFinish(item.finish),
             source: string(item.source) || "Product link",
             state: selectionState,

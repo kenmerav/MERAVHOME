@@ -125,7 +125,7 @@ export function finishEvidenceFromPage(value: unknown, sourceUrl: string): Selec
       const url = new URL(sourceUrl);
       const identifiers = [...url.searchParams.entries()]
         .filter(([key]) =>
-          /^(?:(?:variant|sku|product|finish|colou?r|option)_?id|variant|sku|pid|piid|selected_?sku|finish|colou?r|colorway|option)$/i.test(
+          /^(?:(?:variant|sku|product|finish|colou?r|option)_?id|variant|sku|uid|itemNo|pid|piid|selected_?sku|finish|colou?r|colorway|option)$/i.test(
             key,
           ),
         )
@@ -222,7 +222,12 @@ export function reviewSelectedFinishes(items: MaterialItem[], observations: Fini
     const observed = observations.find((row) => row.item_id === item.id && row.source_url === url);
     const current = item.color?.trim() || item.product?.finish?.trim() || "";
     const linkedFinish = observed?.status === "verified" ? selectedFinishLabel(observed) : "";
-    const selected = /^(?:(?:matte|flat|eggshell|satin|polished|brushed|honed|glossy?|smooth|textured|unfinished|silgranit|roman clay)[\s/,-]*)+$/i.test(linkedFinish) ? "" : linkedFinish;
+    const selected =
+      /^(?:(?:matte|flat|eggshell|satin|polished|brushed|honed|glossy?|smooth|textured|unfinished|silgranit|roman clay)[\s/,-]*)+$/i.test(
+        linkedFinish,
+      )
+        ? ""
+        : linkedFinish;
     const ambiguous = ambiguousFinish(current);
     if (!ambiguous && selected && finishMatches(current, selected)) {
       verified++;

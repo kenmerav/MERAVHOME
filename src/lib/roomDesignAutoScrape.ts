@@ -15,8 +15,28 @@ export function mergeAutomaticRoomProduct<T extends RoomDesignSelection>(
 ): T | null {
   if ((scraped.url || "").trim() !== link.url.trim()) return null;
   if (current?.accuracySource) {
-    // Canonical project choices can change only through explicit draft acceptance.
-    return { ...current, reviewFields: [...new Set([...(current.reviewFields ?? []), "finish", "sku", "dimensions"])], scrapeStatus: "partial", scrapeError: "New product facts are proposals. Review them in Design decisions before changing confirmed values." };
+    // Carry the new page facts to the card. Empty draft fields can fill automatically;
+    // existing decisions receive proposals through the versioned decision API.
+    const keys = [
+      "productName",
+      "manufacturer",
+      "finish",
+      "sku",
+      "dimensions",
+      "selectedSize",
+      "imageUrl",
+    ] as const;
+    return {
+      ...current,
+      colorOptions: scraped.colorOptions ?? current.colorOptions,
+      colorOptionImages: scraped.colorOptionImages ?? current.colorOptionImages,
+      surfaceFinish: scraped.surfaceFinish ?? current.surfaceFinish,
+      scrapeFacts: Object.fromEntries(
+        keys.flatMap((key) => (scraped[key] ? [[key, scraped[key]]] : [])),
+      ),
+      scrapeStatus: "partial",
+      scrapeError: "New product facts are proposals. Review any changed values on this item.",
+    };
   }
   const next = retainRoomDesignMeasurements(
     {

@@ -1,9 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireRoomDesignPilotAccess } from "@/lib/roomDesignAuth.server";
-import { FIRECRAWL_PRODUCT_SCHEMA, FIRECRAWL_PRODUCT_PROMPT, normalizeFirecrawlProduct } from "@/lib/firecrawlProduct";
+import {
+  FIRECRAWL_PRODUCT_SCHEMA,
+  ROOM_PRODUCT_SPEC_PROMPT,
+  normalizeFirecrawlProduct,
+} from "@/lib/firecrawlProduct";
 
 const FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape";
-const SCRAPE_TIMEOUT_MS = 15000;
+const SCRAPE_TIMEOUT_MS = 45000;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -16,11 +20,13 @@ export const Route = createFileRoute("/api/scrape-url")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
-          const { url, projectId, roomId } = (await request.json()) as {
+          const { url, projectId, roomId, fresh } = (await request.json()) as {
             url?: string;
             projectId?: string;
             roomId?: string;
+            fresh?: boolean;
           };
           if (projectId || roomId) {
             if (!projectId || !roomId) {
@@ -38,7 +44,7 @@ export const Route = createFileRoute("/api/scrape-url")({
           }
 
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+          timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
           const res = await fetch(FIRECRAWL_API, {
             method: "POST",
             headers: {
@@ -51,13 +57,16 @@ export const Route = createFileRoute("/api/scrape-url")({
               formats: [
                 "markdown",
                 "html",
+                "rawHtml",
                 {
                   type: "json",
                   schema: FIRECRAWL_PRODUCT_SCHEMA,
-                  prompt: FIRECRAWL_PRODUCT_PROMPT,
+                  prompt: ROOM_PRODUCT_SPEC_PROMPT,
                 },
               ],
               onlyMainContent: false,
+              waitFor: 1000,
+              maxAge: fresh === true ? 0 : 600000,
               timeout: SCRAPE_TIMEOUT_MS,
             }),
           });
@@ -66,7 +75,14 @@ export const Route = createFileRoute("/api/scrape-url")({
           if (!res.ok) {
             const txt = await res.text();
             console.error("Firecrawl scrape failed", res.status, txt.slice(0, 500));
-            return json({ error: `Scrape failed (${res.status}). You can still enter the details manually.` });
+            return json(
+              {
+                error: `Scrape failed (${res.status}). You can still enter the details manually.`,
+                upstreamStatus: res.status,
+                retryable: res.status === 429 || res.status >= 500,
+              },
+              res.status,
+            );
           }
           const body = (await res.json()) as any;
           const data = body?.data ?? body;
@@ -74,6 +90,8 @@ export const Route = createFileRoute("/api/scrape-url")({
         } catch (e: any) {
           console.error("Unexpected scrape error", e);
           return json({ error: "Scrape failed. You can still enter the details manually." });
+        } finally {
+          if (timeout) clearTimeout(timeout);
         }
       },
     },

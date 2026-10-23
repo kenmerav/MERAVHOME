@@ -49,6 +49,63 @@ describe("product scraper client", () => {
     );
   });
 
+  it("revisits incomplete product pages instead of permanently caching missing specifications", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ name: "Mirror", finish: "Brass" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          name: "Mirror",
+          color: "Brass",
+          finish: "Satin",
+          dimensions: "24 x 36 in",
+        }),
+      ) as unknown as typeof fetch;
+    await scrapeProductUrl("https://example.com/incomplete", request);
+    expect((await scrapeProductUrl("https://example.com/incomplete", request)).dimensions).toBe(
+      "24 x 36 in",
+    );
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("bypasses complete cached data for an explicit fresh retry", async () => {
+    const request = vi.fn(async () =>
+      Response.json({ name: "Mirror", color: "Brass", finish: "Satin", dimensions: "24 x 36 in" }),
+    ) as unknown as typeof fetch;
+    await scrapeProductUrl("https://example.com/fresh", request);
+    await scrapeProductUrl("https://example.com/fresh", request, { fresh: true });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(JSON.parse((request as ReturnType<typeof vi.fn>).mock.calls[1][1].body).fresh).toBe(
+      true,
+    );
+  });
+
+  it("never assigns another returned product to an unmatched URL by batch position", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "batch-123456" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "completed",
+          completed: 1,
+          total: 1,
+          results: [
+            {
+              url: "https://example.com/other?variant=black",
+              product: { name: "Wrong variant", finish: "Black" },
+            },
+          ],
+        }),
+      ) as unknown as typeof fetch;
+    const [result] = await scrapeProductUrlsBatch(
+      ["https://example.com/original?variant=bronze"],
+      request,
+      { pollIntervalMs: 0 },
+    );
+    expect(result.product).toBeUndefined();
+    expect(result.error).toBeTruthy();
+  });
+
   it("retries a rate-limited scrape and caches the successful result", async () => {
     const request = vi
       .fn()
@@ -68,6 +125,9 @@ describe("product scraper client", () => {
           JSON.stringify({
             name: "Aged Brass Sconce",
             vendor: "Perigold",
+            color: "Brass",
+            finish: "Aged brass",
+            dimensions: "12 in H",
             image_url: "https://images.example.com/sconce.jpg",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },

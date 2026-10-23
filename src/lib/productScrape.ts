@@ -1,15 +1,20 @@
 import { missingProductSpecifications } from "@/lib/firecrawlProduct";
 import { exactProductPrice } from "@/lib/productPricing";
+import { productColorFinish } from "./productDetails";
 
 export type ScrapedProductData = {
   name?: string;
   vendor?: string;
+  manufacturer?: string;
   sku?: string;
   color?: string;
   finish?: string;
   dimensions?: string;
   size_options?: string[];
   selected_size?: string;
+  color_options?: string[];
+  color_option_images?: Record<string, string>;
+  variant_unresolved?: boolean;
   price?: string;
   image_url?: string;
 };
@@ -22,6 +27,7 @@ type ScrapeErrorPayload = {
 };
 
 export type ProductScrapeOptions = {
+  fresh?: boolean;
   maxAttempts?: number;
   retryDelayMs?: number;
   authorization?: string;
@@ -42,6 +48,7 @@ export type ProductBatchProgress = {
 };
 
 export type ProductBatchOptions = {
+  fresh?: boolean;
   pollIntervalMs?: number;
   maxWaitMs?: number;
   onProgress?: (progress: ProductBatchProgress) => void;
@@ -62,7 +69,33 @@ export class ProductScrapeError extends Error {
   }
 }
 
-const scrapeCache = new Map<string, ScrapedProductData>();
+const scrapeCache = new Map<string, { product: ScrapedProductData; at: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+function cachedProduct(url: string, fresh = false) {
+  const cached = scrapeCache.get(url);
+  // A retry must actually revisit pages whose selected specifications were missing.
+  if (
+    fresh ||
+    !cached ||
+    Date.now() - cached.at > CACHE_TTL_MS ||
+    !cached.product.dimensions ||
+    !productColorFinish(cached.product)
+  )
+    return undefined;
+  return cached.product;
+}
+
+function productUrlKey(value: string) {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    url.searchParams.sort();
+    return url.toString();
+  } catch {
+    return value.trim();
+  }
+}
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -78,7 +111,7 @@ function retryAfterFromResponse(response: Response) {
 }
 
 export function cacheScrapedProduct(url: string, product: ScrapedProductData) {
-  scrapeCache.set(url.trim(), product);
+  scrapeCache.set(url.trim(), { product, at: Date.now() });
 }
 
 export async function scrapeProductUrlsBatch(
@@ -89,7 +122,7 @@ export async function scrapeProductUrlsBatch(
   const normalizedUrls = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
   const cachedResults: ProductBatchResult[] = [];
   const uncachedUrls = normalizedUrls.filter((url) => {
-    const cached = scrapeCache.get(url);
+    const cached = cachedProduct(url, options.fresh);
     if (cached) cachedResults.push({ url, product: cached });
     return !cached;
   });
@@ -112,6 +145,7 @@ export async function scrapeProductUrlsBatch(
       urls: uncachedUrls,
       projectId: options.projectId,
       roomId: options.roomId,
+      fresh: options.fresh === true,
     }),
   });
   const created = (await createResponse.json()) as { id?: string; error?: string };
@@ -162,9 +196,11 @@ export async function scrapeProductUrlsBatch(
 
     if (status.status === "completed") {
       const returnedResults = status.results ?? [];
-      const resultByUrl = new Map(returnedResults.map((result) => [result.url, result]));
-      const ordered = uncachedUrls.map((url, index) => {
-        const result = resultByUrl.get(url) ?? returnedResults[index];
+      const resultByUrl = new Map(
+        returnedResults.map((result) => [productUrlKey(result.url), result]),
+      );
+      const ordered = uncachedUrls.map((url) => {
+        const result = resultByUrl.get(productUrlKey(url));
         if (!result) return { url, error: "Firecrawl did not return this product." };
         const normalized = { ...result, url };
         if (normalized.product) cacheScrapedProduct(url, normalized.product);
@@ -195,7 +231,7 @@ export async function scrapeProductUrl(
   options: ProductScrapeOptions = {},
 ): Promise<ScrapedProductData> {
   const normalizedUrl = url.trim();
-  const cached = scrapeCache.get(normalizedUrl);
+  const cached = cachedProduct(normalizedUrl, options.fresh);
   if (cached) return cached;
 
   const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
@@ -212,11 +248,12 @@ export async function scrapeProductUrl(
         url: normalizedUrl,
         projectId: options.projectId,
         roomId: options.roomId,
+        fresh: options.fresh === true,
       }),
     });
     const result = (await response.json()) as ScrapedProductData & ScrapeErrorPayload;
     if (response.ok && !result.error) {
-      scrapeCache.set(normalizedUrl, result);
+      cacheScrapedProduct(normalizedUrl, result);
       return result;
     }
 
@@ -247,6 +284,8 @@ export function productScrapeReviewMessage(
   category: string,
   result: ScrapedProductData,
 ) {
+  if (result.variant_unresolved)
+    return "The variant selected by this link was not found in the product data. Check the exact product link before confirming its details.";
   let pathname = "";
   try {
     pathname = new URL(url).pathname.toLowerCase();

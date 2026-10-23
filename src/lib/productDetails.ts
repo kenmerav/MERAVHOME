@@ -15,3 +15,23 @@ export function cleanRoomDesignFinish(value: unknown): string {
     ? "TBD"
     : cleanProductDetail(value);
 }
+
+/** Room Design has one color/finish display field; keep both published parts. */
+export function productColorFinish(value: {
+  color?: unknown;
+  finish?: unknown;
+  color_options?: string[];
+}) {
+  const color = cleanProductDetail(value.color),
+    finish = cleanProductDetail(value.finish);
+  if (
+    (value.color_options?.length ?? 0) > 1 &&
+    !color &&
+    !value.color_options?.some((option) => option.toLowerCase() === finish.toLowerCase())
+  )
+    return "";
+  if (!color || !finish) return color || finish;
+  if (finish.toLowerCase().includes(color.toLowerCase())) return finish;
+  if (color.toLowerCase().includes(finish.toLowerCase())) return color;
+  return `${color} / ${finish}`;
+}

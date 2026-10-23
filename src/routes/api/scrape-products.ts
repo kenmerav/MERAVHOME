@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  FIRECRAWL_PRODUCT_PROMPT,
+  ROOM_PRODUCT_SPEC_PROMPT,
   FIRECRAWL_PRODUCT_SCHEMA,
   firecrawlItemError,
   firecrawlSourceUrl,
@@ -58,6 +58,7 @@ export const Route = createFileRoute("/api/scrape-products")({
           urls?: unknown;
           projectId?: string;
           roomId?: string;
+          fresh?: boolean;
         };
         if (!payload.projectId || !payload.roomId) {
           return json({ error: "projectId and roomId are required." }, 400);
@@ -87,16 +88,18 @@ export const Route = createFileRoute("/api/scrape-products")({
             formats: [
               "markdown",
               "html",
+              "rawHtml",
               {
                 type: "json",
                 schema: FIRECRAWL_PRODUCT_SCHEMA,
-                prompt: FIRECRAWL_PRODUCT_PROMPT,
+                prompt: ROOM_PRODUCT_SPEC_PROMPT,
               },
             ],
             onlyMainContent: false,
+            waitFor: 1000,
             timeout: PAGE_TIMEOUT_MS,
             proxy: "auto",
-            maxAge: 604800000,
+            maxAge: payload.fresh === true ? 0 : 600000,
             storeInCache: true,
           }),
         });
