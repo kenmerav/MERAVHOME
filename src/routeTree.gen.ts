@@ -29,6 +29,7 @@ import { Route as ApiClientDashboardRouteImport } from './routes/api/client-dash
 import { Route as ApiConstructionDocumentNotificationsRouteImport } from './routes/api/construction-document-notifications'
 import { Route as ApiConstructionUploadsRouteImport } from './routes/api/construction-uploads'
 import { Route as ApiCreateStripePaymentLinkRouteImport } from './routes/api/create-stripe-payment-link'
+import { Route as ApiDesignAccuracyRouteImport } from './routes/api/design-accuracy'
 import { Route as ApiDesignBoardCommentTodosRouteImport } from './routes/api/design-board-comment-todos'
 import { Route as ApiDesignBoardQuestionRouteImport } from './routes/api/design-board-question'
 import { Route as ApiDrawingVerificationRouteImport } from './routes/api/drawing-verification'
@@ -230,6 +231,11 @@ const ApiCreateStripePaymentLinkRoute =
     path: '/api/create-stripe-payment-link',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiDesignAccuracyRoute = ApiDesignAccuracyRouteImport.update({
+  id: '/api/design-accuracy',
+  path: '/api/design-accuracy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDesignBoardCommentTodosRoute =
   ApiDesignBoardCommentTodosRouteImport.update({
     id: '/api/design-board-comment-todos',
@@ -752,6 +758,7 @@ export interface FileRoutesByFullPath {
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
   '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-accuracy': typeof ApiDesignAccuracyRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/drawing-verification': typeof ApiDrawingVerificationRoute
@@ -870,6 +877,7 @@ export interface FileRoutesByTo {
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
   '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-accuracy': typeof ApiDesignAccuracyRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/drawing-verification': typeof ApiDrawingVerificationRoute
@@ -989,6 +997,7 @@ export interface FileRoutesById {
   '/api/construction-document-notifications': typeof ApiConstructionDocumentNotificationsRoute
   '/api/construction-uploads': typeof ApiConstructionUploadsRoute
   '/api/create-stripe-payment-link': typeof ApiCreateStripePaymentLinkRoute
+  '/api/design-accuracy': typeof ApiDesignAccuracyRoute
   '/api/design-board-comment-todos': typeof ApiDesignBoardCommentTodosRoute
   '/api/design-board-question': typeof ApiDesignBoardQuestionRoute
   '/api/drawing-verification': typeof ApiDrawingVerificationRoute
@@ -1109,6 +1118,7 @@ export interface FileRouteTypes {
     | '/api/construction-document-notifications'
     | '/api/construction-uploads'
     | '/api/create-stripe-payment-link'
+    | '/api/design-accuracy'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
     | '/api/drawing-verification'
@@ -1227,6 +1237,7 @@ export interface FileRouteTypes {
     | '/api/construction-document-notifications'
     | '/api/construction-uploads'
     | '/api/create-stripe-payment-link'
+    | '/api/design-accuracy'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
     | '/api/drawing-verification'
@@ -1345,6 +1356,7 @@ export interface FileRouteTypes {
     | '/api/construction-document-notifications'
     | '/api/construction-uploads'
     | '/api/create-stripe-payment-link'
+    | '/api/design-accuracy'
     | '/api/design-board-comment-todos'
     | '/api/design-board-question'
     | '/api/drawing-verification'
@@ -1464,6 +1476,7 @@ export interface RootRouteChildren {
   ApiConstructionDocumentNotificationsRoute: typeof ApiConstructionDocumentNotificationsRoute
   ApiConstructionUploadsRoute: typeof ApiConstructionUploadsRoute
   ApiCreateStripePaymentLinkRoute: typeof ApiCreateStripePaymentLinkRoute
+  ApiDesignAccuracyRoute: typeof ApiDesignAccuracyRoute
   ApiDesignBoardCommentTodosRoute: typeof ApiDesignBoardCommentTodosRoute
   ApiDesignBoardQuestionRoute: typeof ApiDesignBoardQuestionRoute
   ApiDrawingVerificationRoute: typeof ApiDrawingVerificationRoute
@@ -1701,6 +1714,13 @@ declare module '@tanstack/react-router' {
       path: '/api/create-stripe-payment-link'
       fullPath: '/api/create-stripe-payment-link'
       preLoaderRoute: typeof ApiCreateStripePaymentLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/design-accuracy': {
+      id: '/api/design-accuracy'
+      path: '/api/design-accuracy'
+      fullPath: '/api/design-accuracy'
+      preLoaderRoute: typeof ApiDesignAccuracyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/design-board-comment-todos': {
@@ -2412,6 +2432,7 @@ const rootRouteChildren: RootRouteChildren = {
     ApiConstructionDocumentNotificationsRoute,
   ApiConstructionUploadsRoute: ApiConstructionUploadsRoute,
   ApiCreateStripePaymentLinkRoute: ApiCreateStripePaymentLinkRoute,
+  ApiDesignAccuracyRoute: ApiDesignAccuracyRoute,
   ApiDesignBoardCommentTodosRoute: ApiDesignBoardCommentTodosRoute,
   ApiDesignBoardQuestionRoute: ApiDesignBoardQuestionRoute,
   ApiDrawingVerificationRoute: ApiDrawingVerificationRoute,

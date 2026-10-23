@@ -21,6 +21,7 @@ const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
 
 type BoardElement = {
+  materialQuantityTbd?: boolean;
   id: string;
   type: "image" | "text" | "shape";
   x: number;
@@ -761,7 +762,8 @@ export const Route = createFileRoute("/api/extension/import-product")({
                   price: price || null,
                   finish: finish || null,
                   materialCategory,
-                  materialQuantity: 1,
+                  materialQuantity: null,
+                  materialQuantityTbd: true,
                   materialFinish: finish || null,
                   materialDimensions: dimensions || null,
                   x: placement.x,

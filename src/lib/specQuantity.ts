@@ -158,12 +158,12 @@ export function validateSpecQuantityPatch(value: unknown): SpecQuantityPatch {
 
 export function invoiceQuantityNumber(value: string) {
   const quantity = Number(value.trim());
-  return Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
 }
 
 export function invoiceQuantityInput(item?: SpecQuantity | null) {
   if (item?.quantity_tbd) return "TBD";
-  return String(item?.quantity && item.quantity > 0 ? item.quantity : 1);
+  return item?.quantity == null ? "" : String(item.quantity);
 }
 
 export function invoiceQuantityReady(value: string, unit: SpecQuantityUnit = "count") {

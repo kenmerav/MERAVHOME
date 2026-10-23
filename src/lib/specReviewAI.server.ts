@@ -69,3 +69,12 @@ export async function retrieveSpecReview(responseId: string) {
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, signal: AbortSignal.timeout(15000),
   });
 }
+
+// Background Responses cancellation is idempotent. No key or provider payload is returned to the client.
+export async function cancelSpecReview(responseId: string, fetcher: typeof fetch = fetch) {
+  if (!/^resp_[a-zA-Z0-9_-]{1,200}$/.test(responseId) || !process.env.OPENAI_API_KEY) throw new Error("Invalid saved plan job");
+  const response = await fetcher(`https://api.openai.com/v1/responses/${encodeURIComponent(responseId)}/cancel`, {
+    method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error("Provider cancellation was not confirmed. The design check remains unverified.");
+}

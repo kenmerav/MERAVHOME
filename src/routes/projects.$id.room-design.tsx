@@ -39,6 +39,19 @@ import {
   type ReactNode,
 } from "react";
 import { AppShell } from "@/components/AppShell";
+import {
+  RoomDesignAccuracyProvider,
+  RoomDesignAccuracyRoom,
+  RoomDesignNotNeededButton,
+  RoomDesignAccuracySync,
+  RoomDesignAccuracyNotice,
+  RoomDesignAccuracyProjectOptions,
+  RoomDesignAccuracyItem,
+} from "@/components/RoomDesignAccuracy";
+import { useRoomDesignAccuracy, useRoomDesignAccuracyRoom } from "@/lib/roomDesignAccuracyContext";
+import { ACCURACY_FIXTURE_ID } from "@/lib/designAccuracyFixtures";
+import { accuracyItemIssues, valueOf } from "@/lib/designAccuracy";
+import { accuracyRoomSelections } from "@/lib/designAccuracyProjection";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,6 +71,7 @@ import {
   roomItemNeedsProduct,
   roomItemSummaryNotes,
   roomDetailValue,
+  updateRoomDetail,
   roomScopeValue,
   updateRoomScope,
   isRoomScopeItem,
@@ -193,8 +207,8 @@ function selectionQuantityUnit(selection: DemoSelection) {
 }
 
 function selectionOrderQuantity(selection: DemoSelection) {
-  if (selection.quantity === null) return null;
-  const quantity = selection.quantity ?? 1;
+  if (selection.quantity == null) return null;
+  const quantity = selection.quantity;
   const unit = selectionQuantityUnit(selection);
   if (!quantityUnitUsesWaste(unit)) return quantity;
   const wastePercent = selection.wastePercent ?? defaultWastePercent(selection.category);
@@ -202,6 +216,7 @@ function selectionOrderQuantity(selection: DemoSelection) {
 }
 
 type DemoSelection = {
+  accuracySource?: { id: string; version: number };
   id: string;
   category: string;
   productName: string;
@@ -631,6 +646,165 @@ function downloadBrowserFile(filename: string, contents: Uint8Array, type: strin
 
 function RoomDesignPage() {
   const { id } = Route.useParams();
+  if (import.meta.env.DEV && id === ACCURACY_FIXTURE_ID)
+    return (
+      <RoomDesignAccuracyProvider projectId={id} fixture>
+        <LocalLinkFirstRoomDesign />
+      </RoomDesignAccuracyProvider>
+    );
+  return <AuthenticatedRoomDesignPage />;
+}
+
+function LocalLinkFirstRoomDesign() {
+  const accuracy = useRoomDesignAccuracy();
+  const [roomId, setRoomId] = useState("kitchen");
+  const [step, setStep] = useState(0);
+  const [method, setMethod] = useState<StartMethod>("links");
+  const [drafts, setDrafts] = useState<
+    Record<string, { links: DemoLink[]; selections: DemoSelection[] }>
+  >({});
+  const room = accuracy?.state?.rooms.find((r) => r.id === roomId);
+  const initialLinks = linksForRoom(room?.name ?? "Kitchen").map((link) => {
+    const item = room?.items.find((i) => i.category.toLowerCase() === link.category.toLowerCase());
+    const quantity = item ? valueOf(item, "quantity") : null;
+    return {
+      ...link,
+      quantity: typeof quantity === "number" ? quantity : null,
+      url: item ? String(valueOf(item, "url") || "") : "",
+    };
+  });
+  const draft = drafts[roomId] ?? { links: initialLinks, selections: [] };
+  const updateDraft = (patch: Partial<typeof draft>) =>
+    setDrafts((old) => ({ ...old, [roomId]: { ...draft, ...patch } }));
+  const updateSelection = (id: string, patch: Partial<DemoSelection>) =>
+    updateDraft({
+      selections: draft.selections.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    });
+  const gather = () => {
+    const selections: DemoSelection[] = draft.links
+      .filter((link) => link.url.trim() || link.custom)
+      .map((link) => {
+        const existing = draft.selections.find((s) => s.id === link.id && s.url === link.url);
+        if (existing) return existing;
+        const item = room?.items.find(
+          (i) =>
+            i.category.toLowerCase() === link.category.toLowerCase() &&
+            (!i.selectionId || i.selectionId === link.id),
+        );
+        const sample = link.url.startsWith("https://example.com/");
+        return {
+          id: link.id,
+          category: link.category,
+          productName:
+            sample && item ? String(valueOf(item, "productName") || link.category) : link.category,
+          vendor: "",
+          finish: sample && item ? String(valueOf(item, "color") || "") : "",
+          url: link.url,
+          sku: sample && item ? String(valueOf(item, "sku") || "") : "",
+          source: "Product link",
+          state: "selected",
+          swatch: "#d8cbbb",
+          group: link.group,
+          quantity: link.quantity,
+          quantityUnit: defaultQuantityUnit(link.category),
+          notes: link.notes,
+          scrapeStatus: "partial",
+        };
+      });
+    updateDraft({ selections });
+    setStep(1);
+  };
+  return (
+    <RoomDesignAccuracyRoom roomId={roomId}>
+      <main className="page-pad mx-auto max-w-[1720px]">
+        <div className="eyebrow">MERAV Studio · Local preview</div>
+        <h1 className="mt-3 font-display text-5xl">Room Design</h1>
+        <p className="my-4 max-w-3xl text-sm text-muted-foreground">
+          Start with your product links, then fill in the required details on each item. This
+          kitchen and bathroom preview saves locally. Example products are test data; live product
+          lookup is available in the authenticated project workflow.
+        </p>
+        <label className="mb-5 block max-w-sm text-sm">
+          Room
+          <select
+            className="mt-2 block w-full border border-border bg-background p-3"
+            value={roomId}
+            onChange={(e) => {
+              setRoomId(e.target.value);
+              setStep(0);
+            }}
+          >
+            <option value="kitchen">Kitchen</option>
+            <option value="bath">Primary Bathroom</option>
+          </select>
+        </label>
+        <div className="mb-4 flex gap-2">
+          <Button variant={step === 0 ? "default" : "outline"} onClick={() => setStep(0)}>
+            1. Product links
+          </Button>
+          <Button variant={step === 1 ? "default" : "outline"} onClick={() => setStep(1)}>
+            2. Review products
+          </Button>
+        </div>
+        <RoomDesignAccuracyNotice />
+        <RoomDesignAccuracyProjectOptions projectId={ACCURACY_FIXTURE_ID} roomId={roomId} fixture />
+        <RoomDesignAccuracySync roomId={roomId} selections={draft.selections} />
+        <div className="min-w-0 border border-border bg-background">
+          {step === 0 ? (
+            <StartStep
+              renderingEnabled={false}
+              method={method}
+              onMethod={setMethod}
+              links={draft.links}
+              loadedProducts={draft.selections}
+              projectDefaultLinks={[]}
+              onLinks={(links) => updateDraft({ links })}
+              gathering={false}
+              gatherProgress={{ completed: 0, total: 0, successful: 0, partial: 0, failed: 0 }}
+              linkScrapeStates={{}}
+              onGather={gather}
+              onRetryFailed={gather}
+              conceptPreview=""
+              roomPreview=""
+              planPreview=""
+              sketchupPreview=""
+              onConcept={() => {}}
+              onRoom={() => {}}
+              onPlan={() => {}}
+              onSketchup={() => {}}
+              sourcing={false}
+              onSource={() => {}}
+              conceptSourceMessage="Concept sourcing requires an authenticated project."
+              projectId={ACCURACY_FIXTURE_ID}
+              projectName="Local design accuracy preview"
+              roomId={roomId}
+              roomName={room?.name ?? "Kitchen"}
+            />
+          ) : step === 1 ? (
+            <SelectionsStep
+              selections={draft.selections}
+              gathering={false}
+              onRetryFailed={gather}
+              onUpdate={updateSelection}
+              onReview={() => {}}
+              onBack={() => setStep(0)}
+              onContinue={() => setStep(2)}
+            />
+          ) : null}
+          {step === 2 && (
+            <p role="status" className="p-6 text-sm">
+              Local product review saved. The existing Design Board continues in authenticated
+              projects.
+            </p>
+          )}
+        </div>
+      </main>
+    </RoomDesignAccuracyRoom>
+  );
+}
+
+function AuthenticatedRoomDesignPage() {
+  const { id } = Route.useParams();
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["currentUserProfile"],
     queryFn: () => db.getCurrentUserProfile(),
@@ -735,16 +909,18 @@ function RoomDesignPage() {
   }
 
   return (
-    <RoomDesignWorkflow
-      key={project.id}
-      project={project}
-      initialRooms={rooms}
-      workflows={workflows}
-      roomImages={roomImages}
-      materialItems={materialItems}
-      designBoardState={designBoard?.board_state}
-      profile={profile as UserProfile}
-    />
+    <RoomDesignAccuracyProvider key={project.id} projectId={project.id}>
+      <RoomDesignWorkflow
+        key={project.id}
+        project={project}
+        initialRooms={rooms}
+        workflows={workflows}
+        roomImages={roomImages}
+        materialItems={materialItems}
+        designBoardState={designBoard?.board_state}
+        profile={profile as UserProfile}
+      />
+    </RoomDesignAccuracyProvider>
   );
 }
 
@@ -776,6 +952,7 @@ function RoomDesignWorkflow({
     initialRoom.id,
   );
   const projectId = project.id;
+  const accuracyState = useRoomDesignAccuracy()?.state;
   const renderingEnabled = canUseRenderingStudio(profile);
   const [rooms, setRooms] = useState(initialRooms);
   const [roomId, setRoomId] = useState(initialRoom.id);
@@ -1014,6 +1191,12 @@ function RoomDesignWorkflow({
   };
 
   const populateStudioDesignBoard = async (pageCount: number, boardSelections: DemoSelection[]) => {
+    if (accuracyState)
+      boardSelections = accuracyRoomSelections(
+        accuracyState,
+        roomId,
+        boardSelections,
+      ) as DemoSelection[];
     const uploadedSelections = await Promise.all(
       boardSelections.map(async (selection) => {
         if (!selection.imageUrl?.startsWith("data:image/")) return selection;
@@ -1103,7 +1286,7 @@ function RoomDesignWorkflow({
         url: item.product_url || item.product?.product_url || undefined,
         imageUrl: item.image_url || item.product?.image_url || undefined,
         group: classifyBoardGroup(item.item_label),
-        quantity: item.quantity_tbd || item.quantity === null ? null : (item.quantity ?? 1),
+        quantity: item.quantity_tbd ? null : (item.quantity ?? null),
         quantityUnit: selectionQuantityUnitFromSpec(item.quantity_unit),
         wastePercent: item.waste_percent || 0,
         notes: item.notes || undefined,
@@ -2053,227 +2236,239 @@ function RoomDesignWorkflow({
 
   return (
     <AppShell>
-      <div className="page-pad max-w-[1720px]">
-        <header className="mb-7 flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <div className="eyebrow mb-3">{project.name} · Room Design</div>
-            <h1 className="editorial-hero text-5xl lg:text-7xl">Room Design</h1>
-            <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Begin manually, from product links, or from a concept. Every path builds one room
-              selection set for the board, {renderingEnabled ? "render, " : ""}approval, Materials,
-              Specs, and Procurement.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <span
-              className={cn(
-                "text-xs",
-                saveStatus === "error" ? "text-destructive" : "text-muted-foreground",
-              )}
-            >
-              {saveStatus === "saving"
-                ? "Saving to Studio…"
-                : saveStatus === "error"
-                  ? "Could not save"
-                  : "Saved to Studio"}
-            </span>
-            <Button variant="outline" onClick={resetPreview}>
-              <RefreshCw className="h-4 w-4" /> Reset room draft
-            </Button>
-          </div>
-        </header>
-        {reviewError && (
-          <p role="alert" className="mb-5 border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-            {reviewError}
-          </p>
-        )}
-
-        {saveStatus === "error" && saveError && (
-          <p role="alert" className="mb-5 text-sm text-destructive">
-            {saveError}
-          </p>
-        )}
-
-        <section className="mb-5 grid gap-3 border border-border bg-bone/25 p-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Project</Label>
-            <Select value={projectId} disabled>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a project" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={project.id}>{project.name}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Room</Label>
-            <Select value={roomId} onValueChange={changeRoom} disabled={!projectId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a room" />
-              </SelectTrigger>
-              <SelectContent>
-                {rooms.map((room) => (
-                  <SelectItem key={room.id} value={room.id}>
-                    {room.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2 pt-1">
-              <Input
-                aria-label="New room name"
-                value={newRoomName}
-                onChange={(event) => setNewRoomName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void addRoomToProject();
-                }}
-                placeholder="Add another room"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void addRoomToProject()}
-                disabled={!newRoomName.trim()}
+      <RoomDesignAccuracyRoom roomId={roomId}>
+        <div className="page-pad max-w-[1720px]">
+          <header className="mb-7 flex flex-wrap items-end justify-between gap-5">
+            <div>
+              <div className="eyebrow mb-3">{project.name} · Room Design</div>
+              <h1 className="editorial-hero text-5xl lg:text-7xl">Room Design</h1>
+              <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">
+                Begin manually, from product links, or from a concept. Every path builds one room
+                selection set for the board, {renderingEnabled ? "render, " : ""}approval,
+                Materials, Specs, and Procurement.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                className={cn(
+                  "text-xs",
+                  saveStatus === "error" ? "text-destructive" : "text-muted-foreground",
+                )}
               >
-                <Plus /> Add Room
+                {saveStatus === "saving"
+                  ? "Saving to Studio…"
+                  : saveStatus === "error"
+                    ? "Could not save"
+                    : "Saved to Studio"}
+              </span>
+              <Button variant="outline" onClick={resetPreview}>
+                <RefreshCw className="h-4 w-4" /> Reset room draft
               </Button>
             </div>
-          </div>
-        </section>
+          </header>
+          {reviewError && (
+            <p
+              role="alert"
+              className="mb-5 border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+            >
+              {reviewError}
+            </p>
+          )}
 
-        <WorkflowRail step={step} onStep={setStep} renderingEnabled={renderingEnabled} />
+          {saveStatus === "error" && saveError && (
+            <p role="alert" className="mb-5 text-sm text-destructive">
+              {saveError}
+            </p>
+          )}
 
-        <div>
-          <div className="min-w-0 border border-border bg-background">
-            {step === 0 && (
-              <StartStep
-                renderingEnabled={renderingEnabled}
-                method={method}
-                onMethod={chooseMethod}
-                links={links}
-                loadedProducts={selections}
-                onLinks={applyLinks}
-                projectDefaultLinks={projectDefaultLinks}
-                onOpenDefaults={
-                  defaultsRoom && defaultsRoom.id !== roomId
-                    ? () => changeRoom(defaultsRoom.id)
-                    : undefined
-                }
-                gathering={gathering}
-                gatherProgress={gatherProgress}
-                linkScrapeStates={linkScrapeStates}
-                onGather={() => gatherLinks()}
-                onRetryFailed={retryFailedLinks}
-                conceptPreview={conceptPreview}
-                roomPreview={roomPreview}
-                planPreview={planPreview}
-                sketchupPreview={sketchupPreview}
-                onConcept={(value) =>
-                  void storeWorkflowImage("concept-board", value, setConceptPreview)
-                }
-                onRoom={(value) => void storeWorkflowImage("room-photo", value, setRoomPreview)}
-                onPlan={(value) => void storeWorkflowImage("floor-plan", value, setPlanPreview)}
-                onSketchup={(value) =>
-                  void storeWorkflowImage("sketchup-view", value, setSketchupPreview)
-                }
-                sourcing={sourcing}
-                onSource={sourceConcept}
-                conceptSourceMessage={conceptSourceMessage}
-                projectId={projectId}
-                projectName={project.name}
-                roomId={roomId}
-                roomName={activeRoom?.name ?? "Primary Bathroom"}
-              />
-            )}
-            {step === 1 && (
-              <SelectionsStep
-                selections={selections}
-                gathering={gathering}
-                onRetryFailed={retryFailedLinks}
-                onUpdate={updateSelection}
-                onReview={reviewSelection}
-                onBack={() => setStep(0)}
-                onContinue={composeBoard}
-              />
-            )}
-            {step === 2 && (
-              <BoardStep
-                renderingEnabled={renderingEnabled}
-                selections={selections}
-                projectRooms={projectRenderRooms}
-                ready={boardReady}
-                projectName={project.name}
-                roomName={activeRoom?.name ?? "Primary Bathroom"}
-                roomId={roomId}
-                projectId={projectId}
-                onReplaceProduct={replaceSelectionFromUrl}
-                onReplaceImage={replaceSelectionImage}
-                onUpdate={updateSelection}
-                onReview={reviewSelection}
-                onPopulateBoard={populateStudioDesignBoard}
-                onRemoveBackground={removeSelectionBackground}
-                initialStudioPageCount={roomDesignGeneratedPageCount(designBoardState, roomId)}
-                materialsSent={materialsSent}
-                onBack={() => setStep(1)}
-                onContinue={prepareRender}
-              />
-            )}
-            {step === 3 && renderingEnabled && (
-              <RenderStep
-                boardState={designBoardState}
-                selections={selections}
-                method={method}
-                projectId={projectId}
-                roomId={roomId}
-                projectName={project.name}
-                roomName={activeRoom?.name ?? "Primary Bathroom"}
-                conceptPreview={conceptPreview}
-                roomPreview={roomPreview}
-                planPreview={planPreview}
-                sketchupPreview={sketchupPreview}
-                onRoom={(value) => void storeWorkflowImage("room-photo", value, setRoomPreview)}
-                onPlan={(value) => void storeWorkflowImage("floor-plan", value, setPlanPreview)}
-                onSketchup={(value) =>
-                  void storeWorkflowImage("sketchup-view", value, setSketchupPreview)
-                }
-                completedRenderPreview={completedRenderPreview}
-                onCompletedRender={(value) =>
-                  void storeWorkflowImage("completed-render", value, setCompletedRenderPreview)
-                }
-                projectRooms={projectRenderRooms}
-                onProjectRenders={importProjectRenders}
-                onSaveToStudio={saveRenderToStudio}
-                ready={renderReady}
-                onBack={() => setStep(2)}
-                onContinue={() => setStep(4)}
-              />
-            )}
-            {step === 4 && (
-              <ApprovalStep
-                selections={selections}
-                onBack={() => setStep(renderingEnabled ? 3 : 2)}
-                onContinue={() => void approveAll()}
-              />
-            )}
-            {step === 5 && (
-              <MaterialsStep
-                renderingEnabled={renderingEnabled}
-                materialItems={materialItems.filter(
-                  (item) => item.room_id === roomId && !item.not_needed,
-                )}
-                selections={selections}
-                sent={materialsSent}
-                completedRenderPreview={completedRenderPreview}
-                projectName={project.name}
-                roomName={activeRoom?.name ?? "Primary Bathroom"}
-                projectId={projectId}
-                onBack={() => setStep(4)}
-              />
-            )}
+          <section className="mb-5 grid gap-3 border border-border bg-bone/25 p-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Project</Label>
+              <Select value={projectId} disabled>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={project.id}>{project.name}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Room</Label>
+              <Select value={roomId} onValueChange={changeRoom} disabled={!projectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a room" />
+                </SelectTrigger>
+                <SelectContent>
+                  {rooms.map((room) => (
+                    <SelectItem key={room.id} value={room.id}>
+                      {room.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2 pt-1">
+                <Input
+                  aria-label="New room name"
+                  value={newRoomName}
+                  onChange={(event) => setNewRoomName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void addRoomToProject();
+                  }}
+                  placeholder="Add another room"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void addRoomToProject()}
+                  disabled={!newRoomName.trim()}
+                >
+                  <Plus /> Add Room
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <WorkflowRail step={step} onStep={setStep} renderingEnabled={renderingEnabled} />
+          <RoomDesignAccuracyNotice />
+          <RoomDesignAccuracyProjectOptions
+            projectId={projectId}
+            roomId={roomId}
+            materials={materialItems}
+          />
+          <RoomDesignAccuracySync roomId={roomId} selections={selections} />
+
+          <div>
+            <div className="min-w-0 border border-border bg-background">
+              {step === 0 && (
+                <StartStep
+                  renderingEnabled={renderingEnabled}
+                  method={method}
+                  onMethod={chooseMethod}
+                  links={links}
+                  loadedProducts={selections}
+                  onLinks={applyLinks}
+                  projectDefaultLinks={projectDefaultLinks}
+                  onOpenDefaults={
+                    defaultsRoom && defaultsRoom.id !== roomId
+                      ? () => changeRoom(defaultsRoom.id)
+                      : undefined
+                  }
+                  gathering={gathering}
+                  gatherProgress={gatherProgress}
+                  linkScrapeStates={linkScrapeStates}
+                  onGather={() => gatherLinks()}
+                  onRetryFailed={retryFailedLinks}
+                  conceptPreview={conceptPreview}
+                  roomPreview={roomPreview}
+                  planPreview={planPreview}
+                  sketchupPreview={sketchupPreview}
+                  onConcept={(value) =>
+                    void storeWorkflowImage("concept-board", value, setConceptPreview)
+                  }
+                  onRoom={(value) => void storeWorkflowImage("room-photo", value, setRoomPreview)}
+                  onPlan={(value) => void storeWorkflowImage("floor-plan", value, setPlanPreview)}
+                  onSketchup={(value) =>
+                    void storeWorkflowImage("sketchup-view", value, setSketchupPreview)
+                  }
+                  sourcing={sourcing}
+                  onSource={sourceConcept}
+                  conceptSourceMessage={conceptSourceMessage}
+                  projectId={projectId}
+                  projectName={project.name}
+                  roomId={roomId}
+                  roomName={activeRoom?.name ?? "Primary Bathroom"}
+                />
+              )}
+              {step === 1 && (
+                <SelectionsStep
+                  selections={selections}
+                  gathering={gathering}
+                  onRetryFailed={retryFailedLinks}
+                  onUpdate={updateSelection}
+                  onReview={reviewSelection}
+                  onBack={() => setStep(0)}
+                  onContinue={composeBoard}
+                />
+              )}
+              {step === 2 && (
+                <BoardStep
+                  renderingEnabled={renderingEnabled}
+                  selections={selections}
+                  projectRooms={projectRenderRooms}
+                  ready={boardReady}
+                  projectName={project.name}
+                  roomName={activeRoom?.name ?? "Primary Bathroom"}
+                  roomId={roomId}
+                  projectId={projectId}
+                  onReplaceProduct={replaceSelectionFromUrl}
+                  onReplaceImage={replaceSelectionImage}
+                  onUpdate={updateSelection}
+                  onReview={reviewSelection}
+                  onPopulateBoard={populateStudioDesignBoard}
+                  onRemoveBackground={removeSelectionBackground}
+                  initialStudioPageCount={roomDesignGeneratedPageCount(designBoardState, roomId)}
+                  materialsSent={materialsSent}
+                  onBack={() => setStep(1)}
+                  onContinue={prepareRender}
+                />
+              )}
+              {step === 3 && renderingEnabled && (
+                <RenderStep
+                  boardState={designBoardState}
+                  selections={selections}
+                  method={method}
+                  projectId={projectId}
+                  roomId={roomId}
+                  projectName={project.name}
+                  roomName={activeRoom?.name ?? "Primary Bathroom"}
+                  conceptPreview={conceptPreview}
+                  roomPreview={roomPreview}
+                  planPreview={planPreview}
+                  sketchupPreview={sketchupPreview}
+                  onRoom={(value) => void storeWorkflowImage("room-photo", value, setRoomPreview)}
+                  onPlan={(value) => void storeWorkflowImage("floor-plan", value, setPlanPreview)}
+                  onSketchup={(value) =>
+                    void storeWorkflowImage("sketchup-view", value, setSketchupPreview)
+                  }
+                  completedRenderPreview={completedRenderPreview}
+                  onCompletedRender={(value) =>
+                    void storeWorkflowImage("completed-render", value, setCompletedRenderPreview)
+                  }
+                  projectRooms={projectRenderRooms}
+                  onProjectRenders={importProjectRenders}
+                  onSaveToStudio={saveRenderToStudio}
+                  ready={renderReady}
+                  onBack={() => setStep(2)}
+                  onContinue={() => setStep(4)}
+                />
+              )}
+              {step === 4 && (
+                <ApprovalStep
+                  selections={selections}
+                  onBack={() => setStep(renderingEnabled ? 3 : 2)}
+                  onContinue={() => void approveAll()}
+                />
+              )}
+              {step === 5 && (
+                <MaterialsStep
+                  renderingEnabled={renderingEnabled}
+                  materialItems={materialItems.filter(
+                    (item) => item.room_id === roomId && !item.not_needed,
+                  )}
+                  selections={selections}
+                  sent={materialsSent}
+                  completedRenderPreview={completedRenderPreview}
+                  projectName={project.name}
+                  roomName={activeRoom?.name ?? "Primary Bathroom"}
+                  projectId={projectId}
+                  onBack={() => setStep(4)}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </RoomDesignAccuracyRoom>
     </AppShell>
   );
 }
@@ -2506,12 +2701,25 @@ function StartStep(props: {
   const [newSelectionQuantity, setNewSelectionQuantity] = useState<number | null>(null);
   const [newSelectionNotes, setNewSelectionNotes] = useState("");
   const [showNotNeeded, setShowNotNeeded] = useState(false);
+  const accuracy = useRoomDesignAccuracy();
+  const accuracyRoomId = useRoomDesignAccuracyRoom();
+  const isNotNeeded = (link: DemoLink) =>
+    roomItemStatus(link) === "Not needed" ||
+    Boolean(
+      accuracy?.state?.rooms
+        .find((r) => r.id === accuracyRoomId)
+        ?.items.some(
+          (i) =>
+            (i.selectionId === link.id ||
+              i.selectionId === `link-${link.id}` ||
+              (!i.selectionId && i.category.toLowerCase() === link.category.toLowerCase())) &&
+            i.decision?.disposition === "not-needed",
+        ),
+    );
   const sortedLinks = [...props.links].sort((left, right) =>
     left.category.localeCompare(right.category, "en", { sensitivity: "base", numeric: true }),
   );
-  const visibleLinks = sortedLinks.filter(
-    (item) => showNotNeeded || roomItemStatus(item) !== "Not needed",
-  );
+  const visibleLinks = sortedLinks.filter((item) => showNotNeeded || !isNotNeeded(item));
 
   const addCustomSelection = () => {
     const category = newSelectionName.trim();
@@ -2785,8 +2993,7 @@ function StartStep(props: {
                 checked={showNotNeeded}
                 onChange={(event) => setShowNotNeeded(event.target.checked)}
               />
-              Show not needed (
-              {props.links.filter((link) => roomItemStatus(link) === "Not needed").length})
+              Show not needed ({props.links.filter(isNotNeeded).length})
             </label>
           </div>
           <div className="mt-3 space-y-4 bg-bone/35 p-3 sm:p-4">
@@ -2800,6 +3007,27 @@ function StartStep(props: {
                 <div className="min-w-0 md:col-span-full xl:col-span-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-base font-semibold text-ink">{item.category}</span>
+                    <RoomDesignNotNeededButton
+                      category={item.category}
+                      selectionId={item.id}
+                      notNeeded={isNotNeeded(item)}
+                      onChange={(notNeeded) =>
+                        props.onLinks(
+                          props.links.map((link) =>
+                            link.id === item.id
+                              ? {
+                                  ...link,
+                                  notes: updateRoomDetail(
+                                    link.notes,
+                                    "Selection responsibility",
+                                    notNeeded ? "Not needed" : "Choose product",
+                                  ),
+                                }
+                              : link,
+                          ),
+                        )
+                      }
+                    />
                     {item.saveToTemplate && (
                       <span className="border border-brass/40 bg-brass/10 px-1.5 py-0.5 text-[8px] uppercase tracking-[.12em] text-amber-800">
                         Template
@@ -2844,7 +3072,7 @@ function StartStep(props: {
                     <Input
                       aria-label={`${item.category} product link`}
                       value={item.url}
-                      disabled={props.gathering || roomItemStatus(item) === "Not needed"}
+                      disabled={props.gathering || isNotNeeded(item)}
                       onChange={(event) => {
                         const next = {
                           ...item,
@@ -2864,7 +3092,7 @@ function StartStep(props: {
                     />
                     <CatalogPickerButton
                       item={item}
-                      disabled={props.gathering || roomItemStatus(item) === "Not needed"}
+                      disabled={props.gathering || isNotNeeded(item)}
                       onSelect={(product) => {
                         const next = {
                           ...item,
@@ -3230,10 +3458,17 @@ function SelectionsStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
+  const accuracy = useRoomDesignAccuracy();
+  const accuracyRoomId = useRoomDesignAccuracyRoom();
   const failedCount = selections.filter((selection) => selection.scrapeStatus === "failed").length;
-  const missingProductCount = selections.filter(
-    (selection) => roomDesignProductGaps(selection).length,
-  ).length;
+  const missingProductCount = selections.filter((selection) => {
+    const item = accuracy?.state?.rooms
+      .find((r) => r.id === accuracyRoomId)
+      ?.items.find((i) => i.selectionId === selection.id);
+    return accuracy?.state
+      ? !item || accuracyItemIssues(accuracy.state, item).length > 0
+      : roomDesignProductGaps(selection).length > 0;
+  }).length;
   return (
     <StepFrame
       eyebrow="Shared room selection set"
@@ -3266,8 +3501,8 @@ function SelectionsStep({
               className="mb-5 border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
             >
               <p className="font-medium">
-                Missing product information on {missingProductCount}{" "}
-                {missingProductCount === 1 ? "item" : "items"}
+                {accuracy?.state ? "Details to confirm on" : "Missing product information on"}{" "}
+                {missingProductCount} {missingProductCount === 1 ? "item" : "items"}
               </p>
               <p className="mt-1">
                 Some information wasn’t available from the links. Fill in the highlighted fields
@@ -3283,7 +3518,7 @@ function SelectionsStep({
                 stackAction
                 action={
                   <div className="space-y-4">
-                    {roomItemNeedsProduct(selection) && (
+                    {!accuracy?.state && roomItemNeedsProduct(selection) && (
                       <QuantityEditor selection={selection} onUpdate={onUpdate} compact />
                     )}
                     <ProductDetailsEditor
@@ -5255,6 +5490,26 @@ function ProductDetailsEditor({
   onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
   onReview: (id: string) => void;
 }) {
+  const accuracy = useRoomDesignAccuracy();
+  return accuracy?.state ? (
+    <RoomDesignAccuracyItem
+      selection={selection}
+      onUpdate={(id, patch) => onUpdate(id, patch as Partial<DemoSelection>)}
+    />
+  ) : (
+    <LegacyProductDetailsEditor selection={selection} onUpdate={onUpdate} onReview={onReview} />
+  );
+}
+
+function LegacyProductDetailsEditor({
+  selection,
+  onUpdate,
+  onReview,
+}: {
+  selection: DemoSelection;
+  onUpdate: (id: string, patch: Partial<DemoSelection>) => void;
+  onReview: (id: string) => void;
+}) {
   const blockers = roomDesignReviewBlockers(selection);
   const gaps = roomDesignProductGaps(selection);
   const confirmation = roomDesignConfirmationMessage(selection);
@@ -5398,7 +5653,7 @@ function QuantityEditor({
   compact?: boolean;
 }) {
   const unit = selection.quantityUnit ?? defaultQuantityUnit(selection.category);
-  const quantity = selection.quantity === null ? null : (selection.quantity ?? 1);
+  const quantity = selection.quantity ?? null;
   const wastePercent = selection.wastePercent ?? defaultWastePercent(selection.category);
   const showWaste = quantityUnitUsesWaste(unit);
   const orderQuantity =
@@ -5492,9 +5747,18 @@ function SelectionRow({
   action: ReactNode;
   stackAction?: boolean;
 }) {
-  const gaps = roomDesignProductGaps(selection);
-  const issues = roomDesignSelectionIssues(selection);
-  const confirmation = roomDesignConfirmationMessage(selection);
+  const accuracy = useRoomDesignAccuracy();
+  const accuracyRoomId = useRoomDesignAccuracyRoom();
+  const room = accuracy?.state?.rooms.find((r) => r.id === accuracyRoomId);
+  const item = room?.items.find((i) => i.selectionId === selection.id);
+  const canonical = accuracy?.state && item;
+  if (accuracy?.state && room && item)
+    selection = accuracyRoomSelections(accuracy.state, room.id, [selection])[0] as DemoSelection;
+  const gaps = canonical ? [] : roomDesignProductGaps(selection);
+  const issues = canonical
+    ? accuracyItemIssues(accuracy!.state!, item!)
+    : roomDesignSelectionIssues(selection);
+  const confirmation = canonical ? "" : roomDesignConfirmationMessage(selection);
   const otherIssues = issues.filter((issue) => !gaps.some((gap) => gap.message === issue));
   const flagged = issues.length > 0 || Boolean(confirmation);
   return (
@@ -5557,7 +5821,7 @@ function SelectionRow({
               .join(" · ")}
           </div>
         )}
-        {flagged && (
+        {flagged && !canonical && (
           <div className="mt-2 space-y-1 text-xs" role="status">
             {gaps.length > 0 && (
               <p className="text-amber-800">Missing: {gaps.map((gap) => gap.label).join(", ")}.</p>

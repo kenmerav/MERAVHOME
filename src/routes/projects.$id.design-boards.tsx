@@ -7059,7 +7059,7 @@ function materialItemToBoardElement(
     materialItemId: item.id,
     materialRoomId: item.room_id,
     materialCategory,
-    materialQuantity: item.quantity_tbd ? null : (item.quantity ?? 1),
+    materialQuantity: item.quantity_tbd ? null : (item.quantity ?? null),
     materialQuantityTbd: item.quantity_tbd === true,
     materialQuantityUnit: selectionQuantityUnitFromSpec(item.quantity_unit),
     materialWastePercent: item.waste_percent || 0,

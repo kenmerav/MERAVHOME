@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { DesignAccuracySummary } from "@/components/DesignAccuracySummary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Loader2, ArrowUpRight, ImageOff } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -202,6 +203,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
   for (const issue of rows) if (!reviewRooms.some(room => room.id === issue.finding.room_id))
     reviewRooms.push({ id: issue.finding.room_id, name: issue.room_name || "Former room" });
   return <>
+    <DesignAccuracySummary projectId={projectId} />
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
       {[[itemCount, "Items reviewed"], [counts.open, "Open issues"], [counts.completed, "Completed"], [counts.not_needed, "Change not needed"]].map(([count, label]) =>
         <div key={label} className="border bg-bone/40 px-4 py-3"><div className="font-display text-3xl">{count}</div><div className="text-xs text-muted-foreground mt-1">{label}</div></div>)}

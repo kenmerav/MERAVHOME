@@ -6,6 +6,7 @@ export function moneyValue(value?: string | number | null) {
 }
 
 export function formatMoney(value: number) {
+  if (!Number.isFinite(value)) return "TBD";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
@@ -46,15 +47,31 @@ export function procurementTotals(items: any[], taxRate: string | number = 0) {
   const money = items.reduce(
     (sum, item) => {
       const product = item.room_product?.product;
-      const material = item.material as { quantity?: number | null } | null;
-      const qty = material?.quantity && material.quantity > 0 ? material.quantity : 1;
+      const material = item.material as {
+        quantity?: number | null;
+        quantity_tbd?: boolean;
+        design_accuracy_fact?: import("./designAccuracy").AccuracyOutput | null;
+      } | null;
+      const fact = material?.design_accuracy_fact;
+      const quantity = fact
+        ? fact.purchaseReady
+          ? fact.purchaseQuantity
+          : null
+        : material?.quantity_tbd
+          ? null
+          : material?.quantity;
+      const qty =
+        typeof quantity === "number" && Number.isFinite(quantity) && quantity >= 0
+          ? quantity
+          : Number.NaN;
       return {
         client: sum.client + moneyValue(product?.price) * qty,
         cost: sum.cost + moneyValue(product?.unit_cost) * qty,
         shipping: sum.shipping + moneyValue(product?.shipping) * qty,
+        unknownQuantities: sum.unknownQuantities + (Number.isFinite(qty) ? 0 : 1),
       };
     },
-    { client: 0, cost: 0, shipping: 0 },
+    { client: 0, cost: 0, shipping: 0, unknownQuantities: 0 },
   );
   const subtotal = money.client;
   const tax = subtotal * ((Number(taxRate) || 0) / 100);

@@ -14,6 +14,10 @@ export function mergeAutomaticRoomProduct<T extends RoomDesignSelection>(
   link: Pick<RoomDesignLink, "url" | "quantity" | "notes">,
 ): T | null {
   if ((scraped.url || "").trim() !== link.url.trim()) return null;
+  if (current?.accuracySource) {
+    // Canonical project choices can change only through explicit draft acceptance.
+    return { ...current, reviewFields: [...new Set([...(current.reviewFields ?? []), "finish", "sku", "dimensions"])], scrapeStatus: "partial", scrapeError: "New product facts are proposals. Review them in Design decisions before changing confirmed values." };
+  }
   const next = retainRoomDesignMeasurements(
     {
       ...scraped,

@@ -40,12 +40,12 @@ describe("Spec Book Count / Sq Ft / TBD", () => {
   it("never turns an explicit TBD into an invoice quantity of one", () => {
     expect(invoiceQuantityInput({ quantity: null, quantity_tbd: true })).toBe("TBD");
     expect(invoiceQuantityReady("TBD")).toBe(false);
-    expect(invoiceQuantityNumber("TBD")).toBe(0);
+    expect(invoiceQuantityNumber("TBD")).toBeNull();
     expect(invoiceQuantityReady("12.5", "square_feet")).toBe(true);
     expect(invoiceQuantityReady("12.5", "count")).toBe(false);
     expect(invoiceQuantityReady("")).toBe(false);
     expect(invoiceQuantityInput({ quantity: 2 })).toBe("2");
-    expect(invoiceQuantityInput({ quantity: null })).toBe("1"); // Existing blank legacy behavior.
+    expect(invoiceQuantityInput({ quantity: null })).toBe("");
   });
   it("keeps public quantity display read-only with no dialog or edit control", () => {
     const html = renderToStaticMarkup(createElement(SpecQuantityEditor, {

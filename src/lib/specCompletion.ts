@@ -114,6 +114,10 @@ export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[])
       item_label: item.client_product_name || item.item_label, field, source: "details",
       message, current, suggested: "", page: null, sheet: "", evidence: "",
     });
+    if (item.design_accuracy_fact) {
+      if (!item.design_accuracy_fact.designResolved) add("product", "Design decisions remain unresolved. Review the current selection in Room Design.");
+      return result;
+    }
     if (item.quantity_tbd || item.quantity == null || !Number.isFinite(item.quantity) || item.quantity <= 0 ||
       (specQuantityUnit(item) === "count" && !Number.isInteger(item.quantity)))
       add("quantity", "Quantity needs confirmation.", item.quantity_tbd ? "TBD" : String(item.quantity ?? ""));

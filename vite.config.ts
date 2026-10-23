@@ -7,8 +7,14 @@ import tsConfigPaths from "vite-tsconfig-paths";
 import { workflow } from "workflow/vite";
 
 export default defineConfig({
+  optimizeDeps: { exclude: ["@napi-rs/canvas"] },
   ssr: { external: ["@napi-rs/canvas"] },
-  environments: { nitro: { resolve: { external: ["@napi-rs/canvas"] } } },
+  environments: {
+    nitro: {
+      resolve: { external: ["@napi-rs/canvas"] },
+      optimizeDeps: { exclude: ["@napi-rs/canvas"] },
+    },
+  },
   plugins: [
     workflow(),
     tanstackStart({
@@ -21,16 +27,18 @@ export default defineConfig({
       // The OCR worker resolves its own JS/WASM files at runtime.
       traceDeps: ["tesseract.js*", "tesseract.js-core*", "@napi-rs/canvas*"],
       rollupConfig: {
-        plugins: [{
-          name: "preserve-workflow-step-registration",
-          transform(code, id) {
-            // Workflow steps register at module load. Preserve this generated
-            // module in Nitro's queue handler instead of a lazy app chunk.
-            if (id.replaceAll("\\", "/").endsWith("/.nitro/workflow/steps.mjs")) {
-              return { code, map: null, moduleSideEffects: "no-treeshake" };
-            }
+        plugins: [
+          {
+            name: "preserve-workflow-step-registration",
+            transform(code, id) {
+              // Workflow steps register at module load. Preserve this generated
+              // module in Nitro's queue handler instead of a lazy app chunk.
+              if (id.replaceAll("\\", "/").endsWith("/.nitro/workflow/steps.mjs")) {
+                return { code, map: null, moduleSideEffects: "no-treeshake" };
+              }
+            },
           },
-        }],
+        ],
       },
     }),
     viteReact(),

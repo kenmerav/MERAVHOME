@@ -281,7 +281,7 @@ export function SpecBookDocument({
     const map = new Map<string, MaterialItem[]>();
     items.forEach((it) => {
       if (it.not_needed) return;
-      if (!it.product_id || !it.product) return;
+      if ((!it.product_id && !it.design_accuracy_fact) || !it.product) return;
       const arr = map.get(it.room_id) ?? [];
       arr.push(it);
       map.set(it.room_id, arr);
@@ -610,7 +610,7 @@ export function SpecBookDocument({
                 ))
               : ALL_CATEGORIES.filter((c) =>
                   items.some(
-                    (it) => !it.not_needed && it.product_id && it.product && normalizeItemCategory(it.category) === c,
+                    (it) => !it.not_needed && (it.product_id || it.design_accuracy_fact) && it.product && normalizeItemCategory(it.category) === c,
                   ),
                 ).map((c, i) => (
                   <TocRow
@@ -715,7 +715,7 @@ export function SpecBookDocument({
               const rooms = populatedRooms;
               const roomById = new Map(rooms.map((r) => [r.id, r] as const));
               const visibleItems = items.filter(
-                (it) => !it.not_needed && it.product_id && it.product,
+                (it) => !it.not_needed && (it.product_id || it.design_accuracy_fact) && it.product,
               );
               return ALL_CATEGORIES.map((cat) => {
                 const list = visibleItems.filter((it) => normalizeItemCategory(it.category) === cat);
@@ -1831,6 +1831,7 @@ export function SpecCard({
             <NeedsReselectionBadge />
           </div>
         )}
+        {item.design_accuracy_fact && <p className="mt-2 text-xs text-muted-foreground">{item.design_accuracy_fact.designResolved ? "Design decisions confirmed" : "Design draft — decisions outstanding"} · Selection version {item.design_accuracy_fact.selectionVersion}</p>}
         {!hideInternalProductDetails && actualProductName(item, room) && (
           <p className="spec-book-product-name whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-muted-foreground mt-1 tracking-wide print:text-[9px] print:leading-snug">
             {actualProductName(item, room)}
@@ -1843,7 +1844,8 @@ export function SpecCard({
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm mt-6 print:mt-2 print:gap-x-4 print:gap-y-1 print:text-[10px] print:leading-snug">
           <Detail label="Finish" value={p?.finish} />
           <Detail label="Color" value={item.color} />
-          {showPricing && <Detail label="Price" value={formatPriceWithUnit(priceLabel(p?.price), materialPriceUnit(item))} />}
+          {showPricing && <Detail label="Price" value={item.design_accuracy_fact?.price != null ? `${priceLabel(String(item.design_accuracy_fact.price))} / ${item.design_accuracy_fact.priceUnit || "price basis not set"}` : formatPriceWithUnit(priceLabel(p?.price), materialPriceUnit(item))} />}
+          {item.design_accuracy_fact && <><Detail label="Application" value={item.design_accuracy_fact.location} /><Detail label="Approved finish / sample" value={item.design_accuracy_fact.finishCodeOrSample} /><Detail label="Custom specification" value={item.design_accuracy_fact.specification} /><Detail label="Supporting reference" value={item.design_accuracy_fact.documentation} /></>}
           {!hideInternalProductDetails && <Detail label="SKU" value={p?.sku} />}
           <Detail label="Dimensions" value={p?.dimensions} />
           <Detail label="CAD Label" value={item.cad_label} />

@@ -1,6 +1,6 @@
 export function parseRoomDesignQuantity(value: unknown): number | null {
   if (value === null || (typeof value === "string" && /^tbd$/i.test(value.trim()))) return null;
-  if (value === undefined) return 1;
+  if (value === undefined) return null;
   if (typeof value !== "string" && typeof value !== "number")
     throw new Error("Enter a positive quantity or TBD.");
   const text = String(value).trim();
@@ -16,5 +16,5 @@ export function parseRoomDesignQuantity(value: unknown): number | null {
 }
 
 export function roomDesignQuantityLabel(value: number | null | undefined) {
-  return value === null ? "TBD" : String(value ?? 1);
+  return value == null ? "TBD" : String(value);
 }

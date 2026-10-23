@@ -71,6 +71,13 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
       // A copied image assigned to a new room must not move the original row.
       if (item?.room_id !== room.id) item = undefined;
       if (item?.not_needed) continue; // Preserve an explicit staff removal.
+      if (item?.design_accuracy_fact) {
+        // The versioned Room Design decision owns these critical facts. A board edit is a proposal.
+        if (layer.designAccuracySelectionVersion !== item.design_accuracy_fact.selectionVersion) {
+          issue(page, layer, "Design decisions changed. Update this board view from Room Design before sending it."); pageComplete = false;
+        }
+        continue;
+      }
       const linkedProduct = byProduct.get(layer.productId);
       const link = layer.materialLinkCleared ? "" : text(layer.link) || linkedProduct?.product_url || "";
       const product = linkedProduct && (!link || !linkedProduct.product_url || url(linkedProduct.product_url) === url(link)) ? linkedProduct : undefined;
@@ -151,7 +158,8 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
     const newSamePageCopy = refs.some(ref => ref.newLayer &&
       (perPage.get(ref.page.id)?.length || 0) > 1);
     if (!isNew && (!importSelections || (!newSamePageCopy && !refs.some(ref => ref.changedQuantity)))) continue;
-    const counts = [...perPage.values()].map(layers => layers.length > 1 ? layers.length
+    const counts = [...perPage.values()].map(layers => layers[0].designAccuracySourceId ?
+      (typeof layers[0].materialQuantity === "number" && layers[0].materialQuantity > 0 ? layers[0].materialQuantity : null) : layers.length > 1 ? layers.length
       : typeof layers[0].materialQuantity === "number" && layers[0].materialQuantity > 0 ? layers[0].materialQuantity : null);
     const quantity = counts.every(count => count != null) ? Math.max(...counts as number[]) : null;
     if (isNew) { item.quantity = quantity; item.quantity_tbd = quantity === null; }

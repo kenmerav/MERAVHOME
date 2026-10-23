@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { saveAndPrintInvoice } from "@/lib/saveAndPrintInvoice";
 import { normalizeSupabaseImageUrl, supabaseImageTransformUrl } from "@/lib/local-assets";
-import { formatMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
+import { formatMoney as formatKnownMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { supabase } from "@/integrations/supabase/client";
+import { accuracyInvoiceTerms } from "@/lib/designAccuracyProjection";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ type ProcurementInvoiceItem = {
     } | null;
   } | null;
   material?: {
+    design_accuracy_fact?: import("@/lib/designAccuracy").AccuracyOutput | null;
     client_product_name: string | null;
     category: string | null;
     image_url: string | null;
@@ -620,7 +622,7 @@ function makeDraft({
       return {
         sourceId: item.id,
         productId: product?.id ?? null,
-        selected: material?.quantity_tbd !== true,
+        selected: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).selected : material?.quantity_tbd !== true,
         name: material?.client_product_name || product?.name || "Product",
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",
@@ -631,9 +633,9 @@ function makeDraft({
         finish: material?.color || product?.finish || "",
         dimensions: product?.dimensions || "",
         sku: product?.sku || "",
-        quantity: invoiceQuantityInput(material),
-        quantityUnit: specQuantityUnit(material ?? { quantity: null }),
-        unitPrice: normalizeMoneyInput(product?.price) || "",
+        quantity: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).quantity : invoiceQuantityInput(material),
+        quantityUnit: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).quantityUnit : specQuantityUnit(material ?? { quantity: null }),
+        unitPrice: normalizeMoneyInput(material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).unitPrice : product?.price) || "",
         unitCost: normalizeMoneyInput(product?.unit_cost) || "",
         shipping: normalizeMoneyInput(product?.shipping) || "",
       };
@@ -666,8 +668,11 @@ function lineProductSubtotal(line: ProductInvoiceLine) {
 }
 
 function quantityValue(value: string) {
-  return invoiceQuantityNumber(value);
+  // Invalid quantities propagate an unavailable total; canCreate blocks saving/payment.
+  return invoiceQuantityNumber(value) ?? Number.NaN;
 }
+
+function formatMoney(value: number) { return Number.isFinite(value) ? formatKnownMoney(value) : "TBD"; }
 
 function FilterSelect({
   label,

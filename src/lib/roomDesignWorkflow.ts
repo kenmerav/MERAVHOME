@@ -6,6 +6,7 @@ import { roomDesignInitialQuantity, roomItemStatus } from "./roomDesignDetails";
 export type RoomDesignMethod = "manual" | "links" | "concept";
 
 export type RoomDesignSelection = {
+  accuracySource?: { id: string; version: number };
   id: string;
   category: string;
   productName: string;
@@ -325,6 +326,7 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
 
   const selectionId = `link-${target.id}`;
   const existingSelection = state.selections.find((selection) => selection.id === selectionId);
+  if (existingSelection?.accuracySource) throw new Error("This selection has versioned design decisions. Import as a new selection or review the replacement in Room Design first.");
   const nextSelection: RoomDesignSelection = {
     ...existingSelection,
     id: selectionId,
@@ -414,7 +416,7 @@ function optionalString(value: unknown) {
   return normalized || undefined;
 }
 
-function positiveNumber(value: unknown, fallback: number) {
+function positiveNumber(value: unknown, fallback: number | null) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
@@ -439,7 +441,7 @@ export function normalizeRoomDesignWorkflowState(
             category,
             url: string(item.url),
             group: string(item.group) || "Architecture / Other",
-            quantity: item.quantity === null ? null : positiveNumber(item.quantity, 1),
+            quantity: positiveNumber(item.quantity, null),
             notes: string(item.notes),
             productId: optionalString(item.productId),
             catalogProductName: optionalString(item.catalogProductName),
@@ -464,6 +466,7 @@ export function normalizeRoomDesignWorkflowState(
             id,
             category,
             productName: string(item.productName) || category,
+            accuracySource: typeof object(item.accuracySource).id === "string" && typeof object(item.accuracySource).version === "number" ? item.accuracySource as RoomDesignSelection["accuracySource"] : undefined,
             vendor: string(item.vendor),
             finish: cleanRoomDesignFinish(item.finish),
             source: string(item.source) || "Product link",
@@ -473,7 +476,7 @@ export function normalizeRoomDesignWorkflowState(
             imageUrl: optionalString(item.imageUrl),
             originalImageUrl: optionalString(item.originalImageUrl),
             group: optionalString(item.group),
-            quantity: item.quantity === null ? null : positiveNumber(item.quantity, 1),
+            quantity: positiveNumber(item.quantity, null),
             quantityUnit: optionalString(item.quantityUnit),
             wastePercent:
               typeof item.wastePercent === "number" && Number.isFinite(item.wastePercent)
@@ -825,9 +828,10 @@ export function mergeRoomDesignSelectionsIntoBoard({
           materialItemId: null,
           materialRoomId: roomId,
           materialCategory: selection.category,
-          materialQuantity:
-            selection.quantity === null ? null : positiveNumber(selection.quantity, 1),
-          materialQuantityTbd: selection.quantity === null,
+          designAccuracySourceId: selection.accuracySource?.id,
+          designAccuracySelectionVersion: selection.accuracySource?.version,
+          materialQuantity: positiveNumber(selection.quantity, null),
+          materialQuantityTbd: selection.quantity == null,
           materialQuantityUnit:
             selection.quantityUnit || roomDesignDefaultQuantityUnit(selection.category),
           materialWastePercent: selection.wastePercent || 0,

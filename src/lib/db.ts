@@ -3,6 +3,7 @@ import { canViewFinancials, canViewProjectSurface, isSharedProjectRole, isStudio
 import { stripePaidReceipt } from "@/lib/stripePaidReceipts";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { cleanProductDetail } from "./productDetails";
+import { projectMaterialAccuracy } from "./designAccuracyProjection";
 import {
   validateSpecQuantityPatch,
   specQuantityDatabasePatch,
@@ -394,6 +395,7 @@ export interface ProcurementItem {
 }
 
 export interface MaterialItem {
+  design_accuracy_fact?: import("./designAccuracy").AccuracyOutput | null;
   id: string;
   room_id: string;
   project_id: string;
@@ -1096,6 +1098,7 @@ export const db = {
     });
 
     const items = (materialRows ?? [])
+      .map(projectMaterialAccuracy)
       .filter(
         (material: any) =>
           materialVisibleInProcurement(material) && material.room,
@@ -1142,6 +1145,7 @@ export const db = {
           room: Room & { project: Pick<Project, "id" | "name" | "client_name" | "status"> };
         };
         material?: {
+          design_accuracy_fact?: import("./designAccuracy").AccuracyOutput | null;
           client_product_name: string | null;
           category: string | null;
           id: string;
@@ -1193,7 +1197,7 @@ export const db = {
       .eq("project_id", projectId)
       .order("sort_order")
       .order("created_at");
-    const items: MaterialItem[] = ((data ?? []) as MaterialItem[]).map((item) => ({
+    const items: MaterialItem[] = ((data ?? []) as MaterialItem[]).map(projectMaterialAccuracy).map((item) => ({
       ...item,
       quantity_unit: specQuantityUnit(item),
       color: cleanProductDetail(item.color) || null,

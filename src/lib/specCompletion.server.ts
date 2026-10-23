@@ -19,6 +19,7 @@ import { analyzeFullSpecWithEvidence, drawingEvidenceKey, DrawingEvidencePending
 import { checkTileInstallation } from "./tileInstallation.server";
 import { FINISH_REVIEW_VERSION, reviewSelectedFinishes } from "./selectedFinish";
 import { readFinishObservations } from "./selectedFinish.server";
+import { projectMaterialAccuracy } from "./designAccuracyProjection";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -195,7 +196,7 @@ export async function checkSpecCompletion(request: Request) {
   if (documentResult.error) throw documentResult.error;
   const staleIds = new Set(staleSpecBookMaterialIds(projectId, rawItems, boardResult.data?.board_state));
   const roomIds = new Set(rooms.map(room => room.id));
-  const items = rawItems.filter(item => !staleIds.has(item.id) && roomIds.has(item.room_id));
+  const items = rawItems.filter(item => !staleIds.has(item.id) && roomIds.has(item.room_id)).map(projectMaterialAccuracy);
   const document: PlanDocument | undefined = documentResult.data?.[0];
   const report: SpecCompletionReport = { checked_at: new Date(Math.max(Date.now(), (Date.parse(existing?.report.checked_at || "") || 0) + 1)).toISOString(),
     board_refresh: boardSync.summary,
@@ -206,7 +207,7 @@ export async function checkSpecCompletion(request: Request) {
   };
   const observations = readFinishObservations(body.finish_checks, projectId)
     .filter(row => items.some(item => item.id === row.item_id && (item.product_url?.trim() || item.product?.product_url?.trim()) === row.source_url));
-  const finishReview = reviewSelectedFinishes(completionItems(items), observations);
+  const finishReview = reviewSelectedFinishes(completionItems(items).filter(item => !item.design_accuracy_fact?.customId && !item.design_accuracy_fact?.finishCodeOrSample), observations);
   const reviewedColorIds = new Set(finishReview.findings.map(finding => finding.item_id));
   report.findings = report.findings.filter(finding => finding.field !== "color" || !reviewedColorIds.has(finding.item_id));
   report.findings.push(...finishReview.findings);

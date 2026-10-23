@@ -1,6 +1,8 @@
 import { parseSpecQuantity, specQuantityUnitFromSelection } from "./specQuantity";
 
 export type BoardQuantity = {
+  id?: string;
+  designAccuracySourceId?: string;
   materialQuantity?: number | null;
   materialQuantityTbd?: boolean;
   materialQuantityUnit?: string;
@@ -18,7 +20,7 @@ export function boardMaterialQuantity(item: BoardQuantity, override?: number | n
       ? override
       : item.materialQuantityTbd
         ? null
-        : (item.materialQuantity ?? 1);
+        : (item.materialQuantity ?? null);
   return parseSpecQuantity(
     value === null ? "TBD" : String(value),
     specQuantityUnitFromSelection(item.materialQuantityUnit),
@@ -27,9 +29,24 @@ export function boardMaterialQuantity(item: BoardQuantity, override?: number | n
 }
 
 export function boardPageQuantity(items: BoardQuantity[]) {
-  if (items.some((item) => item.materialQuantityTbd)) return null;
-  if (items.length === 1) return items[0].materialQuantity ?? 1;
-  return items.every((item) => item.materialQuantityUnit)
-    ? items.reduce((sum, item) => sum + (item.materialQuantity ?? 1), 0)
-    : items.length;
+  if (
+    !items.length ||
+    items.some((item) => item.materialQuantityTbd || item.materialQuantity == null)
+  )
+    return null;
+  const unique = new Map<string, BoardQuantity>();
+  for (const [index, item] of items.entries()) {
+    const id = item.designAccuracySourceId || item.id || `unassociated-${index}`;
+    const previous = unique.get(id);
+    if (
+      previous &&
+      (previous.materialQuantity !== item.materialQuantity ||
+        previous.materialQuantityUnit !== item.materialQuantityUnit)
+    )
+      return null;
+    unique.set(id, item);
+  }
+  const values = [...unique.values()];
+  if (new Set(values.map((item) => item.materialQuantityUnit || "each")).size > 1) return null;
+  return values.reduce((sum, item) => sum + item.materialQuantity!, 0);
 }

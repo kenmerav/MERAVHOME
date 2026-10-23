@@ -12,6 +12,7 @@ import {
   type SpecQuantityUnit,
 } from "./specQuantity";
 import { cleanProductDetail } from "./productDetails";
+import { projectMaterialAccuracy } from "./designAccuracyProjection";
 
 /** One source of displayed selection data for the spreadsheet and drawing views. */
 export type SpecSpreadsheetRow = {
@@ -59,7 +60,8 @@ export function buildSpecSpreadsheetRows(
 ): SpecSpreadsheetRow[] {
   const roomOrder = new Map(rooms.map((room, index) => [room.id, index]));
   return items
-    .filter((item) => !item.not_needed && item.product_id && item.product)
+    .map(projectMaterialAccuracy)
+    .filter((item) => !item.not_needed && (item.product_id || item.design_accuracy_fact) && item.product)
     .slice()
     .sort((a, b) => {
       const roomDelta = (roomOrder.get(a.room_id) ?? 9999) - (roomOrder.get(b.room_id) ?? 9999);
@@ -89,16 +91,16 @@ export function buildSpecSpreadsheetRows(
         quantityUnit: specQuantityUnit(item),
         wastePercent: item.waste_percent || 0,
         waste: item.waste_percent ? `${item.waste_percent}%` : "",
-        orderQuantity: formatSpecQuantity({ ...item, quantity: specOrderQuantity(item) }),
+        orderQuantity: item.design_accuracy_fact ? item.design_accuracy_fact.purchaseQuantity === null ? "TBD" : `${item.design_accuracy_fact.purchaseQuantity} ${item.design_accuracy_fact.purchaseUnit}` : formatSpecQuantity({ ...item, quantity: specOrderQuantity(item) }),
         dimensions: product?.dimensions ?? "",
         sku: product?.sku ?? "",
-        clientPrice: specPriceLabel(product?.price) ?? "",
+        clientPrice: item.design_accuracy_fact?.price != null ? `${specPriceLabel(item.design_accuracy_fact.price)} / ${item.design_accuracy_fact.priceUnit || "price basis not set"}` : specPriceLabel(product?.price) ?? "",
         priceUnit: materialPriceUnit(item),
         orderedBy: item.ordered_by ?? "",
         ordered: item.ordered ? "Yes" : "No",
         productUrl: item.product_url || product?.product_url || "",
         notes: item.notes ?? "",
-        status: item.room_product?.approval_status === "declined" ? "Needs re-selection" : "",
+        status: item.room_product?.approval_status === "declined" ? "Needs re-selection" : item.design_accuracy_fact ? item.design_accuracy_fact.designResolved ? "Design decisions confirmed" : "Design draft — decisions outstanding" : "",
       };
     });
 }

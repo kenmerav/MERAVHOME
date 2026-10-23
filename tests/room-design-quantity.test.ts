@@ -72,9 +72,9 @@ describe("Room Design quantity", () => {
       expect(sync.inserts[0]).toMatchObject({ quantity: null, quantity_tbd: true });
     },
   );
-  it("keeps numeric quantities and omitted legacy quantities", () => {
+  it("keeps numeric quantities and preserves omitted quantities as unknown", () => {
     expect(parseRoomDesignQuantity(context.parseMeravQuantity("2.5"))).toBe(2.5);
-    expect(parseRoomDesignQuantity(undefined)).toBe(1);
+    expect(parseRoomDesignQuantity(undefined)).toBeNull();
     expect(parseRoomDesignQuantity(null)).toBeNull();
   });
   it.each(["", "0", "-1", "two", "Infinity", "1.23456"])("rejects invalid quantity %s", (value) => {

@@ -7,6 +7,7 @@ import { projectDocumentStoragePath } from "@/lib/constructionDocumentPath.serve
 import {
   fetchSpecReview,
   retrieveSpecReview,
+  cancelSpecReview,
   CreditsUnavailable,
   SpecReviewCostError,
 } from "@/lib/specReviewAI.server";
@@ -222,7 +223,9 @@ async function startPlanJob(
       next.status = "checked";
       next.message = "Latest plans reviewed. Only explicit room requirements are used.";
     }
-    await writeCatalogFitJob(projectId, next, job.request_id);
+    const saved = await writeCatalogFitJob(projectId, next, job.request_id);
+    // A cancellation while the provider was starting must not resurrect the old job.
+    if (!saved && next.response_id) await cancelSpecReview(next.response_id).catch(() => {});
   } catch (error) {
     const message =
       error instanceof CreditsUnavailable
@@ -305,6 +308,18 @@ export async function loadCatalogDocumentFit(projectId: string, document: Docume
     } else job = jobs(await cacheRow(projectId))[key];
   }
   return job ? pollPlanJob(projectId, rooms[0], job) : null;
+}
+
+export async function cancelCatalogDocumentFit(projectId: string, document: Document, rooms: Room[]) {
+  const job = await loadCatalogDocumentFit(projectId, document, rooms, false);
+  if (!job || (job.status !== "checking" && !job.message.startsWith("Cancellation requested"))) return { cancelled: false, message: "There is no active extraction for this document revision." };
+  const cancelled = { ...job, status: "unavailable" as const, request_id: randomUUID(), message: "Cancellation requested. Studio will not use this extraction. Provider cancellation is not yet confirmed; its evidence coverage is incomplete." };
+  if (!await writeCatalogFitJob(projectId, cancelled, job.request_id)) throw new Error("Extraction changed. Check its current status before cancelling.");
+  if (!job.response_id) return { cancelled: false, pending: true, message: cancelled.message };
+  await cancelSpecReview(job.response_id);
+  const confirmed = { ...cancelled, message: "Extraction cancelled at the provider. Evidence coverage remains incomplete; retry only when ready." };
+  await writeCatalogFitJob(projectId, confirmed, cancelled.request_id);
+  return { cancelled: true, message: confirmed.message };
 }
 
 // Called only after active staff/project and room authorization in the catalog API.
