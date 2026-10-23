@@ -339,7 +339,11 @@ export function productPageSpecifications(html: string, sourceUrl: string): Page
     selected ? first(selected.id, selected.sku) : (selectors[0] ?? null),
   );
   const props = properties(current);
-  const sizeResolved = sizes.length <= 1 || Boolean(selectedSize);
+  const differingVariantDimensions =
+    unique(variants.map((variant) => dimensions(variant))).length > 1;
+  const sizeResolved =
+    (sizes.length <= 1 || Boolean(selectedSize)) &&
+    (Boolean(selected) || !differingVariantDimensions);
   const image = list(current.image ?? current.featured_image ?? candidate.images)[0];
   return {
     ...controls,

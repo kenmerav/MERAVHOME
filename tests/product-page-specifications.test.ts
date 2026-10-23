@@ -78,6 +78,21 @@ it("fills a finish shared by every size without selecting an unknown size", () =
     dimensions: "",
   });
 });
+
+it("does not use family measurements when variants publish different dimensions without a size selector", () => {
+  const product = {
+    "@type": "ProductGroup",
+    width: "24 in",
+    hasVariant: [
+      { sku: "A", width: "24 in" },
+      { sku: "B", width: "30 in" },
+    ],
+  };
+  expect(productPageSpecifications(script(product), url).dimensions).toBe("");
+  expect(productPageSpecifications(script(product), `${url}?sku=B`).dimensions).toBe(
+    "Width: 30 in",
+  );
+});
 it("uses only the primary product and ignores recommendation objects", () => {
   const rawHtml = script({
     "@graph": [
