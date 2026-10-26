@@ -1,4 +1,5 @@
 import { roomDesignTileSurface } from "./roomDesignTile";
+import { materialQuantityStartsTbd } from "./materialQuantityDefaults";
 /** Project-specific instructions live in workflow/board notes, never the shared catalog. */
 export const ROOM_ITEM_STATUSES = [
   "Choose product",
@@ -55,6 +56,7 @@ export function roomItemCanOrder(item: RoomItemContext) {
   return roomItemNeedsProduct(item) && (!decision || decision === "Approved for ordering");
 }
 export function roomDesignInitialQuantity(category: string) {
+  if (materialQuantityStartsTbd(category)) return null;
   return /flooring|stair runner|tile|backsplash|countertop(?! power)|baseboard|casing|transition|wall finish|ceiling finish|(?:cabinet|vanity) finish|layout/i.test(
     category,
   )

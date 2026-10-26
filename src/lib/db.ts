@@ -4,6 +4,7 @@ import { stripePaidReceipt } from "@/lib/stripePaidReceipts";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { cleanProductDetail } from "./productDetails";
 import { projectMaterialAccuracy } from "./designAccuracyProjection";
+import { newMaterialQuantityDefaults } from "./materialQuantityDefaults";
 import {
   validateSpecQuantityPatch,
   specQuantityDatabasePatch,
@@ -1230,7 +1231,12 @@ export const db = {
   },
   bulkInsertMaterialItems: async (
     items: Array<Omit<MaterialItem, "id" | "created_at" | "updated_at" | "product">>,
-  ) => supabase.from("material_items").insert(items as any),
+  ) => supabase.from("material_items").insert(
+    items.map(item => ({
+      ...item,
+      ...newMaterialQuantityDefaults(item.category, item.quantity),
+    })) as any,
+  ),
   updateMaterialItem: async (id: string, patch: Partial<MaterialItem>) => {
     if (patch.quantity_unit && !patch.selection_quantity_unit)
       patch = {

@@ -693,7 +693,7 @@ function renderRequiredItems(items, selectedItemId) {
 function restoreQuantity(roomId, itemId) {
   const item = roomDesignData?.items?.find((candidate) => candidate.id === itemId);
   const remembered = settings.quantityByItem?.[`${roomId}:${itemId}`];
-  document.getElementById("quantityInput").value = String(remembered !== undefined ? remembered : item?.quantity === null ? "TBD" : item?.quantity ?? 1);
+  document.getElementById("quantityInput").value = String(restoredMeravQuantity(item, remembered));
   document.getElementById("quantityInput").setCustomValidity("");
 }
 
@@ -730,7 +730,7 @@ async function addProductType() {
       label,
       filled: false,
       productName: "",
-      quantity: 1,
+      quantity: initialMeravQuantity(label) === "TBD" ? null : 1,
     };
     roomDesignData.items.push(item);
     roomDesignData.itemsByRoom[roomId] = roomDesignData.items;

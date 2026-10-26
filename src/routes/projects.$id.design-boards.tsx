@@ -126,6 +126,14 @@ import {
 } from "@/lib/boardMaterialQuantity";
 import { selectionQuantityUnitFromSpec, specQuantityDatabasePatch } from "@/lib/specQuantity";
 import { cleanProductDetail } from "@/lib/productDetails";
+import { BoardQuantityReviewDialog } from "@/components/BoardQuantityReviewDialog";
+import {
+  boardQuantityConflict,
+  findBoardMaterialForSend,
+  type BoardQuantityConflict,
+  type BoardQuantityDecisions,
+} from "@/lib/boardQuantityReview";
+import { readBoardSendMaterials, saveReviewedBoardMaterial } from "@/lib/boardQuantitySave";
 
 type BoardElementType = "image" | "text" | "shape";
 
@@ -741,6 +749,23 @@ function ProjectDesignBoardsPage() {
   const [autoBackgroundRemovalPulse, setAutoBackgroundRemovalPulse] = useState(0);
   const [sendingMaterialId, setSendingMaterialId] = useState<string | null>(null);
   const [bulkMaterialScope, setBulkMaterialScope] = useState<"page" | "board" | null>(null);
+  const [quantityReview, setQuantityReview] = useState<BoardQuantityConflict[] | null>(null);
+  const quantityReviewResolver = useRef<
+    ((decisions: BoardQuantityDecisions | null) => void) | null
+  >(null);
+  useEffect(() => () => { quantityReviewResolver.current?.(null); }, []);
+  const resolveQuantityReview = (decisions: BoardQuantityDecisions | null) => {
+    quantityReviewResolver.current?.(decisions);
+    quantityReviewResolver.current = null;
+    setQuantityReview(null);
+  };
+  const requestQuantityReview = (conflicts: BoardQuantityConflict[]) => {
+    if (quantityReviewResolver.current) return Promise.resolve(null);
+    return new Promise<BoardQuantityDecisions | null>((resolve) => {
+      quantityReviewResolver.current = resolve;
+      setQuantityReview(conflicts);
+    });
+  };
   const [pendingMaterialSend, setPendingMaterialSend] = useState<{
     scope: "page" | "board";
     pageIds: string[];
@@ -1906,7 +1931,11 @@ function ProjectDesignBoardsPage() {
     page: BoardPage,
     sortOrderOverride?: number,
     quantityOverride?: number | null,
-    options: { allowMissingInfo?: boolean } = {},
+    options: {
+      allowMissingInfo?: boolean;
+      materials?: MaterialItem[];
+      quantityDecisions?: BoardQuantityDecisions;
+    } = {},
   ): Promise<SendMaterialResult> => {
     if (element.type !== "image") return { status: "skipped" };
     if (element.materialExcludeFromMaterials) return { status: "skipped" };
@@ -1939,6 +1968,33 @@ function ProjectDesignBoardsPage() {
     const productImageUrl = element.src || element.backgroundRemovedUrl || null;
     const quantityFields = boardMaterialQuantity(element, quantityOverride);
     const quantity = quantityFields.quantity;
+    const currentMaterials = options.materials || (await readBoardSendMaterials(supabase, id));
+    const existingMaterial = findBoardMaterialForSend(
+      {
+        roomId: room.id,
+        materialItemId: element.materialItemId,
+        label: itemLabel,
+        productUrl,
+        color: finish,
+        dimensions,
+        materialLinkCleared: element.materialLinkCleared,
+      },
+      currentMaterials,
+    );
+    const existingMaterialId = existingMaterial?.id || null;
+    const conflict = existingMaterial
+      ? boardQuantityConflict(existingMaterial, quantityFields, room.name)
+      : null;
+    let quantityDecisions = options.quantityDecisions || {};
+    if (conflict && options.quantityDecisions === undefined) {
+      const reviewed = await requestQuantityReview([conflict]);
+      if (!reviewed) return { status: "skipped" };
+      quantityDecisions = reviewed;
+    }
+    if (conflict && !quantityDecisions[conflict.key])
+      throw new Error(
+        "A Spec Book quantity changed since review. Send the board again to review the latest values.",
+      );
 
     const actualProductName = element.productName?.trim() || itemLabel;
     const linkedProductNameMatches =
@@ -1998,44 +2054,6 @@ function ProjectDesignBoardsPage() {
     }
     if (!product) throw new Error("Could not create catalog product.");
 
-    const materialIdentity = buildBoardMaterialIdentity({
-      roomId: room.id,
-      label: itemLabel,
-      productUrl,
-      color: finish,
-      dimensions,
-    });
-    const materialMatchesIdentity = (item: MaterialItem) =>
-      buildBoardMaterialIdentity({
-        roomId: item.room_id,
-        label: item.item_label,
-        productUrl: item.product_url,
-        color: item.color,
-        dimensions: item.product?.dimensions,
-      }) === materialIdentity;
-    const materialMatchesIdentityIgnoringUrl = (item: MaterialItem) =>
-      item.room_id === room.id &&
-      normalizeMaterialIdentityText(item.item_label) ===
-        normalizeMaterialIdentityText(itemLabel) &&
-      normalizeMaterialIdentityText(item.color) === normalizeMaterialIdentityText(finish) &&
-      normalizeMaterialIdentityText(item.product?.dimensions) ===
-        normalizeMaterialIdentityText(dimensions);
-    const materialFromElementId = element.materialItemId
-      ? materialItems.find((item) => item.id === element.materialItemId) ?? null
-      : null;
-    const matchingMaterial = materialItems.find(materialMatchesIdentity) ?? null;
-    // Board layers can outlive/replace materials. If a layer points at a material
-    // whose label/link/color no longer matches, ignore that stale id so a sink
-    // cannot overwrite a countertop row (or vice versa).
-    const existingMaterialId =
-      materialFromElementId &&
-      (materialMatchesIdentity(materialFromElementId) ||
-        (element.materialLinkCleared && materialMatchesIdentityIgnoringUrl(materialFromElementId)))
-        ? materialFromElementId.id
-        : matchingMaterial?.id || null;
-    const existingMaterial = existingMaterialId
-      ? materialItems.find((item) => item.id === existingMaterialId) || matchingMaterial || null
-      : null;
     const sortOrder =
       existingMaterial?.sort_order ??
       sortOrderOverride ??
@@ -2069,13 +2087,12 @@ function ProjectDesignBoardsPage() {
 
     let materialItem = existingMaterial ?? null;
     if (existingMaterialId) {
-      const saved = await db.updateMaterialItem(existingMaterialId, materialPatch);
-      if (saved.error) throw saved.error;
       materialItem = {
-        ...(existingMaterial ?? { id: existingMaterialId }),
-        ...materialPatch,
+        ...(await saveReviewedBoardMaterial(
+          supabase, id, existingMaterialId, materialPatch, quantityFields, quantityDecisions,
+        )),
         product,
-      } as MaterialItem;
+      };
     } else {
       let { data, error } = await supabase
         .from("material_items")
@@ -2120,10 +2137,16 @@ function ProjectDesignBoardsPage() {
               materialCategory: candidate.id.startsWith("room-design-v2:")
                 ? candidate.materialCategory
                 : finalMaterialCategory,
-              materialQuantity: quantity,
-              materialQuantityTbd: quantityFields.quantity_tbd,
-              materialQuantityUnit: selectionQuantityUnitFromSpec(quantityFields.quantity_unit),
-              materialWastePercent: quantityFields.waste_percent,
+              // Existing selections keep their board quantity; saving a spec correction
+              // must not turn each duplicated board reference into the entire room count.
+              ...(!existingMaterial
+                ? {
+                    materialQuantity: quantity,
+                    materialQuantityTbd: quantityFields.quantity_tbd,
+                    materialQuantityUnit: selectionQuantityUnitFromSpec(quantityFields.quantity_unit),
+                    materialWastePercent: quantityFields.waste_percent,
+                  }
+                : {}),
               materialFinish: finish,
               materialDimensions: dimensions,
             }
@@ -2164,8 +2187,8 @@ function ProjectDesignBoardsPage() {
 
     setSendingMaterialId(selected.id);
     try {
-      await sendElementToMaterials(selected, activePage);
-      toast.success(
+      const result = await sendElementToMaterials(selected, activePage);
+      if (result.status === "sent") toast.success(
         selected.materialItemId ? "Updated this material item." : "Sent to project materials.",
       );
     } catch (error) {
@@ -2281,6 +2304,51 @@ function ProjectDesignBoardsPage() {
         const primaryElement = primaryMaterialId
           ? { ...group.primary, materialItemId: primaryMaterialId }
           : { ...group.primary, materialRoomId: group.roomId };
+        group.primary = primaryElement;
+      }
+      // Read current Spec Book quantities before any material or catalog writes.
+      const currentMaterials = await readBoardSendMaterials(supabase, id);
+      const conflicts: BoardQuantityConflict[] = [];
+      for (const group of groups.values()) {
+        const element = group.primary;
+        const linkedProduct = element.productId ? productById.get(element.productId) : null;
+        const existing = findBoardMaterialForSend(
+          {
+            roomId: group.roomId,
+            materialItemId: element.materialItemId,
+            label: imageMaterialLabelForSend(element),
+            productUrl: boardElementProductUrlForMaterialSync(element, linkedProduct),
+            color: cleanProductDetail(element.materialFinish || element.finish),
+            dimensions: element.materialDimensions || linkedProduct?.dimensions,
+            materialLinkCleared: element.materialLinkCleared,
+          },
+          currentMaterials,
+        );
+        const conflict = existing
+          ? boardQuantityConflict(
+              existing,
+              boardMaterialQuantity(element, group.quantity),
+              rooms.find(room => room.id === group.roomId)?.name || group.page.title,
+            )
+          : null;
+        if (conflict && !conflicts.some(item => item.key === conflict.key)) conflicts.push(conflict);
+      }
+      const reviewedEvidence = JSON.stringify(targetPages.map(createPageMaterialsSyncSnapshot));
+      const quantityDecisions = conflicts.length ? await requestQuantityReview(conflicts) : {};
+      if (!quantityDecisions) return;
+      const latestPages = targetPages.map(page =>
+        boardStateRef.current.pages.find(current => current.id === page.id),
+      );
+      if (
+        latestPages.some(page => !page) ||
+        reviewedEvidence !== JSON.stringify((latestPages as BoardPage[]).map(createPageMaterialsSyncSnapshot))
+      )
+        throw new Error(
+          "The design board changed during quantity review. Send it again to review the latest values.",
+        );
+      for (const group of groups.values()) {
+        const primaryElement = group.primary;
+        const primaryMaterialId = primaryElement.materialItemId;
         let sortOrderOverride: number | undefined;
         if (!primaryMaterialId) {
           const nextSortOrder =
@@ -2299,7 +2367,11 @@ function ProjectDesignBoardsPage() {
           group.page,
           sortOrderOverride,
           group.quantity,
-          { allowMissingInfo: options.proceedWithMissing },
+          {
+            allowMissingInfo: options.proceedWithMissing,
+            materials: currentMaterials,
+            quantityDecisions,
+          },
         );
         if (result.status === "sent") {
           sent += 1;
@@ -4647,6 +4719,9 @@ function ProjectDesignBoardsPage() {
             </DialogContent>
           </Dialog>
 
+          {quantityReview && (
+            <BoardQuantityReviewDialog conflicts={quantityReview} onResolve={resolveQuantityReview} />
+          )}
           <Dialog
             open={pendingMaterialSend !== null}
             onOpenChange={(open) => {
