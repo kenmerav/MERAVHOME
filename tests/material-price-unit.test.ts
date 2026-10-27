@@ -80,6 +80,10 @@ describe("Materials price save and price basis", () => {
     const initial: ProductPricingDraft = { ...blank(), price: "$7.99", price_unit: "unit" };
     expect(productPricingPatch({ ...initial, price_unit: "sq_ft" }, initial)).toEqual({ price_unit: "sq_ft" });
   });
+  it("changes a rug from square foot to item without converting or replacing its price", () => {
+    const initial: ProductPricingDraft = { ...blank(), price: "$169", retail_price: "$169", price_unit: "sq_ft" };
+    expect(productPricingPatch({ ...initial, price_unit: "unit" }, initial)).toEqual({ price_unit: "unit" });
+  });
   it("keeps legacy callers from clearing a separately saved basis", () => {
     const initial = blank();
     delete initial.price_unit;

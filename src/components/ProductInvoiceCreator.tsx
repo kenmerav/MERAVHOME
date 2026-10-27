@@ -1,14 +1,14 @@
 import { FileText, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { saveAndPrintInvoice } from "@/lib/saveAndPrintInvoice";
 import { normalizeSupabaseImageUrl, supabaseImageTransformUrl } from "@/lib/local-assets";
 import { formatMoney as formatKnownMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
-import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityUnit } from "@/lib/specQuantity";
+import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, validSpecQuantityUnit, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { supabase } from "@/integrations/supabase/client";
 import { accuracyInvoiceTerms } from "@/lib/designAccuracyProjection";
-import { materialPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
+import { inferProductPriceUnit, materialPriceUnit, productPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 import { productInvoiceDiscount, productInvoiceDiscountLineIssues } from "@/lib/productInvoiceDiscount";
 import {
   Dialog,
@@ -83,6 +83,7 @@ type ProductInvoiceLine = {
   priceUnit: ProductPriceUnit | null;
   unitCost: string;
   shipping: string;
+  sourceAvailable?: boolean;
 };
 
 type ProductInvoiceDraft = {
@@ -113,6 +114,8 @@ export function ProductInvoiceCreator({
   buttonLabel = "Create Product Invoice",
   disabled,
   onSaved,
+  sourceDraft,
+  sourceInvoiceName,
 }: {
   projectId: string | null;
   projectName: string;
@@ -123,6 +126,8 @@ export function ProductInvoiceCreator({
   buttonLabel?: string;
   disabled?: boolean;
   onSaved?: () => void;
+  sourceDraft?: unknown;
+  sourceInvoiceName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -132,16 +137,8 @@ export function ProductInvoiceCreator({
   const [roomFilter, setRoomFilter] = useState("__all");
   const [categoryFilter, setCategoryFilter] = useState("__all");
   const [draft, setDraft] = useState<ProductInvoiceDraft>(() =>
-    makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }),
+    makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved, sourceDraft }),
   );
-
-  useEffect(() => {
-    if (!open) return;
-    setDraft(makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }));
-    setApprovalFilter("all");
-    setRoomFilter("__all");
-    setCategoryFilter("__all");
-  }, [clientName, defaultTaxRate, items, onlyApproved, open, projectName]);
 
   const totals = useMemo(() => productInvoiceTotals(draft), [draft]);
   const discount = useMemo(() => productInvoiceDiscount(draft.lines), [draft.lines]);
@@ -280,7 +277,14 @@ export function ProductInvoiceCreator({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!saveInProgress.current) setOpen(next); }}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (saveInProgress.current) return;
+      if (next && !open) {
+        setDraft(makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved, sourceDraft }));
+        setApprovalFilter("all"); setRoomFilter("__all"); setCategoryFilter("__all");
+      }
+      setOpen(next);
+    }}>
       <DialogTrigger asChild>
         <button
           type="button"
@@ -305,6 +309,8 @@ export function ProductInvoiceCreator({
 
         <fieldset disabled={saving} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
           <div className="space-y-6">
+            {sourceInvoiceName && <p className="border border-border bg-bone/30 p-3 text-sm">Starting a new invoice from {sourceInvoiceName}. You can edit its items below; the original invoice stays unchanged.</p>}
+            {draft.lines.some((line) => line.sourceAvailable === false) && <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Some saved invoice items are no longer in current Procurement. Their saved details are included; review them before creating the new invoice.</p>}
             {draft.lines.some((line) => line.quantity === "TBD") && (
               <p className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Items with TBD quantities start unchecked. Confirm their quantity before including them in an invoice.</p>
             )}
@@ -629,15 +635,17 @@ export function makeProductInvoiceDraft({
   items,
   defaultTaxRate,
   onlyApproved,
+  sourceDraft,
 }: {
   projectName: string;
   clientName: string;
   items: ProcurementInvoiceItem[];
   defaultTaxRate: string;
   onlyApproved: boolean;
+  sourceDraft?: unknown;
 }): ProductInvoiceDraft {
   const today = new Date().toISOString().slice(0, 10);
-  return {
+  const draft: ProductInvoiceDraft = {
     invoiceName: "Product Invoice",
     invoiceDate: today,
     dueDate: "",
@@ -679,6 +687,61 @@ export function makeProductInvoiceDraft({
         shipping: normalizeMoneyInput(product?.shipping) || "",
       };
     }),
+  };
+  return sourceDraft ? copyProductInvoiceDraft(draft, sourceDraft) : draft;
+}
+
+/** Start a new invoice from the saved selected lines, preserving invoice-only edits. */
+export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknown): ProductInvoiceDraft {
+  if (!saved || typeof saved !== "object") throw new Error("This invoice has no saved item details.");
+  const source = saved as Record<string, unknown>;
+  if (!Array.isArray(source.lines)) throw new Error("This invoice has no saved item details.");
+  const currentById = new Map(base.lines.map((line) => [line.sourceId, line]));
+  const stringValue = (value: unknown, fallback = "") => typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : fallback;
+  const lines = source.lines.flatMap((value, index): ProductInvoiceLine[] => {
+    if (!value || typeof value !== "object" || value.selected === false) return [];
+    const row = value as Record<string, unknown>;
+    const sourceId = stringValue(row.sourceId) || `saved-invoice-line-${index}`;
+    const current = currentById.get(sourceId);
+    const name = stringValue(row.name, current?.name || "Product");
+    const category = stringValue(row.category, current?.category);
+    const productUrl = stringValue(row.productUrl, current?.productUrl);
+    const unitPrice = stringValue(row.unitPrice, current?.unitPrice);
+    const priceUnit = row.priceUnit === undefined
+      ? current?.priceUnit ?? inferProductPriceUnit({ name, category, product_url: productUrl, price: unitPrice })
+      : productPriceUnit(row.priceUnit);
+    return [{
+      sourceId,
+      productId: typeof row.productId === "string" ? row.productId : current?.productId ?? null,
+      selected: true,
+      approvalStatus: stringValue(row.approvalStatus, current?.approvalStatus || "undecided"),
+      name,
+      vendor: stringValue(row.vendor, current?.vendor),
+      room: stringValue(row.room, current?.room),
+      category,
+      imageUrl: stringValue(row.imageUrl, current?.imageUrl),
+      productUrl,
+      finish: stringValue(row.finish, current?.finish),
+      dimensions: stringValue(row.dimensions, current?.dimensions),
+      sku: stringValue(row.sku, current?.sku),
+      quantity: stringValue(row.quantity, current?.quantity),
+      quantityUnit: validSpecQuantityUnit(row.quantityUnit) ? row.quantityUnit : current?.quantityUnit ?? "count",
+      unitPrice,
+      retailUnitPrice: stringValue(row.retailUnitPrice, current?.retailUnitPrice),
+      priceUnit,
+      unitCost: stringValue(row.unitCost, current?.unitCost),
+      shipping: stringValue(row.shipping, current?.shipping),
+      sourceAvailable: Boolean(current),
+    }];
+  });
+  return {
+    ...base,
+    invoiceName: `${stringValue(source.invoiceName, "Product Invoice")} (Copy)`,
+    terms: stringValue(source.terms, base.terms),
+    taxRate: stringValue(source.taxRate, base.taxRate),
+    notes: stringValue(source.notes),
+    showDesignerDiscount: source.showDesignerDiscount === true,
+    lines,
   };
 }
 

@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice, type Product } from "@/lib/db";
 import { saveMaterialProductDetails } from "@/lib/materialProductEdit";
 import { productPricingPatch, type ProductPricingDraft } from "@/lib/productPricingEdit";
+import { materialPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
 import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,6 +53,8 @@ type ProductInvoiceSummary = {
   total: number;
   sortDate: string;
   sourceIds: Set<string>;
+  sourceLineCount: number;
+  sourceDraft: unknown;
 };
 
 function externalHref(value?: string | null) {
@@ -296,7 +299,7 @@ function ProcurementPage() {
     ]);
   };
 
-  const syncDecisionPrice = async (item: (typeof visibleItems)[number], price: string | null) => {
+  const syncDecisionPrice = async (item: (typeof visibleItems)[number], price: string | null | undefined, priceUnit?: ProductPriceUnit | null) => {
     const fact = item.material?.design_accuracy_fact;
     if (!fact) return;
     const projectId = item.room_product?.room?.project?.id;
@@ -304,7 +307,7 @@ function ProcurementPage() {
     const materialId = item.material?.id;
     if (!projectId || !roomId || !materialId) throw new Error("Could not find the linked Room Design selection.");
     const { data } = await supabase.auth.getSession();
-    await saveDesignAccuracyPrice({ projectId, roomId, materialId, sourceId: fact.sourceId, selectionVersion: fact.selectionVersion, previousPrice: fact.price }, price, data.session?.access_token || "");
+    await saveDesignAccuracyPrice({ projectId, roomId, materialId, sourceId: fact.sourceId, selectionVersion: fact.selectionVersion, previousPrice: fact.price, previousPriceUnit: fact.priceUnit }, price, data.session?.access_token || "", priceUnit);
   };
 
   const updateProductPricing = async (item: (typeof visibleItems)[number], values: ProductPricingDraft, initial: ProductPricingDraft) => {
@@ -312,12 +315,12 @@ function ProcurementPage() {
     if (!Object.keys(patch).length) return;
     let decisionSaved = false;
     try {
-      if ("price" in patch && item.material?.design_accuracy_fact) {
-        await syncDecisionPrice(item, patch.price ?? null);
+      if (("price" in patch || "price_unit" in patch) && item.material?.design_accuracy_fact) {
+        await syncDecisionPrice(item, "price" in patch ? patch.price ?? null : undefined, "price_unit" in patch ? patch.price_unit ?? null : undefined);
         decisionSaved = true;
       }
       await saveProductPatch(item.room_product?.product?.id, item.material?.id, patch);
-      if (decisionSaved) toast.info("Price saved. Confirm the updated price in Room Design before ordering.");
+      if (decisionSaved) toast.info("Pricing saved. Confirm the updated price and basis in Room Design before ordering.");
     } catch (error) {
       if (decisionSaved) throw new Error("The Spec Book price was saved, but the catalog pricing could not be saved. Refresh and check the other pricing fields.");
       throw error;
@@ -663,9 +666,11 @@ function ProcurementPage() {
                 projectId={selectedProject?.id ?? null}
                 projectName={selectedProject?.name ?? ""}
                 clientName={selectedProject?.client_name ?? ""}
-                items={orderableVisibleItems}
+                items={selectedProductInvoice ? projectItems : orderableVisibleItems}
+                sourceDraft={selectedProductInvoice?.sourceDraft}
+                sourceInvoiceName={selectedProductInvoice?.name}
                 defaultTaxRate={taxRate}
-                disabled={!selectedProject || orderableVisibleItems.length === 0}
+                disabled={!selectedProject || (selectedProductInvoice ? selectedProductInvoice.sourceLineCount === 0 : orderableVisibleItems.length === 0)}
                 onSaved={() => {
                   qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
                   qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
@@ -860,6 +865,7 @@ function ProcurementPage() {
                         productName={clientName}
                         retailPrice={p?.retail_price ?? ""}
                         price={p?.price ?? ""}
+                        priceUnit={materialPriceUnit({ ...m, product: p })}
                         unitCost={p?.unit_cost ?? ""}
                         markupPercent={p?.markup_percent ?? null}
                         markupBasis={p?.markup_basis ?? null}
@@ -1045,6 +1051,7 @@ function PricingEditor({
   productName,
   retailPrice,
   price,
+  priceUnit,
   unitCost,
   markupPercent,
   markupBasis,
@@ -1055,6 +1062,7 @@ function PricingEditor({
   productName: string;
   retailPrice: string;
   price: string;
+  priceUnit: ProductPriceUnit | null;
   unitCost: string;
   markupPercent: number | null;
   markupBasis: MarkupBasis | null;
@@ -1064,8 +1072,9 @@ function PricingEditor({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [draft, setDraft] = useState(() => ({
+  const [draft, setDraft] = useState<ProductPricingDraft>(() => ({
     price: moneyDraft(price),
+    price_unit: priceUnit ?? "",
     retail_price: moneyDraft(retailPrice || (markupPercent == null ? price : "")),
     unit_cost: moneyDraft(unitCost),
     markup_percent: markupPercent?.toString() ?? "",
@@ -1076,8 +1085,9 @@ function PricingEditor({
 
   useEffect(() => {
     if (!open) {
-      const current = {
+      const current: ProductPricingDraft = {
         price: moneyDraft(price),
+        price_unit: priceUnit ?? "",
         retail_price: moneyDraft(retailPrice || (markupPercent == null ? price : "")),
         unit_cost: moneyDraft(unitCost),
         markup_percent: markupPercent?.toString() ?? "",
@@ -1087,7 +1097,7 @@ function PricingEditor({
       setDraft(current);
       setInitialDraft(current);
     }
-  }, [markupBasis, markupPercent, open, price, retailPrice, shipping, unitCost]);
+  }, [markupBasis, markupPercent, open, price, priceUnit, retailPrice, shipping, unitCost]);
 
   const calculatedClientPrice = clientPriceFromMarkup({
     retailPrice: draft.retail_price,
@@ -1137,6 +1147,7 @@ function PricingEditor({
             }
           />
           <PricingSummary label="Price" value={price} />
+          <PricingTextSummary label="Price is per" value={priceUnit === "unit" ? "Unit / item" : priceUnit === "sq_ft" ? "Square foot" : "Not set"} />
           <PricingSummary label="Shipping" value={shipping} />
         </button>
       </PopoverTrigger>
@@ -1200,6 +1211,15 @@ function PricingEditor({
             value={draft.shipping}
             onChange={(value) => setDraft((current) => ({ ...current, shipping: value }))}
           />
+          <label className="block">
+            <span className="eyebrow mb-1.5 block">Price is per</span>
+            <select aria-label="Price is per" value={draft.price_unit} onChange={(event) => setDraft((current) => ({ ...current, price_unit: event.target.value === "unit" || event.target.value === "sq_ft" ? event.target.value : "" }))} className="h-10 w-full border border-input bg-background px-3 text-sm">
+              <option value="">Choose unit</option>
+              <option value="unit">Unit / item</option>
+              <option value="sq_ft">Square foot</option>
+            </select>
+            <span className="mt-1 block text-xs text-muted-foreground">Changing the basis does not convert the price.</span>
+          </label>
         </div>
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
@@ -1620,6 +1640,8 @@ function productInvoiceFromFinancialInvoice(
       total: ledger.adjustedTotal,
       sortDate: invoice.invoice_date || invoice.created_at || "",
       sourceIds,
+      sourceLineCount: (parsed.draft?.lines ?? []).filter((line) => line && line.selected !== false).length,
+      sourceDraft: parsed.draft,
     };
   } catch {
     return null;

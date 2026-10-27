@@ -51,4 +51,31 @@ describe("syncing Procurement price to the Spec Book", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(saveDesignAccuracyPrice(selection, "$125", "token")).rejects.toThrow("newer version");
   });
+
+  it("updates a linked price basis without changing its amount", async () => {
+    const current = state();
+    Object.assign(current.rooms[0].items[0].fields, { priceUnit: { value: "sq ft" } });
+    const fetchMock = fetchWithState(current);
+    vi.stubGlobal("fetch", fetchMock);
+    await saveDesignAccuracyPrice({ ...selection, previousPriceUnit: "sq ft" }, undefined, "token", "unit");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ expectedRevision: 9, commands: [
+      { type: "field", roomId: "room", itemId: "selection", key: "priceUnit", value: "each" },
+    ] });
+  });
+
+  it("updates price and basis together and rejects a stale basis", async () => {
+    const current = state();
+    Object.assign(current.rooms[0].items[0].fields, { priceUnit: { value: "sq ft" } });
+    const fetchMock = fetchWithState(current);
+    vi.stubGlobal("fetch", fetchMock);
+    await saveDesignAccuracyPrice({ ...selection, previousPriceUnit: "sq ft" }, "$100", "token", "unit");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).commands).toEqual([
+      { type: "field", roomId: "room", itemId: "selection", key: "price", value: 100 },
+      { type: "field", roomId: "room", itemId: "selection", key: "priceUnit", value: "each" },
+    ]);
+    const stale = fetchWithState(current);
+    vi.stubGlobal("fetch", stale);
+    await expect(saveDesignAccuracyPrice({ ...selection, previousPriceUnit: "each" }, undefined, "token", "unit")).rejects.toThrow("Refresh Procurement");
+    expect(stale).toHaveBeenCalledTimes(1);
+  });
 });
