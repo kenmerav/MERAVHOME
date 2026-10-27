@@ -618,6 +618,18 @@ async function getCurrentProjectAccess() {
   };
 }
 
+async function fetchStaleSpecMaterialIds(projectId: string, token?: string) {
+  const response = await fetch(`/api/spec-book-source-status?projectId=${encodeURIComponent(projectId)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Could not check the current design selections. Please retry.");
+  const body = await response.json() as { staleMaterialIds: unknown };
+  if (!Array.isArray(body.staleMaterialIds) || !body.staleMaterialIds.every((id) => typeof id === "string"))
+    throw new Error("Could not check the current design selections. Please retry.");
+  return body.staleMaterialIds as string[];
+}
+
 export const db = {
   getCurrentUserProfile: async () => {
     const { profile } = await getCurrentProjectAccess();
@@ -1098,12 +1110,27 @@ export const db = {
       legacyByPair.set(key, matches);
     });
 
-    const items = (materialRows ?? [])
+    const candidateRows = (materialRows ?? [])
       .map(projectMaterialAccuracy)
       .filter(
         (material: any) =>
           materialVisibleInProcurement(material) && material.room,
-      )
+      );
+    const projectIds = Array.from(new Set<string>(candidateRows
+      .filter((material: any) => material.project_id && material.source_board_id === material.project_id &&
+        material.source_board_page_id && material.source_board_element_id)
+      .map((material: any) => material.project_id)));
+    const staleIds = new Set<string>();
+    if (projectIds.length) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      for (let offset = 0; offset < projectIds.length; offset += 5) {
+        const results = await Promise.all(projectIds.slice(offset, offset + 5).map((id) => fetchStaleSpecMaterialIds(id, token)));
+        results.flat().forEach((id) => staleIds.add(id));
+      }
+    }
+    const items = candidateRows
+      .filter((material: any) => !staleIds.has(material.id))
       .map((material: any) => {
         const key = `${material.room_id}::${material.product_id}`;
         const legacy = legacyByPair.get(key)?.shift() ?? null;
@@ -1178,18 +1205,12 @@ export const db = {
   listSpecBookMaterialItems: async (projectId: string) => {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
-    const [items, response] = await Promise.all([
+    const [items, staleIds] = await Promise.all([
       db.listMaterialItemsByProject(projectId),
-      fetch(`/api/spec-book-source-status?projectId=${encodeURIComponent(projectId)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        cache: "no-store",
-      }),
+      fetchStaleSpecMaterialIds(projectId, token),
     ]);
-    if (!response.ok) throw new Error("Could not check the current design selections. Please retry.");
-    const body = await response.json() as { staleMaterialIds: string[] };
-    if (!Array.isArray(body.staleMaterialIds)) throw new Error("Could not check the current design selections. Please retry.");
-    const staleIds = new Set(body.staleMaterialIds);
-    return items.filter((item) => !staleIds.has(item.id));
+    const staleSet = new Set(staleIds);
+    return items.filter((item) => !staleSet.has(item.id));
   },
   listMaterialItemsByProject: async (projectId: string) => {
     const { data } = await supabase

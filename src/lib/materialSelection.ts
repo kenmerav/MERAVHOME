@@ -23,5 +23,9 @@ export function materialHasUserSelection(item: Partial<MaterialItem>) {
 }
 
 export function materialVisibleInProcurement(item: Partial<MaterialItem>) {
-  return !item.not_needed && (item.is_required === false || materialHasUserSelection(item));
+  return materialVisibleInSpecBook(item);
+}
+
+export function materialVisibleInSpecBook(item: Partial<MaterialItem>) {
+  return Boolean(!item.not_needed && (item.product_id || item.design_accuracy_fact) && item.product);
 }

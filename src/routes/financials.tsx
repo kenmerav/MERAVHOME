@@ -56,7 +56,7 @@ function FinancialsOverviewPage() {
     queryFn: async () => (await db.listAllFinancialInvoices()) ?? [],
     enabled: allowed,
   });
-  const { data: procurementItems = [] } = useQuery({
+  const { data: procurementItems = [], isPending: procurementPending, error: procurementError } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
     enabled: allowed,
@@ -87,12 +87,12 @@ function FinancialsOverviewPage() {
         revenue,
         paid,
         due,
-        procurementProfit: procurement.profit,
-        totalProfit: revenue + procurement.profit,
+        procurementProfit: procurementPending || procurementError ? Number.NaN : procurement.profit,
+        totalProfit: procurementPending || procurementError ? Number.NaN : revenue + procurement.profit,
         invoiceCount: rangedInvoices.length,
       };
     }).sort((a, b) => b.totalProfit - a.totalProfit);
-  }, [invoices, procurementItems, projects, selectedLabels, selectedRange, taxRate]);
+  }, [invoices, procurementItems, procurementPending, procurementError, projects, selectedLabels, selectedRange, taxRate]);
 
   const totals = useMemo(() => rows.reduce((sum, row) => ({
     revenue: sum.revenue + row.revenue,
@@ -145,6 +145,7 @@ function FinancialsOverviewPage() {
           <p className="mt-4 text-muted-foreground max-w-2xl">
             Revenue and profit across every project, combining invoice payment schedules with procurement profit.
           </p>
+          {procurementError && <p role="alert" className="mt-3 text-amber-800">Could not verify current Spec Book selections. Procurement profit is unavailable; refresh to try again.</p>}
         </div>
 
         <div className="mb-8 grid gap-4 lg:grid-cols-[260px_1fr]">

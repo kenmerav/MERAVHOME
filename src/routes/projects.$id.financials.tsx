@@ -175,7 +175,7 @@ function FinancialsPage() {
     queryFn: async () => (await db.listFinancialInvoices(id)) ?? [],
     enabled: allowed,
   });
-  const { data: procurementItems = [] } = useQuery({
+  const { data: procurementItems = [], isPending: procurementPending, error: procurementError } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
     enabled: allowed,
@@ -233,7 +233,8 @@ function FinancialsPage() {
     () => procurementTotals(procurementItems.filter((item) => item.room_product?.room?.project?.id === id), taxRate),
     [id, procurementItems, taxRate],
   );
-  const totalProjectProfit = totals.total + projectProcurement.profit;
+  const procurementProfit = procurementPending || procurementError ? Number.NaN : projectProcurement.profit;
+  const totalProjectProfit = totals.total + procurementProfit;
 
   const onFile = async (file?: File | null) => {
     if (!file) return;
@@ -731,12 +732,13 @@ function FinancialsPage() {
           </div>
         </div>
 
+        {procurementError && <p role="alert" className="mb-4 text-amber-800">Could not verify current Spec Book selections. Procurement profit is unavailable; refresh to try again.</p>}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 mb-10">
           <Stat label="Invoice Revenue" value={formatMoney(totals.total)} />
           <Stat label="Paid" value={formatMoney(totals.paid)} />
           <Stat label="Due" value={formatMoney(totals.due)} />
           <Stat label="Client Credit Owed" value={formatMoney(totals.credit)} />
-          <Stat label="Procurement Profit" value={formatMoney(projectProcurement.profit)} />
+          <Stat label="Procurement Profit" value={formatMoney(procurementProfit)} />
           <Stat label="Total Project Profit" value={formatMoney(totalProjectProfit)} />
           <Stat label="Payment Lines" value={String(totals.count)} />
         </div>

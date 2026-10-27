@@ -13,6 +13,7 @@ import {
 } from "./specQuantity";
 import { cleanProductDetail } from "./productDetails";
 import { projectMaterialAccuracy } from "./designAccuracyProjection";
+import { materialVisibleInSpecBook } from "./materialSelection";
 
 /** One source of displayed selection data for the spreadsheet and drawing views. */
 export type SpecSpreadsheetRow = {
@@ -61,7 +62,7 @@ export function buildSpecSpreadsheetRows(
   const roomOrder = new Map(rooms.map((room, index) => [room.id, index]));
   return items
     .map(projectMaterialAccuracy)
-    .filter((item) => !item.not_needed && (item.product_id || item.design_accuracy_fact) && item.product)
+    .filter(materialVisibleInSpecBook)
     .slice()
     .sort((a, b) => {
       const roomDelta = (roomOrder.get(a.room_id) ?? 9999) - (roomOrder.get(b.room_id) ?? 9999);

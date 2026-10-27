@@ -103,7 +103,7 @@ function ProcurementPage() {
     },
   });
   const allowed = canViewProcurement(profile);
-  const { data: procurementItems = [] } = useQuery({
+  const { data: procurementItems = [], error: procurementError, refetch: retryProcurement } = useQuery({
     queryKey: ["procurement"],
     queryFn: async () => (await db.listProcurement()) ?? [],
     enabled: allowed,
@@ -419,6 +419,18 @@ function ProcurementPage() {
           <p className="mt-4 text-muted-foreground max-w-xl">
             Procurement is currently available only to Ken and Katie.
           </p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (procurementError) {
+    return (
+      <AppShell>
+        <div className="page-pad max-w-[900px]">
+          <h1 className="editorial-hero text-5xl">Procurement</h1>
+          <p role="alert" className="mt-4 text-muted-foreground">Could not verify the current Spec Book selections. Please try again.</p>
+          <button className="mt-4 border border-border px-4 py-2" onClick={() => retryProcurement()}>Retry</button>
         </div>
       </AppShell>
     );
