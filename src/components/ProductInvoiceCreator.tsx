@@ -8,6 +8,8 @@ import { formatMoney as formatKnownMoney, moneyValue, normalizeMoneyInput } from
 import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { supabase } from "@/integrations/supabase/client";
 import { accuracyInvoiceTerms } from "@/lib/designAccuracyProjection";
+import { materialPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
+import { productInvoiceDiscount } from "@/lib/productInvoiceDiscount";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +33,8 @@ type ProcurementInvoiceItem = {
       vendor: string | null;
       image_url: string | null;
       price: string | null;
+      retail_price?: string | null;
+      price_unit?: ProductPriceUnit | null;
       unit_cost: string | null;
       shipping: string | null;
       finish: string | null;
@@ -75,6 +79,8 @@ type ProductInvoiceLine = {
   quantity: string;
   quantityUnit: SpecQuantityUnit;
   unitPrice: string;
+  retailUnitPrice: string;
+  priceUnit: ProductPriceUnit | null;
   unitCost: string;
   shipping: string;
 };
@@ -91,6 +97,7 @@ type ProductInvoiceDraft = {
   stripeLink: string;
   stripePaymentLinkId: string;
   notes: string;
+  showDesignerDiscount: boolean;
   lines: ProductInvoiceLine[];
 };
 
@@ -125,18 +132,19 @@ export function ProductInvoiceCreator({
   const [roomFilter, setRoomFilter] = useState("__all");
   const [categoryFilter, setCategoryFilter] = useState("__all");
   const [draft, setDraft] = useState<ProductInvoiceDraft>(() =>
-    makeDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }),
+    makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }),
   );
 
   useEffect(() => {
     if (!open) return;
-    setDraft(makeDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }));
+    setDraft(makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved }));
     setApprovalFilter("all");
     setRoomFilter("__all");
     setCategoryFilter("__all");
   }, [clientName, defaultTaxRate, items, onlyApproved, open, projectName]);
 
   const totals = useMemo(() => productInvoiceTotals(draft), [draft]);
+  const discount = useMemo(() => productInvoiceDiscount(draft.lines), [draft.lines]);
   const selectedCount = draft.lines.filter((line) => line.selected).length;
   const roomOptions = useMemo(
     () => uniqueSorted(draft.lines.map((line) => line.room).filter(Boolean)),
@@ -163,7 +171,7 @@ export function ProductInvoiceCreator({
     [visibleLines],
   );
   const invalidQuantities = draft.lines.filter((line) => line.selected && !invoiceQuantityReady(line.quantity, line.quantityUnit));
-  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0;
+  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0 && (!draft.showDesignerDiscount || discount.incomplete === 0);
   const html = useMemo(() => buildProductInvoiceHtml(draft, totals), [draft, totals]);
 
   const updateDraft = (patch: Partial<ProductInvoiceDraft>) =>
@@ -178,7 +186,7 @@ export function ProductInvoiceCreator({
   };
 
   const generateStripeLink = async () => {
-    if (!canCreate) return toast.error("Select at least one product with a client price first.");
+    if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check retail prices, client prices, quantities and units before showing the discount." : "Select at least one product with a client price first.");
     setGeneratingLink(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -212,7 +220,7 @@ export function ProductInvoiceCreator({
     if (saveInProgress.current || generatingLink) return;
     if (!projectId)
       return toast.error("Choose a single project before creating a product invoice.");
-    if (!canCreate) return toast.error("Select products with a client price before saving.");
+    if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check retail prices, client prices, quantities and units before showing the discount." : "Select products with a client price before saving.");
     saveInProgress.current = true;
     setSaving(true);
     try {
@@ -550,6 +558,16 @@ export function ProductInvoiceCreator({
           </div>
 
           <aside className="space-y-4">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={draft.showDesignerDiscount} onCheckedChange={(checked) => updateDraft({ showDesignerDiscount: checked === true })} />
+              Show designer discount on invoice
+            </label>
+            {draft.showDesignerDiscount && (discount.incomplete > 0 ? (
+              <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Add retail and client prices and matching units for every selected item in Procurement before showing the discount on the invoice. You can also turn this option off.</p>
+            ) : <>
+              <SummaryStat label="Full retail price" value={discount.retail} />
+              <SummaryStat label="Designer discount" value={discount.discount === 0 ? 0 : -discount.discount} />
+            </>)}
             <SummaryStat label="Subtotal" value={totals.subtotal} />
             <SummaryStat label="Shipping" value={totals.shipping} />
             <SummaryStat label={`Tax (${draft.taxRate || "0"}%)`} value={totals.tax} />
@@ -587,7 +605,7 @@ export function ProductInvoiceCreator({
   );
 }
 
-function makeDraft({
+export function makeProductInvoiceDraft({
   projectName,
   clientName,
   items,
@@ -613,6 +631,7 @@ function makeDraft({
     stripeLink: "",
     stripePaymentLinkId: "",
     notes: "",
+    showDesignerDiscount: false,
     lines: (onlyApproved
       ? items.filter((item) => item.room_product?.approval_status === "approved")
       : items
@@ -636,6 +655,8 @@ function makeDraft({
         quantity: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).quantity : invoiceQuantityInput(material),
         quantityUnit: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).quantityUnit : specQuantityUnit(material ?? { quantity: null }),
         unitPrice: normalizeMoneyInput(material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).unitPrice : product?.price) || "",
+        retailUnitPrice: normalizeMoneyInput(product?.retail_price) || "",
+        priceUnit: materialPriceUnit({ ...material, product }),
         unitCost: normalizeMoneyInput(product?.unit_cost) || "",
         shipping: normalizeMoneyInput(product?.shipping) || "",
       };
@@ -643,7 +664,7 @@ function makeDraft({
   };
 }
 
-function productInvoiceTotals(draft: ProductInvoiceDraft) {
+export function productInvoiceTotals(draft: ProductInvoiceDraft) {
   const selected = draft.lines.filter((line) => line.selected);
   const subtotal = selected.reduce(
     (sum, line) => sum + moneyValue(line.unitPrice) * quantityValue(line.quantity),
@@ -749,11 +770,12 @@ function SummaryStat({ label, value, strong }: { label: string; value: number; s
   );
 }
 
-function buildProductInvoiceHtml(
+export function buildProductInvoiceHtml(
   draft: ProductInvoiceDraft,
   totals: ReturnType<typeof productInvoiceTotals>,
 ) {
   const selected = draft.lines.filter((line) => line.selected);
+  const discount = productInvoiceDiscount(draft.lines);
   const rows = selected
     .map(
       (line) => `
@@ -843,6 +865,8 @@ function buildProductInvoiceHtml(
       <tbody>${rows || `<tr><td colspan="4" class="center">No products selected</td></tr>`}</tbody>
     </table>
     <section class="summary">
+      ${draft.showDesignerDiscount && discount.incomplete === 0 ? `<div class="summary-row"><span>Full retail price:</span><span>${formatMoney(discount.retail)}</span></div>
+      <div class="summary-row"><span>Designer discount:</span><span>${formatMoney(discount.discount === 0 ? 0 : -discount.discount)}</span></div>` : ""}
       <div class="summary-row"><span>Subtotal:</span><span>${formatMoney(totals.subtotal)}</span></div>
       <div class="summary-row"><span>Shipping:</span><span>${formatMoney(totals.shipping)}</span></div>
       <div class="summary-row"><span>Tax:</span><span>${formatMoney(totals.tax)}</span></div>

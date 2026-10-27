@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { financialInvoiceLedger } from "@/lib/financialInvoiceLedger";
+import { saveDesignAccuracyPrice } from "@/lib/designAccuracyPricing";
 import { downloadInvoiceDocument, openInvoiceDocument } from "@/lib/invoiceDocuments";
 
 type ProcurementMaterialDetails = {
@@ -89,6 +90,7 @@ function ProcurementPage() {
   const [vendorFilters, setVendorFilters] = useState<string[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState("__all");
   const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
+  const [showDesignerDiscount, setShowDesignerDiscount] = useState(false);
   const [taxRate, setTaxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
     return window.localStorage.getItem("merav.procurement.taxRate") ?? "0";
@@ -294,9 +296,37 @@ function ProcurementPage() {
     ]);
   };
 
-  const updateProductPricing = async (productId: string | undefined, values: ProductPricingDraft, initial: ProductPricingDraft, materialId?: string) => {
+  const syncDecisionPrice = async (item: (typeof visibleItems)[number], price: string | null) => {
+    const fact = item.material?.design_accuracy_fact;
+    if (!fact) return;
+    const projectId = item.room_product?.room?.project?.id;
+    const roomId = item.room_product?.room?.id;
+    const materialId = item.material?.id;
+    if (!projectId || !roomId || !materialId) throw new Error("Could not find the linked Room Design selection.");
+    const { data } = await supabase.auth.getSession();
+    await saveDesignAccuracyPrice({ projectId, roomId, materialId, sourceId: fact.sourceId, selectionVersion: fact.selectionVersion, previousPrice: fact.price }, price, data.session?.access_token || "");
+  };
+
+  const updateProductPricing = async (item: (typeof visibleItems)[number], values: ProductPricingDraft, initial: ProductPricingDraft) => {
     const patch = productPricingPatch(values, initial);
-    if (Object.keys(patch).length) await saveProductPatch(productId, materialId, patch);
+    if (!Object.keys(patch).length) return;
+    let decisionSaved = false;
+    try {
+      if ("price" in patch && item.material?.design_accuracy_fact) {
+        await syncDecisionPrice(item, patch.price ?? null);
+        decisionSaved = true;
+      }
+      await saveProductPatch(item.room_product?.product?.id, item.material?.id, patch);
+      if (decisionSaved) toast.info("Price saved. Confirm the updated price in Room Design before ordering.");
+    } catch (error) {
+      if (decisionSaved) throw new Error("The Spec Book price was saved, but the catalog pricing could not be saved. Refresh and check the other pricing fields.");
+      throw error;
+    } finally {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["procurement"] }),
+        qc.invalidateQueries({ queryKey: ["materialItems"] }),
+      ]);
+    }
   };
 
   const applyBulkMarkup = async (markupBasis: MarkupBasis, markupPercent: number) => {
@@ -327,6 +357,16 @@ function ProcurementPage() {
       ];
     });
 
+    let decisionsUpdated = 0;
+    try {
+    for (const item of visibleItems) {
+      if (!item.material?.design_accuracy_fact) continue;
+      const update = updates.find(({ product }) => product.id === item.room_product?.product?.id);
+      if (update) {
+        await syncDecisionPrice(item, update.patch.price);
+        decisionsUpdated++;
+      }
+    }
     for (let start = 0; start < updates.length; start += 20) {
       const chunk = updates.slice(start, start + 20);
       await Promise.all(
@@ -336,6 +376,15 @@ function ProcurementPage() {
         }),
       );
     }
+    } catch (error) {
+      if (decisionsUpdated) throw new Error("Some Room Design prices were saved before the update stopped. Refresh and review prices before retrying.");
+      throw error;
+    } finally {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["procurement"] }),
+        qc.invalidateQueries({ queryKey: ["materialItems"] }),
+      ]);
+    }
 
     if (updates.length > 0) {
       await Promise.all([
@@ -344,6 +393,7 @@ function ProcurementPage() {
         qc.invalidateQueries({ queryKey: ["product"] }),
       ]);
     }
+    if (decisionsUpdated) toast.info("Room Design prices changed. Confirm them in Room Design before ordering.");
 
     return {
       updated: updates.length,
@@ -816,7 +866,7 @@ function ProcurementPage() {
                         shipping={p?.shipping ?? ""}
                         disabled={!p?.id && !m?.id}
                         onSave={(values, initial) =>
-                          updateProductPricing(p?.id, values, initial, m?.id)
+                          updateProductPricing(item, values, initial)
                         }
                       />
                     </td>
@@ -848,6 +898,27 @@ function ProcurementPage() {
               })}
             </tbody>
           </table>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <div className="w-full max-w-md">
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox checked={showDesignerDiscount} onCheckedChange={(checked) => setShowDesignerDiscount(checked === true)} />
+              Show designer discount
+            </label>
+            {showDesignerDiscount && (
+              <div className="mt-3 border border-border p-5 text-sm" aria-label="Designer discount breakdown">
+                <div className="flex justify-between gap-4 py-1"><span>Full retail price</span><span>{formatMoney(money.retail)}</span></div>
+                <div className="flex justify-between gap-4 py-1"><span>Designer discount</span><span>{formatMoney(money.discount === 0 ? 0 : -money.discount)}</span></div>
+                <div className="flex justify-between gap-4 border-t border-border pt-2 mt-2"><span>Client subtotal</span><span>{formatMoney(money.subtotal)}</span></div>
+                <div className="flex justify-between gap-4 py-1"><span>Tax</span><span>{formatMoney(money.tax)}</span></div>
+                <div className="flex justify-between gap-4 py-1"><span>Shipping</span><span>{formatMoney(money.shipping)}</span></div>
+                <div className="flex justify-between gap-4 border-t border-border pt-3 mt-2 font-semibold"><span>Client total</span><span>{formatMoney(money.total)}</span></div>
+                {(money.missingRetailPrices > 0 || money.missingPrices > 0 || money.unknownQuantities > 0 || money.incompatibleUnits > 0) && (
+                  <p className="mt-3 text-xs text-muted-foreground">TBD amounts count as $0. The discount only includes items with both retail and client prices and a known quantity. Missing information may keep the amounts from balancing.</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </AppShell>

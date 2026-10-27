@@ -124,6 +124,16 @@ function retail(state = single(), overrides = {}) {
 }
 const item = (state: AccuracyState) => state.rooms[0].items[0];
 
+it("projects a changed Room Design price into the Spec Book without retaining old confirmation", () => {
+  let state = values(retail(), { price: 80, priceUnit: "each" });
+  expect(fieldConfirmed(state, item(state), "price")).toBe(true);
+  state = values(state, { price: 125 }, false);
+  const fact = accuracyOutputs(state)[0];
+  const material = projectMaterialAccuracy({ product: { id: "p", price: "$80" }, design_accuracy_fact: fact } as unknown as MaterialItem);
+  expect(material.product?.price).toBe("125");
+  expect(fieldConfirmed(state, item(state), "price")).toBe(false);
+});
+
 describe("design scope and exact selections", () => {
   it("preserves every untouched requirement; one-click exclusions resolve and reverse with history", () => {
     let state = initial();

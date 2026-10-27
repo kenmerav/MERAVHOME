@@ -23,6 +23,13 @@ export function normalizeMoneyInput(value?: string | null) {
 
 export type MarkupBasis = "retail_price" | "our_price";
 
+export function isKnownPrice(value: unknown) {
+  return typeof value === "number"
+    ? Number.isFinite(value) && value >= 0
+    : typeof value === "string" &&
+      /^\s*\$?\s*(?:\d[\d,]*(?:\.\d+)?|\.\d+)\s*(?:\/\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet)|sf|each|item|unit|sheet|piece|set|box|carton|case|roll|gallon))?\s*$/i.test(value);
+}
+
 export function clientPriceFromMarkup({
   retailPrice,
   ourPrice,
@@ -86,16 +93,12 @@ export function procurementTotals(
         ? !fact.priceUnit || fact.priceUnit !== fact.purchaseUnit
         : (priceUnit === "sq_ft" && quantityUnit !== "square_feet") ||
           (priceUnit === "unit" && quantityUnit === "square_feet");
-      const hasPrice = (value: unknown) =>
-        typeof value === "number"
-          ? Number.isFinite(value) && value >= 0
-          : typeof value === "string" &&
-            /^\s*\$?\s*(?:\d[\d,]*(?:\.\d+)?|\.\d+)\s*(?:\/\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet)|sf|each|item|unit|sheet|piece|set|box|carton|case|roll|gallon))?\s*$/i.test(
-              value,
-            );
       const clientPrice = fact ? fact.price : product?.price;
-      const missingPrice = qty !== 0 && !hasPrice(clientPrice);
-      const missingCost = qty !== 0 && !hasPrice(product?.unit_cost);
+      const missingPrice = qty !== 0 && !isKnownPrice(clientPrice);
+      const missingCost = qty !== 0 && !isKnownPrice(product?.unit_cost);
+      const retailPrice = product?.retail_price;
+      const missingRetail = qty !== 0 && !isKnownPrice(retailPrice);
+      const comparable = Number.isFinite(qty) && !incompatibleUnit && !missingPrice && !missingRetail;
       return {
         client:
           sum.client +
@@ -104,6 +107,9 @@ export function procurementTotals(
           sum.cost +
           contribution(missingCost || incompatibleUnit ? Number.NaN : moneyValue(product?.unit_cost) * qty),
         shipping: sum.shipping + contribution(moneyValue(product?.shipping) * qty),
+        retail: sum.retail + contribution(missingRetail || incompatibleUnit ? Number.NaN : moneyValue(retailPrice) * qty),
+        discount: sum.discount + (comparable ? (moneyValue(retailPrice) - moneyValue(clientPrice)) * qty : 0),
+        missingRetailPrices: sum.missingRetailPrices + (missingRetail ? 1 : 0),
         unknownQuantities: sum.unknownQuantities + (Number.isFinite(qty) ? 0 : 1),
         missingPrices: sum.missingPrices + (missingPrice ? 1 : 0),
         missingCosts: sum.missingCosts + (missingCost ? 1 : 0),
@@ -114,6 +120,9 @@ export function procurementTotals(
       client: 0,
       cost: 0,
       shipping: 0,
+      retail: 0,
+      discount: 0,
+      missingRetailPrices: 0,
       unknownQuantities: 0,
       missingPrices: 0,
       missingCosts: 0,

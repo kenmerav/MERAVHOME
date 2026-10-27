@@ -36,6 +36,7 @@ vi.mock("@/lib/db", () => ({
 }));
 import { saveMaterialProductDetails } from "@/lib/materialProductEdit";
 import { productPricingPatch, type ProductPricingDraft } from "@/lib/productPricingEdit";
+import { buildSpecSpreadsheetRows } from "@/lib/specBookRows";
 
 const material = {
   id: "material",
@@ -105,6 +106,16 @@ describe("Product details from Materials and Procurement", () => {
     });
     expect(state.writes).toEqual([]);
     expect(state.addRoom).not.toHaveBeenCalled();
+  });
+  it("uses the updated client price in the Spec Book for the linked product", async () => {
+    state.responses = [{ data: { ...material, product_id: "current-product" }, error: null }];
+    state.roomProducts.mockResolvedValue([{ product_id: "current-product" }]);
+    const patch = productPricingPatch({ ...values, price: "275" }, values);
+    await saveMaterialProductDetails("material", patch);
+    expect(state.update).toHaveBeenCalledWith("current-product", { price: "$275.00" });
+    const rows = buildSpecSpreadsheetRows([{ ...material, product_id: "current-product", not_needed: false,
+      product: { id: "current-product", name: "Sink", price: patch.price } } as any], [{ id: "bath", name: "Bath" }]);
+    expect(rows[0].clientPrice).toBe("$275.00");
   });
   it("preserves a concurrent material link instead of overwriting it", async () => {
     state.responses = [

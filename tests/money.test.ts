@@ -151,4 +151,34 @@ describe("procurement totals from the Spec Book", () => {
     expect(totals.incompatibleUnits).toBe(1);
     expect([known, tile]).toEqual(original);
   });
+
+  it("calculates the designer discount from retail and the client's Spec Book price", () => {
+    const selection = item("$80", 2);
+    Object.assign(selection.room_product.product, { retail_price: "$100", unit_cost: "$50" });
+    const totals = procurementTotals([selection], 10, { unknownAsZero: true });
+    expect(totals.retail).toBe(200);
+    expect(totals.discount).toBe(40);
+    expect(totals.subtotal).toBe(160);
+    expect(totals.total).toBe(186);
+  });
+
+  it("does not invent discounts when either price, quantity or price unit is unknown", () => {
+    const missingRetail = item("$80", 2);
+    const missingClient = item(null, 1);
+    Object.assign(missingClient.room_product.product, { retail_price: "$100" });
+    const unknownQuantity = item("$80", null, { quantity_tbd: true });
+    Object.assign(unknownQuantity.room_product.product, { retail_price: "$100" });
+    const totals = procurementTotals([missingRetail, missingClient, unknownQuantity], 0, { unknownAsZero: true });
+    expect(totals.retail).toBe(100);
+    expect(totals.discount).toBe(0);
+    expect(totals.missingRetailPrices).toBe(1);
+    expect(totals.missingPrices).toBe(1);
+    expect(totals.unknownQuantities).toBe(1);
+  });
+
+  it("shows an increase as a negative discount rather than inventing savings", () => {
+    const selection = item("$120", 2);
+    Object.assign(selection.room_product.product, { retail_price: "$100" });
+    expect(procurementTotals([selection], 0, { unknownAsZero: true }).discount).toBe(-40);
+  });
 });
