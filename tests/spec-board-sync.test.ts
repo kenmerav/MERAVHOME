@@ -23,9 +23,19 @@ it("sends the board one way without adding Materials selections or replacing boa
 it("imports included board selections with exact source references, image and variant URL", () => {
   const result = run(board([layer({ materialQuantity: null })]));
   expect(result.inserts).toHaveLength(1);
-  expect(result.inserts[0]).toMatchObject({ id: itemId, project_id: project, source_board_page_id: "shared", source_board_element_id: "sink-layer", image_url: product.image_url, product_url: product.product_url, quantity: null, quantity_tbd: true });
+  expect(result.inserts[0]).toMatchObject({ id: itemId, project_id: project, source_board_page_id: "shared", source_board_element_id: "sink-layer", image_url: product.image_url, product_url: product.product_url, quantity: 1, quantity_tbd: false });
   expect(result.state.pages[0].elements[0].materialItemId).toBe(itemId);
   expect(run(result.state, result.inserts).inserts).toHaveLength(0);
+});
+it("defaults a new blank count to one but preserves a deliberate TBD and measured materials", () => {
+  expect(run(board([layer({ label: "Couch", materialCategory: "Furniture", materialQuantity: null })])).inserts[0]).toMatchObject({ quantity: 1, quantity_tbd: false });
+  expect(run(board([layer({ label: "Couch", materialCategory: "Furniture", materialQuantity: null, materialQuantityTbd: true })])).inserts[0]).toMatchObject({ quantity: null, quantity_tbd: true });
+  expect(run(board([layer({ label: "Shower tile", materialCategory: "Tile & Stone", materialQuantity: null })])).inserts[0]).toMatchObject({ quantity: null, quantity_tbd: true });
+});
+it("does not replace an existing saved TBD merely because a blank board count now defaults to one", () => {
+  const state = board([layer({ materialItemId: itemId, materialQuantity: null })]);
+  const first = run(state, [material({ quantity: null, quantity_tbd: true })]);
+  expect(first.updates.some(update => "quantity" in update.patch)).toBe(false);
 });
 it.each([null, "Hardware", "Cabinetry & Hardware"])("sends cabinet hardware to Cabinetry from a board category of %s", materialCategory => {
   const pull = { ...product, category: "Hardware", name: "Cabinet Pull", product_url: "https://vendor.example/cabinet-pull" };

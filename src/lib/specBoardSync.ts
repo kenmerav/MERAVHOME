@@ -5,6 +5,8 @@ import { selectionItemCategory } from "@/lib/roomTemplates";
 import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { cleanUuid } from "@/lib/ids";
 import { createBoardMaterialsSnapshot, boardMaterialsFingerprint } from "@/lib/boardMaterialsSnapshot";
+import { boardBlankQuantityDefault } from "@/lib/boardBlankQuantityDefault";
+import { boardPageQuantity } from "@/lib/boardMaterialQuantity";
 
 type Layer = Record<string, any> & { id: string; type: string };
 type Page = Record<string, any> & { id: string; elements: Layer[] };
@@ -158,7 +160,9 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
     const newSamePageCopy = refs.some(ref => ref.newLayer &&
       (perPage.get(ref.page.id)?.length || 0) > 1);
     if (!isNew && (!importSelections || (!newSamePageCopy && !refs.some(ref => ref.changedQuantity)))) continue;
-    const counts = [...perPage.values()].map(layers => layers[0].designAccuracySourceId ?
+    const counts = [...perPage.values()].map(layers => isNew
+      ? boardPageQuantity(layers.map(layer => boardBlankQuantityDefault({ ...layer, materialCategory: layer.materialCategory || item.category })))
+      : layers[0].designAccuracySourceId ?
       (typeof layers[0].materialQuantity === "number" && layers[0].materialQuantity > 0 ? layers[0].materialQuantity : null) : layers.length > 1 ? layers.length
       : typeof layers[0].materialQuantity === "number" && layers[0].materialQuantity > 0 ? layers[0].materialQuantity : null);
     const quantity = counts.every(count => count != null) ? Math.max(...counts as number[]) : null;

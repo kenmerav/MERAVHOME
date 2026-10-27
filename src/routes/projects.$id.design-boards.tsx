@@ -127,6 +127,7 @@ import {
 import { selectionQuantityUnitFromSpec, specQuantityDatabasePatch } from "@/lib/specQuantity";
 import { cleanProductDetail } from "@/lib/productDetails";
 import { BoardQuantityReviewDialog } from "@/components/BoardQuantityReviewDialog";
+import { boardBlankQuantityDefault } from "@/lib/boardBlankQuantityDefault";
 import {
   boardQuantityConflict,
   findBoardMaterialForSend,
@@ -1966,7 +1967,7 @@ function ProjectDesignBoardsPage() {
     // original before sending to materials, the catalog should follow that choice
     // instead of keeping an older background-removed cutout.
     const productImageUrl = element.src || element.backgroundRemovedUrl || null;
-    const quantityFields = boardMaterialQuantity(element, quantityOverride);
+    const quantityFields = boardMaterialQuantity(boardBlankQuantityDefault({ ...element, materialCategory }), quantityOverride);
     const quantity = quantityFields.quantity;
     const currentMaterials = options.materials || (await readBoardSendMaterials(supabase, id));
     const existingMaterial = findBoardMaterialForSend(
@@ -2275,7 +2276,7 @@ function ProjectDesignBoardsPage() {
             element.materialQuantityUnit || "each",
             String(element.materialWastePercent || 0),
           ].join("::");
-          const quantity = boardPageQuantity([element]);
+          const quantity = boardPageQuantity([boardBlankQuantityDefault(element)]);
           const existing = groups.get(key);
           if (existing) {
             existing.elements.push({ page, element });
@@ -2299,7 +2300,7 @@ function ProjectDesignBoardsPage() {
           elementsByPage.set(page.id, [...(elementsByPage.get(page.id) ?? []), element]);
         }
         const pageQuantities = Array.from(elementsByPage.values()).map((pageElements) => {
-          return boardPageQuantity(pageElements);
+          return boardPageQuantity(pageElements.map(boardBlankQuantityDefault));
         });
         group.quantity = pageQuantities.includes(null)
           ? null
