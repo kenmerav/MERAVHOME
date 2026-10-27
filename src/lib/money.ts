@@ -46,7 +46,13 @@ export function clientPriceFromMarkup({
   return Math.round(base * (1 + percent / 100) * 100) / 100;
 }
 
-export function procurementTotals(items: any[], taxRate: string | number = 0) {
+export function procurementTotals(
+  items: any[],
+  taxRate: string | number = 0,
+  options: { unknownAsZero?: boolean } = {},
+) {
+  const contribution = (value: number) =>
+    options.unknownAsZero && !Number.isFinite(value) ? 0 : value;
   const money = items.reduce(
     (sum, item) => {
       const product = item.room_product?.product;
@@ -93,11 +99,11 @@ export function procurementTotals(items: any[], taxRate: string | number = 0) {
       return {
         client:
           sum.client +
-          (missingPrice || incompatibleUnit ? Number.NaN : moneyValue(clientPrice) * qty),
+          contribution(missingPrice || incompatibleUnit ? Number.NaN : moneyValue(clientPrice) * qty),
         cost:
           sum.cost +
-          (missingCost || incompatibleUnit ? Number.NaN : moneyValue(product?.unit_cost) * qty),
-        shipping: sum.shipping + moneyValue(product?.shipping) * qty,
+          contribution(missingCost || incompatibleUnit ? Number.NaN : moneyValue(product?.unit_cost) * qty),
+        shipping: sum.shipping + contribution(moneyValue(product?.shipping) * qty),
         unknownQuantities: sum.unknownQuantities + (Number.isFinite(qty) ? 0 : 1),
         missingPrices: sum.missingPrices + (missingPrice ? 1 : 0),
         missingCosts: sum.missingCosts + (missingCost ? 1 : 0),

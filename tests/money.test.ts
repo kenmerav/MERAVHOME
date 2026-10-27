@@ -121,4 +121,34 @@ describe("procurement totals from the Spec Book", () => {
     ]);
     expect(totals.subtotal).toBe(225);
   });
+
+  it("adds known amounts in Procurement while TBD quantities and prices contribute zero", () => {
+    const totals = procurementTotals([
+      item("$100", 2),
+      item("$80", null, { quantity_tbd: true }),
+      item(null, 3),
+    ], 10, { unknownAsZero: true });
+    expect(totals.subtotal).toBe(200);
+    expect(totals.cost).toBe(300);
+    expect(totals.shipping).toBe(25);
+    expect(totals.tax).toBe(20);
+    expect(totals.total).toBe(245);
+    expect(totals.unknownQuantities).toBe(1);
+    expect(totals.missingPrices).toBe(1);
+  });
+
+  it("counts a missing cost and mismatched units as zero without changing saved values", () => {
+    const known = item("$100", 2);
+    known.room_product.product.unit_cost = null as unknown as string;
+    const tile = item("$8", 5, { quantity_unit: "box", category: "Tile & Stone" });
+    tile.room_product.product = { ...tile.room_product.product, name: "Tile", price_unit: "sq_ft" } as typeof tile.room_product.product;
+    const original = structuredClone([known, tile]);
+    const totals = procurementTotals([known, tile], 0, { unknownAsZero: true });
+    expect(totals.subtotal).toBe(200);
+    expect(totals.cost).toBe(0);
+    expect(totals.profit).toBe(200);
+    expect(totals.missingCosts).toBe(1);
+    expect(totals.incompatibleUnits).toBe(1);
+    expect([known, tile]).toEqual(original);
+  });
 });
