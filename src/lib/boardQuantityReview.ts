@@ -23,6 +23,10 @@ export type BoardMaterialTarget = {
 };
 const text = (value?: string | null) => (value || "").trim().replace(/\s+/g, " ").toLowerCase();
 const url = (value?: string | null) => (value || "").trim().replace(/\/+$/, "").toLowerCase();
+const meaningfulProductName = (value?: string | null) =>
+  value?.trim() && !/^(?:unlabeled|unnamed|untitled)(?: item| product)?$/i.test(value.trim())
+    ? value.trim()
+    : null;
 export function findBoardMaterialForSend(target: BoardMaterialTarget, items: MaterialItem[]) {
   const matches = (item: MaterialItem, ignoreUrl = false) =>
     item.room_id === target.roomId &&
@@ -56,25 +60,44 @@ export function boardQuantityReviewKey(
 export type BoardQuantityConflict = {
   key: string;
   materialId: string;
+  roomId: string;
   itemLabel: string;
   roomName: string;
   spec: SpecQuantityPatch;
   board: SpecQuantityPatch;
+  imageUrl?: string | null;
+  productName?: string | null;
+  productUrl?: string | null;
+  boardPageId?: string;
+  boardElementId?: string;
 };
-export type BoardQuantityDecisions = Record<string, "keep" | "board">;
+export type BoardQuantityDecision =
+  "keep" | "board" | { kind: "custom"; quantity: SpecQuantityPatch };
+export type BoardQuantityDecisions = Record<string, BoardQuantityDecision>;
 export function boardQuantityConflict(
   item: MaterialItem,
   board: SpecQuantity,
   roomName: string,
+  context?: Pick<
+    BoardQuantityConflict,
+    "imageUrl" | "productName" | "productUrl" | "boardPageId" | "boardElementId"
+  >,
 ): BoardQuantityConflict | null {
   return boardQuantitiesDiffer(item, board)
     ? {
         key: boardQuantityReviewKey(item.id, item, board),
         materialId: item.id,
+        roomId: item.room_id,
         itemLabel: item.item_label,
         roomName,
         spec: quantityForReview(item),
         board: quantityForReview(board),
+        imageUrl: context?.imageUrl || item.image_url || item.product?.image_url || null,
+        productName:
+          meaningfulProductName(context?.productName) || meaningfulProductName(item.product?.name),
+        productUrl: context?.productUrl || item.product_url || item.product?.product_url || null,
+        boardPageId: context?.boardPageId,
+        boardElementId: context?.boardElementId,
       }
     : null;
 }

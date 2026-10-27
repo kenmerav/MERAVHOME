@@ -21,6 +21,7 @@ const initial = [
   {
     id: "pendant",
     project_id: "test",
+    room_id: "kitchen",
     item_label: "Island pendants",
     quantity: 4,
     quantity_tbd: false,
@@ -30,11 +31,25 @@ const initial = [
   {
     id: "tile",
     project_id: "test",
+    room_id: "kitchen",
     item_label: "Backsplash tile",
     quantity: 100,
     quantity_tbd: false,
     quantity_unit: "square_feet",
     waste_percent: 15,
+  },
+  {
+    id: "unnamed",
+    project_id: "test",
+    room_id: "kitchen",
+    item_label: "Unlabeled Item",
+    quantity: 2,
+    quantity_tbd: false,
+    quantity_unit: "count",
+    waste_percent: 0,
+    image_url:
+      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cpath d='M25 53h50l-11-28H36zM50 53v22M36 76h28' fill='none' stroke='%236b6157' stroke-width='4'/%3E%3C/svg%3E",
+    product: { name: "Example table lamp" },
   },
 ] as MaterialItem[];
 const board = {
@@ -60,9 +75,12 @@ function TestPage() {
       setItems((current) =>
         current.map((item) => {
           const conflict = conflicts?.find((c) => c.materialId === item.id);
-          return conflict && decisions[conflict.key] === "board"
-            ? { ...item, ...specQuantityDatabasePatch(conflict.board) }
-            : item;
+          const decision = conflict && decisions[conflict.key];
+          if (conflict && decision === "board")
+            return { ...item, ...specQuantityDatabasePatch(conflict.board) };
+          if (decision && typeof decision === "object" && decision.kind === "custom")
+            return { ...item, ...specQuantityDatabasePatch(decision.quantity) };
+          return item;
         }),
       );
       setMessage("Local send complete. Unselected quantities preserved.");
@@ -128,7 +146,12 @@ function TestPage() {
         className="bg-ink px-5 py-3 text-sm text-white"
         onClick={() => {
           const next = items
-            .map((item) => boardQuantityConflict(item, board, "Kitchen"))
+            .map((item) =>
+              boardQuantityConflict(item, board, "Kitchen", {
+                boardPageId: "sample-page",
+                boardElementId: item.id,
+              }),
+            )
             .filter((value): value is BoardQuantityConflict => value !== null);
           if (next.length) setConflicts(next);
           else setMessage("Quantities match. Local send complete.");
@@ -148,7 +171,14 @@ function TestPage() {
       <p role="status" className="mt-5 text-sm">
         {message}
       </p>
-      {conflicts && <BoardQuantityReviewDialog conflicts={conflicts} onResolve={resolve} />}
+      {conflicts && (
+        <BoardQuantityReviewDialog
+          conflicts={conflicts}
+          onResolve={resolve}
+          projectId="local-test"
+          onViewBoard={(item) => setMessage(`Local preview: show ${item.itemLabel} on its board.`)}
+        />
+      )}
     </main>
   );
 }

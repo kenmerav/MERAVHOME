@@ -51,16 +51,39 @@ export async function saveReviewedBoardMaterial(
   const material = current as unknown as MaterialItem;
   const key = boardQuantityReviewKey(materialId, material, proposed);
   const differs = boardQuantitiesDiffer(material, proposed);
-  if (differs && !decisions[key])
+  const priorReviewForItem = Object.keys(decisions).some((candidate) => {
+    try {
+      const identity = JSON.parse(candidate);
+      return Array.isArray(identity) && identity[0] === materialId;
+    } catch {
+      return false;
+    }
+  });
+  if ((differs || priorReviewForItem) && !decisions[key])
     throw new Error(
       "A Spec Book quantity changed since review. Send the board again to review the latest values.",
     );
   // Even when values match, omit quantity columns unless the user explicitly chose replacement.
+  const decision = decisions[key];
+  let replacement;
+  if (decision === "board") replacement = validateSpecQuantityPatch(quantityForReview(proposed));
+  else if (decision && typeof decision === "object" && decision.kind === "custom") {
+    replacement = validateSpecQuantityPatch(decision.quantity);
+    const saved = quantityForReview(material);
+    if (
+      replacement.quantity_unit !== saved.quantity_unit ||
+      (replacement.waste_percent || 0) !== (saved.waste_percent || 0) ||
+      (replacement.quantity === null && !replacement.quantity_tbd)
+    )
+      throw new Error(
+        "The chosen quantity is invalid or its measurement changed. Review the item and send again.",
+      );
+  } else if (decision !== undefined && decision !== "keep") {
+    throw new Error("The quantity choice is invalid. Review the item and send again.");
+  }
   const safePatch = {
     ...boardMaterialUpdatePatch(patch, false),
-    ...(decisions[key] === "board"
-      ? specQuantityDatabasePatch(validateSpecQuantityPatch(quantityForReview(proposed)))
-      : {}),
+    ...(replacement ? specQuantityDatabasePatch(replacement) : {}),
   };
   const update = async (values: Partial<MaterialItem>) =>
     client

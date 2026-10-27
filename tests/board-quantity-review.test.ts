@@ -117,6 +117,126 @@ describe("quantity review before board sends", () => {
     );
     expect(state.row.quantity).toBe(1);
   });
+  it("saves an entered quantity while preserving the reviewed measurement and waste", async () => {
+    const { state, client } = store(
+      item({
+        quantity: 100,
+        quantity_unit: "square_feet",
+        selection_quantity_unit: "square_feet",
+        waste_percent: 15,
+      }),
+    );
+    const conflict = boardQuantityConflict(state.row, proposed, "Kitchen")!;
+    await saveReviewedBoardMaterial(
+      client,
+      "project",
+      "pendant",
+      { notes: "Board note" },
+      proposed,
+      {
+        [conflict.key]: {
+          kind: "custom",
+          quantity: {
+            quantity: 125.5,
+            quantity_tbd: false,
+            quantity_unit: "square_feet",
+            waste_percent: 15,
+          },
+        },
+      },
+    );
+    expect(state.row).toMatchObject({
+      quantity: 125.5,
+      quantity_tbd: false,
+      selection_quantity_unit: "square_feet",
+      waste_percent: 15,
+      notes: "Board note",
+    });
+  });
+  it("accepts a chosen TBD and rejects invalid counts, changed units, and changed waste", async () => {
+    const { state, client } = store();
+    const conflict = boardQuantityConflict(state.row, proposed, "Kitchen")!;
+    for (const quantity of [
+      { quantity: 1.5, quantity_tbd: false, quantity_unit: "count", waste_percent: 0 },
+      { quantity: null, quantity_tbd: false, quantity_unit: "count", waste_percent: 0 },
+      { quantity: 3, quantity_tbd: false, quantity_unit: "square_feet", waste_percent: 0 },
+      { quantity: 3, quantity_tbd: false, quantity_unit: "count", waste_percent: 5 },
+    ] as const) {
+      await expect(
+        saveReviewedBoardMaterial(client, "project", "pendant", {}, proposed, {
+          [conflict.key]: { kind: "custom", quantity },
+        }),
+      ).rejects.toThrow();
+    }
+    expect(state.writes).toHaveLength(0);
+    await saveReviewedBoardMaterial(client, "project", "pendant", {}, proposed, {
+      [conflict.key]: {
+        kind: "custom",
+        quantity: { quantity: null, quantity_tbd: true, quantity_unit: "count", waste_percent: 0 },
+      },
+    });
+    expect(state.row).toMatchObject({ quantity: null, quantity_tbd: true });
+  });
+  it("does not replay a custom choice after the saved quantity or board changes", async () => {
+    const { state, client } = store();
+    const conflict = boardQuantityConflict(state.row, proposed, "Kitchen")!;
+    const decision = {
+      [conflict.key]: { kind: "custom" as const, quantity: { ...proposed, quantity: 3 } },
+    };
+    state.row.quantity = 7;
+    await expect(
+      saveReviewedBoardMaterial(client, "project", "pendant", {}, proposed, decision),
+    ).rejects.toThrow(/changed since review/);
+    state.row.quantity = 1; // A concurrent edit can also make the saved value equal the board.
+    await expect(
+      saveReviewedBoardMaterial(client, "project", "pendant", {}, proposed, decision),
+    ).rejects.toThrow(/changed since review/);
+    state.row.quantity = 4;
+    await expect(
+      saveReviewedBoardMaterial(
+        client,
+        "project",
+        "pendant",
+        {},
+        { ...proposed, quantity: 2 },
+        decision,
+      ),
+    ).rejects.toThrow(/changed since review/);
+    expect(state.writes).toHaveLength(0);
+  });
+  it("uses the actual board item image, product details and target when reviewing an unlabeled selection", () => {
+    const conflict = boardQuantityConflict(
+      item({ item_label: "Unlabeled Item", image_url: "old.png" }),
+      proposed,
+      "Bar Room",
+      {
+        imageUrl: "board.png",
+        productName: "Example lamp",
+        productUrl: "https://store.example/lamp",
+        boardPageId: "page",
+        boardElementId: "layer",
+      },
+    );
+    expect(conflict).toMatchObject({
+      materialId: "pendant",
+      roomId: "kitchen",
+      imageUrl: "board.png",
+      productName: "Example lamp",
+      boardPageId: "page",
+      boardElementId: "layer",
+    });
+    expect(
+      boardQuantityConflict(
+        item({
+          item_label: "Unlabeled Item",
+          product: { name: "Known lamp" } as MaterialItem["product"],
+        }),
+        proposed,
+        "Kitchen",
+        { productName: "Unlabeled Item" },
+      )?.productName,
+    ).toBe("Known lamp");
+  });
   it("rejects missing approval, a newer Spec Book edit, and a changed board proposal", async () => {
     const { state, client } = store();
     const conflict = boardQuantityConflict(state.row, proposed, "Kitchen")!;

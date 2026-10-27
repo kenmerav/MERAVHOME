@@ -1983,12 +1983,19 @@ function ProjectDesignBoardsPage() {
     );
     const existingMaterialId = existingMaterial?.id || null;
     const conflict = existingMaterial
-      ? boardQuantityConflict(existingMaterial, quantityFields, room.name)
+      ? boardQuantityConflict(existingMaterial, quantityFields, room.name, {
+          imageUrl: productImageUrl, productName: element.productName || linkedProduct?.name,
+          productUrl, boardPageId: page.id, boardElementId: element.id,
+        })
       : null;
     let quantityDecisions = options.quantityDecisions || {};
     if (conflict && options.quantityDecisions === undefined) {
+      const reviewedPage = JSON.stringify(createPageMaterialsSyncSnapshot(page));
       const reviewed = await requestQuantityReview([conflict]);
       if (!reviewed) return { status: "skipped" };
+      const currentPage = boardStateRef.current.pages.find((candidate) => candidate.id === page.id);
+      if (!currentPage || reviewedPage !== JSON.stringify(createPageMaterialsSyncSnapshot(currentPage)))
+        throw new Error("The design board changed during quantity review. Send it again to review the latest values.");
       quantityDecisions = reviewed;
     }
     if (conflict && !quantityDecisions[conflict.key])
@@ -2329,6 +2336,10 @@ function ProjectDesignBoardsPage() {
               existing,
               boardMaterialQuantity(element, group.quantity),
               rooms.find(room => room.id === group.roomId)?.name || group.page.title,
+              { imageUrl: element.src || element.backgroundRemovedUrl || null,
+                productName: element.productName || linkedProduct?.name,
+                productUrl: boardElementProductUrlForMaterialSync(element, linkedProduct),
+                boardPageId: group.page.id, boardElementId: element.id },
             )
           : null;
         if (conflict && !conflicts.some(item => item.key === conflict.key)) conflicts.push(conflict);
@@ -4720,7 +4731,10 @@ function ProjectDesignBoardsPage() {
           </Dialog>
 
           {quantityReview && (
-            <BoardQuantityReviewDialog conflicts={quantityReview} onResolve={resolveQuantityReview} />
+            <BoardQuantityReviewDialog conflicts={quantityReview} onResolve={resolveQuantityReview} projectId={id}
+              onViewBoard={item => {
+                if (item.boardPageId && item.boardElementId) reviewMissingMaterialInfoItem(item.boardPageId, item.boardElementId);
+              }} />
           )}
           <Dialog
             open={pendingMaterialSend !== null}
