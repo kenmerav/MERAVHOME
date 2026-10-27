@@ -9,7 +9,7 @@ import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, spec
 import { supabase } from "@/integrations/supabase/client";
 import { accuracyInvoiceTerms } from "@/lib/designAccuracyProjection";
 import { materialPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
-import { productInvoiceDiscount } from "@/lib/productInvoiceDiscount";
+import { productInvoiceDiscount, productInvoiceDiscountLineIssues } from "@/lib/productInvoiceDiscount";
 import {
   Dialog,
   DialogContent,
@@ -186,7 +186,7 @@ export function ProductInvoiceCreator({
   };
 
   const generateStripeLink = async () => {
-    if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check retail prices, client prices, quantities and units before showing the discount." : "Select at least one product with a client price first.");
+    if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check prices, quantities and units before showing the discount." : "Select at least one product with a client price first.");
     setGeneratingLink(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -220,7 +220,7 @@ export function ProductInvoiceCreator({
     if (saveInProgress.current || generatingLink) return;
     if (!projectId)
       return toast.error("Choose a single project before creating a product invoice.");
-    if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check retail prices, client prices, quantities and units before showing the discount." : "Select products with a client price before saving.");
+    if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check prices, quantities and units before showing the discount." : "Select products with a client price before saving.");
     saveInProgress.current = true;
     setSaving(true);
     try {
@@ -309,7 +309,10 @@ export function ProductInvoiceCreator({
               <p className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Items with TBD quantities start unchecked. Confirm their quantity before including them in an invoice.</p>
             )}
             {invalidQuantities.length > 0 && (
-              <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">Enter a known, positive quantity for every selected item before saving, downloading, or creating a payment link.</p>
+              <div role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                Enter a known, positive quantity for every selected item before saving, downloading, or creating a payment link.
+                <ul className="mt-2 list-disc pl-5">{invalidQuantities.map((line) => <li key={line.sourceId}>{line.name}{line.room ? ` — ${line.room}` : ""}</li>)}</ul>
+              </div>
             )}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Field
@@ -524,6 +527,14 @@ export function ProductInvoiceCreator({
                               }
                               className="text-right"
                             />
+                            {draft.showDesignerDiscount && <label className="mt-2 block text-xs text-muted-foreground">
+                              Price basis
+                              <select aria-label={`Price basis for ${line.name}`} value={line.priceUnit ?? ""} onChange={(event) => updateLine(line.sourceId, { priceUnit: event.target.value === "unit" || event.target.value === "sq_ft" ? event.target.value : null })} className="mt-1 h-9 w-full border border-input bg-background px-2 text-xs text-ink">
+                                <option value="">Choose price basis</option>
+                                <option value="unit">Per unit</option>
+                                <option value="sq_ft">Per sq ft</option>
+                              </select>
+                            </label>}
                           </td>
                           <td className="px-3 py-3">
                             <Input
@@ -563,7 +574,14 @@ export function ProductInvoiceCreator({
               Show designer discount on invoice
             </label>
             {draft.showDesignerDiscount && (discount.incomplete > 0 ? (
-              <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Add retail and client prices and matching units for every selected item in Procurement before showing the discount on the invoice. You can also turn this option off.</p>
+              <div role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Check these selected items before showing the discount. You can edit client prices and price basis here; correct any invalid retail price in Procurement. A blank retail price uses the client price.
+                <ul className="mt-2 max-h-48 list-disc overflow-y-auto pl-5">
+                  {draft.lines.filter((line) => productInvoiceDiscountLineIssues(line).length > 0).map((line) => (
+                    <li key={line.sourceId}>{line.name}{line.room ? ` — ${line.room}` : ""}: {productInvoiceDiscountLineIssues(line).join(", ")}</li>
+                  ))}
+                </ul>
+              </div>
             ) : <>
               <SummaryStat label="Full retail price" value={discount.retail} />
               <SummaryStat label="Designer discount" value={discount.discount === 0 ? 0 : -discount.discount} />

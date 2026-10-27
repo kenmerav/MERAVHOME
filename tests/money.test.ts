@@ -162,18 +162,28 @@ describe("procurement totals from the Spec Book", () => {
     expect(totals.total).toBe(186);
   });
 
-  it("does not invent discounts when either price, quantity or price unit is unknown", () => {
+  it("uses the client price when retail is blank and does not invent discounts for unknown amounts", () => {
     const missingRetail = item("$80", 2);
     const missingClient = item(null, 1);
     Object.assign(missingClient.room_product.product, { retail_price: "$100" });
     const unknownQuantity = item("$80", null, { quantity_tbd: true });
     Object.assign(unknownQuantity.room_product.product, { retail_price: "$100" });
     const totals = procurementTotals([missingRetail, missingClient, unknownQuantity], 0, { unknownAsZero: true });
-    expect(totals.retail).toBe(100);
+    expect(totals.retail).toBe(260);
     expect(totals.discount).toBe(0);
-    expect(totals.missingRetailPrices).toBe(1);
+    expect(totals.missingRetailPrices).toBe(0);
     expect(totals.missingPrices).toBe(1);
     expect(totals.unknownQuantities).toBe(1);
+  });
+
+  it("uses an explicitly entered zero retail price and rejects invalid retail prices", () => {
+    const free = item("$80", 2);
+    Object.assign(free.room_product.product, { retail_price: "$0" });
+    expect(procurementTotals([free], 0, { unknownAsZero: true }).discount).toBe(-160);
+    Object.assign(free.room_product.product, { retail_price: "invalid" });
+    const totals = procurementTotals([free], 0, { unknownAsZero: true });
+    expect(totals.missingRetailPrices).toBe(1);
+    expect(totals.discount).toBe(0);
   });
 
   it("shows an increase as a negative discount rather than inventing savings", () => {

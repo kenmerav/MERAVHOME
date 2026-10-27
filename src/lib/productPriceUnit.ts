@@ -33,6 +33,7 @@ export function inferProductPriceUnit(context: PriceUnitContext, { allowAreaDefa
   catch { /* Item metadata can still identify the usual selling unit. */ }
   const name = `${context.name || ""} ${context.subcategory || ""} ${path}`;
   if (/\b(?:interior|exterior) doors?\b|\bdoor slabs?\b/i.test(name)) return "unit";
+  if (/\b(?:filing cabinets?|chaises?|bedding|duvets?|duvet covers?|pillows?|pillow covers?)\b/i.test(name)) return "unit";
   // Discrete products win over broad or misassigned categories (e.g. rugs in Flooring).
   if (/\b(?:faucets?|sinks?|toilets?|tubs?|shower\s*(?:heads?|systems?|trim)|valves?|drains?|pot fillers?|pendants?|sconces?|chandeliers?|lamps?|ceiling fans?|(?:ceiling|vanity|wall|pendant|recessed) lights?|light fixtures?|mirrors?|knobs?|pulls?|handles?|hooks?|hinges?|towel\s*(?:bars?|rings?|holders?)|(?:toilet paper|tp) holders?|dispensers?|vanit(?:y|ies)|refrigerators?|fridges?|dishwashers?|microwaves?|ranges?|ovens?|washers?|dryers?|sofas?|chairs?|benches?|desks?|tables?|beds?|ottomans?|rugs?|mats?|planters?|plants?|signage|water fountains?|roman clay|limewash|wallpaper|reformers?|pilates|yoga)\b/i.test(name)) return "unit";
   if (/\b(?:per|priced by|sold by|sold as)\s+(?:the\s+)?(?:box|case|carton|sheet|piece|set|roll)\b|\b(?:box|case|pack)\s+of\s+\d+/i.test(name)) return "unit";

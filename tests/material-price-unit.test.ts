@@ -10,7 +10,7 @@ function blank(): ProductPricingDraft {
 }
 
 describe("Materials price save and price basis", () => {
-  it.each(["Kitchen sink faucet", "Ceiling light", "Bathroom mirror", "Cabinet knob", "Dishwasher", "Sofa", "Pilates reformer", "Rug", "Roman clay", "Interior Doors"])("sets the obvious item price basis for %s", name => {
+  it.each(["Kitchen sink faucet", "Ceiling light", "Bathroom mirror", "Cabinet knob", "Dishwasher", "Sofa", "Pilates reformer", "Rug", "Roman clay", "Interior Doors", "Filing Cabinet", "Thornton Chaise", "Bedding", "lumbar pillow"])("sets the obvious item price basis for %s", name => {
     expect(inferProductPriceUnit({ name, price: "$25", category: "Flooring" })).toBe("unit");
   });
   it("defaults ordinary tile and flooring to square feet and respects explicit sheet or box prices", () => {

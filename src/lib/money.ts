@@ -30,6 +30,11 @@ export function isKnownPrice(value: unknown) {
       /^\s*\$?\s*(?:\d[\d,]*(?:\.\d+)?|\.\d+)\s*(?:\/\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet)|sf|each|item|unit|sheet|piece|set|box|carton|case|roll|gallon))?\s*$/i.test(value);
 }
 
+/** A blank retail price means the client pays retail; an invalid entered price stays invalid. */
+export function retailPriceOrClient(retail: string | number | null | undefined, client: string | number | null | undefined) {
+  return retail == null || (typeof retail === "string" && !retail.trim()) ? client : retail;
+}
+
 export function clientPriceFromMarkup({
   retailPrice,
   ourPrice,
@@ -96,7 +101,7 @@ export function procurementTotals(
       const clientPrice = fact ? fact.price : product?.price;
       const missingPrice = qty !== 0 && !isKnownPrice(clientPrice);
       const missingCost = qty !== 0 && !isKnownPrice(product?.unit_cost);
-      const retailPrice = product?.retail_price;
+      const retailPrice = retailPriceOrClient(product?.retail_price, clientPrice);
       const missingRetail = qty !== 0 && !isKnownPrice(retailPrice);
       const comparable = Number.isFinite(qty) && !incompatibleUnit && !missingPrice && !missingRetail;
       return {
