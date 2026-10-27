@@ -391,7 +391,7 @@ function ProcurementPage() {
     (item) => item.room_product?.product && item.room_product.approval_status === "approved",
   );
   const orderableVisibleItems = visibleItems.filter(
-    (item) => item.room_product?.product && item.room_product.approval_status !== "declined",
+    (item) => item.room_product?.approval_status !== "declined",
   );
   const needsReselectionCount = projectItems.filter(
     (item) => item.room_product?.approval_status === "declined",
@@ -455,6 +455,16 @@ function ProcurementPage() {
           <MoneyStat label="Our Price" value={money.cost} />
           <MoneyStat label="Profit" value={money.profit} />
         </div>
+
+        {(money.unknownQuantities > 0 || money.missingPrices > 0 || money.missingCosts > 0 || money.incompatibleUnits > 0) && (
+          <p className="mb-6 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Totals may show TBD until the Spec Book has a price and order quantity with matching units for every item.
+            {money.unknownQuantities > 0 && ` ${money.unknownQuantities} missing or TBD quantities.`}
+            {money.missingPrices > 0 && ` ${money.missingPrices} missing prices.`}
+            {money.missingCosts > 0 && ` ${money.missingCosts} missing our prices, so cost and profit are TBD.`}
+            {money.incompatibleUnits > 0 && ` ${money.incompatibleUnits} price and quantity units need review.`}
+          </p>
+        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-12">
           <Stat label="Total Items" n={total} />

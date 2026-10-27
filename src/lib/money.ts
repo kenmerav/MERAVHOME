@@ -1,3 +1,6 @@
+import { specOrderQuantity, specQuantityUnit } from "./specQuantity";
+import { materialPriceUnit } from "./productPriceUnit";
+
 export function moneyValue(value?: string | number | null) {
   if (value == null) return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -50,6 +53,9 @@ export function procurementTotals(items: any[], taxRate: string | number = 0) {
       const material = item.material as {
         quantity?: number | null;
         quantity_tbd?: boolean;
+        quantity_unit?: import("./specQuantity").SpecQuantityUnit;
+        selection_quantity_unit?: import("./specQuantity").SpecQuantityUnit | null;
+        waste_percent?: number;
         design_accuracy_fact?: import("./designAccuracy").AccuracyOutput | null;
       } | null;
       const fact = material?.design_accuracy_fact;
@@ -59,19 +65,54 @@ export function procurementTotals(items: any[], taxRate: string | number = 0) {
           : null
         : material?.quantity_tbd
           ? null
-          : material?.quantity;
+          : material
+            ? specOrderQuantity({ ...material, quantity: material.quantity ?? null })
+            : null;
       const qty =
         typeof quantity === "number" && Number.isFinite(quantity) && quantity >= 0
           ? quantity
           : Number.NaN;
+      const priceUnit = material ? materialPriceUnit({ ...material, product }) : null;
+      const quantityUnit = material
+        ? specQuantityUnit({ ...material, quantity: material.quantity ?? null })
+        : null;
+      const incompatibleUnit = fact
+        ? !fact.priceUnit || fact.priceUnit !== fact.purchaseUnit
+        : (priceUnit === "sq_ft" && quantityUnit !== "square_feet") ||
+          (priceUnit === "unit" && quantityUnit === "square_feet");
+      const hasPrice = (value: unknown) =>
+        typeof value === "number"
+          ? Number.isFinite(value) && value >= 0
+          : typeof value === "string" &&
+            /^\s*\$?\s*(?:\d[\d,]*(?:\.\d+)?|\.\d+)\s*(?:\/\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet)|sf|each|item|unit|sheet|piece|set|box|carton|case|roll|gallon))?\s*$/i.test(
+              value,
+            );
+      const clientPrice = fact ? fact.price : product?.price;
+      const missingPrice = qty !== 0 && !hasPrice(clientPrice);
+      const missingCost = qty !== 0 && !hasPrice(product?.unit_cost);
       return {
-        client: sum.client + moneyValue(product?.price) * qty,
-        cost: sum.cost + moneyValue(product?.unit_cost) * qty,
+        client:
+          sum.client +
+          (missingPrice || incompatibleUnit ? Number.NaN : moneyValue(clientPrice) * qty),
+        cost:
+          sum.cost +
+          (missingCost || incompatibleUnit ? Number.NaN : moneyValue(product?.unit_cost) * qty),
         shipping: sum.shipping + moneyValue(product?.shipping) * qty,
         unknownQuantities: sum.unknownQuantities + (Number.isFinite(qty) ? 0 : 1),
+        missingPrices: sum.missingPrices + (missingPrice ? 1 : 0),
+        missingCosts: sum.missingCosts + (missingCost ? 1 : 0),
+        incompatibleUnits: sum.incompatibleUnits + (incompatibleUnit ? 1 : 0),
       };
     },
-    { client: 0, cost: 0, shipping: 0, unknownQuantities: 0 },
+    {
+      client: 0,
+      cost: 0,
+      shipping: 0,
+      unknownQuantities: 0,
+      missingPrices: 0,
+      missingCosts: 0,
+      incompatibleUnits: 0,
+    },
   );
   const subtotal = money.client;
   const tax = subtotal * ((Number(taxRate) || 0) / 100);
