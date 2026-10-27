@@ -857,11 +857,21 @@ export function buildProductInvoiceHtml(
 ) {
   const selected = draft.lines.filter((line) => line.selected);
   const discount = productInvoiceDiscount(draft.lines);
-  const rows = selected
-    .map(
-      (line) => `
-    <tr>
-      <td>
+  const rooms = new Map<string, { name: string; lines: ProductInvoiceLine[] }>();
+  for (const line of selected) {
+    const roomName = line.room.trim() || "Unassigned";
+    const roomKey = roomName.toLocaleLowerCase();
+    const group = rooms.get(roomKey) ?? { name: roomName, lines: [] };
+    group.lines.push(line);
+    rooms.set(roomKey, group);
+  }
+  const groupedRooms = [...rooms.entries()].sort(([a], [b]) => a === "unassigned" ? 1 : b === "unassigned" ? -1 : 0);
+  const columns = `<div class="invoice-row column-heading" role="row"><div class="cell" role="columnheader">Product</div><div class="cell" role="columnheader">Qty</div><div class="cell" role="columnheader">Unit Price</div><div class="cell" role="columnheader">Total</div></div>`;
+  const rows = groupedRooms.map(([, room]) => `
+    <div class="room-heading" role="rowheader">${escapeHtml(room.name)}</div>
+    ${room.lines.map((line) => `
+    <div class="invoice-row" role="row">
+      <div class="cell" role="cell">
         <div class="product-line">
           ${
             line.imageUrl
@@ -870,17 +880,16 @@ export function buildProductInvoiceHtml(
           }
           <div>
             <strong>${escapeHtml(line.name)}</strong>
-            <div class="muted">${escapeHtml([line.room, line.vendor, line.finish].filter(Boolean).join(" - "))}</div>
+            <div class="muted">${escapeHtml([line.room.trim(), line.vendor, line.finish].filter(Boolean).join(" - "))}</div>
           </div>
         </div>
-      </td>
-      <td class="center">${escapeHtml(line.quantity)}${line.quantityUnit === "square_feet" ? " Sq Ft" : ""}</td>
-      <td class="right">${formatMoney(moneyValue(line.unitPrice))}</td>
-      <td class="right">${formatMoney(lineProductSubtotal(line))}</td>
-    </tr>
-  `,
-    )
-    .join("");
+      </div>
+      <div class="cell center" role="cell">${escapeHtml(line.quantity)}${line.quantityUnit === "square_feet" ? " Sq Ft" : ""}</div>
+      <div class="cell right" role="cell">${formatMoney(moneyValue(line.unitPrice))}</div>
+      <div class="cell right" role="cell">${formatMoney(lineProductSubtotal(line))}</div>
+    </div>
+  `).join("")}
+  `).join("");
 
   return `<!doctype html>
 <html>
@@ -889,6 +898,7 @@ export function buildProductInvoiceHtml(
   <title>${escapeHtml(draft.invoiceName || "Product Invoice")}</title>
   <style>
     @page { size: letter; margin: 0.35in; }
+    @media print { .page { width: 100% !important; min-height: 0 !important; padding: 0 !important; } }
     body { margin: 0; font-family: Georgia, "Times New Roman", serif; color: #111; background: #fff; }
     .page { width: 8.5in; min-height: 10.5in; padding: 0.15in 0.25in; box-sizing: border-box; }
     .brand { text-align: center; margin: 0.05in 0 0.45in; }
@@ -897,16 +907,21 @@ export function buildProductInvoiceHtml(
     .top { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5in; font-size: 14px; margin-bottom: 0.35in; }
     .title { text-align: right; font-size: 25px; font-weight: 700; margin-bottom: 0.25in; }
     .meta { display: grid; grid-template-columns: 0.85in 1fr; gap: 0.12in; }
-    table { border-collapse: collapse; width: 100%; font-size: 13px; }
-    th, td { border: 1px solid #000; padding: 0.1in 0.08in; vertical-align: middle; }
-    th { background: #e9e7de; text-align: left; }
+    .invoice-table { width: 100%; font-size: 13px; }
+    .invoice-row { display: grid; grid-template-columns: 58% 10% 16% 16%; break-inside: avoid; page-break-inside: avoid; }
+    .cell { border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 0.08in; display: flex; align-items: center; min-width: 0; }
+    .cell:first-child { border-left: 1px solid #000; }
+    .column-heading .cell { background: #e9e7de; border-top: 1px solid #000; font-weight: 700; }
+    .room-heading { break-after: avoid; page-break-after: avoid; }
+    .room-heading { background: #f4f1ea; border: 1px solid #000; border-top: 0; padding: 0.08in; font-family: Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .product-line { display: flex; align-items: center; gap: 0.12in; }
-    .product-image { width: 0.82in; height: 0.82in; object-fit: contain; background: #f7f5ef; flex: 0 0 auto; }
+    .product-image { width: 0.72in; height: 0.72in; object-fit: contain; background: #f7f5ef; flex: 0 0 auto; }
     .product-image.placeholder { display: none; }
-    .center { text-align: center; }
-    .right { text-align: right; }
+    .center { justify-content: center; text-align: center; }
+    .right { justify-content: flex-end; text-align: right; }
     .muted { margin-top: 5px; color: #666; font-size: 11px; font-family: Arial, sans-serif; }
     .summary { width: 3.1in; margin-left: auto; margin-top: 0.3in; font-size: 14px; }
+    @media print { .summary { break-inside: avoid; page-break-inside: avoid; } }
     .summary-row { display: grid; grid-template-columns: 1fr 1.2in; gap: 0.08in; text-align: right; margin: 0.065in 0; }
     .total { border: 1px solid #000; background: #e9e7de; padding: 0.08in; font-size: 18px; font-weight: 700; text-align: center; display: block; }
     .pay { display: grid; grid-template-columns: 1fr 1.2in; border: 2px solid #000; margin: 0.22in 0; }
@@ -939,12 +954,7 @@ export function buildProductInvoiceHtml(
         </div>
       </div>
     </section>
-    <table>
-      <thead>
-        <tr><th>Product</th><th style="width:10%">Qty</th><th style="width:16%">Unit Price</th><th style="width:16%">Total</th></tr>
-      </thead>
-      <tbody>${rows || `<tr><td colspan="4" class="center">No products selected</td></tr>`}</tbody>
-    </table>
+    <div class="invoice-table" role="table" aria-label="Invoice items">${columns}${rows || `<div class="room-heading center">No products selected</div>`}</div>
     <section class="summary">
       ${draft.showDesignerDiscount && discount.incomplete === 0 ? `<div class="summary-row"><span>Full retail price:</span><span>${formatMoney(discount.retail)}</span></div>
       <div class="summary-row"><span>Designer discount:</span><span>${formatMoney(discount.discount === 0 ? 0 : -discount.discount)}</span></div>` : ""}
