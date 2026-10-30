@@ -215,6 +215,9 @@ export function ProcurementCartBuilder({
         }),
     [classifiedDrafts, categoryFilter, categoryById, sortBy],
   );
+  const showOrderQuantity = visibleDrafts.some(
+    ({ draft }) => categoryById.get(draft.specBookItemId) === "Tile & Stone",
+  );
   const selected = classifiedDrafts.filter(({ draft }) => draft.selected);
   const hiddenSelectedCount = selected.filter(
     ({ draft }) => categoryFilter && categoryById.get(draft.specBookItemId) !== categoryFilter,
@@ -682,7 +685,7 @@ export function ProcurementCartBuilder({
                   <th className="p-3">Unit</th>
                   <th className="p-3">Carton sq ft</th>
                   <th className="p-3">Waste %</th>
-                  <th className="p-3">Order qty</th>
+                  {showOrderQuantity && <th className="p-3">Order qty</th>}
                   <th className="p-3">Color</th>
                   <th className="p-3">Finish</th>
                   <th className="p-3">Size</th>
@@ -694,7 +697,7 @@ export function ProcurementCartBuilder({
               <tbody>
                 {visibleDrafts.length === 0 && (
                   <tr>
-                    <td colSpan={15} className="p-6 text-muted-foreground">
+                    <td colSpan={showOrderQuantity ? 15 : 14} className="p-6 text-muted-foreground">
                       No products in this category.
                     </td>
                   </tr>
@@ -906,8 +909,8 @@ export function ProcurementCartBuilder({
                         aria-label={`Waste percentage for ${draft.productName}`}
                       />
                     </td>
-                    <td className="p-3 text-xs leading-5">
-                      {draft.quantity
+                    {showOrderQuantity && <td className="p-3 text-xs leading-5">
+                      {categoryById.get(draft.specBookItemId) === "Tile & Stone" && draft.quantity
                         ? (() => {
                             const order = calculateProcurementOrderQuantity({
                               quantity: draft.quantity,
@@ -929,7 +932,7 @@ export function ProcurementCartBuilder({
                             );
                           })()
                         : "—"}
-                    </td>
+                    </td>}
                     {(["color", "finish", "size", "dimensions"] as ProcurementOptionKey[]).map(
                       (key) => (
                         <td key={key} className="p-3">
