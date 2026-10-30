@@ -92,7 +92,9 @@ export function buildSpecSpreadsheetRows(
         quantityUnit: specQuantityUnit(item),
         wastePercent: item.waste_percent || 0,
         waste: item.waste_percent ? `${item.waste_percent}%` : "",
-        orderQuantity: item.design_accuracy_fact ? item.design_accuracy_fact.purchaseQuantity === null ? "TBD" : `${item.design_accuracy_fact.purchaseQuantity} ${item.design_accuracy_fact.purchaseUnit}` : formatSpecQuantity({ ...item, quantity: specOrderQuantity(item) }),
+        orderQuantity: normalizeItemCategory(item.category) === "Tile & Stone"
+          ? item.design_accuracy_fact ? item.design_accuracy_fact.purchaseQuantity === null ? "TBD" : `${item.design_accuracy_fact.purchaseQuantity} ${item.design_accuracy_fact.purchaseUnit}` : formatSpecQuantity({ ...item, quantity: specOrderQuantity(item) })
+          : "",
         dimensions: product?.dimensions ?? "",
         sku: product?.sku ?? "",
         clientPrice: item.design_accuracy_fact?.price != null ? `${specPriceLabel(item.design_accuracy_fact.price)} / ${item.design_accuracy_fact.priceUnit || "price basis not set"}` : specPriceLabel(product?.price) ?? "",

@@ -46,6 +46,7 @@ export function normalizeItemCategory(value: string | null | undefined): ItemCat
   if (!trimmed) return null;
   if (/^Cabinetry\s*&\s*Hardware$/i.test(trimmed)) return "Cabinetry";
   if (/^Doors,\s*Base,\s*Case$/i.test(trimmed)) return "Doors Base & Case";
+  if (/^Tile\s*(?:\+|&|and)\s*Stone$/i.test(trimmed)) return "Tile & Stone";
   const canonical = ALL_CATEGORIES.find(category => category.toLowerCase() === trimmed.toLowerCase());
   if (canonical) return canonical;
   return null;

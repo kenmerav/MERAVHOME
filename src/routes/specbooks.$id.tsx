@@ -993,7 +993,9 @@ export function SpecSpreadsheetView({
               <div className="overflow-x-auto print:overflow-visible">
                 <SpreadsheetTable
                   rows={group.rows}
-                  columns={visibleColumns}
+                  columns={group.rows.some((row) => row.category === "Tile & Stone")
+                    ? visibleColumns
+                    : visibleColumns.filter((column) => column !== "orderQuantity")}
                   canEditProducts={canEditProducts}
                   canEditOrdering={canEditOrdering}
                   onSaveProductText={saveProductText}
@@ -2256,7 +2258,7 @@ async function downloadSpecSpreadsheetWorkbook(
     const headerCells = columns
       .map(
         (column, index) =>
-          `<c r="${excelColumnName(index)}${excelRow}" t="inlineStr" s="1"><is><t>${xmlEscape(column.label)}</t></is></c>`,
+          `<c r="${excelColumnName(index)}${excelRow}" t="inlineStr" s="1"><is><t>${xmlEscape(column.key === "orderQuantity" && !group.rows.some((row) => row.category === "Tile & Stone") ? "" : column.label)}</t></is></c>`,
       )
       .join("");
     worksheetRows.push(`<row r="${excelRow}" ht="24" customHeight="1">${headerCells}</row>`);
