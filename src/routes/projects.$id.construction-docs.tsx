@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { db } from "@/lib/db";
+import { db, type ProjectDocument } from "@/lib/db";
 import {
   canDownloadConstructionDocs,
   canViewProjectSurface,
@@ -40,8 +40,9 @@ function ConstructionDocsPage() {
   const canManageDocs = profile?.is_active === true && isStudioTeamRole(profile.role);
   const canViewDocs = canViewProjectSurface(profile, project, "constructionDocs");
   const canDownloadDocs = canDownloadConstructionDocs(profile, project);
-  const { data: docs = [], isLoading: loadingDocs } = useQuery({
-    queryKey: ["projectDocuments", id, profile?.id, canManageDocs ? "history" : "latest"],
+  const documentsQueryKey = ["projectDocuments", id, profile?.id, canManageDocs ? "history" : "latest"];
+  const { data: docs = [], isLoading: loadingDocs, isError: docsFailed, refetch: reloadDocs } = useQuery({
+    queryKey: documentsQueryKey,
     queryFn: async () => (await db.listProjectDocuments(id)) ?? [],
     enabled: canViewDocs,
   });
@@ -96,7 +97,11 @@ function ConstructionDocsPage() {
         created_by: sessionData.session?.user.id ?? null,
       });
     },
-    onSuccess: () => {
+    onSuccess: (document) => {
+      qc.setQueryData<ProjectDocument[]>(documentsQueryKey, (current = []) => [
+        document,
+        ...current.filter((doc) => doc.id !== document.id),
+      ]);
       toast.success("Construction doc uploaded.");
       setTitle("");
       qc.invalidateQueries({ queryKey: ["projectDocuments", id] });
@@ -196,6 +201,11 @@ function ConstructionDocsPage() {
           </div>
           {loadingDocs ? (
             <div className="p-8 text-sm text-muted-foreground">Loading docs...</div>
+          ) : docsFailed ? (
+            <div className="p-8 text-sm text-destructive" role="alert">
+              Could not load construction docs.
+              <button type="button" className="ml-2 underline" onClick={() => void reloadDocs()}>Try again</button>
+            </div>
           ) : docs.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground">
               <FileText className="mx-auto mb-4 h-8 w-8" />
@@ -245,3 +255,4 @@ function formatFileSize(size: number) {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
+
