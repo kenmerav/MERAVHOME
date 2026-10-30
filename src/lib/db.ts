@@ -850,14 +850,32 @@ export const db = {
   },
   createProjectDocument: async (
     document: Omit<ProjectDocument, "id" | "created_at" | "updated_at">,
-  ) =>
-    (
-      await supabase
-        .from("project_documents" as any)
-        .insert(document as any)
-        .select()
-        .single()
-    ).data as ProjectDocument | null,
+  ) => {
+    const id = crypto.randomUUID();
+    // The document-read policy looks up saved IDs. Its statement snapshot
+    // cannot include a new row during INSERT ... RETURNING, so save first
+    // and read the committed document in a separate request.
+    const { error: saveError } = await supabase
+      .from("project_documents" as any)
+      .insert({ ...document, id } as any);
+    if (saveError) {
+      throw new Error(saveError.message || "Could not save construction document.", { cause: saveError });
+    }
+
+    const { data, error: readError } = await supabase
+      .from("project_documents" as any)
+      .select("*")
+      .eq("id", id)
+      .eq("project_id", document.project_id)
+      .single();
+    if (readError || !data) {
+      throw new Error(
+        "The document was saved but could not be loaded. Refresh Construction Docs before uploading again.",
+        { cause: readError },
+      );
+    }
+    return data as unknown as ProjectDocument;
+  },
   deleteProjectDocument: async (id: string) =>
     supabase
       .from("project_documents" as any)
@@ -1636,3 +1654,4 @@ export const db = {
   deleteEmployeeTimeEntry: async (id: string) =>
     supabase.from("employee_time_entries").delete().eq("id", id),
 };
+
