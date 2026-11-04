@@ -802,6 +802,7 @@ export function SpecSpreadsheetView({
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["materialItems", projectId] }),
       qc.invalidateQueries({ queryKey: ["catalog"] }),
+      qc.invalidateQueries({ queryKey: ["products"] }),
       qc.invalidateQueries({ queryKey: ["procurement"] }),
       productId ? qc.invalidateQueries({ queryKey: ["product", productId] }) : Promise.resolve(),
     ]);
@@ -814,7 +815,9 @@ export function SpecSpreadsheetView({
   ) => {
     const next = value.trim();
     if (key === "name" && !next) return toast.error("Product name required");
-    await db.updateProduct(row.productId, { [key]: next || null });
+    if (!(await db.updateProduct(row.productId, { [key]: next || null }))) {
+      throw new Error("Could not save the product. Refresh and try again.");
+    }
     await refreshSpec(row.productId);
     toast.success("Spec updated");
   };
@@ -825,8 +828,11 @@ export function SpecSpreadsheetView({
     value: string,
   ) => {
     const next = value.trim();
-    await db.updateMaterialItem(row.id, { [key]: next || null });
-    if (key === "product_url") await db.updateProduct(row.productId, { product_url: next || null });
+    await db.updateSpecMaterialItem(row.id, { [key]: next || null });
+    if (key === "product_url" && !(await db.updateProduct(row.productId, { product_url: next || null }))) {
+      await refreshSpec(row.productId);
+      throw new Error("The Materials link was saved, but the catalog link could not be updated.");
+    }
     await refreshSpec(row.productId);
     toast.success("Spec updated");
   };
@@ -834,14 +840,15 @@ export function SpecSpreadsheetView({
   const saveCategory = async (row: SpecSpreadsheetRow, value: string) => {
     const next = value.trim();
     if (!next) return;
+    await db.updateSpecMaterialItem(row.id, { category: next });
     const productCategory = toProductCategory(next);
-    await Promise.all([
-      db.updateMaterialItem(row.id, { category: next }),
-      db.updateProduct(row.productId, {
-        category: productCategory,
-        subcategory: SUBCATEGORIES[productCategory][0],
-      }),
-    ]);
+    if (!(await db.updateProduct(row.productId, {
+      category: productCategory,
+      subcategory: SUBCATEGORIES[productCategory][0],
+    }))) {
+      await refreshSpec(row.productId);
+      throw new Error("The Materials category was saved, but the catalog category could not be updated.");
+    }
     await refreshSpec(row.productId);
     toast.success("Spec updated");
   };
@@ -853,7 +860,9 @@ export function SpecSpreadsheetView({
   };
 
   const savePrice = async (row: SpecSpreadsheetRow, value: string) => {
-    await db.updateProduct(row.productId, { price: normalizeMoneyInput(value) });
+    if (!(await db.updateProduct(row.productId, { price: normalizeMoneyInput(value) }))) {
+      throw new Error("Could not save the price. Refresh and try again.");
+    }
     await refreshSpec(row.productId);
     toast.success("Spec updated");
   };
@@ -1372,7 +1381,11 @@ function EditableSpecTextCell({
     const next = draft.trim();
     setEditing(false);
     if (next === value.trim()) return;
-    await onSave(next);
+    try {
+      await onSave(next);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the change.");
+    }
   };
 
   if (!editing) {
@@ -1430,7 +1443,11 @@ function EditableSpecLinkCell({
     const next = draft.trim();
     setEditing(false);
     if (next === value.trim()) return;
-    await onSave(next);
+    try {
+      await onSave(next);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the link.");
+    }
   };
 
   if (editing) {
@@ -2051,7 +2068,12 @@ export function SpecProductEditDialog({
     if (!form.name.trim()) return toast.error("Product name required");
     setSaving(true);
     try {
-      await db.updateProduct(product.id, {
+      await db.updateSpecMaterialItem(item.id, {
+        category: materialCategory,
+        image_url: clean(form.image_url),
+        notes: clean(materialNotes),
+      });
+      const savedProduct = await db.updateProduct(product.id, {
         ...form,
         name: form.name.trim(),
         vendor: clean(form.vendor),
@@ -2065,11 +2087,7 @@ export function SpecProductEditDialog({
         shipping: normalizeMoneyInput(form.shipping),
         description: clean(form.description),
       });
-      await db.updateMaterialItem(item.id, {
-        category: materialCategory,
-        image_url: clean(form.image_url),
-        notes: clean(materialNotes),
-      });
+      if (!savedProduct) throw new Error("Could not save the product. Refresh and try again.");
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["product", product.id] }),
         qc.invalidateQueries({ queryKey: ["catalog"] }),
@@ -2079,6 +2097,7 @@ export function SpecProductEditDialog({
       toast.success("Product updated");
       onOpenChange(false);
     } catch (error) {
+      await qc.invalidateQueries({ queryKey: ["materialItems", projectId] });
       toast.error(error instanceof Error ? error.message : "Could not update product.");
     } finally {
       setSaving(false);

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { requireSavedSpecMaterial } from "./specMaterialWrite";
 import { canViewFinancials, canViewProjectSurface, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { stripePaidReceipt } from "@/lib/stripePaidReceipts";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
@@ -1295,6 +1296,16 @@ export const db = {
         .eq("id", id);
     }
     return result;
+  },
+  // Spec Book edits must confirm that the matching Materials row was updated.
+  updateSpecMaterialItem: async (id: string, patch: Partial<MaterialItem>) => {
+    const { data, error } = await supabase
+      .from("material_items")
+      .update(patch as any)
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+    return requireSavedSpecMaterial({ data, error });
   },
   updateMaterialItemsByProduct: async (productId: string, patch: Partial<MaterialItem>) =>
     supabase
