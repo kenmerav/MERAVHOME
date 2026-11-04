@@ -8,6 +8,7 @@ import { sharedCompletionCoversMissing, sharedCompletionSelections, sharedComple
 import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { isTileInstallationLabel } from "./tileInstallation";
 import { ambiguousFinish } from "./selectedFinish";
+import { pdfSelectionNameMismatch } from "./specProductIdentity";
 
 export type CompletionRoom = { id: string; name: string };
 export type CompletionField = "quantity" | "color" | "finish" | "dimensions" | "price" | "price_unit" | "product" | "link" | "missing_item" | "grout" | "tile_layout";
@@ -122,6 +123,10 @@ export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[])
       (specQuantityUnit(item) === "count" && !Number.isInteger(item.quantity)))
       add("quantity", "Quantity needs confirmation.", item.quantity_tbd ? "TBD" : String(item.quantity ?? ""));
     if (!item.product_id || !item.product) add("product", "No catalog product is assigned. This item does not appear in the Spec Book yet.");
+    if (item.product) {
+      const mismatch = pdfSelectionNameMismatch(item.product_url || item.product.product_url || "", item.color || "", item.product.name || "");
+      if (mismatch) add("product", `Product name may conflict with the linked PDF and selected color (${mismatch.sourceName}). Review the selection.`, mismatch.productName);
+    }
     if (needsCompletionColor(item)) add("color", ambiguousFinish(item.color || item.product?.finish)
       ? "Color / finish lists alternatives. Confirm the selected finish from the product link."
       : "Color / finish needs confirmation.", item.color || item.product?.finish || "");

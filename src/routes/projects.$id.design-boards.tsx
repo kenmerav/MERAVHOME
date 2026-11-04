@@ -66,6 +66,7 @@ import { buildClientProductName } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { createDesignBoardExportImageLoader } from "@/lib/designBoardExportImages";
 import { materialImageUrl } from "@/lib/materialImages";
+import { keepNamedProductForGenericBoard, latestBoardProduct } from "@/lib/specProductIdentity";
 import { roomDesignBoardDisplayLabel } from "@/lib/roomDesignWorkflow";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import {
@@ -1945,7 +1946,9 @@ function ProjectDesignBoardsPage() {
       return { status: "skipped" };
     }
 
-    const linkedProduct = element.productId ? productById.get(element.productId) ?? null : null;
+    const currentMaterials = options.materials || (await readBoardSendMaterials(supabase, id));
+    const linkedProduct = latestBoardProduct(element.materialItemId, element.productId, currentMaterials,
+      element.productId ? productById.get(element.productId) : null);
     const missingInfo = imageMaterialIssues(element, linkedProduct);
     if (missingInfo.length && !options.allowMissingInfo) {
       return { status: "skipped" };
@@ -1969,7 +1972,6 @@ function ProjectDesignBoardsPage() {
     const productImageUrl = element.src || element.backgroundRemovedUrl || null;
     const quantityFields = boardMaterialQuantity(boardBlankQuantityDefault({ ...element, materialCategory }), quantityOverride);
     const quantity = quantityFields.quantity;
-    const currentMaterials = options.materials || (await readBoardSendMaterials(supabase, id));
     const existingMaterial = findBoardMaterialForSend(
       {
         roomId: room.id,
@@ -2024,11 +2026,16 @@ function ProjectDesignBoardsPage() {
       return true;
     };
 
+    const preserveNamedProduct = keepNamedProductForGenericBoard({
+      boardName: actualProductName, boardPageId: page.id, boardElementId: element.id,
+      boardProductId: element.productId, boardLink: productUrl, boardColor: finish,
+      materialId: element.materialItemId, material: existingMaterial, productLink: linkedProductUrl,
+    });
     let product =
       linkedProduct &&
-      linkedProductNameMatches &&
+      (linkedProductNameMatches || preserveNamedProduct) &&
       (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl) &&
-      productVariantMatches(linkedProduct)
+      (productVariantMatches(linkedProduct) || preserveNamedProduct)
         ? linkedProduct
         : null;
     if (productUrl && !product) {
