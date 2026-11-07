@@ -136,6 +136,7 @@ import {
   type BoardQuantityDecisions,
 } from "@/lib/boardQuantityReview";
 import { readBoardSendMaterials, saveReviewedBoardMaterial } from "@/lib/boardQuantitySave";
+import { boardSendError, createBoardSendGate } from "@/lib/boardSendGuard";
 
 type BoardElementType = "image" | "text" | "shape";
 
@@ -724,6 +725,7 @@ function ProjectDesignBoardsPage() {
   const pendingSaveJsonRef = useRef<string | null>(null);
   const localEditShieldUntilRef = useRef(0);
   const removingBackgroundRef = useRef(false);
+  const boardSendGateRef = useRef(createBoardSendGate());
   const autoBackgroundRemovalIdsRef = useRef<Set<string>>(new Set());
   const applyingRemoteRef = useRef(false);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -2200,6 +2202,11 @@ function ProjectDesignBoardsPage() {
       return;
     }
 
+    const releaseSend = boardSendGateRef.current.tryBegin();
+    if (!releaseSend) {
+      toast.error("A send to Materials is already in progress.");
+      return;
+    }
     setSendingMaterialId(selected.id);
     try {
       const result = await sendElementToMaterials(selected, activePage);
@@ -2207,9 +2214,10 @@ function ProjectDesignBoardsPage() {
         selected.materialItemId ? "Updated this material item." : "Sent to project materials.",
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not send this to Materials.");
+      toast.error(boardSendError(error, "Could not send this to Materials."));
     } finally {
       setSendingMaterialId(null);
+      releaseSend();
     }
   };
 
@@ -2218,8 +2226,14 @@ function ProjectDesignBoardsPage() {
     scope: "page" | "board",
     options: { proceedWithMissing?: boolean } = {},
   ) => {
+    const releaseSend = boardSendGateRef.current.tryBegin();
+    if (!releaseSend) {
+      toast.error("A send to Materials is already in progress.");
+      return;
+    }
     const unresolvedItems = materialInfoItemsForPages(targetPages);
     if (unresolvedItems.length && !options.proceedWithMissing) {
+      releaseSend();
       setPendingMaterialSend({ scope, pageIds: targetPages.map((page) => page.id) });
       toast.error(
         `${unresolvedItems.length} item${unresolvedItems.length === 1 ? "" : "s"} need material review before final specs.`,
@@ -2490,9 +2504,10 @@ function ProjectDesignBoardsPage() {
         );
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not send materials.");
+      toast.error(boardSendError(error, "Could not send materials."));
     } finally {
       setBulkMaterialScope(null);
+      releaseSend();
     }
   };
 
