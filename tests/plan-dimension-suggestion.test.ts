@@ -3,17 +3,19 @@ const projectId = "527d1356-919b-48b9-877e-1924c766282b";
 const itemId = "0033186c-a2e6-417f-a50f-37f5390f5cf5";
 const roomId = "4204f2d1-e10c-4d98-a01b-350cf7d8cafe";
 const state = vi.hoisted(() => ({ active: true, role: "Admin", assigned: true, authenticated: true,
-  item: null as any, room: null as any, document: null as any, board: null as any, fetch: vi.fn(), download: vi.fn(), reads: [] as any[] }));
+  item: null as any, room: null as any, document: null as any, board: null as any, fetch: vi.fn(), download: vi.fn(), reads: [] as any[], reserve: vi.fn(), settle: vi.fn(), budget: vi.fn(), email: "ken@meravinteriors.com" }));
+vi.mock("@/lib/fullSpecBudget.server", () => ({ assertProductionFullSpecBudget: state.budget, productionFullSpecBudgetStore: () => ({}) }));
+vi.mock("@/lib/fullSpecBudgetStore", () => ({ reserveFullSpecBudget: state.reserve, settleFullSpecBudget: state.settle }));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
-  auth: { getUser: async () => ({ data: { user: state.authenticated ? { id: "staff" } : null }, error: null }) },
+  auth: { getUser: async () => ({ data: { user: state.authenticated ? { id: "staff", email: state.email } : null }, error: null }) },
   storage: { from: () => ({ download: state.download }) },
   from: (table: string) => {
     const filters: any = {};
     const get = () => {
       state.reads.push({ table, filters });
       const scoped = filters.project_id === projectId;
-      const data = table === "user_profiles" ? { role: state.role, is_active: state.active, can_view_all_projects: false } :
+      const data = table === "user_profiles" ? { email: "ken@meravinteriors.com", role: state.role, is_active: state.active, can_view_all_projects: false } :
         table === "projects" ? (filters.id === projectId ? { id: projectId } : null) :
         table === "user_project_assignments" ? (state.assigned && scoped ? { project_id: projectId } : null) :
         !scoped ? null : table === "material_items" ? (filters.id === itemId ? state.item : null) :
@@ -34,9 +36,10 @@ const finding = { item_id: itemId, room_id: roomId, field: "dimensions", confide
   dimension_scope: "proposed_layout", conflicting_dimensions: false };
 const request = (extra: any = {}, token = true) => new Request("https://studio.test/api/suggest-plan-dimensions", {
   method: "POST", headers: { ...(token ? { Authorization: "Bearer TEST_ONLY_TOKEN" } : {}), "Content-Type": "application/json" },
-  body: JSON.stringify({ project_id: projectId, item_id: itemId, ...extra }) });
+  body: JSON.stringify({ project_id: projectId, item_id: itemId, full_check_run_id: "44444444-4444-4444-8444-444444444444", ...extra }) });
 beforeEach(() => {
   vi.clearAllMocks(); state.active = true; state.role = "Admin"; state.assigned = true; state.authenticated = true; state.reads = [];
+  state.email = "ken@meravinteriors.com"; state.reserve.mockResolvedValue(true); state.budget.mockResolvedValue({});
   state.item = { id: itemId, project_id: projectId, room_id: roomId, item_label: "Mirror", is_required: false,
     product_id: "product", not_needed: false, product: { name: "Selected mirror", dimensions: null } };
   state.room = { id: roomId, name: "Primary Bath" }; state.board = null;
@@ -49,6 +52,13 @@ beforeEach(() => {
   vi.stubEnv("OPENAI_API_KEY", "TEST_ONLY_KEY"); vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+it("requires Ken's active run and reserves before generating dimensions", async () => {
+  expect((await suggestPlanDimensions(request({ full_check_run_id: "" }))).status).toBe(400);
+  state.email = "other@meravinteriors.com"; expect((await suggestPlanDimensions(request())).status).toBe(403);
+  state.email = "ken@meravinteriors.com"; state.reserve.mockResolvedValue(false);
+  const result = await (await suggestPlanDimensions(request())).json();
+  expect(result.status).toBe("unavailable"); expect(result.message).toContain("already attempted"); expect(state.fetch).not.toHaveBeenCalled();
+});
 it("finds an explicit mirror size in the latest plans, labels it as planned and saves nothing", async () => {
   const result = await (await suggestPlanDimensions(request())).json();
   expect(result).toMatchObject({ status: "suggested", dimensions: "Width: 30 in; Height: 36 in", dimension_scope: "proposed_layout", page: 10, sheet: "ID2.5" });

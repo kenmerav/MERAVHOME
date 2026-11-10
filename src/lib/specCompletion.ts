@@ -24,9 +24,12 @@ export type SpecCompletionReport = {
   finish_review?: import("./selectedFinish").FinishReview;
   tile_review?: import("./tileInstallation").TileInstallationReview;
   board_refresh?: import("@/lib/specBoardSync").SpecBoardSyncSummary;
+  product_refresh_budget_stopped?: boolean;
+  product_refresh_not_refreshed?: number;
   catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
   spec_drawing_evidence?: Record<string, import("@/lib/specDrawingEvidence").DrawingEvidenceJob>;
   board_option_matches?: Record<string, { signature: string; checkedAt: string; value: import("./boardOptionMatch").BoardOptionMatch }>;
+  full_spec_budget?: import("./fullSpecBudget").FullSpecBudget;
   checked_at: string; item_count: number; findings: CompletionFinding[];
   plan_status: "checked" | "no_document" | "unavailable" | "checking";
   document: { id: string; title: string; updated_at: string } | null;
@@ -35,6 +38,7 @@ export type SpecCompletionReport = {
   plan_failure_code?: "credit_balance_exhausted" | "insufficient_quota";
   document_refresh?: { status: "checked" | "incomplete" | "unavailable"; checked_at: string; uploaded: number; message: string };
   plan_job?: { request_id: string; response_id: string | null; pages: number | null; started_at: string; worker_run_id?: string;
+    full_check_run_id?: string; budget_owner_id?: string;
     evidence_key?: string; evidence_mode?: "extract" | "compare"; selection_signature?: string };
 };
 
@@ -46,7 +50,7 @@ export function hasCompletionValue(value: unknown) {
 
 // Extraction snapshots are private server cache, not part of browser responses.
 export function publicSpecCompletionReport(report: SpecCompletionReport): SpecCompletionReport {
-  const { spec_drawing_evidence: _evidence, catalog_fit_checks: _catalog, board_option_matches: _options, ...publicReport } = report;
+  const { spec_drawing_evidence: _evidence, catalog_fit_checks: _catalog, board_option_matches: _options, full_spec_budget: _budget, ...publicReport } = report;
   return publicReport;
 }
 

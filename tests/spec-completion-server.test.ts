@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const projectId = "527d1356-919b-48b9-877e-1924c766282b";
 const roomId = "0033186c-a2e6-417f-a50f-37f5390f5cf5";
 const userId = "4204f2d1-e10c-4d98-a01b-350cf7d8cafe";
+const runId = "a1e43132-e210-4450-a009-0c877292489f";
 const state = vi.hoisted(() => ({ authenticated: true, profile: {} as any, assigned: true, project: true,
   documents: [] as any[], rooms: [] as any[], items: [] as any[], board: null as any,
   reads: [] as any[], download: vi.fn(), fetch: vi.fn(), rpc: vi.fn(), refresh: vi.fn(), dataError: false, storageError: null as any, saved: null as any, writes: [] as any[], writeMisses: 0 }));
@@ -11,9 +12,17 @@ vi.mock("@/lib/specCompletionBackground.server", () => ({ startCompletionSaveWor
 vi.mock("workflow", () => ({ sleep: vi.fn(async () => undefined) }));
 vi.mock("@/lib/specBoardSync.server", () => ({ syncSpecBoardForStaff: boardSync }));
 vi.mock("@/lib/constructionUploads.server", () => ({ refreshConstructionUploads: state.refresh }));
+vi.mock("@/lib/fullSpecBudget.server", () => ({
+  assertProductionFullSpecBudget: vi.fn(async () => ({})),
+  productionFullSpecBudgetStore: vi.fn(() => ({})),
+}));
+vi.mock("@/lib/fullSpecBudgetStore", () => ({
+  reserveFullSpecBudget: vi.fn(async () => true),
+  settleFullSpecBudget: vi.fn(async () => undefined),
+}));
 vi.mock("pdf-lib", () => ({ PDFDocument: { load: async () => ({ getPageCount: () => 14 }) } }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
-  auth: { getUser: async () => ({ data: { user: state.authenticated ? { id: userId } : null }, error: null }) },
+  auth: { getUser: async () => ({ data: { user: state.authenticated ? { id: userId, email: "ken@meravinteriors.com" } : null }, error: null }) },
   storage: { from: () => ({ download: state.download }) },
   rpc: state.rpc,
   from: (table: string) => {
@@ -50,13 +59,18 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
     return query;
   },
 } }));
-import { checkSpecCompletion } from "@/lib/specCompletion.server";
+import { checkSpecCompletion as checkSpecCompletionRequest } from "@/lib/specCompletion.server";
 import { signFinishObservation } from "@/lib/selectedFinish.server";
 import { savedSpecCompletionRequest } from "@/lib/savedSpecCompletionApi.server";
 import { completionSourceSignature, pollCompletionSave, failCompletionSave } from "@/lib/savedSpecCompletion.server";
 import { saveSpecCompletionInBackground } from "@/workflows/specCompletionSave";
 const request = (body: any = { project_id: projectId }, token = true) => new Request("https://studio.test/api/check-spec-completion", {
   method: "POST", headers: { ...(token ? { Authorization: "Bearer TEST_ONLY_TOKEN" } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const checkSpecCompletion = async (source: Request) => {
+  const body = await source.json();
+  return checkSpecCompletionRequest(new Request(source.url, { method: "POST", headers: source.headers,
+    body: JSON.stringify({ ...body, full_check_run_id: runId }) }));
+};
 const drawingEvidence = () => ({ complete: true, reviewed_pages: Array.from({ length: 14 }, (_, i) => i + 1), complete_project_scope: true,
   rooms: state.rooms.map(room => ({ room_id: room.id, match: /throughout/i.test(room.name) ? "shared_default" : "matched" })),
   facts: state.rooms.some(room => room.id === roomId) ? [{ id: "sink-count", room_id: roomId, label: "Sink", field: "quantity",
@@ -116,12 +130,12 @@ beforeEach(() => {
     return { data: null, error: null };
   });
   state.refresh.mockResolvedValue({ uploaded: 0, failed: 0, deferred: 0, needsReview: 0, needsReconnect: false, error: null });
-  state.profile = { role: "Admin", is_active: true, can_view_all_projects: true };
+  state.profile = { email: "ken@meravinteriors.com", role: "Admin", is_active: true, can_view_all_projects: true };
   state.rooms = [{ id: roomId, name: "Bathroom 2" }]; state.board = null; state.reads = [];
   state.documents = [{ id: "latest", title: "Latest Plans", updated_at: "v1", file_size: 20,
     file_url: `https://example.supabase.co/storage/v1/object/public/project-files/${projectId}/construction-docs/latest.pdf` }];
   state.items = [{ id: "sink", project_id: projectId, room_id: roomId, item_label: "Sink", is_required: false,
-    quantity: null, color: null, product_id: null, not_needed: false }];
+    quantity: null, color: null, product_id: "product", product: { id: "product", name: "Selected Sink", size_options: ["Small", "Large"] }, not_needed: false }];
   state.download.mockResolvedValue({ data: new Blob(["fixture-pdf"]), error: null });
   state.fetch.mockImplementation(async () => completed([{
     item_id: "sink", room_id: roomId, field: "quantity", confidence: "high", page: 2, sheet: "ID1", evidence: "Two identical selected sinks in proposed vanity.",
@@ -160,7 +174,7 @@ it("keeps drawing extraction independent of newly selected products and of a col
   state.items.push({ ...state.items[0], id: "new-faucet", item_label: "Sink Faucet", product_id: "new-product", product: { name: "New Faucet", sku: "new-sku" } });
   vi.resetModules();
   const cold = await import("@/lib/specCompletion.server");
-  expect((await (await cold.checkSpecCompletion(request())).json()).plan_status).toBe("checked");
+  expect((await (await cold.checkSpecCompletion(request({ project_id: projectId, full_check_run_id: runId }))).json()).plan_status).toBe("checked");
   expect(Object.keys(state.saved.report.spec_drawing_evidence)).toEqual([source]);
   expect(state.download).toHaveBeenCalledTimes(1);
   const input = JSON.parse(JSON.parse(state.fetch.mock.calls[1][1].body).input[0].content[0].text);
@@ -229,6 +243,8 @@ it("salvages drawing evidence from a stale selection check without paying to res
   state.fetch.mockImplementation(async () => Response.json({ status: "queued", id: "resp_stale_selection_scan" }));
   await checkSpecCompletion(request());
   state.items[0].quantity = 4;
+  state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === "POST"
+    ? Response.json({ status: "queued", id: "resp_stale_selection_scan" }) : completed());
   const stale = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
   expect(stale.report.plan_status).toBe("unavailable");
   state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === "POST"
@@ -243,10 +259,12 @@ it("rejects a queued comparison when the PDF path changes even without a revisio
   state.fetch.mockImplementation(async () => Response.json({ status: "queued", id: "resp_replaced_path" }));
   await checkSpecCompletion(request());
   state.documents[0].file_url = state.documents[0].file_url.replace("latest.pdf", "replacement.pdf");
-  const count = state.fetch.mock.calls.length;
+  const count = state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === "POST").length;
+  state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === "POST"
+    ? Response.json({ status: "queued", id: "resp_replaced_path" }) : completed());
   const loaded = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: "load" }))).json();
   expect(loaded.report.plan_status).toBe("unavailable"); expect(loaded.stale).toBe(true);
-  expect(state.fetch).toHaveBeenCalledTimes(count);
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === "POST")).toHaveLength(count);
 });
 it("reads current project data and latest PDF, saving the review without editing any selections", async () => {
   const result = await (await checkSpecCompletion(request())).json();
@@ -432,10 +450,12 @@ it('preserves staff decisions when a status save races the background result', a
 it('rejects background suggestions when the selections changed, without starting another paid request', async () => {
   state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' })); await checkSpecCompletion(request());
   state.items[0].quantity = 4;
-  const calls = state.fetch.mock.calls.length;
+  const calls = state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST').length;
+  state.fetch.mockImplementation(async (_url: string, options: any) => options?.method === 'POST'
+    ? Response.json({ id: 'resp_test', status: 'queued' }) : completed());
   const result = await (await savedSpecCompletionRequest(request({ project_id: projectId, action: 'load' }))).json();
   expect(result.report.plan_status).toBe('unavailable'); expect(result.report.plan_message).toContain('changed');
-  expect(state.fetch).toHaveBeenCalledTimes(calls);
+  expect(state.fetch.mock.calls.filter((call: any[]) => call[1]?.method === 'POST')).toHaveLength(calls);
 });
 it('keeps saved details when a temporary background response expires', async () => {
   state.fetch.mockResolvedValue(Response.json({ id: 'resp_test', status: 'queued' })); await checkSpecCompletion(request());
@@ -498,7 +518,7 @@ it("loads saved results without starting AI and preserves old findings for remov
   expect(state.refresh).not.toHaveBeenCalled();
 });
 it("hides optional missing-price warnings from saved reviews without another plan check or lost decisions", async () => {
-  state.items.push({ ...state.items[0], id: 'counter', item_label: 'Countertop', category: 'Countertops' });
+  state.items.push({ ...state.items[0], id: 'counter', item_label: 'Countertop', category: 'Countertops', product: { name: 'Quartz countertop' } });
   const gap = (id: string) => ({ item_id: id, room_id: roomId, field: 'price', source: 'details' });
   state.saved = { report: { checked_at: 'earlier', document: null }, source_signature: 'old', issues: {
     counter: { key: 'counter', status: 'open', finding: gap('counter') },
@@ -511,6 +531,7 @@ it("hides optional missing-price warnings from saved reviews without another pla
   expect(state.fetch).not.toHaveBeenCalled(); expect(state.rpc).not.toHaveBeenCalled(); expect(state.refresh).not.toHaveBeenCalled();
 });
 it("retires old blanket dimension flags from open results while retaining team decisions", async () => {
+  state.items[0].product.size_options = [];
   const gap = { item_id: 'sink', room_id: roomId, field: 'dimensions', source: 'details' };
   state.saved = { report: { checked_at: 'earlier', document: null }, source_signature: 'old', issues: {
     open: { key: 'open', status: 'open', finding: gap },

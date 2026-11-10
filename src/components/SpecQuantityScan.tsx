@@ -9,7 +9,7 @@ import { missingFixtureAlternatives } from "@/lib/specMissingAlternatives";
 import type { MaterialItem } from "@/lib/db";
 import type { CompletionRoom } from "@/lib/specCompletion";
 
-export function SpecQuantityScan({ projectId, items, rooms, runSignal = 0 }: { projectId: string; items: MaterialItem[]; rooms: CompletionRoom[]; runSignal?: number }) {
+export function SpecQuantityScan({ projectId, items, rooms, runSignal = 0, fullCheckRunId = "" }: { projectId: string; items: MaterialItem[]; rooms: CompletionRoom[]; runSignal?: number; fullCheckRunId?: string }) {
   const qc = useQueryClient();
   const [report, setReport] = useState<DrawingMatchReport | null>(null);
   const [error, setError] = useState("");
@@ -24,7 +24,7 @@ export function SpecQuantityScan({ projectId, items, rooms, runSignal = 0 }: { p
   const load = async (key?: string, attemptNumber = attempt) => {
     const request = await createStudioSessionRequest();
     const response = await request(`/api/spec-drawing-matches?projectId=${encodeURIComponent(projectId)}&purpose=quantities&attempt=${attemptNumber}`, key ? {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, expectedKey: key, purpose: "quantities", attempt: attemptNumber }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, expectedKey: key, purpose: "quantities", attempt: attemptNumber, full_check_run_id: fullCheckRunId }),
     } : {});
     const body = await response.json();
     if (!response.ok) throw Error(body.error || "Could not check the construction drawings.");
@@ -41,7 +41,7 @@ export function SpecQuantityScan({ projectId, items, rooms, runSignal = 0 }: { p
     return () => clearTimeout(timer);
   }, [projectId, report, attempt]);
   const start = async (retry = false) => {
-    if (lock.current || !report?.key) return;
+    if (lock.current || !report?.key || !report.canScan || !fullCheckRunId) return;
     lock.current = true; setBusy(true); setError("");
     try {
       if (retry) {
@@ -96,8 +96,9 @@ export function SpecQuantityScan({ projectId, items, rooms, runSignal = 0 }: { p
   return <details open={working || !!report?.quantityFindings?.length || !!report?.missingFindings?.length || undefined} className="shrink-0 border p-3 text-xs">
     <summary className="cursor-pointer font-medium">Check quantities across construction drawings</summary>
     <p className="mt-2">Reads the current drawing set in page groups, compares supported room counts with the Spec Book, and looks for possible missing fixtures. It sends the PDF and selections to OpenAI; the estimated scan is capped at $5 before it starts. Counts, conflicts and missing-item suggestions must be reviewed before editing.</p>
-    <button type="button" onClick={() => void start(report?.status === "partial" || report?.status === "failed")} disabled={busy || working || !report?.key || (report.status === "complete" && !report.needsFreshScan) || savedNeedsRefresh}
+    <button type="button" onClick={() => void start(report?.status === "partial" || report?.status === "failed")} disabled={busy || working || !report?.key || !report.canScan || !fullCheckRunId || (report.status === "complete" && !report.needsFreshScan) || savedNeedsRefresh}
       className="mt-2 border px-3 py-2 disabled:opacity-50">{working ? "Checking drawings…" : report?.needsFreshScan ? "Check updated drawings and selections" : report?.status === "complete" ? "Drawing check complete" : report?.status === "partial" || report?.status === "failed" ? "Retry drawing check" : "Check drawing quantities"}</button>
+    {report && !report.canScan && <p className="mt-1 text-muted-foreground">Only Ken can start a drawing check. Saved findings remain available for review.</p>}
     {report && <p className="mt-2" role="status">{report.status === "no_document" ? "No construction document is attached." :
       `${report.reviewedPages.length} of ${report.totalPages || "?"} pages checked${report.ceilingUsd != null ? ` · estimated maximum $${report.ceilingUsd.toFixed(2)}` : ""}. ${report.status === "partial" || report.status === "failed" ? "Scan incomplete; unchecked pages remain unverified." : ""}`}</p>}
     {(error || report?.error) && <p role="alert" className="mt-2 text-red-800">{error || report?.error}</p>}

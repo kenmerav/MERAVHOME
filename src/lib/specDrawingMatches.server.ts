@@ -19,6 +19,9 @@ import type { DrawingMatchJob, DrawingMatchReport } from "./specDrawingMatches";
 import { loadDrawingMatchReport, failDrawingMatchJob } from "./specDrawingMatchEngine.server";
 import { specDrawingMatchesWorkflow } from "@/workflows/specDrawingMatches";
 import { applyDrawingQuantities } from "./specQuantityApproval.server";
+import { canRunPaidSpecCheck } from "./specCheckAccess";
+import { assertProductionFullSpecBudget } from "./fullSpecBudget.server";
+import { FullSpecBudgetError } from "./fullSpecBudget";
 const admin = supabaseAdmin as any;
 const BUCKET = "rendering-studio-files";
 export async function specDrawingMatchesApi(request: Request) {
@@ -34,6 +37,7 @@ export async function specDrawingMatchesApi(request: Request) {
               attempt: z.number().int().min(0).max(5).optional(),
               action: z.enum(["apply"]).optional(),
               itemIds: z.array(z.string().uuid()).min(1).max(100).optional(),
+              full_check_run_id: z.string().uuid().optional(),
             })
             .strict()
             .parse(await boundedJson(request))
@@ -55,6 +59,14 @@ export async function specDrawingMatchesApi(request: Request) {
     );
     if (!canViewProjectSurface(actor.profile, actor.project, "constructionDocs"))
       throw new ProjectAccessError("Construction drawings are not shared with your account.");
+    const canRunQuantityScan = purpose !== "quantities" || canRunPaidSpecCheck(actor.user, actor.profile);
+    if (body && purpose === "quantities" && body.action !== "apply" && !canRunQuantityScan)
+      throw new ProjectAccessError("The paid full Spec Book check is currently available only to Ken’s active Studio account.");
+    if (body && purpose === "quantities" && body.action !== "apply") {
+      if (!body.full_check_run_id) throw new ProjectAccessError("Start a budgeted full project check before scanning drawings.", 400);
+      try { await assertProductionFullSpecBudget(projectId, actor.user.id, body.full_check_run_id); }
+      catch (error) { throw new ProjectAccessError(error instanceof FullSpecBudgetError ? error.message : "The check budget could not be confirmed.", 409); }
+    }
     // The existing bucket stays private; no schema or public-bucket change.
     const bucket = await admin.storage.getBucket(BUCKET);
     if (bucket.error || !bucket.data || bucket.data.public !== false)
@@ -72,7 +84,7 @@ export async function specDrawingMatchesApi(request: Request) {
         uncertainties: [],
         completedChunks: 0,
         totalChunks: 0,
-        canScan: actor.staff,
+        canScan: actor.staff && canRunQuantityScan,
       } satisfies DrawingMatchReport);
     if (body && body.expectedKey !== key)
       throw new ProjectAccessError(
@@ -90,7 +102,7 @@ export async function specDrawingMatchesApi(request: Request) {
       const job: DrawingMatchJob = {
         version: 1,
         mode: purpose === "quantities" ? "ai" : "direct",
-        ...(purpose === "quantities" ? { purpose, quantityAttempt: attempt } : {}),
+        ...(purpose === "quantities" ? { purpose, quantityAttempt: attempt, fullCheckRunId: body.full_check_run_id } : {}),
         key,
         projectId,
         document: source.document,
@@ -143,7 +155,7 @@ export async function specDrawingMatchesApi(request: Request) {
       if (signed.error) throw signed.error;
       report.documentUrl = signed.data.signedUrl;
     }
-    return privateJson({ ...report, canScan: actor.staff });
+    return privateJson({ ...report, canScan: actor.staff && canRunQuantityScan });
   } catch (error) {
     return accessFailure(error);
   }

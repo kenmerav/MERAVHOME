@@ -3,7 +3,7 @@ import { DesignAccuracySummary } from "@/components/DesignAccuracySummary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Loader2, ArrowUpRight, ImageOff } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { fetchSpecCompletion, fetchBoardColorSuggestion, fetchBoardOptionMatch, fetchPlanDimensionSuggestion, fetchSavedSpecCompletion, updateCompletionIssue } from "@/lib/specCompletionClient";
+import { fetchSpecCompletion, fetchBoardColorSuggestion, fetchBoardOptionMatch, fetchPlanDimensionSuggestion, fetchSavedSpecCompletion, updateCompletionIssue, fullSpecBudget } from "@/lib/specCompletionClient";
 import type { BoardOptionMatch } from "@/lib/boardOptionMatch";
 import { boardOptionBatchCandidates, reusableBoardOptionMatch, runBoardOptionBatch } from "@/lib/boardOptionMatch";
 import { SpecQuantityScan } from "@/components/SpecQuantityScan";
@@ -11,7 +11,8 @@ import { SpecCompletionBatchReview } from "@/components/SpecCompletionBatchRevie
 import type { BoardColorSuggestion } from "@/lib/boardColorSuggestion";
 import type { PlanDimensionSuggestion } from "@/lib/planDimensionSuggestion";
 import { checkSpecDetails, completionItems, type CompletionRoom, type CompletionFinding, type SpecCompletionReport } from "@/lib/specCompletion";
-import type { MaterialItem } from "@/lib/db";
+import { db, type MaterialItem } from "@/lib/db";
+import { canUseRenderingStudio } from "@/lib/permissions";
 import { completionIssueCounts, type SavedCompletionIssue, type CompletionIssueStatus } from "@/lib/savedSpecCompletion";
 import { completionSolution, completionProductLink, completionMaterialsLink } from "@/lib/specCompletionPresentation";
 import { saveCompletionDetail } from "@/lib/specCompletionClient";
@@ -38,6 +39,12 @@ export function SpecCompletionReview(props: CompletionReviewProps) {
 }
 function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionReviewProps) {
   const [open, setOpen] = useState(false);
+  const { data: profile } = useQuery({ queryKey: ["currentUserProfile"], queryFn: () => db.getCurrentUserProfile() });
+  const canRunPaidCheck = canUseRenderingStudio(profile);
+  const budgetKey = ["full-spec-budget", projectId];
+  const budgetQuery = useQuery({ queryKey: budgetKey, queryFn: () => fullSpecBudget(projectId, "status"), enabled: canRunPaidCheck, retry: false, refetchInterval: open ? 5000 : false });
+  const [runId, setRunId] = useState("");
+  const activeRunId = runId || (budgetQuery.data?.active ? budgetQuery.data.runId || "" : "");
   const [checking, setChecking] = useState(false);
   const [progress, setProgress] = useState("");
   const [productRefresh, setProductRefresh] = useState<MaterialProductRefresh | null>(null);
@@ -60,13 +67,18 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   const currentSignature = useRef(signature);
   currentSignature.current = signature;
   const run = async () => {
-    if (lock.current || pending) return;
+    if (lock.current || pending || !canRunPaidCheck) return;
     lock.current = true;
     setOpen(true); setChecking(true); setError(""); setReport(null); setViewSaved(false);
     setProgress("Sending the full design board to Materials…"); setProductRefresh(null); setBoardRefresh(null);
     setReviewedSignature(signature);
     try {
+      const existing = await fullSpecBudget(projectId, "status");
+      const budget = existing.active ? existing : await fullSpecBudget(projectId, "start");
+      if (!budget.active || !budget.runId) throw new Error("Could not start the $10 check budget. No paid check was started.");
+      setRunId(budget.runId); qc.setQueryData(budgetKey, budget);
       setReport(await fetchSpecCompletion(projectId, {
+        runId: budget.runId,
         onProgress: setProgress,
         onBoardRefreshed: async summary => {
           setBoardRefresh(summary);
@@ -93,12 +105,21 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
       // The pre-check may have added PDFs; refresh any open project document lists.
       void qc.invalidateQueries({ queryKey: ["projectDocuments", projectId] });
       void qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      void qc.invalidateQueries({ queryKey: budgetKey });
     }
   };
   const openSaved = async () => {
     setOpen(true); setViewSaved(true); setError(""); setProductRefresh(null); setBoardRefresh(null); setReviewedSignature(signature);
     try { await savedQuery.refetch({ throwOnError: true }); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not load the saved review."); }
+  };
+  const finishCheck = async () => {
+    if (!activeRunId || busy) return;
+    setError("");
+    try {
+      await fullSpecBudget(projectId, "close", activeRunId);
+      setRunId(""); qc.setQueryData(budgetKey, { active: false });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not finish the check."); }
   };
   const changeStatus = async (issue: SavedCompletionIssue, status: CompletionIssueStatus) => {
     if (statusLock.current) return;
@@ -136,7 +157,7 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
   return <>
     {savedQuery.data && <button type="button" onClick={() => void openSaved()} disabled={checking || !!savingIssue}
       className="inline-flex items-center gap-2 border px-5 py-2.5 text-sm print:hidden disabled:opacity-60">Saved completion review · {count} open</button>}
-    <button type="button" onClick={() => void run()} disabled={busy}
+    <button type="button" onClick={() => void run()} disabled={busy || !canRunPaidCheck}
       title="Send the full design board to Materials, scrape pricing, dimensions and color, then run the spec check"
       className="inline-flex items-center gap-2 border border-ink px-5 py-2.5 text-sm text-ink disabled:opacity-60 print:hidden">
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
@@ -149,7 +170,8 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
           <DialogTitle className="font-display text-3xl">Spec Book completion review</DialogTitle>
           <DialogDescription>Send the full design board to Materials and the Spec Book, scrape pricing, dimensions and color, then run the spec check.</DialogDescription>
         </DialogHeader>
-        {productRefresh && <p className="text-xs text-muted-foreground">Product info refreshed: {productRefresh.saved} saved{productRefresh.failed ? `; ${productRefresh.failed} products could not be refreshed and were reviewed using their saved details` : ""}.</p>}
+        {productRefresh && <p className="text-xs text-muted-foreground">Product info refreshed: {productRefresh.saved} saved{productRefresh.failed ? `; ${productRefresh.failed} products could not be refreshed and were reviewed using their saved details` : ""}.{productRefresh.skipped ? ` ${productRefresh.skipped} already attempted in this check were not repeated.` : ""}{productRefresh.unconfirmed ? ` ${productRefresh.unconfirmed} earlier requests have unconfirmed outcomes and need review.` : ""}{productRefresh.budgetStopped && ` The check reached its $10 estimated budget; ${productRefresh.notRefreshed ?? 0} selections were not refreshed and still need review.`}</p>}
+        {activeReport?.product_refresh_budget_stopped && !productRefresh?.budgetStopped && <p className="text-xs text-amber-800">The check reached its $10 estimated budget; {activeReport.product_refresh_not_refreshed ?? 0} selections were not refreshed and still need review.</p>}
         {(boardRefresh || activeReport?.board_refresh) && <div className="text-xs text-muted-foreground">
           <p>{(boardRefresh || activeReport?.board_refresh)?.status === "not_present" ? "No saved design board is attached." : `Full board sent to Materials${boardRefresh?.imported ? ` · ${boardRefresh.imported} selections added` : ""}${boardRefresh?.updated ? ` · ${boardRefresh.updated} selections updated` : ""}.`}</p>
           {!!boardIssues.length && <details className="mt-2" open>
@@ -158,7 +180,8 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
               <li key={index}>{issue.page} · {issue.label}: {issue.message}</li>)}</ul>
           </details>}
         </div>}
-        <SpecCompletionResults key={reviewedSignature + (activeReport?.checked_at ?? "pending")} projectId={projectId} rooms={rooms} items={items} findings={details}
+        {canRunPaidCheck && activeRunId && <div className="text-xs text-muted-foreground">This check has a $10 estimated OpenAI usage limit{budgetQuery.data?.runId === activeRunId && budgetQuery.data.reservedCents != null ? `; $${(budgetQuery.data.reservedCents / 100).toFixed(2)} reserved` : ""}. Firecrawl uses your existing credits. <button type="button" disabled={busy || !!budgetQuery.data?.pendingCount} onClick={() => void finishCheck()} className="underline disabled:opacity-50">Finish this check</button> when done; any remaining comparisons will stop.{!!budgetQuery.data?.pendingCount && " Some provider requests are still running or unconfirmed; wait for them before finishing. If this does not clear, the provider charge needs to be checked before starting another run."}</div>}
+        <SpecCompletionResults key={reviewedSignature + (activeReport?.checked_at ?? "pending")} projectId={projectId} rooms={rooms} items={items} findings={details} canRunPaidCheck={canRunPaidCheck} fullCheckRunId={activeRunId}
           issues={saved?.issues} onStatusChange={saved ? changeStatus : undefined} savingIssue={savingIssue}
           onSaveDetail={saved && !busy ? saveDetail : undefined}
           onSuggestionSaved={saved ? () => { void qc.invalidateQueries({ queryKey: reviewKey }); } : undefined}
@@ -172,15 +195,17 @@ function SpecCompletionReviewContent({ projectId, items, rooms }: CompletionRevi
         <div className="flex shrink-0 items-center justify-between gap-4 border-t pt-4">
           <p className="text-xs text-muted-foreground">{saved ? "Issue decisions are saved for the team. Edit Materials to change product information." : "No quantities or selections have been changed."}</p>
           <button type="button" className="shrink-0 bg-ink px-5 py-2.5 text-sm text-white disabled:opacity-50"
-            disabled={busy || !!savingIssue} onClick={() => void run()}>{busy ? progress || "Checking plans…" : "Run a new check"}</button>
+            disabled={busy || !!savingIssue || !canRunPaidCheck} onClick={() => void run()}>{busy ? progress || "Checking plans…" : "Run a new check"}</button>
         </div>
       </DialogContent>
     </Dialog>
   </>;
 }
 
-export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSaveDetail, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, finishReview, stale = false }: {
+export function SpecCompletionResults({ projectId, rooms, items = [], findings, issues, onStatusChange, onSaveDetail, onSuggestionSaved, savingIssue = "", checkedAt, itemCount, checking = false, planStatus, document, message, documentRefresh, finishReview, stale = false, canRunPaidCheck = false, fullCheckRunId = "" }: {
   projectId: string; rooms: CompletionRoom[]; findings: CompletionFinding[]; itemCount: number;
+  canRunPaidCheck?: boolean;
+  fullCheckRunId?: string;
   items?: MaterialItem[];
   documentRefresh?: SpecCompletionReport["document_refresh"];
   finishReview?: SpecCompletionReport["finish_review"];
@@ -212,8 +237,8 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
     <DesignAccuracySummary projectId={projectId} />
     {issues && !checking && !stale && <div className="shrink-0 border p-3 text-xs">
       <p className="font-medium">Full project check</p>
-      <p className="mt-1">Compares {boardOptionBatchCandidates(completionItems(items)).length} eligible board images to retailer options and checks the current construction PDF for quantity differences. The estimated AI maximum is $5 for drawings plus up to ${Math.round(boardOptionBatchCandidates(completionItems(items)).length * 25) / 100} for product comparisons; Firecrawl may also charge. Saved current comparisons are reused. Keep this review open for the product comparisons. Nothing is changed without review.</p>
-      <button type="button" className="mt-2 border px-3 py-2" onClick={() => setFullRunSignal(current => current + 1)}>Run full project check</button>
+      <p className="mt-1">Compares {boardOptionBatchCandidates(completionItems(items)).length} eligible board images to retailer options and checks the construction PDF. The check stops before its reserved estimated OpenAI usage exceeds $10; Firecrawl uses your existing credits. Saved current comparisons are reused. Keep this review open for product comparisons.</p>
+      {canRunPaidCheck ? <><button type="button" disabled={!fullCheckRunId} className="mt-2 border px-3 py-2 disabled:opacity-50" onClick={() => setFullRunSignal(current => current + 1)}>Run full project check</button>{!fullCheckRunId && <p className="mt-1">Start with Check Spec Book for Completion to establish the check budget.</p>}</> : <p className="mt-2">Only Ken can run the full project check. Saved results remain available for review.</p>}
     </div>}
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
       {[[itemCount, "Items reviewed"], [counts.open, "Open issues"], [counts.completed, "Completed"], [counts.not_needed, "Change not needed"]].map(([count, label]) =>
@@ -240,8 +265,8 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
       {onStatusChange && <SpecCompletionPossibleItems projectId={projectId} rooms={rooms} items={items} issues={rows} checkedAt={checkedAt} document={document} disabled={checking || !!savingIssue} onAdded={catalogSaved} />}
     </div>
     <div className="min-h-0 overflow-y-auto space-y-6 pr-1">
-      {issues && !checking && <SpecQuantityScan projectId={projectId} items={items} rooms={rooms} runSignal={fullRunSignal} />}
-      {issues && !checking && !stale && <BoardOptionBatchReview projectId={projectId} items={completionItems(items)}
+      {issues && !checking && <SpecQuantityScan projectId={projectId} items={items} rooms={rooms} runSignal={fullRunSignal} fullCheckRunId={fullCheckRunId} />}
+      {issues && !checking && !stale && <BoardOptionBatchReview projectId={projectId} items={completionItems(items)} canRunPaidCheck={canRunPaidCheck} fullCheckRunId={fullCheckRunId}
         runSignal={fullRunSignal} onMatch={(itemId, result) => setMatchedOptions(current => ({ ...current, [itemId]: result }))} />}
       {issues && <SpecCompletionBatchReview projectId={projectId} items={items} rooms={rooms} issues={issues}
         checkedAt={checkedAt} disabled={checking || stale || !!savingIssue} />}
@@ -273,7 +298,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
             const catalogLabel = item?.item_label || catalogIssue?.finding.item_label || "";
             const missingTemplate = completionCatalogTemplate(catalogLabel, item?.category);
             const placeholder = !item ? items.find(row => row.room_id === room.id && row.item_label === missingTemplate.label && untouchedCatalogPlaceholder(row)) : null;
-            const canSuggest = (issue: SavedCompletionIssue | undefined) => !!issues && !checking &&
+            const canSuggest = (issue: SavedCompletionIssue | undefined) => !!issues && !checking && canRunPaidCheck && !!fullCheckRunId &&
               issue?.status === "open" && issue.last_seen_at === checkedAt && (!stale ||
                 (issue.finding.field === "color" && item && needsCompletionColor(item) &&
                   item.room_id === issue.finding.room_id && (!issue.item_preview?.product_id || issue.item_preview.product_id === item.product_id)));
@@ -296,7 +321,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                 <p className="text-xs text-muted-foreground">{item ? "Choose a replacement if the selection needs correction. Quantity is kept." : "Choose a product to fill this missing item."}</p>
               </div>}
               {selectionChanged && <p className="mt-3 text-xs text-amber-900">The selected product has changed since this check. Run the check again to review its current details and fit.</p>}
-              {item && productLink && !selectionChanged && !checking && <BoardOptionReview projectId={projectId} itemId={item.id}
+              {item && productLink && !selectionChanged && !checking && <BoardOptionReview projectId={projectId} itemId={item.id} canRunPaidCheck={canRunPaidCheck} fullCheckRunId={fullCheckRunId}
                 onMatch={value => setMatchedOptions(current => ({ ...current, [item.id]: value }))} />}
               {catalogIssue && onStatusChange && ["missing_item", "product", "link"].includes(catalogIssue.finding.field) && !item?.not_needed &&
                 <MaterialProductLinkInput projectId={projectId} roomId={room.id} label={catalogIssue.finding.item_label} existingItem={item || placeholder || null}
@@ -333,7 +358,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                     <p className="mt-1 text-sm leading-6">{completionSolution(row, item, issue.suggestion)}</p>
                   </div>
                   {issue.key === color?.key && (canSuggest(color) || color.suggestion?.kind === "color") && color.finding.item_id && (
-                    <BoardColorReview key={color.key} projectId={projectId} itemId={color.finding.item_id}
+                    <BoardColorReview key={color.key} projectId={projectId} itemId={color.finding.item_id} fullCheckRunId={fullCheckRunId}
                       initial={color.suggestion?.kind === "color" ? color.suggestion.value : undefined} allowCheck={canSuggest(color)} onSaved={onSuggestionSaved} />
                   )}
                   {row.source === "plans" && <>
@@ -343,7 +368,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                 </div>;
               })}
               {dimensions && ((canSuggest(dimensions) && !related.some(issue => issue.finding.field === "dimensions" && issue.finding.source === "plans" && issue.last_seen_at === checkedAt)) || dimensions.suggestion?.kind === "dimensions") && dimensions.finding.item_id && (
-                <PlanDimensionReview key={dimensions.key} projectId={projectId} itemId={dimensions.finding.item_id}
+                <PlanDimensionReview key={dimensions.key} projectId={projectId} itemId={dimensions.finding.item_id} fullCheckRunId={fullCheckRunId}
                   initial={dimensions.suggestion?.kind === "dimensions" ? dimensions.suggestion.value : undefined} allowCheck={canSuggest(dimensions)} onSaved={onSuggestionSaved} />
               )}
             </div>;
@@ -414,7 +439,7 @@ function CompletionProductImage({ src, name }: { src: string; name: string }) {
     <img src={src} alt={name} loading="lazy" onError={() => setFailed(true)} className="h-20 w-20 sm:h-24 sm:w-24 shrink-0 border object-contain bg-white" />;
 }
 
-function BoardColorReview({ projectId, itemId, initial, allowCheck = true, onSaved }: { projectId: string; itemId: string; initial?: BoardColorSuggestion; allowCheck?: boolean; onSaved?: () => void }) {
+function BoardColorReview({ projectId, itemId, initial, allowCheck = true, onSaved, fullCheckRunId }: { projectId: string; itemId: string; initial?: BoardColorSuggestion; allowCheck?: boolean; onSaved?: () => void; fullCheckRunId: string }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<BoardColorSuggestion | null>(initial ?? null);
   const [error, setError] = useState("");
@@ -422,7 +447,7 @@ function BoardColorReview({ projectId, itemId, initial, allowCheck = true, onSav
   const suggest = async () => {
     if (lock.current) return;
     lock.current = true; setChecking(true); setError(""); setResult(null);
-    try { setResult(await fetchBoardColorSuggestion(projectId, itemId)); onSaved?.(); }
+    try { setResult(await fetchBoardColorSuggestion(projectId, itemId, fullCheckRunId)); onSaved?.(); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not suggest a color."); }
     finally { lock.current = false; setChecking(false); }
   };
@@ -448,20 +473,20 @@ function BoardColorReview({ projectId, itemId, initial, allowCheck = true, onSav
   </div>;
 }
 
-function BoardOptionReview({ projectId, itemId, onMatch }: { projectId: string; itemId: string; onMatch: (value: BoardOptionMatch | null) => void }) {
+function BoardOptionReview({ projectId, itemId, onMatch, canRunPaidCheck, fullCheckRunId }: { projectId: string; itemId: string; onMatch: (value: BoardOptionMatch | null) => void; canRunPaidCheck: boolean; fullCheckRunId: string }) {
   const [result, setResult] = useState<BoardOptionMatch | null>(null);
   const [matching, setMatching] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const run = async (cached = false) => {
-    if (lock.current) return;
+    if (lock.current || (!cached && (!canRunPaidCheck || !fullCheckRunId))) return;
     lock.current = true; setMatching(true); setError(""); setResult(null); onMatch(null);
-    try { const matched = await fetchBoardOptionMatch(projectId, itemId, cached); setResult(matched); if (matched.status === "matched") onMatch(matched); }
+    try { const matched = await fetchBoardOptionMatch(projectId, itemId, cached, fullCheckRunId); setResult(matched); if (matched.status === "matched") onMatch(matched); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not compare options."); }
     finally { lock.current = false; setMatching(false); }
   };
   return <div className="mt-3">
-    <button type="button" disabled={matching} onClick={() => void run()} className="inline-flex items-center gap-2 border px-3 py-2 text-xs disabled:opacity-50">
+    <button type="button" disabled={matching || !canRunPaidCheck || !fullCheckRunId} onClick={() => void run()} className="inline-flex items-center gap-2 border px-3 py-2 text-xs disabled:opacity-50">
       {matching ? "Comparing retailer options…" : "Match board to product options"}
     </button>
     <button type="button" disabled={matching} onClick={() => void run(true)} className="ml-2 underline disabled:opacity-50">Show saved comparison</button>
@@ -496,7 +521,7 @@ function BoardOptionWarnings({ result }: { result: BoardOptionMatch }) {
   })}</>;
 }
 
-function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0 }: { projectId: string; items: MaterialItem[]; onMatch: (itemId: string, value: BoardOptionMatch | null) => void; runSignal?: number }) {
+function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0, canRunPaidCheck, fullCheckRunId }: { projectId: string; items: MaterialItem[]; onMatch: (itemId: string, value: BoardOptionMatch | null) => void; runSignal?: number; canRunPaidCheck: boolean; fullCheckRunId: string }) {
   const candidates = boardOptionBatchCandidates(items);
   const [running, setRunning] = useState(false);
   const [count, setCount] = useState(0);
@@ -505,7 +530,7 @@ function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0 }: { 
   const lock = useRef(false);
   const handledSignal = useRef(0);
   const run = async (mode: "fresh" | "saved" | "reuse" = "fresh") => {
-    if (lock.current || !candidates.length) return;
+    if (lock.current || !candidates.length || (mode !== "saved" && (!canRunPaidCheck || !fullCheckRunId))) return;
     lock.current = true; stop.current = false; setRunning(true); setCount(0); setResults([]);
     try {
       await runBoardOptionBatch(candidates, async item => {
@@ -513,10 +538,11 @@ function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0 }: { 
           const saved = await fetchBoardOptionMatch(projectId, item.id, true);
           if (mode === "saved" || reusableBoardOptionMatch(saved)) return saved;
         }
-        return fetchBoardOptionMatch(projectId, item.id);
+        return fetchBoardOptionMatch(projectId, item.id, false, fullCheckRunId);
       }, (item, result, error) => {
         setResults(current => [...current, { id: item.id, label: item.client_product_name || item.item_label, roomId: item.room_id, result, error }]);
         setCount(current => current + 1);
+        if (/\$10|budget|limit.*reached/i.test(error || result?.reason || "")) stop.current = true;
         onMatch(item.id, result?.status === "matched" ? result : null);
       }, () => stop.current);
     } finally { lock.current = false; setRunning(false); }
@@ -529,9 +555,9 @@ function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0 }: { 
   useEffect(() => () => { stop.current = true; }, []);
   return <details open={running || !!results.length || undefined} className="shrink-0 border p-3 text-xs">
     <summary className="cursor-pointer font-medium">Compare board images with product options across this project</summary>
-    <p className="mt-2">Up to {candidates.length} linked selections will be checked one at a time. Links are sent to Firecrawl and available option images to OpenAI. Each AI comparison has a 25¢ estimated maximum (up to ${Math.round(candidates.length * 25) / 100} for the project); Firecrawl may also charge. Results are suggestions and do not change saved selections.</p>
+    <p className="mt-2">Up to {candidates.length} linked selections will be checked one at a time. Links are sent to Firecrawl and available option images to OpenAI. Comparisons share the check’s $10 estimated OpenAI limit; Firecrawl uses your existing credits. Results are suggestions and do not change saved selections.</p>
     <div className="mt-2 flex gap-2">
-      <button type="button" disabled={running || !candidates.length} onClick={() => void run()} className="border px-3 py-2 disabled:opacity-50">{running ? `Checking ${count} of ${candidates.length}…` : "Compare project options"}</button>
+      <button type="button" disabled={running || !candidates.length || !canRunPaidCheck || !fullCheckRunId} onClick={() => void run()} className="border px-3 py-2 disabled:opacity-50">{running ? `Checking ${count} of ${candidates.length}…` : "Compare project options"}</button>
       <button type="button" disabled={running || !candidates.length} onClick={() => void run("saved")} className="border px-3 py-2 disabled:opacity-50">Load saved comparisons</button>
       {running && <button type="button" onClick={() => { stop.current = true; }} className="border px-3 py-2">Stop after current item</button>}
     </div>
@@ -544,7 +570,7 @@ function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0 }: { 
   </details>;
 }
 
-function PlanDimensionReview({ projectId, itemId, initial, allowCheck = true, onSaved }: { projectId: string; itemId: string; initial?: PlanDimensionSuggestion; allowCheck?: boolean; onSaved?: () => void }) {
+function PlanDimensionReview({ projectId, itemId, initial, allowCheck = true, onSaved, fullCheckRunId }: { projectId: string; itemId: string; initial?: PlanDimensionSuggestion; allowCheck?: boolean; onSaved?: () => void; fullCheckRunId: string }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<PlanDimensionSuggestion | null>(initial ?? null);
   const [error, setError] = useState("");
@@ -552,7 +578,7 @@ function PlanDimensionReview({ projectId, itemId, initial, allowCheck = true, on
   const suggest = async () => {
     if (lock.current) return;
     lock.current = true; setChecking(true); setError(""); setResult(null);
-    try { setResult(await fetchPlanDimensionSuggestion(projectId, itemId)); onSaved?.(); }
+    try { setResult(await fetchPlanDimensionSuggestion(projectId, itemId, fullCheckRunId)); onSaved?.(); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not suggest dimensions."); }
     finally { lock.current = false; setChecking(false); }
   };

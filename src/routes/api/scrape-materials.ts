@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
@@ -10,6 +11,10 @@ import {
 } from "@/lib/productPricing";
 import { cleanUuid } from "@/lib/ids";
 import { authorizeCompletionProject } from "@/lib/specCompletion.server";
+import { canRunPaidSpecCheck } from "@/lib/specCheckAccess";
+import { assertProductionFullSpecBudget, productionFullSpecBudgetStore } from "@/lib/fullSpecBudget.server";
+import { reserveFullSpecBudget, settleFullSpecBudget } from "@/lib/fullSpecBudgetStore";
+import { FullSpecBudgetError } from "@/lib/fullSpecBudget";
 import { allowsMissingMaterialPrice, hasCompletionValue } from "@/lib/specCompletion";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
 import { resolveCartonCoverage } from "@/lib/cartonCoverage";
@@ -498,6 +503,8 @@ function scrapedFromFirecrawlData(data: FirecrawlPage, sourceUrl: string): Scrap
 
 async function scrapeOne(url: string, fcKey: string, options: {
   fresh?: boolean;
+  bounded?: boolean;
+  onProviderTerminal?: () => Promise<void>;
   selection?: { sku?: string; finish?: string; dimensions?: string; color?: string };
 } = {}): Promise<Scraped> {
   const directProduct = await scrapeDirectProduct(url);
@@ -533,8 +540,15 @@ async function scrapeOne(url: string, fcKey: string, options: {
         maxAge: options.fresh ? 0 : FIRECRAWL_MAX_AGE_MS,
         location: { country: "US", languages: ["en-US"] },
         proxy: "auto",
+        // A URL may redirect to a multipage PDF; prevent unbounded per-page
+        // parsing charges during a budgeted full check.
+        ...(options.bounded ? { parsers: [] } : {}),
       }),
     });
+    // A lost request or provider 5xx is ambiguous and must remain in-flight.
+    // A completed response or an explicit non-timeout 4xx is terminal.
+    if (res.ok || (res.status >= 400 && res.status < 500 && ![408, 429].includes(res.status)))
+      await options.onProviderTerminal?.();
     if (timeout) clearTimeout(timeout);
     timeout = null;
     if (!res.ok) {
@@ -559,7 +573,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
       // Phase 1 — Firecrawl batch jobs return immediately; the client polls until ready.
       POST: async ({ request }) => {
         try {
-          const access = await authorizeCompletionProject(request, ["action", "project_id", "material_item_ids", "exclude_material_item_ids", "batch_id", "candidates", "force", "verify_selected_finishes"]);
+          const access = await authorizeCompletionProject(request, ["action", "project_id", "material_item_ids", "exclude_material_item_ids", "batch_id", "candidates", "force", "verify_selected_finishes", "full_check_run_id"]);
           if (access instanceof Response) return access;
           const body = access.body as {
             action?: "start" | "poll" | "fallback";
@@ -569,6 +583,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             batch_id?: string;
             force?: boolean;
             verify_selected_finishes?: boolean;
+            full_check_run_id?: string;
             candidates?: Array<{
               material_item_id?: string;
               url?: string;
@@ -579,6 +594,25 @@ export const Route = createFileRoute("/api/scrape-materials")({
           };
           const projectId = cleanUuid(body.project_id);
           if (!projectId) return json({ error: "Valid project_id required" }, 400);
+          // Any call carrying a run ID belongs to the check even if a caller
+          // omits the finish-verification flag; it must not bypass its budget.
+          const budgeted = body.verify_selected_finishes === true || body.full_check_run_id !== undefined;
+          const runId = budgeted ? cleanUuid(body.full_check_run_id) : null;
+          if (budgeted && !canRunPaidSpecCheck(access.user, access.profile))
+            return json({ error: "The paid full Spec Book check is currently available only to Ken’s active Studio account." }, 403);
+          if (budgeted && !runId) return json({ error: "Start a budgeted full check before refreshing selections." }, 400);
+          if (budgeted) await assertProductionFullSpecBudget(projectId, access.userId, runId!);
+          // Firecrawl JSON extraction costs 5 credits/page. Each actual batch,
+          // fallback and price retry is separately reserved before submission.
+          const reserveScrape = async (phase: string, details: unknown, pages: number) => {
+            if (!budgeted || !pages) return null;
+            const digest = createHash("sha256").update(JSON.stringify(details)).digest("hex");
+            const key = `scrape:${phase}:${digest}`;
+            const claimed = await reserveFullSpecBudget(productionFullSpecBudgetStore(projectId), access.userId, runId!,
+              { key, kind: "scrape", openAiCents: 0, firecrawlCredits: pages * 5 });
+            if (!claimed && phase !== "single") throw new FullSpecBudgetError("This product refresh was already attempted. Open the saved review; no duplicate scrape was started.");
+            return { key, claimed };
+          };
           const respond = (value: any, status = 200) => {
             if (body.verify_selected_finishes !== true) return json(value, status);
             const signedRows = (rows: any[]) => rows.map(row => ({ ...row, finish_check_token:
@@ -591,6 +625,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
           const fcKey = process.env.FIRECRAWL_API_KEY;
           if (!fcKey) return json({ error: "Firecrawl is not connected yet." }, 500);
 
+          // Full checks use bounded synchronous, one-item requests. A Firecrawl
+          // batch would otherwise keep running after the browser loses its ID.
+          if (budgeted && (body.action === "poll" || body.action === "fallback"))
+            return json({ error: "Budgeted checks do not start asynchronous product batches. Reopen the saved review." }, 409);
+
           if (body.action === "fallback") {
             if (!Array.isArray(body.candidates) || !body.candidates.length) {
               return respond({ error: "Batch candidates required." }, 400);
@@ -602,10 +641,11 @@ export const Route = createFileRoute("/api/scrape-materials")({
             const uniqueUrls = Array.from(
               new Set(candidates.map((candidate) => candidate.url?.trim() ?? "")),
             );
+            await reserveScrape("fallback", uniqueUrls.slice().sort(), uniqueUrls.length);
             const scrapedByUrl = new Map(
               await Promise.all(
                 uniqueUrls.map(async (url) => [url, await scrapeOne(url, fcKey, {
-                  fresh: true, selection: candidates.find((candidate) => candidate.url?.trim() === url)?.selection,
+                  fresh: true, bounded: budgeted, selection: candidates.find((candidate) => candidate.url?.trim() === url)?.selection,
                 })] as const),
               ),
             );
@@ -673,12 +713,14 @@ export const Route = createFileRoute("/api/scrape-materials")({
             // A successful page scrape can still omit a dynamically loaded price.
             // Retry those pages once, bypassing cached incomplete HTML. Share one
             // retry across duplicate product URLs within the batch.
+            const retryKeys = [...new Set(rows.flatMap((row, index) => exactProductPrice(row.scraped.price) ? [] : [JSON.stringify([row.url, body.candidates![index].selection])]))];
+            await reserveScrape("price-retry", [body.batch_id, retryKeys.slice().sort()], retryKeys.length);
             const retries = new Map<string, Promise<Scraped>>();
             const recoveredRows = await Promise.all(rows.map(async (row, index) => {
               if (exactProductPrice(row.scraped.price)) return row;
               const selection = body.candidates![index].selection;
               const key = JSON.stringify([row.url, selection]);
-              if (!retries.has(key)) retries.set(key, scrapeOne(row.url, fcKey, { fresh: true, selection }));
+              if (!retries.has(key)) retries.set(key, scrapeOne(row.url, fcKey, { fresh: true, bounded: budgeted, selection }));
               const retried = await retries.get(key)!;
               if (retried.error) return row;
               const scraped = exactProductPrice(retried.price)
@@ -730,7 +772,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             );
           });
           const already_scraped_count = validLinkItems.length - candidates.length;
-          const batchItems = candidates.slice(0, MAX_SCRAPE_ROWS_PER_BATCH);
+          const batchItems = candidates.slice(0, budgeted ? 1 : MAX_SCRAPE_ROWS_PER_BATCH);
           const remaining_count = Math.max(0, candidates.length - batchItems.length);
           const batchCandidates = batchItems.map((item: any) => ({
             material_item_id: item.id,
@@ -782,7 +824,37 @@ export const Route = createFileRoute("/api/scrape-materials")({
               remaining_count,
             });
           }
+          if (budgeted) {
+            const candidate = firecrawlCandidates[0];
+            // An interrupted client can lose its processed list after a prior
+            // result was saved. The key must not depend on mutable scraped
+            // fields, or a resumed run could pay again for the same link.
+            const reservation = await reserveScrape("single", [candidate.material_item_id, candidate.url], 1);
+            if (!reservation!.claimed) {
+              const current = await assertProductionFullSpecBudget(projectId, access.userId, runId!);
+              const claim = current.claims.find(row => row.key === reservation!.key);
+              if (!claim) throw new FullSpecBudgetError("The earlier product request could not be verified. Refresh the review.");
+              const pending = claim.status !== "settled";
+              return respond({ status: "completed", rows: [...prefetchedRows, { material_item_id: candidate.material_item_id,
+                url: candidate.url, existing_product_id: candidate.existing_product_id,
+                skipped_reason: pending ? "outcome_unconfirmed" : "already_checked",
+                scraped: { error: pending ? "An earlier request has an unconfirmed outcome. No duplicate scrape was started; verify this item." :
+                  "This item was already checked in this run. No duplicate scrape was started; review its saved details." } }],
+                invalid_link_count, already_scraped_count, remaining_count });
+            }
+            let terminal = false;
+            const scraped = await scrapeOne(candidate.url, fcKey, { bounded: true, selection: candidate.selection,
+              onProviderTerminal: async () => {
+                await settleFullSpecBudget(productionFullSpecBudgetStore(projectId), access.userId, runId!, reservation!.key);
+                terminal = true;
+              } });
+            if (!terminal) throw new FullSpecBudgetError("The product request outcome could not be confirmed. No automatic retry was made; the check cannot close until it is resolved.");
+            return respond({ status: "completed", rows: [...prefetchedRows, { material_item_id: candidate.material_item_id,
+              url: candidate.url, existing_product_id: candidate.existing_product_id, scraped }],
+              invalid_link_count, already_scraped_count, remaining_count });
+          }
           const urls = Array.from(new Set(firecrawlCandidates.map((candidate) => candidate.url)));
+          await reserveScrape("batch", urls.slice().sort(), urls.length);
           const response = await fetch(FIRECRAWL_BATCH_API, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${fcKey}` },
@@ -805,6 +877,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
               maxAge: FIRECRAWL_MAX_AGE_MS,
               location: { country: "US", languages: ["en-US"] },
               proxy: "auto",
+              ...(budgeted ? { parsers: [] } : {}),
             }),
           });
           if (!response.ok) {
@@ -812,11 +885,12 @@ export const Route = createFileRoute("/api/scrape-materials")({
             // A rejected batch must not stop the rest of a project's selections.
             // Individual requests isolate a blocked/invalid retailer URL and let
             // the client save useful rows and continue with the next batch.
+            await reserveScrape("batch-retry", firecrawlCandidates.map(candidate => [candidate.url, candidate.material_item_id]), firecrawlCandidates.length);
             const recoveredRows = await Promise.all(firecrawlCandidates.map(async (candidate) => ({
               material_item_id: cleanUuid(candidate.material_item_id),
               url: candidate.url,
               existing_product_id: cleanUuid(candidate.existing_product_id),
-              scraped: await scrapeOne(candidate.url, fcKey, { fresh: true, selection: candidate.selection }),
+              scraped: await scrapeOne(candidate.url, fcKey, { fresh: true, bounded: budgeted, selection: candidate.selection }),
             })));
             return respond({ status: "completed", rows: [...prefetchedRows, ...recoveredRows],
               invalid_link_count, already_scraped_count, remaining_count });
@@ -835,7 +909,7 @@ export const Route = createFileRoute("/api/scrape-materials")({
             remaining_count,
           });
         } catch (e: any) {
-          return json({ error: e?.message || "Unexpected error" }, 500);
+          return json({ error: e?.message || "Unexpected error", ...(e instanceof FullSpecBudgetError && e.code === "budget_exhausted" ? { code: "full_spec_budget_reached" } : {}) }, e instanceof FullSpecBudgetError ? 409 : 500);
         }
       },
 

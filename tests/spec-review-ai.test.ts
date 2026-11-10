@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { fetchSpecReview, reviewCostCeiling, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
+import { fetchSpecReview, reviewCostCeiling, terminalSpecReviewResponse, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
 
 const request = { instructions: "Review this exact selection", input: [{ role: "user", content: [
   { type: "input_text", text: "Mirror in Bathroom 2" },
@@ -35,6 +35,21 @@ it("stops an expensive PDF before generation rather than silently downgrading or
   fetchMock.mockResolvedValue(Response.json({ input_tokens: 850000 }));
   await expect(fetchSpecReview(request, "completion")).rejects.toThrow("exceeds $5");
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it("reserves the estimated cost before generation and stops when the run budget is exhausted", async () => {
+  const reserve = vi.fn(async () => { throw new Error("$10 run budget reached"); });
+  await expect(fetchSpecReview(request, "completion", true, fetchMock, reserve)).rejects.toThrow("$10 run budget reached");
+  expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ ceilingUsd: reviewCostCeiling(50000, "completion").ceilingUsd }));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it("settles only after a provider response, leaving queued or lost work pending", async () => {
+  const order: string[] = [];
+  const response = await fetchSpecReview(request, "completion", true, fetchMock,
+    async () => { order.push("reserve"); }, async result => { if (await terminalSpecReviewResponse(result)) order.push("settle"); });
+  expect(response.ok).toBe(true); expect(order).toEqual(["reserve", "settle"]);
+  expect(await terminalSpecReviewResponse(Response.json({ status: "queued" }))).toBe(false);
+  expect(await terminalSpecReviewResponse(Response.json({ error: "unavailable" }, { status: 500 }))).toBe(false);
+  expect(await terminalSpecReviewResponse(Response.json({ error: "rate limit" }, { status: 429 }))).toBe(false);
 });
 it("uses a smaller budget for option images and stops before a comparison above 25 cents", async () => {
   await fetchSpecReview(request, "option");

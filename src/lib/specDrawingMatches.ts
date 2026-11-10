@@ -70,6 +70,7 @@ export type DrawingMatchJob = {
   mode?: "direct" | "ai";
   purpose?: "quantities";
   quantityAttempt?: number;
+  fullCheckRunId?: string;
   key: string;
   projectId: string;
   createdBy: string;

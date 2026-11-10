@@ -3,8 +3,11 @@ import type { MaterialItem } from "@/lib/db";
 import { linkedBoardImage, cleanBoardColorSuggestion } from "@/lib/boardColorSuggestion";
 const projectId = "527d1356-919b-48b9-877e-1924c766282b";
 const itemId = "0033186c-a2e6-417f-a50f-37f5390f5cf5";
-const state = vi.hoisted(() => ({ item: null as any, board: null as any, access: null as any, fetch: vi.fn() }));
+const state = vi.hoisted(() => ({ item: null as any, board: null as any, access: null as any, fetch: vi.fn(), count: vi.fn(), freeze: vi.fn(), reserve: vi.fn(), settle: vi.fn(), budget: vi.fn() }));
 vi.mock("@/lib/specCompletion.server", () => ({ authorizeCompletionProject: async () => state.access }));
+vi.mock("@/lib/fullSpecBudget.server", () => ({ assertProductionFullSpecBudget: state.budget, productionFullSpecBudgetStore: () => ({}) }));
+vi.mock("@/lib/fullSpecBudgetStore", () => ({ reserveFullSpecBudget: state.reserve, settleFullSpecBudget: state.settle }));
+vi.mock("@/lib/immutableSpecImages.server", () => ({ immutableSpecImages: state.freeze }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
   from: (table: string) => {
     const filters: any = {};
@@ -17,7 +20,9 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {
 import { suggestBoardColor, boardColorImageUrl } from "@/lib/boardColorSuggestion.server";
 const request = () => new Request("https://studio.test/api/suggest-board-color", { method: "POST", body: "{}" });
 beforeEach(() => {
-  vi.clearAllMocks(); state.access = { projectId, body: { item_id: itemId } };
+  vi.clearAllMocks(); state.access = { projectId, userId: "staff", body: { item_id: itemId, full_check_run_id: "44444444-4444-4444-8444-444444444444" }, user: { email: "ken@meravinteriors.com" }, profile: { email: "ken@meravinteriors.com", is_active: true, role: "Admin" } };
+  state.reserve.mockResolvedValue(true); state.budget.mockResolvedValue({});
+  state.freeze.mockResolvedValue({ images: ["data:image/png;base64,dGVzdA=="], bytes: 4 });
   state.item = { id: itemId, project_id: projectId, room_id: "bath", item_label: "Tile", color: null, not_needed: false,
     product_id: "product", product: { name: "Selected tile", finish: null },
     source_board_id: projectId, source_board_page_id: "page", source_board_element_id: "element" };
@@ -26,7 +31,7 @@ beforeEach(() => {
   state.fetch.mockResolvedValue(Response.json({ status: "completed", output_text: JSON.stringify({ status: "suggested", color: "Warm beige", confidence: 0.9,
     reason: "The selected tile has a clear warm beige base." }) }));
   vi.stubGlobal("fetch", (url: string, options: unknown) => url.endsWith("/input_tokens") ?
-    Promise.resolve(Response.json({ input_tokens: 3500 })) : state.fetch(url, options));
+    (state.count(url, options), Promise.resolve(Response.json({ input_tokens: 3500 }))) : state.fetch(url, options));
   vi.stubEnv("OPENAI_API_KEY", "TEST_ONLY_KEY");
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -35,7 +40,8 @@ it("uses the current linked board image and returns a visual suggestion without 
   expect(result).toMatchObject({ status: "suggested", color: "Warm beige", source: { page_id: "page", page_name: "Guest Bath" } });
   expect(state.item.color).toBeNull();
   const body = JSON.parse(state.fetch.mock.calls[0][1].body);
-  expect(body.store).toBe(false); expect(body.input[0].content[1].image_url).toBe("https://cdn.example.com/tile.jpg");
+  expect(body.store).toBe(false); expect(body.input[0].content[1].image_url).toBe("data:image/png;base64,dGVzdA==");
+  expect(JSON.parse(state.count.mock.calls[0][1].body).input[0].content[1].image_url).toBe(body.input[0].content[1].image_url);
   expect(body).toMatchObject({ model: "gpt-6.1-sol", reasoning: { effort: "high" }, service_tier: "default", max_output_tokens: 8000 });
   expect(body.instructions).toContain("Never invent a manufacturer color name");
 });
@@ -54,9 +60,19 @@ it("can suggest missing color when only a sheen was entered", async () => {
 it("uses the shared project access guard and rejects other-project materials", async () => {
   state.access = Response.json({ error: "Forbidden" }, { status: 403 });
   expect((await suggestBoardColor(request())).status).toBe(403);
-  state.access = { projectId: itemId, body: { item_id: itemId } };
+  state.access = { ...state.access, projectId: itemId, body: { item_id: itemId, full_check_run_id: "44444444-4444-4444-8444-444444444444" }, user: { email: "ken@meravinteriors.com" }, profile: { email: "ken@meravinteriors.com", is_active: true, role: "Admin" } };
   expect((await suggestBoardColor(request())).status).toBe(404);
   expect(state.fetch).not.toHaveBeenCalled();
+});
+it("requires Ken's active run and reserves before generating a color suggestion", async () => {
+  state.access.body.full_check_run_id = "";
+  expect((await suggestBoardColor(request())).status).toBe(400); expect(state.fetch).not.toHaveBeenCalled();
+  state.access.body.full_check_run_id = "44444444-4444-4444-8444-444444444444";
+  state.access.user.email = "other@meravinteriors.com";
+  expect((await suggestBoardColor(request())).status).toBe(403); expect(state.fetch).not.toHaveBeenCalled();
+  state.access.user.email = "ken@meravinteriors.com"; state.reserve.mockResolvedValue(false);
+  const result = await (await suggestBoardColor(request())).json();
+  expect(result.status).toBe("unavailable"); expect(result.reason).toContain("already attempted"); expect(state.fetch).not.toHaveBeenCalled();
 });
 it("does not analyze unrelated, excluded or removed board pictures", async () => {
   const element = state.board.pages[0].elements[0];

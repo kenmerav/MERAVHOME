@@ -10,6 +10,14 @@ import { refreshMaterialProductInfo, type MaterialProductRefresh } from "@/lib/m
 import type { SpecBoardSyncSummary } from "@/lib/specBoardSync";
 import { createStudioSessionRequest } from "@/lib/studioSessionRequest";
 
+export type FullSpecBudgetStatus = { active: boolean; runId?: string; limitCents?: number; reservedCents?: number; pendingCount?: number };
+export async function fullSpecBudget(projectId: string, action: "start" | "status" | "close", runId?: string): Promise<FullSpecBudgetStatus> {
+  const request = await createStudioSessionRequest();
+  const response = await request("/api/full-spec-budget", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId, action, ...(action === "close" ? { run_id: runId } : {}) }) });
+  return completionResponse(response, "Could not confirm the check budget.");
+}
+
 async function savedReviewRequest(body: unknown): Promise<SavedSpecCompletionReview | null> {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("Sign in to review completion.");
@@ -41,15 +49,16 @@ export async function saveCompletionDetail(projectId: string, item: MaterialItem
 }
 
 export async function fetchSpecCompletion(projectId: string, options: {
+  runId: string;
   onProgress?: (message: string) => void;
   onProductsRefreshed?: (summary: MaterialProductRefresh) => Promise<void>;
   onBoardRefreshed?: (summary: SpecBoardSyncSummary) => Promise<void>;
-} = {}): Promise<SpecCompletionReport> {
+}): Promise<SpecCompletionReport> {
   const request = await createStudioSessionRequest();
   const headers = { "Content-Type": "application/json" };
   options.onProgress?.("Sending the full design board to Materials…");
   const preparedResponse = await request("/api/check-spec-completion", {
-    method: "POST", headers, body: JSON.stringify({ project_id: projectId, action: "prepare" }),
+    method: "POST", headers, body: JSON.stringify({ project_id: projectId, action: "prepare", full_check_run_id: options.runId }),
   });
   const prepared = await completionResponse<{ material_item_ids: string[]; pending_report?: SpecCompletionReport;
     board_updated_at?: string | null; board_refresh?: SpecBoardSyncSummary }>(preparedResponse, "Could not prepare the completion check.");
@@ -57,43 +66,43 @@ export async function fetchSpecCompletion(projectId: string, options: {
   if (!Array.isArray(prepared.material_item_ids)) throw new Error("Could not confirm current selections. Please retry.");
   if (prepared.board_refresh) await options.onBoardRefreshed?.(prepared.board_refresh);
   const summary = await refreshMaterialProductInfo(projectId, prepared.material_item_ids, {
-    request, onProgress: options.onProgress, verifySelectedFinishes: true,
+    request, onProgress: options.onProgress, verifySelectedFinishes: true, fullCheckRunId: options.runId,
   });
   await options.onProductsRefreshed?.(summary);
   options.onProgress?.("Checking construction PDFs and Spec Book…");
   const response = await request("/api/check-spec-completion", {
     method: "POST", headers,
-    body: JSON.stringify({ project_id: projectId, finish_checks: summary.finishChecks ?? [], ...(prepared.board_updated_at !== undefined
+    body: JSON.stringify({ project_id: projectId, full_check_run_id: options.runId, finish_checks: summary.finishChecks ?? [], ...(summary.budgetStopped ? { product_refresh_budget_stopped: true, product_refresh_not_refreshed: summary.notRefreshed ?? 0 } : {}), ...(prepared.board_updated_at !== undefined
       ? { expected_board_updated_at: prepared.board_updated_at } : {}) }),
   });
   return completionResponse(response, "Could not check completion.");
 }
 
-export async function fetchBoardColorSuggestion(projectId: string, itemId: string): Promise<BoardColorSuggestion> {
+export async function fetchBoardColorSuggestion(projectId: string, itemId: string, runId: string): Promise<BoardColorSuggestion> {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("Sign in to suggest a color.");
   const response = await fetch("/api/suggest-board-color", {
     method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId, item_id: itemId }),
+    body: JSON.stringify({ project_id: projectId, item_id: itemId, full_check_run_id: runId }),
   });
   return completionResponse(response, "Could not suggest a color.");
 }
 
-export async function fetchBoardOptionMatch(projectId: string, itemId: string, cached = false): Promise<import("./boardOptionMatch").BoardOptionMatch> {
+export async function fetchBoardOptionMatch(projectId: string, itemId: string, cached = false, runId?: string): Promise<import("./boardOptionMatch").BoardOptionMatch> {
   const request = await createStudioSessionRequest();
   const response = await request("/api/match-board-option", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId, item_id: itemId, ...(cached ? { action: "cached" } : {}) }),
+    body: JSON.stringify({ project_id: projectId, item_id: itemId, ...(cached ? { action: "cached" } : { full_check_run_id: runId }) }),
   });
   return completionResponse(response, "Could not compare product options.");
 }
 
-export async function fetchPlanDimensionSuggestion(projectId: string, itemId: string): Promise<PlanDimensionSuggestion> {
+export async function fetchPlanDimensionSuggestion(projectId: string, itemId: string, runId: string): Promise<PlanDimensionSuggestion> {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("Sign in to suggest dimensions.");
   const response = await fetch("/api/suggest-plan-dimensions", {
     method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId, item_id: itemId }),
+    body: JSON.stringify({ project_id: projectId, item_id: itemId, full_check_run_id: runId }),
   });
   return completionResponse(response, "Could not suggest dimensions.");
 }

@@ -38,7 +38,17 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputL
   return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimit };
 }
 
-export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false, fetcher:typeof fetch = fetch): Promise<Response> {
+// Only an explicit terminal provider response can release an in-flight claim.
+// Network errors, ambiguous 5xx/rate-limit responses and queued work stay pending.
+export async function terminalSpecReviewResponse(response: Response) {
+  if (!response.ok) return response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status);
+  const body = await response.clone().json().catch(() => null);
+  return ["completed", "failed", "cancelled", "incomplete"].includes(body?.status);
+}
+
+export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false, fetcher:typeof fetch = fetch,
+  beforeGenerate?: (budget: ReturnType<typeof reviewCostCeiling>) => Promise<void>,
+  afterGenerate?: (response: Response) => Promise<void>): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) throw new Error("AI configuration unavailable");
   const headers = { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" };
   const countedRequest = { ...request, model: SPEC_REVIEW_MODEL, reasoning: { effort: kind === "option" ? "medium" : "high" } };
@@ -56,13 +66,16 @@ export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, 
     throw new SpecReviewCostError("The AI review was stopped because its cost could not be confirmed. Try again later.");
   }
   const budget = reviewCostCeiling(count?.input_tokens, kind);
+  if (beforeGenerate) await beforeGenerate(budget);
   // One generation per button press, no automatic retries or hosted tools.
   // This guards estimated model-token cost, not an account-wide billing limit.
-  return fetcher("https://api.openai.com/v1/responses", {
+  const response = await fetcher("https://api.openai.com/v1/responses", {
     method: "POST", signal: AbortSignal.timeout(background ? 60000 : reviewTimeouts[kind]), headers,
     body: JSON.stringify({ ...countedRequest, service_tier: "default", store: false,
       max_output_tokens: budget.maxOutputTokens, ...(background ? { background: true } : {}) }),
   });
+  if (afterGenerate) await afterGenerate(response);
+  return response;
 }
 
 export async function retrieveSpecReview(responseId: string) {

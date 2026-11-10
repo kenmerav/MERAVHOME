@@ -5,10 +5,13 @@ import {
   normalizeFirecrawlProduct,
 } from "../src/lib/firecrawlProduct";
 
-const mock = vi.hoisted(() => ({ query: vi.fn(), denied: null as Response | null, currentUrl: "" }));
+const mock = vi.hoisted(() => ({ query: vi.fn(), denied: null as Response | null, currentUrl: "", reserve: vi.fn(), settle: vi.fn(), assertBudget: vi.fn(), userEmail: "ken@meravinteriors.com" }));
 vi.mock("@/lib/specCompletion.server", () => ({ authorizeCompletionProject: async (request: Request) => mock.denied ?? {
   projectId: "11111111-1111-4111-8111-111111111111", body: await request.json(), userId: "staff",
+  user: { email: mock.userEmail }, profile: { email: "ken@meravinteriors.com", is_active: true, role: "Admin" },
 } }));
+vi.mock("@/lib/fullSpecBudget.server", () => ({ assertProductionFullSpecBudget: mock.assertBudget, productionFullSpecBudgetStore: () => ({}) }));
+vi.mock("@/lib/fullSpecBudgetStore", () => ({ reserveFullSpecBudget: mock.reserve, settleFullSpecBudget: mock.settle }));
 vi.mock("../src/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from: (table: string) => {
@@ -49,6 +52,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 import { Route } from "../src/routes/api/scrape-materials";
 import { readFinishObservations } from "../src/lib/selectedFinish.server";
+import { FullSpecBudgetError } from "../src/lib/fullSpecBudget";
 type Handler = (context: { request: Request }) => Promise<Response>;
 const handlers = (
   Route.options as unknown as { server: { handlers: { POST: Handler; PUT: Handler } } }
@@ -59,6 +63,8 @@ const product = "33333333-3333-4333-8333-333333333333";
 const url = "https://shop.example.com/products/sconce?variant=123";
 function request(method: string, body: unknown) {
   mock.currentUrl = (body as any)?.rows?.[0]?.url || url;
+  if ((body as any)?.verify_selected_finishes === true && !("full_check_run_id" in (body as any)))
+    body = { ...(body as any), full_check_run_id: "44444444-4444-4444-8444-444444444444" };
   return new Request("https://studio.example/api/scrape-materials", {
     method,
     headers: { "Content-Type": "application/json" },
@@ -68,6 +74,7 @@ function request(method: string, body: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   mock.denied = null;
+  mock.userEmail = "ken@meravinteriors.com"; mock.reserve.mockResolvedValue(true); mock.settle.mockResolvedValue(undefined); mock.assertBudget.mockResolvedValue({});
   vi.stubEnv("FIRECRAWL_API_KEY", "test-only");
 });
 afterEach(() => {
@@ -76,6 +83,123 @@ afterEach(() => {
 });
 
 describe("source-grounded product specifications", () => {
+  it("requires a Ken-owned budget before the completion workflow starts product refresh", async () => {
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    const missing = await handlers.POST({ request: request("POST", { action: "start", project_id: project, verify_selected_finishes: true, full_check_run_id: "" }) });
+    expect(missing.status).toBe(400); expect(fetcher).not.toHaveBeenCalled();
+    mock.userEmail = "other@meravinteriors.com";
+    const denied = await handlers.POST({ request: request("POST", { action: "start", project_id: project, verify_selected_finishes: true }) });
+    expect(denied.status).toBe(403); expect(fetcher).not.toHaveBeenCalled(); expect(mock.reserve).not.toHaveBeenCalled();
+  });
+  it.each(["start", "poll", "fallback"])("validates the run for budgeted %s even when the verification flag is absent", async action => {
+    mock.assertBudget.mockRejectedValue(new FullSpecBudgetError("Budget unavailable"));
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action, project_id: project,
+      full_check_run_id: "44444444-4444-4444-8444-444444444444", batch_id: "batch", candidates: [{ material_item_id: item, url }] }) });
+    expect(response.status).toBe(409); expect(fetcher).not.toHaveBeenCalled(); expect(mock.reserve).not.toHaveBeenCalled();
+  });
+  it("reserves five credits, disables PDF parsing and settles a terminal single-product scrape", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url, product_id: product, product: { id: product } }], error: null });
+    const fetcher = vi.fn(async (input: string | URL) => String(input).includes(".js")
+      ? new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } })
+      : Response.json({ data: { markdown: "Available", json: { name: "Sconce", price: "$100" } } }));
+    vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project,
+      verify_selected_finishes: true, material_item_ids: [item] }) });
+    expect(response.status).toBe(200);
+    expect(mock.reserve).toHaveBeenCalledWith(expect.anything(), "staff", expect.any(String), expect.objectContaining({ kind: "scrape", firecrawlCredits: 5 }));
+    const paid = fetcher.mock.calls.find(([input]) => String(input).includes("api.firecrawl.dev"));
+    expect(JSON.parse((paid as any)[1].body).parsers).toEqual([]);
+    expect(mock.settle).toHaveBeenCalledOnce();
+  });
+  it("processes every item in a 15-selection budgeted refresh without silently dropping the remaining rows", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    const items = Array.from({ length: 15 }, (_, i) => ({ id: `22222222-2222-4222-8222-${String(i).padStart(12, "0")}`,
+      category: "Lighting", product_url: `https://shop.example.com/products/sconce?variant=${i}`, product_id: product, product: { id: product } }));
+    mock.query.mockResolvedValue({ data: items, error: null });
+    const fetcher = vi.fn(async (input: string | URL) => String(input).includes("api.firecrawl.dev/v2/scrape")
+      ? Response.json({ data: { markdown: "Available", json: { name: "Sconce", price: "$100" } } }) : new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", fetcher);
+    const processed: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project,
+        material_item_ids: items.map(row => row.id), exclude_material_item_ids: processed, verify_selected_finishes: true }) });
+      expect(response.status).toBe(200); const body = await response.json();
+      expect(body.rows).toHaveLength(1); expect(body.remaining_count).toBe(items.length - i - 1);
+      expect(body.rows[0].finish_check_token).toBeTruthy(); processed.push(body.rows[0].material_item_id);
+    }
+    expect(new Set(processed).size).toBe(15); expect(mock.reserve).toHaveBeenCalledTimes(15); expect(mock.settle).toHaveBeenCalledTimes(15);
+  });
+  it("makes no paid Firecrawl request when the run budget is exhausted", async () => {
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url, product_id: product, product: { id: product } }], error: null });
+    mock.reserve.mockRejectedValue(new FullSpecBudgetError("The $10 check budget has been reached.", "budget_exhausted"));
+    const fetcher = vi.fn(async () => new Response("{}", { status: 404 })); vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project,
+      verify_selected_finishes: true, material_item_ids: [item] }) });
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ code: "full_spec_budget_reached", error: expect.stringContaining("$10") });
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes("api.firecrawl.dev"))).toHaveLength(0); expect(mock.settle).not.toHaveBeenCalled();
+  });
+  it("marks a previously settled scrape unverified without repeating or misreporting a $10 limit", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url, product_id: product, product: { id: product } }], error: null });
+    mock.reserve.mockResolvedValue(false); const fetcher = vi.fn(async () => new Response("{}", { status: 404 })); vi.stubGlobal("fetch", fetcher);
+    mock.assertBudget.mockImplementation(async () => ({ claims: mock.reserve.mock.calls.length ? [{ key: mock.reserve.mock.calls[0][3].key, status: "settled" }] : [] }));
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project,
+      verify_selected_finishes: true, material_item_ids: [item] }) });
+    expect(response.status).toBe(200); const body = await response.json();
+    expect(body.rows[0].skipped_reason).toBe("already_checked"); expect(body.rows[0].scraped.error).toContain("already checked");
+    expect(readFinishObservations([body.rows[0].finish_check_token], project)[0].status).toBe("unverified");
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes("api.firecrawl.dev"))).toHaveLength(0);
+  });
+  it("resumes after the browser loses its processed list without paying twice, even when saved product details changed", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    const selection = { id: item, category: "Lighting", product_url: url, product_id: product, color: null as string | null, product: { id: product } };
+    mock.query.mockImplementation(() => ({ data: [selection], error: null }));
+    mock.reserve.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    mock.assertBudget.mockImplementation(async () => ({ claims: mock.reserve.mock.calls.length >= 2 ? [{ key: mock.reserve.mock.calls[0][3].key, status: "settled" }] : [] }));
+    const fetcher = vi.fn(async (input: string | URL) => String(input).includes("api.firecrawl.dev/v2/scrape")
+      ? Response.json({ data: { markdown: "Available", json: { name: "Sconce", price: "$100" } } }) : new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", fetcher);
+    const body = { action: "start", project_id: project, verify_selected_finishes: true, material_item_ids: [item] };
+    const first = await handlers.POST({ request: request("POST", body) }); expect(first.status).toBe(200);
+    selection.color = "Recently saved finish";
+    const resumed = await handlers.POST({ request: request("POST", body) }); const result = await resumed.json();
+    expect(resumed.status).toBe(200); expect(result.rows[0].skipped_reason).toBe("already_checked");
+    expect(readFinishObservations([result.rows[0].finish_check_token], project)[0].status).toBe("unverified");
+    expect(mock.reserve.mock.calls[0][3].key).toBe(mock.reserve.mock.calls[1][3].key);
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes("api.firecrawl.dev/v2/scrape"))).toHaveLength(1);
+  });
+  it("keeps an earlier unconfirmed claim pending and returns an explicitly unverified skipped row", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url, product_id: product, product: { id: product } }], error: null });
+    mock.reserve.mockResolvedValue(false);
+    mock.assertBudget.mockImplementation(async () => ({ claims: mock.reserve.mock.calls.length ? [{ key: mock.reserve.mock.calls[0][3].key, status: "pending" }] : [] }));
+    const fetcher = vi.fn(async () => new Response("{}", { status: 404 })); vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project, verify_selected_finishes: true, material_item_ids: [item] }) });
+    const result = await response.json(); expect(result.rows[0].skipped_reason).toBe("outcome_unconfirmed");
+    expect(readFinishObservations([result.rows[0].finish_check_token], project)[0].status).toBe("unverified");
+    expect(mock.settle).not.toHaveBeenCalled(); expect(fetcher.mock.calls.filter(([input]) => String(input).includes("api.firecrawl.dev"))).toHaveLength(0);
+  });
+  it("keeps an ambiguous single-product response pending and does not retry", async () => {
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url, product_id: product,
+      product: { id: product } }], error: null });
+    const fetcher = vi.fn(async (input: string | URL) => String(input).includes("api.firecrawl.dev/v2/scrape")
+      ? new Response("{}", { status: 500 }) : new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project,
+      material_item_ids: [item], verify_selected_finishes: true }) });
+    expect(response.status).toBe(409);
+    expect(mock.reserve).toHaveBeenCalledOnce(); expect(mock.settle).not.toHaveBeenCalled();
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes("api.firecrawl.dev/v2/scrape"))).toHaveLength(1);
+  });
+  it.each(["poll", "fallback"])("rejects budgeted asynchronous %s so it cannot launch or retry a batch", async action => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const response = await handlers.POST({ request: request("POST", { action, project_id: project, batch_id: "batch",
+      verify_selected_finishes: true, candidates: [{ material_item_id: item, url, existing_product_id: product }] }) });
+    expect(response.status).toBe(409); expect(mock.reserve).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+  });
   it("rechecks populated selections for completion and signs the exact URL-selected finish", async () => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
     mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url,
@@ -93,11 +217,12 @@ describe("source-grounded product specifications", () => {
   });
   it("returns an unverified result when only a generic color or a default option is scraped", async () => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only-finish-signing");
+    mock.query.mockResolvedValue({ data: [{ id: item, category: "Lighting", product_url: url, product_id: product, product: { id: product } }], error: null });
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => String(input).includes(".js")
       ? new Response("{}", { status: 404, headers: { "Content-Type": "application/json" } })
       : Response.json({ data: { markdown: "Available: Bronze, Black", json: { name: "Sconce", color: "Bronze", price: "$100" } } })));
-    const response = await handlers.POST({ request: request("POST", { action: "fallback", project_id: project,
-      verify_selected_finishes: true, candidates: [{ material_item_id: item, url, existing_product_id: product }] }) });
+    const response = await handlers.POST({ request: request("POST", { action: "start", project_id: project,
+      verify_selected_finishes: true, material_item_ids: [item] }) });
     const result = await response.json();
     expect(readFinishObservations([result.rows[0].finish_check_token], project)[0].status).toBe("unverified");
   });

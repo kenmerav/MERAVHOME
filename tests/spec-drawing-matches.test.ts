@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { PDFDocument } from "pdf-lib";
+const budgetMock = vi.hoisted(() => ({ assert: vi.fn(async () => ({})), reserve: vi.fn(async () => true), settle: vi.fn(async () => {}) }));
+vi.mock("@/lib/fullSpecBudget.server", () => ({ assertProductionFullSpecBudget: budgetMock.assert, productionFullSpecBudgetStore: () => ({}) }));
+vi.mock("@/lib/fullSpecBudgetStore", () => ({ reserveFullSpecBudget: budgetMock.reserve, settleFullSpecBudget: budgetMock.settle }));
 vi.mock("@/lib/specDrawingRoomLabels.server", () => ({
   readDrawingRoomLabels: async () => ({ labels: [], pagesRead: 0 }),
 }));
@@ -621,17 +624,62 @@ describe("saved, cost-bounded drawing scan", () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     const { store } = await storage(10);
     const fixture = { ...item, label: "Pendant", name: "Soren pendant", category: "Lighting", quantity: 7, quantityTbd: false };
-    await store.write("scan/job.json", { ...job, purpose: "quantities", items: [fixture] });
+    await store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id", items: [fixture] });
     await prepareDrawingMatchScan(store, "scan", vi.fn(async () => Response.json({ input_tokens: 200 })) as typeof fetch);
     const result = (pages: number[], count: number) => completed({ complete: true, reviewedPages: pages, matches: [], uncertainties: [], quantities: [{
       item: "S1", roomRef: "R1", page: 1, sheet: `ID${count}`, quantity: count, source: "schedule", evidence: `${count} Soren pendants`,
       confidence: "high", roomVerified: true, exactItem: true, completeRoomScope: true,
     }] });
-    await startDrawingMatchChunk(store, "scan", 0, vi.fn(async () => Response.json(result([1, 2, 3, 4, 5, 6, 7, 8], 4))) as typeof fetch);
-    await startDrawingMatchChunk(store, "scan", 1, vi.fn(async () => Response.json(result([1, 2], 2))) as typeof fetch);
+    const fetchChunk = (payload: unknown) => vi.fn(async (url: string | URL | Request) => String(url).endsWith("input_tokens") ? Response.json({ input_tokens: 200 }) : Response.json(payload)) as typeof fetch;
+    await startDrawingMatchChunk(store, "scan", 0, fetchChunk(result([1, 2, 3, 4, 5, 6, 7, 8], 4)));
+    await startDrawingMatchChunk(store, "scan", 1, fetchChunk(result([1, 2], 2)));
     const report = await loadDrawingMatchReport(store, "scan");
     expect(report?.status).toBe("complete"); expect(report?.reviewedPages).toHaveLength(10);
     expect(report?.quantityFindings).toMatchObject([{ current: "7", status: "conflict", quantity: null, sources: [{ page: 1, quantity: 4 }, { page: 9, quantity: 2 }] }]);
+  });
+  it("never sends a drawing generation when its budget claim is unavailable", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const { store } = await storage();
+    await store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id" });
+    await prepareDrawingMatchScan(store, "scan", vi.fn(async () => Response.json({ input_tokens: 200 })) as typeof fetch);
+    budgetMock.reserve.mockResolvedValueOnce(false);
+    const fetcher = vi.fn(async (_url: string | URL | Request) => Response.json({ input_tokens: 200 }));
+    expect(await startDrawingMatchChunk(store, "scan", 0, fetcher as typeof fetch)).toBe("failed");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0][0])).toMatch(/input_tokens$/);
+  });
+  it("settles a reserved drawing claim without refund when a changed source stops it before send", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key"); budgetMock.settle.mockClear();
+    const { store } = await storage();
+    await store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id" });
+    await prepareDrawingMatchScan(store, "scan", vi.fn(async () => Response.json({ input_tokens: 200 })) as typeof fetch);
+    store.current = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const fetcher = vi.fn(async (_url: string | URL | Request) => Response.json({ input_tokens: 200 }));
+    expect(await startDrawingMatchChunk(store, "scan", 0, fetcher as typeof fetch)).toBe("failed");
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(budgetMock.settle).toHaveBeenCalledOnce();
+  });
+  it("keeps a queued drawing claim pending until the existing provider result is terminal", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key"); budgetMock.settle.mockClear();
+    const { store } = await storage();
+    await store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id" });
+    await prepareDrawingMatchScan(store, "scan", vi.fn(async () => Response.json({ input_tokens: 200 })) as typeof fetch);
+    const fetcher = vi.fn(async (url: string | URL | Request) => String(url).endsWith("input_tokens")
+      ? Response.json({ input_tokens: 200 }) : Response.json({ status: "queued", id: "resp_test" }));
+    expect(await startDrawingMatchChunk(store, "scan", 0, fetcher as typeof fetch)).toBe("checking");
+    expect(budgetMock.settle).not.toHaveBeenCalled();
+    const retrieve = vi.fn(async () => Response.json(completed({ ...raw([], [1]), quantities: [] })));
+    expect(await collectDrawingMatchChunk(store, "scan", 0, retrieve)).toBe("complete");
+    expect(budgetMock.settle).toHaveBeenCalledOnce();
+  });
+  it("keeps a drawing claim pending if the provider returns an ambiguous server error", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key"); budgetMock.settle.mockClear();
+    const { store } = await storage();
+    await store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id" });
+    await prepareDrawingMatchScan(store, "scan", vi.fn(async () => Response.json({ input_tokens: 200 })) as typeof fetch);
+    const fetcher = vi.fn(async (url: string | URL | Request) => String(url).endsWith("input_tokens")
+      ? Response.json({ input_tokens: 200 }) : Response.json({ error: "uncertain" }, { status: 503 }));
+    expect(await startDrawingMatchChunk(store, "scan", 0, fetcher as typeof fetch)).toBe("failed");
+    expect(budgetMock.settle).not.toHaveBeenCalled();
   });
   it("does not recommend tile quantities, unclear counts, or transfer counts across rooms", () => {
     const fixture = { ...item, category: "Tile & Stone", quantity: 1 };

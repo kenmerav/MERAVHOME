@@ -2,10 +2,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanBoardOptionMatch, prepareBoardOptions, publishedImageOptions, structuredImageOptions, boardOptionBatchCandidates, reusableBoardOptionMatch, runBoardOptionBatch } from "@/lib/boardOptionMatch";
 const projectId = "527d1356-919b-48b9-877e-1924c766282b";
 const itemId = "0033186c-a2e6-417f-a50f-37f5390f5cf5";
-const state = vi.hoisted(() => ({ item: null as any, board: null as any, access: null as any, cached: null as any, model: vi.fn() }));
+const state = vi.hoisted(() => ({ item: null as any, board: null as any, access: null as any, cached: null as any, model: vi.fn(), reserve: vi.fn(), settle: vi.fn(), budget: vi.fn(), freeze: vi.fn() }));
 vi.mock("@/lib/specCompletion.server", () => ({ authorizeCompletionProject: async () => state.access }));
 vi.mock("@/lib/specReviewAI.server", () => ({ fetchSpecReview: (...args: any[]) => state.model(...args), SpecReviewCostError: class extends Error {}, CreditsUnavailable: class extends Error {} }));
 vi.mock("@/lib/boardOptionCache.server", () => ({ boardOptionSignature: () => "signature", readBoardOptionCache: async () => state.cached, saveBoardOptionCache: async () => true }));
+vi.mock("@/lib/fullSpecBudget.server", () => ({ assertProductionFullSpecBudget: state.budget, productionFullSpecBudgetStore: () => ({}) }));
+vi.mock("@/lib/fullSpecBudgetStore", () => ({ reserveFullSpecBudget: state.reserve, settleFullSpecBudget: state.settle }));
+vi.mock("@/lib/immutableSpecImages.server", () => ({ immutableSpecImages: state.freeze }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: (table: string) => {
   const q: any = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: table === "design_boards" ? { board_state: state.board } : state.item, error: null }) }; return q;
 } } }));
@@ -13,11 +16,13 @@ import { matchBoardOption } from "@/lib/boardOptionMatch.server";
 const html = `<button data-parent-id="color" data-text="Black"><img src="https://cdn.example.com/black.jpg"></button><button data-parent-id="color" data-text="Brass"><img src="https://cdn.example.com/brass.jpg"></button>`;
 const request = () => new Request("https://studio.example/api/match-board-option", { method: "POST", body: "{}" });
 beforeEach(() => {
-  state.access = { projectId, body: { item_id: itemId } };
+  state.access = { projectId, userId: "11111111-1111-4111-8111-111111111111", body: { item_id: itemId, full_check_run_id: "33333333-3333-4333-8333-333333333333" }, user: { email: "ken@meravinteriors.com" }, profile: { email: "ken@meravinteriors.com", is_active: true, role: "Admin" } };
   state.cached = null;
   state.item = { id: itemId, project_id: projectId, room_id: "bath", item_label: "Knob", product_id: "p", product_url: "https://retailer.example/products/knob", product: { id: "p" }, source_board_id: projectId, source_board_page_id: "page", source_board_element_id: "element" };
   state.board = { pages: [{ id: "page", elements: [{ id: "element", type: "image", src: "https://cdn.example.com/board.jpg", materialItemId: itemId, productId: "p", materialRoomId: "bath" }] }] };
-  state.model.mockReset(); state.model.mockResolvedValue(Response.json({ status: "completed", output_text: JSON.stringify({ status: "matched", option_index: 1, confidence: 0.96, reason: "The shape and gold finish match." }) }));
+  state.reserve.mockReset(); state.reserve.mockResolvedValue(true); state.settle.mockReset(); state.settle.mockResolvedValue(undefined); state.budget.mockReset(); state.budget.mockResolvedValue({});
+  state.freeze.mockReset(); state.freeze.mockImplementation(async (urls: string[], bytes = 0) => ({ images: urls.map(url => `data:image/png;base64,${btoa(url)}`), bytes: bytes + urls.length }));
+  state.model.mockReset(); state.model.mockImplementation(async (...args: any[]) => { await args[4]({ ceilingUsd: 0.03 }); return Response.json({ status: "completed", output_text: JSON.stringify({ status: "matched", option_index: 1, confidence: 0.96, reason: "The shape and gold finish match." }) }); });
   vi.stubEnv("FIRECRAWL_API_KEY", "test"); vi.stubEnv("OPENAI_API_KEY", "test");
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ data: { html } })));
 });
@@ -27,7 +32,13 @@ it("compares the linked board image to complete retailer options and never chang
   const result = await (await matchBoardOption(request())).json();
   expect(result).toMatchObject({ status: "matched", option: "Brass", boardImage: "https://cdn.example.com/board.jpg" });
   expect(result.options).toHaveLength(2); expect(JSON.stringify(state.item)).toBe(before);
+  expect(state.reserve).toHaveBeenCalledTimes(2);
+  expect(state.settle).toHaveBeenCalledTimes(2);
+  expect(state.reserve.mock.calls[0][3]).toMatchObject({ openAiCents: 0, firecrawlCredits: 1 });
+  expect(state.reserve.mock.calls[1][3]).toMatchObject({ openAiCents: 3, firecrawlCredits: 0 });
+  expect(JSON.parse((fetch as any).mock.calls[0][1].body).parsers).toEqual([]);
   expect(state.model.mock.calls[0][0].input[0].content.filter((x: any) => x.type === "input_image")).toHaveLength(3);
+  expect(state.model.mock.calls[0][0].input[0].content.filter((x: any) => x.type === "input_image").every((x: any) => x.image_url.startsWith("data:image/png;base64,"))).toBe(true);
 });
 it("leaves the match uncertain when confidence is low or the provider returns an invalid index", () => {
   const options = prepareBoardOptions({ Black: "a", Brass: "b" }, ["Black", "Brass"]);
@@ -68,6 +79,31 @@ it("reports retailer access blocking rather than presenting it as a product opti
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ data: { html: "Sorry, due to website restrictions we are unable to display the requested page." } })));
   const result = await (await matchBoardOption(request())).json();
   expect(result.status).toBe("unavailable"); expect(result.reason).toContain("blocked"); expect(state.model).not.toHaveBeenCalled();
+  expect(state.reserve).toHaveBeenCalledTimes(1); expect(state.reserve.mock.calls[0][3]).toMatchObject({ openAiCents: 0, firecrawlCredits: 1 });
+});
+it("does not contact Firecrawl if the run or its reservation is unavailable", async () => {
+  delete state.access.body.full_check_run_id;
+  expect((await matchBoardOption(request())).status).toBe(400); expect(fetch).not.toHaveBeenCalled();
+  state.access.body.full_check_run_id = "33333333-3333-4333-8333-333333333333";
+  state.reserve.mockResolvedValue(false);
+  expect((await matchBoardOption(request())).status).toBe(409); expect(fetch).not.toHaveBeenCalled();
+});
+it("does not contact paid providers when the board image cannot be frozen safely", async () => {
+  state.freeze.mockRejectedValueOnce(Error("unsafe image"));
+  const result = await (await matchBoardOption(request())).json();
+  expect(result.reason).toMatch(/safely downloaded/); expect(state.reserve).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled(); expect(state.model).not.toHaveBeenCalled();
+});
+it("retains the scrape claim but does not generate an image comparison when the remaining budget is insufficient", async () => {
+  state.reserve.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  const result = await (await matchBoardOption(request())).json();
+  expect(result.status).toBe("unavailable"); expect(result.reason).toMatch(/already claimed/);
+  expect(fetch).toHaveBeenCalledTimes(1); expect(state.reserve).toHaveBeenCalledTimes(2);
+});
+it("keeps a failed or lost retailer request pending so its budget cannot be reset", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => { throw Error("connection lost"); }));
+  await expect(matchBoardOption(request())).rejects.toThrow("connection lost");
+  expect(state.reserve).toHaveBeenCalledTimes(1); expect(state.settle).not.toHaveBeenCalled();
 });
 it("does not send the images if options cannot be identified", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ data: { html: "<div>Product</div>" } })));
@@ -84,10 +120,18 @@ it("checks project access before reading images", async () => {
   expect(state.model).not.toHaveBeenCalled();
 });
 it("returns an existing cached comparison without contacting either paid provider", async () => {
+  state.access.user.email = "other@meravinteriors.com"; state.access.profile.email = "other@meravinteriors.com";
   state.access.body.action = "cached";
   state.cached = { status: "matched", option: "Brass", reason: "Saved", options: [], boardImage: "", productUrl: "", optionKind: "finish" };
   const result = await (await matchBoardOption(request())).json();
   expect(result.option).toBe("Brass"); expect(state.model).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+});
+it("rejects paid comparisons from any other account, including a forged Ken profile", async () => {
+  for (const [authEmail, profileEmail] of [["other@meravinteriors.com", "other@meravinteriors.com"], ["other@meravinteriors.com", "ken@meravinteriors.com"]]) {
+    state.access.user.email = authEmail; state.access.profile.email = profileEmail;
+    expect((await matchBoardOption(request())).status).toBe(403);
+  }
+  expect(fetch).not.toHaveBeenCalled(); expect(state.model).not.toHaveBeenCalled();
 });
 it("reuses cached warnings and selected variants even when image matching was unavailable", () => {
   const unavailable = { status: "unavailable" as const, option: "", reason: "No current saved image comparison", options: [], boardImage: "", productUrl: "", optionKind: "variant" as const };

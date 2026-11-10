@@ -37,6 +37,7 @@ import { Route as ApiDuplicateProjectRouteImport } from './routes/api/duplicate-
 import { Route as ApiEaCalendarRouteImport } from './routes/api/ea-calendar'
 import { Route as ApiEaDocumentEvidenceRouteImport } from './routes/api/ea-document-evidence'
 import { Route as ApiEaWorkspaceRouteImport } from './routes/api/ea-workspace'
+import { Route as ApiFullSpecBudgetRouteImport } from './routes/api/full-spec-budget'
 import { Route as ApiGenerateRenderingRouteImport } from './routes/api/generate-rendering'
 import { Route as ApiImageDataUrlRouteImport } from './routes/api/image-data-url'
 import { Route as ApiImportMaterialsPdfRouteImport } from './routes/api/import-materials-pdf'
@@ -271,6 +272,11 @@ const ApiEaDocumentEvidenceRoute = ApiEaDocumentEvidenceRouteImport.update({
 const ApiEaWorkspaceRoute = ApiEaWorkspaceRouteImport.update({
   id: '/api/ea-workspace',
   path: '/api/ea-workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFullSpecBudgetRoute = ApiFullSpecBudgetRouteImport.update({
+  id: '/api/full-spec-budget',
+  path: '/api/full-spec-budget',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiGenerateRenderingRoute = ApiGenerateRenderingRouteImport.update({
@@ -772,6 +778,7 @@ export interface FileRoutesByFullPath {
   '/api/ea-calendar': typeof ApiEaCalendarRoute
   '/api/ea-document-evidence': typeof ApiEaDocumentEvidenceRoute
   '/api/ea-workspace': typeof ApiEaWorkspaceRoute
+  '/api/full-spec-budget': typeof ApiFullSpecBudgetRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -892,6 +899,7 @@ export interface FileRoutesByTo {
   '/api/ea-calendar': typeof ApiEaCalendarRoute
   '/api/ea-document-evidence': typeof ApiEaDocumentEvidenceRoute
   '/api/ea-workspace': typeof ApiEaWorkspaceRoute
+  '/api/full-spec-budget': typeof ApiFullSpecBudgetRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -1013,6 +1021,7 @@ export interface FileRoutesById {
   '/api/ea-calendar': typeof ApiEaCalendarRoute
   '/api/ea-document-evidence': typeof ApiEaDocumentEvidenceRoute
   '/api/ea-workspace': typeof ApiEaWorkspaceRoute
+  '/api/full-spec-budget': typeof ApiFullSpecBudgetRoute
   '/api/generate-rendering': typeof ApiGenerateRenderingRoute
   '/api/image-data-url': typeof ApiImageDataUrlRoute
   '/api/import-materials-pdf': typeof ApiImportMaterialsPdfRoute
@@ -1135,6 +1144,7 @@ export interface FileRouteTypes {
     | '/api/ea-calendar'
     | '/api/ea-document-evidence'
     | '/api/ea-workspace'
+    | '/api/full-spec-budget'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -1255,6 +1265,7 @@ export interface FileRouteTypes {
     | '/api/ea-calendar'
     | '/api/ea-document-evidence'
     | '/api/ea-workspace'
+    | '/api/full-spec-budget'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -1375,6 +1386,7 @@ export interface FileRouteTypes {
     | '/api/ea-calendar'
     | '/api/ea-document-evidence'
     | '/api/ea-workspace'
+    | '/api/full-spec-budget'
     | '/api/generate-rendering'
     | '/api/image-data-url'
     | '/api/import-materials-pdf'
@@ -1496,6 +1508,7 @@ export interface RootRouteChildren {
   ApiEaCalendarRoute: typeof ApiEaCalendarRoute
   ApiEaDocumentEvidenceRoute: typeof ApiEaDocumentEvidenceRoute
   ApiEaWorkspaceRoute: typeof ApiEaWorkspaceRoute
+  ApiFullSpecBudgetRoute: typeof ApiFullSpecBudgetRoute
   ApiGenerateRenderingRoute: typeof ApiGenerateRenderingRoute
   ApiImageDataUrlRoute: typeof ApiImageDataUrlRoute
   ApiImportMaterialsPdfRoute: typeof ApiImportMaterialsPdfRoute
@@ -1783,6 +1796,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ea-workspace'
       fullPath: '/api/ea-workspace'
       preLoaderRoute: typeof ApiEaWorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/full-spec-budget': {
+      id: '/api/full-spec-budget'
+      path: '/api/full-spec-budget'
+      fullPath: '/api/full-spec-budget'
+      preLoaderRoute: typeof ApiFullSpecBudgetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/generate-rendering': {
@@ -2460,6 +2480,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiEaCalendarRoute: ApiEaCalendarRoute,
   ApiEaDocumentEvidenceRoute: ApiEaDocumentEvidenceRoute,
   ApiEaWorkspaceRoute: ApiEaWorkspaceRoute,
+  ApiFullSpecBudgetRoute: ApiFullSpecBudgetRoute,
   ApiGenerateRenderingRoute: ApiGenerateRenderingRoute,
   ApiImageDataUrlRoute: ApiImageDataUrlRoute,
   ApiImportMaterialsPdfRoute: ApiImportMaterialsPdfRoute,

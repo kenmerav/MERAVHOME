@@ -6,7 +6,7 @@ import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
 import { checkSpecDetails, cleanCompletionPlanFindings, completionItems, allowsMissingMaterialPrice, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
 import type { MaterialItem } from "@/lib/db";
 import { PDFDocument } from "pdf-lib";
-import { fetchSpecReview, CreditsUnavailable, SpecReviewCostError } from "@/lib/specReviewAI.server";
+import { fetchSpecReview, CreditsUnavailable, SpecReviewCostError, terminalSpecReviewResponse } from "@/lib/specReviewAI.server";
 import { assertCompletionStorage, saveCompletionReview, readSavedCompletionReview, updateActiveCompletionReview, attachCompletionSaveWorker, completionSourceSignature, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
 import { completionOutput } from "@/lib/specCompletionOutput";
 import { randomUUID } from "node:crypto";
@@ -20,6 +20,10 @@ import { checkTileInstallation } from "./tileInstallation.server";
 import { FINISH_REVIEW_VERSION, reviewSelectedFinishes } from "./selectedFinish";
 import { readFinishObservations } from "./selectedFinish.server";
 import { projectMaterialAccuracy } from "./designAccuracyProjection";
+import { canRunPaidSpecCheck } from "./specCheckAccess";
+import { assertProductionFullSpecBudget, productionFullSpecBudgetStore } from "./fullSpecBudget.server";
+import { reserveFullSpecBudget, settleFullSpecBudget } from "./fullSpecBudgetStore";
+import { FullSpecBudgetError } from "./fullSpecBudget";
 export { CreditsUnavailable } from "@/lib/specReviewAI.server";
 
 const admin = supabaseAdmin as any;
@@ -36,9 +40,9 @@ async function readProjectRows(table: string, select: string, projectId: string)
   }
 }
 
-export function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string): Promise<ReturnType<typeof cleanCompletionPlanFindings>>;
-export function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId: undefined, background: true, requestId?: string): Promise<FullPlanReview>;
-export async function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string, background = false, requestId: string = randomUUID()) {
+export function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string, background?: false, requestId?: string, beforeGenerate?: (budget: { ceilingUsd: number }) => Promise<void>, afterGenerate?: (response: Response) => Promise<void>): Promise<ReturnType<typeof cleanCompletionPlanFindings>>;
+export function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId: undefined, background: true, requestId?: string, beforeGenerate?: (budget: { ceilingUsd: number }) => Promise<void>, afterGenerate?: (response: Response) => Promise<void>): Promise<FullPlanReview>;
+export async function analyzeSpecCompletion(document: PlanDocument, projectId: string, items: MaterialItem[], rooms: CompletionRoom[], dimensionItemId?: string, background = false, requestId: string = randomUUID(), beforeGenerate?: (budget: { ceilingUsd: number }) => Promise<void>, afterGenerate?: (response: Response) => Promise<void>) {
   if (!process.env.OPENAI_API_KEY) throw new Error("AI configuration unavailable");
   const selected = completionItems(items);
   if (items.length > 800) throw new Error("Project too large for one plan review");
@@ -76,7 +80,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
           excluded_items: items.filter(item => item.not_needed).map(item => ({ room_id: item.room_id, label: item.item_label, product: item.product?.name })),
         };
   if (background && !dimensionItemId) {
-    const result = await analyzeFullSpecWithEvidence(document, projectId, rooms, context, instructions, requestId);
+    const result = await analyzeFullSpecWithEvidence(document, projectId, rooms, context, instructions, requestId, beforeGenerate, afterGenerate);
     if (result.findings) result.findings = cleanCompletionPlanFindings(result.findings, items, rooms, result.pages);
     return result;
   }
@@ -90,7 +94,7 @@ export async function analyzeSpecCompletion(document: PlanDocument, projectId: s
         { type: "input_text", text: JSON.stringify(context) },
         { type: "input_file", filename: "construction-document.pdf", file_data: `data:application/pdf;base64,${Buffer.from(bytes).toString("base64")}`, detail: "high" },
       ] }],
-  }, dimensionItemId ? "dimensions" : "completion", background);
+  }, dimensionItemId ? "dimensions" : "completion", background, fetch, beforeGenerate, afterGenerate);
   if (!response.ok) {
     const failure = await response.json().catch(() => ({}));
     if (["credit_balance_exhausted", "insufficient_quota"].includes(failure.error?.code)) throw new CreditsUnavailable();
@@ -107,7 +111,7 @@ export async function authorizeCompletionProject(request: Request, allowedKeys =
   const { data: auth, error: authError } = await admin.auth.getUser(token);
   if (authError || !auth.user) return json({ error: "Your session expired." }, 401);
   const { data: profile, error: profileError } = await admin.from("user_profiles")
-    .select("role,is_active,can_view_all_projects").eq("id", auth.user.id).maybeSingle();
+    .select("email,role,is_active,can_view_all_projects").eq("id", auth.user.id).maybeSingle();
   if (profileError) throw profileError;
   if (!profile?.is_active || !isStudioTeamRole(profile.role)) return json({ error: "Only Studio staff can check completion." }, 403);
   const body = await request.json().catch(() => null);
@@ -122,17 +126,27 @@ export async function authorizeCompletionProject(request: Request, allowedKeys =
   const { data: project, error: projectError } = await admin.from("projects").select("id").eq("id", projectId).maybeSingle();
   if (projectError) throw projectError;
   if (!project) return json({ error: "Project not found." }, 404);
-  return { projectId, body, userId: auth.user.id };
+  return { projectId, body, userId: auth.user.id, user: auth.user, profile };
 }
 
 export async function checkSpecCompletion(request: Request) {
-  const access = await authorizeCompletionProject(request, ["project_id", "action", "expected_board_updated_at", "finish_checks"]);
+  const access = await authorizeCompletionProject(request, ["project_id", "action", "expected_board_updated_at", "finish_checks", "full_check_run_id", "product_refresh_budget_stopped", "product_refresh_not_refreshed"]);
   if (access instanceof Response) return access;
   const { projectId, userId, body } = access;
+  if (!canRunPaidSpecCheck(access.user, access.profile)) return json({ error: "The paid full Spec Book check is currently available only to Ken’s active Studio account." }, 403);
+  const runId = cleanUuid(body.full_check_run_id);
+  if (!runId) return json({ error: "Start a budgeted full check before refreshing selections." }, 400);
+  try { await assertProductionFullSpecBudget(projectId, userId, runId); }
+  catch (error) { if (error instanceof FullSpecBudgetError) return json({ error: error.message }, 409); throw error; }
   if (body.finish_checks !== undefined && (!Array.isArray(body.finish_checks) || body.finish_checks.length > 2000 ||
       body.finish_checks.some((token: unknown) => typeof token !== "string" || token.length > 8000)))
     return json({ error: "Finish verification results are incomplete. Run the completion check again." }, 400);
   if (body.action !== undefined && body.action !== "prepare") return json({ error: "Choose a valid completion action." }, 400);
+  if ((body.product_refresh_budget_stopped !== undefined && typeof body.product_refresh_budget_stopped !== "boolean") ||
+      (body.product_refresh_not_refreshed !== undefined && (!Number.isSafeInteger(body.product_refresh_not_refreshed) || body.product_refresh_not_refreshed < 0 || body.product_refresh_not_refreshed > 2000)) ||
+      (body.product_refresh_budget_stopped === true && body.product_refresh_not_refreshed === undefined) ||
+      (body.action === "prepare" && (body.product_refresh_budget_stopped !== undefined || body.product_refresh_not_refreshed !== undefined)))
+    return json({ error: "Product refresh progress could not be confirmed." }, 400);
   if (body.expected_board_updated_at !== undefined && body.expected_board_updated_at !== null &&
       (typeof body.expected_board_updated_at !== "string" || body.expected_board_updated_at.length > 80))
     return json({ error: "Choose a valid board revision." }, 400);
@@ -200,6 +214,7 @@ export async function checkSpecCompletion(request: Request) {
   const document: PlanDocument | undefined = documentResult.data?.[0];
   const report: SpecCompletionReport = { checked_at: new Date(Math.max(Date.now(), (Date.parse(existing?.report.checked_at || "") || 0) + 1)).toISOString(),
     board_refresh: boardSync.summary,
+    ...(body.product_refresh_budget_stopped === true ? { product_refresh_budget_stopped: true, product_refresh_not_refreshed: body.product_refresh_not_refreshed } : {}),
     document_refresh: refresh,
     item_count: completionItems(items).length, findings: checkSpecDetails(items, rooms),
     plan_status: "no_document", document: document ? { id: document.id, title: document.title, updated_at: document.updated_at } : null,
@@ -234,7 +249,8 @@ export async function checkSpecCompletion(request: Request) {
     }
     report.plan_status = "checking";
     report.plan_message = "Selection details are saved. The review will reuse saved drawing evidence when available and finish in the background. You can close Studio and open Saved completion review later.";
-    report.plan_job = { request_id: randomUUID(), response_id: null, pages: null, started_at: report.checked_at, selection_signature: signature };
+    report.plan_job = { request_id: randomUUID(), response_id: null, pages: null, started_at: report.checked_at, selection_signature: signature,
+      full_check_run_id: runId, budget_owner_id: userId };
     try { await saveCompletionReview(projectId, userId, report, items, rooms, boardResult.data?.board_state); }
     catch (error) { if (error instanceof CompletionReviewConflict) return json({ error: error.message }, 409); throw error; }
     let conflict = false;
@@ -246,7 +262,13 @@ export async function checkSpecCompletion(request: Request) {
       report.plan_job.worker_run_id = await startCompletionSaveWorker(projectId, report.plan_job.request_id);
       workerStarted = true;
       await updateActiveCompletionReview(projectId, report, items, rooms, boardResult.data?.board_state);
-      const planFindings = await analyzeSpecCompletion(document, projectId, items, rooms, undefined, true, report.plan_job.request_id);
+      const planFindings = await analyzeSpecCompletion(document, projectId, items, rooms, undefined, true, report.plan_job.request_id, async budget => {
+        const claimed = await reserveFullSpecBudget(productionFullSpecBudgetStore(projectId), userId, runId,
+          { key: `completion:${report.plan_job!.request_id}`, kind: "completion", openAiCents: Math.round(budget.ceilingUsd * 100), firecrawlCredits: 0 });
+        if (!claimed) throw new FullSpecBudgetError("This drawing comparison was already started. Open the saved review; no duplicate request was made.");
+      }, async response => {
+        if (await terminalSpecReviewResponse(response)) await settleFullSpecBudget(productionFullSpecBudgetStore(projectId), userId, runId, `completion:${report.plan_job!.request_id}`);
+      });
       // A long scan must not present corrections against selections or plans that changed meanwhile.
       const [freshItems, freshRooms, freshBoard, freshDocument] = await Promise.all([
         readProjectRows("material_items", "*,product:products(*)", projectId),
@@ -287,7 +309,7 @@ export async function checkSpecCompletion(request: Request) {
       report.plan_message = conflict ? (error as Error).message : !workerStarted ?
         "Selection details are saved. The background plan review could not start, so no AI plan check was launched. Please try again." : error instanceof DrawingEvidencePending ? error.message : error instanceof CreditsUnavailable ?
         "Missing-detail checks are complete. Plan comparison needs AI credits; quantities and missing items have not been verified against the drawings." :
-        error instanceof SpecReviewCostError ? `Missing-detail checks are complete. ${error.message} Plan quantities and missing items have not been verified.` :
+        error instanceof SpecReviewCostError || error instanceof FullSpecBudgetError ? `Missing-detail checks are complete. ${error.message} Plan quantities and missing items have not been verified.` :
         "Missing-detail checks are complete. Plan comparison is unavailable; quantities and missing items have not been verified against the drawings.";
     }
     await updateActiveCompletionReview(projectId, report, items, rooms, boardResult.data?.board_state);

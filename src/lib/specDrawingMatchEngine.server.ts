@@ -1,6 +1,8 @@
 import { PDFDocument } from "pdf-lib";
 import { SPEC_REVIEW_MODEL, reviewCostCeiling, retrieveSpecReview } from "./specReviewAI.server";
 import { responseJson } from "./specDrawingEvidence";
+import { assertProductionFullSpecBudget, productionFullSpecBudgetStore } from "./fullSpecBudget.server";
+import { reserveFullSpecBudget, settleFullSpecBudget } from "./fullSpecBudgetStore";
 import {
   cleanDrawingMatchChunk,
   drawingMatchPageGroups,
@@ -27,6 +29,10 @@ export type DrawingMatchStore = {
 const path = (key: string, name: string) => `${key}/${name}`;
 const statePath = (key: string, index: number) => path(key, `chunk-${index}-request.json`);
 type ChunkState = { startedAt: string; responseId?: string; error?: string };
+async function settleDrawingClaim(job: DrawingMatchJob, index: number) {
+  if (job.purpose === "quantities" && job.fullCheckRunId)
+    await settleFullSpecBudget(productionFullSpecBudgetStore(job.projectId), job.createdBy, job.fullCheckRunId, `drawing:${job.key}:${index}`);
+}
 
 export function enrichQuantityDrawingTags(job: DrawingMatchJob, results: (DrawingMatchChunkResult | null)[]): DrawingMatchJob {
   if (job.purpose !== "quantities") return job;
@@ -295,6 +301,24 @@ export async function startDrawingMatchChunk(
       await store.readBytes(path(key, `chunk-${index}.pdf`)),
       index,
     );
+    if (job.purpose === "quantities") {
+      if (!job.fullCheckRunId) throw Error("A budgeted full project check is required before scanning drawings.");
+      await assertProductionFullSpecBudget(job.projectId, job.createdBy, job.fullCheckRunId);
+      // Count the *enriched* request immediately before reserving and sending
+      // that same immutable request, so new schedule tags cannot evade budget.
+      const ceilingUsd = await cost(request, fetcher, job.outputLimits?.[index] || 12000);
+      const claimed = await reserveFullSpecBudget(productionFullSpecBudgetStore(job.projectId), job.createdBy, job.fullCheckRunId,
+        { key: `drawing:${job.key}:${index}`, kind: "drawing", openAiCents: Math.round(ceilingUsd * 100), firecrawlCredits: 0 });
+      if (!claimed) throw Error("This drawing page group was already claimed in this run; it will not be sent again.");
+      try {
+        if (!(await store.current(job))) throw Error("The drawings or selections changed after the budget was reserved. No matching request was sent.");
+      } catch (error) {
+        // This check is before fetch: no generation was submitted. Keep the
+        // reserved amount but allow the known-not-sent claim to settle.
+        await settleDrawingClaim(job, index);
+        throw error;
+      }
+    }
     const response = await fetcher("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: headers(),
@@ -308,6 +332,8 @@ export async function startDrawingMatchChunk(
       signal: AbortSignal.timeout(60000),
     });
     const value = await response.json().catch(() => null);
+    if ((response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status)) || ["completed", "failed", "incomplete", "cancelled"].includes(value?.status))
+      await settleDrawingClaim(job, index);
     if (!response.ok)
       throw Error(
         ["insufficient_quota", "credit_balance_exhausted"].includes(value?.error?.code)
@@ -356,6 +382,8 @@ export async function collectDrawingMatchChunk(
   }
   const response = await retrieve(state.responseId),
     value = await response.json().catch(() => null);
+  if (response.ok && ["completed", "failed", "incomplete", "cancelled"].includes(value?.status))
+    await settleDrawingClaim(job, index);
   if (
     response.ok &&
     ["queued", "in_progress"].includes(value?.status) &&

@@ -7,6 +7,7 @@ type ScrapedRow = {
   existing_product_id?: string | null;
   scraped: Record<string, unknown> & { error?: string };
   finish_check_token?: string;
+  skipped_reason?: "already_checked" | "outcome_unconfirmed";
 };
 type ScrapeBatch = {
   status: "started" | "processing" | "completed" | "failed";
@@ -18,7 +19,8 @@ type ScrapeBatch = {
   total_count?: number;
   remaining_count?: number;
 };
-export type MaterialProductRefresh = { saved: number; failed: number; priceMissing: number; finishChecks?: string[] };
+export type MaterialProductRefresh = { saved: number; failed: number; priceMissing: number; finishChecks?: string[]; budgetStopped?: boolean; notRefreshed?: number; skipped?: number; unconfirmed?: number };
+class ProductRefreshBudgetReached extends Error {}
 
 async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, request: StudioSessionRequest): Promise<T> {
   const response = await request("/api/scrape-materials", {
@@ -27,7 +29,10 @@ async function scrapeRequest<T>(method: "POST" | "PUT", body: unknown, request: 
   let result: any;
   try { result = await response.json(); }
   catch { throw new Error("Product info refresh was interrupted. Run the check again to finish; saved product details are kept."); }
-  if (!response.ok) throw new Error(result?.error || "Could not refresh product info. The completion review has not started.");
+  if (!response.ok) {
+    if (result?.code === "full_spec_budget_reached") throw new ProductRefreshBudgetReached(result?.error || "The check budget has been reached.");
+    throw new Error(result?.error || "Could not refresh product info. The completion review has not started.");
+  }
   return result;
 }
 
@@ -39,6 +44,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
   onProgress?: (message: string) => void;
   force?: boolean;
   verifySelectedFinishes?: boolean;
+  fullCheckRunId?: string;
   request?: StudioSessionRequest;
 }): Promise<MaterialProductRefresh> {
   const scope = [...new Set(materialItemIds.map(cleanUuid).filter((id): id is string => !!id))];
@@ -49,13 +55,15 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
   const request = options.request ?? await createStudioSessionRequest();
   const scopeIds = new Set(scope);
   const processed = new Set<string>();
-  for (let batchNumber = 1; batchNumber <= 100; batchNumber++) {
+  const maxBatches = options.fullCheckRunId ? 2000 : 100;
+  try { for (let batchNumber = 1; batchNumber <= maxBatches; batchNumber++) {
     options.onProgress?.(`Refreshing product info · batch ${batchNumber}…`);
     const batch = await scrapeRequest<ScrapeBatch>("POST", {
       action: "start", project_id: projectId, material_item_ids: scope,
       exclude_material_item_ids: [...processed],
       ...(options.force ? { force: true } : {}),
       ...(options.verifySelectedFinishes ? { verify_selected_finishes: true } : {}),
+      ...(options.fullCheckRunId ? { full_check_run_id: options.fullCheckRunId } : {}),
     }, request);
     let completed = batch;
     if (batch.status === "started") {
@@ -67,6 +75,7 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
           action: fallback ? "fallback" : "poll", project_id: projectId,
           ...(!fallback ? { batch_id: batch.batch_id } : {}), candidates: batch.candidates,
           ...(options.verifySelectedFinishes ? { verify_selected_finishes: true } : {}),
+          ...(options.fullCheckRunId ? { full_check_run_id: options.fullCheckRunId } : {}),
         }, request);
         if (result.status === "processing" && !fallback) {
           options.onProgress?.(`Refreshing product info · batch ${batchNumber} (${result.completed_count ?? 0} of ${result.total_count ?? batch.candidates.length})…`);
@@ -86,6 +95,10 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
       if (tokens.length) summary.finishChecks = [...(summary.finishChecks ?? []), ...tokens];
     }
     const successful = uniqueRows.filter(row => row.scraped && !row.scraped.error);
+    const skipped = uniqueRows.filter(row => row.skipped_reason === "already_checked").length;
+    const unconfirmed = uniqueRows.filter(row => row.skipped_reason === "outcome_unconfirmed").length;
+    if (skipped) summary.skipped = (summary.skipped || 0) + skipped;
+    if (unconfirmed) summary.unconfirmed = (summary.unconfirmed || 0) + unconfirmed;
     summary.failed += uniqueRows.length - successful.length;
     if (successful.length) {
       options.onProgress?.(`Saving product info · ${summary.saved + successful.length} products…`);
@@ -100,6 +113,9 @@ export async function refreshMaterialProductInfo(projectId: string, materialItem
       throw new Error("Product info refresh failed. The completion review has not started; please retry.");
     if (!completed.remaining_count) return summary;
     if (!uniqueRows.length) throw new Error("Product info refresh stopped making progress. Run the check again to continue.");
+  } } catch (error) {
+    if (error instanceof ProductRefreshBudgetReached && options.fullCheckRunId) return { ...summary, budgetStopped: true, notRefreshed: scope.length - processed.size };
+    throw error;
   }
   throw new Error("Product info refresh reached its batch limit. Run the check again to continue; saved product details are kept.");
 }

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { projectDocumentStoragePath } from "./constructionDocumentPath.server";
-import { fetchSpecReview, retrieveSpecReview, CreditsUnavailable } from "./specReviewAI.server";
+import { fetchSpecReview, retrieveSpecReview, CreditsUnavailable, type reviewCostCeiling } from "./specReviewAI.server";
 import { PDFDocument } from "pdf-lib";
 import type { CompletionRoom } from "./specCompletion";
 import { cleanDrawingEvidence, groundedCompletionRows, drawingCoverageMessage, responseJson, DRAWING_EVIDENCE_VERSION, type DrawingEvidenceJob } from "./specDrawingEvidence";
@@ -93,7 +93,9 @@ const groundingInstructions = [
 ].join("\n");
 
 export async function analyzeFullSpecWithEvidence(document: EvidenceDocument, projectId: string, rooms: CompletionRoom[],
-  context: unknown, instructions: string, requestId: string): Promise<FullPlanReview> {
+  context: unknown, instructions: string, requestId: string,
+  beforeGenerate?: (budget: ReturnType<typeof reviewCostCeiling>) => Promise<void>,
+  afterGenerate?: (response: Response) => Promise<void>): Promise<FullPlanReview> {
   const key = drawingEvidenceKey(projectId, document, rooms);
   let job = await readDrawingEvidence(projectId, key);
   if (job?.status === "checking") job = await collectEvidence(projectId, job);
@@ -126,7 +128,7 @@ export async function analyzeFullSpecWithEvidence(document: EvidenceDocument, pr
   try {
     const response = await fetchSpecReview({ instructions: instructions + "\n" + groundingInstructions + "\n" +
       (cached ? "Compare today's supplied selections against the saved drawing_evidence only. No PDF is supplied. Return JSON {findings:[...]} only. Never invent omitted facts or treat missing evidence as an absence in the drawings." : evidenceInstructions),
-      input: [{ role: "user", content }] }, "completion", true);
+      input: [{ role: "user", content }] }, "completion", true, fetch, beforeGenerate, afterGenerate);
     const result = await response.json();
     checkCredits(result);
     if (!response.ok) throw Error("Plan comparison failed");

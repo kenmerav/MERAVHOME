@@ -4,7 +4,9 @@ import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
 import { cleanCompletionPlanFindings, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit, allowsMeasurementTbd, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
-import { retrieveSpecReview } from "@/lib/specReviewAI.server";
+import { retrieveSpecReview, terminalSpecReviewResponse } from "@/lib/specReviewAI.server";
+import { productionFullSpecBudgetStore } from "@/lib/fullSpecBudget.server";
+import { settleFullSpecBudget } from "@/lib/fullSpecBudgetStore";
 import { sharedCompletionCoversMissing, sharedCompletionSelections } from "@/lib/specSharedMaterials";
 import { completionOutput } from "@/lib/specCompletionOutput";
 import { normalizeMaterialSuggestionLabel } from "@/lib/materialSuggestions";
@@ -109,10 +111,11 @@ export async function saveCompletionReview(projectId: string, userId: string, re
   throw new CompletionReviewConflict("The saved review changed. Open it again for the latest results.");
 }
 
-function preserveDrawingCaches(report: SpecCompletionReport, current: SpecCompletionReport | undefined) {
+export function preserveDrawingCaches(report: SpecCompletionReport, current: SpecCompletionReport | undefined) {
   return { ...report,
     ...(current?.catalog_fit_checks ? { catalog_fit_checks: current.catalog_fit_checks } : {}),
     ...(current?.spec_drawing_evidence ? { spec_drawing_evidence: current.spec_drawing_evidence } : {}),
+    ...(current?.full_spec_budget ? { full_spec_budget: current.full_spec_budget } : {}),
     ...(current?.board_option_matches ? { board_option_matches: current.board_option_matches } : {}) };
 }
 
@@ -148,11 +151,37 @@ export async function updateActiveCompletionReview(projectId: string, report: Sp
   throw new CompletionReviewConflict("The saved review changed. Open it again for the latest results.");
 }
 
-async function finishPendingReview(projectId: string, saved: any, items: MaterialItem[], rooms: CompletionRoom[], document: SpecCompletionReport["document"], boardState?: unknown, drawingChanged = false) {
+export async function finishPendingReview(projectId: string, saved: any, items: MaterialItem[], rooms: CompletionRoom[], document: SpecCompletionReport["document"], boardState?: unknown, drawingChanged = false) {
   const job = saved.report.plan_job;
-  if (saved.report.plan_status !== "checking" || !job) return saved;
+  if (saved.report.plan_status !== "checking" || !job) {
+    // An earlier collector can time out while the provider is still working.
+    // Opening the saved review may later resolve the existing request without
+    // creating another generation or discarding an in-flight reservation.
+    if (job?.response_id && job.full_check_run_id && job.budget_owner_id) try {
+      const store = productionFullSpecBudgetStore(projectId), key = `completion:${job.request_id}`;
+      const budget = (await store.read()).budget;
+      if (budget && budget.runId === job.full_check_run_id && budget.ownerId === job.budget_owner_id && budget.status === "active" &&
+          budget.claims.some(claim => claim.key === key && claim.status === "pending")) {
+        const existing = await retrieveSpecReview(job.response_id);
+        if (existing.ok && await terminalSpecReviewResponse(existing)) await settleFullSpecBudget(store, job.budget_owner_id, job.full_check_run_id, key);
+      }
+    } catch { /* Keep unknown provider outcomes pending. */ }
+    return saved;
+  }
   const report: SpecCompletionReport = { ...saved.report, findings: [...saved.report.findings] };
   const stale = drawingChanged || saved.source_signature !== completionSourceSignature(items, rooms, document, boardState);
+  let collected: Response | null = null;
+  // Continue collecting the same queued provider response even after the
+  // sources change. Otherwise a completed request could remain in-flight
+  // forever and incorrectly allow (or prevent) later budget decisions.
+  if (job.response_id && job.full_check_run_id && job.budget_owner_id) {
+    try {
+      collected = await retrieveSpecReview(job.response_id);
+      if (collected.ok && await terminalSpecReviewResponse(collected))
+        await settleFullSpecBudget(productionFullSpecBudgetStore(projectId), job.budget_owner_id, job.full_check_run_id, `completion:${job.request_id}`);
+      else if (stale) return saved;
+    } catch { return saved; }
+  }
   if (stale) {
     report.plan_status = "unavailable";
     report.plan_message = "Selections or construction documents changed while the plans were reviewed. Plan suggestions were not applied. The saved detail findings remain available.";
@@ -162,7 +191,7 @@ async function finishPendingReview(projectId: string, saved: any, items: Materia
     report.plan_message = "The plan check could not be started or confirmed. Selection details are saved. No automatic retry was made.";
   } else {
     let response: Response;
-    try { response = await retrieveSpecReview(job.response_id); }
+    try { response = collected || await retrieveSpecReview(job.response_id); }
     catch { return saved; }
     if (!response.ok && response.status !== 404) return saved;
     const value = await response.json().catch(() => null);

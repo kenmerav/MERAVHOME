@@ -7,6 +7,7 @@ import { refreshMaterialProductInfo } from "@/lib/materialProductRefresh";
 import { checkSpecDetails } from "@/lib/specCompletion";
 
 const project = "2b31849c-b94a-4b78-9bf0-e263bbfce6a0";
+const runId = "a1e43132-e210-4450-a009-0c877292489f";
 const itemId = "89863790-1b55-4a90-a9fe-0ec3a11f0b0d";
 const otherId = "64f674d2-01d1-45bc-8fe5-8c6a24e66c9c";
 const row = (id = itemId, scraped: Record<string, unknown> = { price: "$87.90" }) => ({
@@ -28,9 +29,11 @@ it("saves product prices and refreshes the screen before starting completion, el
     const body = JSON.parse(String(options.body));
     expect(new Headers(options.headers).get("Authorization")).toBe("Bearer TEST_ONLY");
     if (url === "/api/check-spec-completion" && body.action === "prepare") {
+      expect(body.full_check_run_id).toBe(runId);
       order.push("prepare"); return Response.json({ material_item_ids: [itemId], board_updated_at: "saved-board-revision", board_refresh: { imported: 1, updated: 2, added: 1, issues: [] } });
     }
     if (url === "/api/scrape-materials" && options.method === "POST") {
+      expect(body.full_check_run_id).toBe(runId);
       order.push("scrape"); expect(body.material_item_ids).toEqual([itemId]);
       return Response.json({ status: "completed", rows: [row()], remaining_count: 0 });
     }
@@ -38,13 +41,13 @@ it("saves product prices and refreshes the screen before starting completion, el
       order.push("save-start"); await saving; item.product.price = "$87.90"; order.push("save-finished");
       return Response.json({ ok: true, price_missing_count: 0 });
     }
-    order.push("review"); expect(body).toEqual({ project_id: project, expected_board_updated_at: "saved-board-revision", finish_checks: [] });
+    order.push("review"); expect(body).toEqual({ project_id: project, full_check_run_id: runId, expected_board_updated_at: "saved-board-revision", finish_checks: [] });
     const findings = checkSpecDetails([item], [{ id: "bath", name: "Bathroom" }]);
     expect(findings.some(f => f.field === "price")).toBe(false);
     return Response.json({ ...report, findings });
   });
   vi.stubGlobal("fetch", request);
-  const check = fetchSpecCompletion(project, { onBoardRefreshed: async summary => {
+  const check = fetchSpecCompletion(project, { runId, onBoardRefreshed: async summary => {
     expect(summary.imported).toBe(1); order.push("board-synced");
   }, onProductsRefreshed: async summary => {
     expect(summary).toEqual({ saved: 1, failed: 0, priceMissing: 0 }); order.push("refresh-screen");
@@ -57,7 +60,7 @@ it("saves product prices and refreshes the screen before starting completion, el
 it("does not scrape or start a paid review when project preparation denies access", async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ error: "This project is not assigned to you." }, { status: 403 }));
   vi.stubGlobal("fetch", request);
-  await expect(fetchSpecCompletion(project)).rejects.toThrow("not assigned"); expect(request).toHaveBeenCalledTimes(1);
+  await expect(fetchSpecCompletion(project, { runId })).rejects.toThrow("not assigned"); expect(request).toHaveBeenCalledTimes(1);
 });
 
 it("carries server finish evidence through product saves into the completion check", async () => {
@@ -73,14 +76,14 @@ it("carries server finish evidence through product saves into the completion che
     return Response.json(report);
   });
   vi.stubGlobal("fetch", request);
-  await fetchSpecCompletion(project);
+  await fetchSpecCompletion(project, { runId });
   expect(request).toHaveBeenCalledTimes(4);
 });
 
 it("does not restart an already-running plan review", async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ material_item_ids: [], pending_report: report }));
   vi.stubGlobal("fetch", request);
-  expect(await fetchSpecCompletion(project)).toEqual(report); expect(request).toHaveBeenCalledTimes(1);
+  expect(await fetchSpecCompletion(project, { runId })).toEqual(report); expect(request).toHaveBeenCalledTimes(1);
 });
 
 it("stops before completion when scraped products cannot be saved", async () => {
@@ -88,7 +91,7 @@ it("stops before completion when scraped products cannot be saved", async () => 
     .mockResolvedValueOnce(Response.json({ status: "completed", rows: [row()] }))
     .mockResolvedValueOnce(Response.json({ error: "Save unavailable" }, { status: 500 }));
   vi.stubGlobal("fetch", request);
-  await expect(fetchSpecCompletion(project)).rejects.toThrow("Save unavailable");
+  await expect(fetchSpecCompletion(project, { runId })).rejects.toThrow("Save unavailable");
   expect(request).toHaveBeenCalledTimes(3);
 });
 
@@ -142,7 +145,7 @@ it("rejects invalid scopes and incomplete responses instead of treating them as 
 
 it("skips product scraping for projects with no active selections", async () => {
   const request = vi.fn().mockResolvedValueOnce(Response.json({ material_item_ids: [] })).mockResolvedValueOnce(Response.json(report));
-  vi.stubGlobal("fetch", request); await fetchSpecCompletion(project);
+  vi.stubGlobal("fetch", request); await fetchSpecCompletion(project, { runId });
   expect(request).toHaveBeenCalledTimes(2); expect(request.mock.calls.every(call => call[0] === "/api/check-spec-completion")).toBe(true);
 });
 
@@ -160,7 +163,7 @@ it("uses the latest session for product saves and the final plan check after a l
     if(options.method==="PUT")return Response.json({ok:true});
     return Response.json(report);
   }));
-  await fetchSpecCompletion(project);
+  await fetchSpecCompletion(project, { runId });
   expect(sent).toEqual(["Bearer INITIAL","Bearer INITIAL","Bearer RENEWED","Bearer RENEWED"]);
 });
 
@@ -201,7 +204,7 @@ it("completes 409 selections across 35 batches after more than an hour and one e
     expect(saved).toEqual(ids); expect(token).toBe("Bearer RENEWED"); reviewed = true;
     return Response.json({ ...report, item_count: 409 });
   }));
-  const checking = fetchSpecCompletion(project);
+  const checking = fetchSpecCompletion(project, { runId });
   await vi.runAllTimersAsync();
   expect((await checking).item_count).toBe(409);
   expect(batchCount).toBe(35); expect(new Set(saved).size).toBe(409);
