@@ -322,7 +322,9 @@ describe("quantity review before board sends", () => {
   });
   it("does not replay even equal quantity fields without an explicit replacement", async () => {
     const { state, client } = store(item({ quantity: 1 }));
-    await saveReviewedBoardMaterial(client, "project", "pendant", proposed, proposed, {});
+    await saveReviewedBoardMaterial(
+      client, "project", "pendant", { ...proposed, notes: "Confirmed" }, proposed, {},
+    );
     expect(state.writes[0]).not.toHaveProperty("quantity");
     expect(boardMaterialUpdatePatch({ quantity: 1, notes: "Keep other changes" }, false)).toEqual({
       notes: "Keep other changes",
@@ -348,6 +350,43 @@ describe("quantity review before board sends", () => {
         [item()],
       )?.id,
     ).toBe("pendant");
+  });
+  it("reuses the saved board source when a verified selection no longer matches its board details", async () => {
+    const saved = item({
+      source_board_element_id: "board-pendant",
+      color: "Aged Bronze",
+      product: { dimensions: "21 in" } as MaterialItem["product"],
+      notes: "Installer to confirm height",
+    });
+    const target = {
+      boardElementId: "board-pendant",
+      roomId: "kitchen",
+      materialItemId: "other",
+      label: "Pendants",
+      productUrl: "https://store.example/pendant",
+      color: "Bronze",
+      dimensions: "20 in",
+    };
+    const found = findBoardMaterialForSend(target, [
+      item({ id: "other", source_board_element_id: "other-element" }),
+      item({ id: "old", source_board_element_id: "board-pendant", not_needed: true }),
+      saved,
+    ]);
+    expect(found?.id).toBe(saved.id);
+    const { state, client } = store(saved);
+    const conflict = boardQuantityConflict(found!, proposed, "Kitchen")!;
+    const result = await saveReviewedBoardMaterial(client, "project", saved.id, {}, proposed, {
+      [conflict.key]: "keep",
+    });
+    expect(result).toMatchObject({ quantity: 4, color: "Aged Bronze", notes: saved.notes });
+    expect(state.writes).toHaveLength(0);
+  });
+  it("does not guess which legacy duplicate to update when the board has no matching reference", () => {
+    const first = item({ source_board_element_id: "board-pendant" });
+    const second = item({ id: "duplicate", source_board_element_id: "board-pendant" });
+    const target = { boardElementId: "board-pendant", roomId: "kitchen", label: "Pendants" };
+    expect(() => findBoardMaterialForSend(target, [first, second])).toThrow(/duplicates in Materials/);
+    expect(findBoardMaterialForSend({ ...target, materialItemId: first.id }, [first, second])).toBe(first);
   });
   it("reviews the existing room quantity against the total on a page without summing references across rooms", () => {
     const boardQuantity = boardPageQuantity([

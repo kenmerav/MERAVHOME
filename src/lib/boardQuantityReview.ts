@@ -14,6 +14,7 @@ export function boardQuantityDescription(value: SpecQuantity) {
 
 export type BoardMaterialTarget = {
   roomId: string;
+  boardElementId?: string;
   materialItemId?: string | null;
   label: string;
   productUrl?: string | null;
@@ -28,16 +29,29 @@ const meaningfulProductName = (value?: string | null) =>
     ? value.trim()
     : null;
 export function findBoardMaterialForSend(target: BoardMaterialTarget, items: MaterialItem[]) {
+  // The caller reads only this project's materials. Match the stable source before
+  // mutable display details, just as the database duplicate guard does.
+  const active = items.filter((item) => !item.not_needed);
   const matches = (item: MaterialItem, ignoreUrl = false) =>
     item.room_id === target.roomId &&
     text(item.item_label) === text(target.label) &&
     (ignoreUrl || url(item.product_url) === url(target.productUrl)) &&
     text(item.color) === text(target.color) &&
     text(item.product?.dimensions) === text(target.dimensions);
-  const linked = items.find((item) => item.id === target.materialItemId);
+  const linked = active.find((item) => item.id === target.materialItemId);
+  if (target.boardElementId) {
+    const sourced = active.filter((item) => item.source_board_element_id === target.boardElementId);
+    if (linked && sourced.includes(linked)) return linked;
+    if (sourced.length === 1) return sourced[0];
+    if (sourced.length > 1) {
+      const matching = sourced.filter((item) => matches(item));
+      if (matching.length === 1) return matching[0];
+      throw new Error(`More than one saved material is linked to "${target.label}". Review the duplicates in Materials before sending this item.`);
+    }
+  }
   return linked && (matches(linked) || (target.materialLinkCleared && matches(linked, true)))
     ? linked
-    : items.find((item) => matches(item)) || null;
+    : active.find((item) => matches(item)) || null;
 }
 export function quantityForReview(value: SpecQuantity): SpecQuantityPatch {
   return {

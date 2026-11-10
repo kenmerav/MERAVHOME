@@ -1977,6 +1977,7 @@ function ProjectDesignBoardsPage() {
     const existingMaterial = findBoardMaterialForSend(
       {
         roomId: room.id,
+        boardElementId: element.id,
         materialItemId: element.materialItemId,
         label: itemLabel,
         productUrl,
@@ -2007,6 +2008,38 @@ function ProjectDesignBoardsPage() {
       throw new Error(
         "A Spec Book quantity changed since review. Send the board again to review the latest values.",
       );
+
+    // A re-send of an unchanged selection can review quantity without rolling back
+    // edits made in Materials or replacing its verified catalog product.
+    const previousSelection = page.materialsSyncSnapshot?.materialImages.find(
+      (candidate) => candidate.id === element.id,
+    );
+    const currentSelection = previousSelection
+      ? createPageMaterialsSyncSnapshot({ ...page, elements: [element] }).materialImages[0]
+      : undefined;
+    const unchangedSelection = previousSelection && currentSelection &&
+      (["src", "label", "notes", "link", "materialLinkCleared", "productId", "productName",
+        "finish", "materialRoomId", "materialCategory", "materialFinish", "materialDimensions"] as const)
+        .every((key) => previousSelection[key] === currentSelection[key]);
+    if (
+      existingMaterial?.source_board_element_id === element.id &&
+      existingMaterial.room_id === room.id &&
+      unchangedSelection
+    ) {
+      const saved = await saveReviewedBoardMaterial(
+        supabase, id, existingMaterial.id, {}, quantityFields, quantityDecisions,
+      );
+      setElementsForPage(page.id, (current) =>
+        current.map((candidate) => candidate.id === element.id
+          ? { ...candidate, materialItemId: saved.id }
+          : candidate),
+      );
+      await queryClient.invalidateQueries({ queryKey: ["materialItems", id] });
+      return {
+        status: "sent", materialItemId: saved.id, productId: saved.product_id,
+        roomId: saved.room_id, quantity,
+      };
+    }
 
     const actualProductName = element.productName?.trim() || itemLabel;
     const linkedProductNameMatches =
@@ -2344,6 +2377,7 @@ function ProjectDesignBoardsPage() {
         const existing = findBoardMaterialForSend(
           {
             roomId: group.roomId,
+            boardElementId: element.id,
             materialItemId: element.materialItemId,
             label: imageMaterialLabelForSend(element),
             productUrl: boardElementProductUrlForMaterialSync(element, linkedProduct),

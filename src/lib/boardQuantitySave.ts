@@ -85,6 +85,7 @@ export async function saveReviewedBoardMaterial(
     ...boardMaterialUpdatePatch(patch, false),
     ...(replacement ? specQuantityDatabasePatch(replacement) : {}),
   };
+  if (!Object.keys(safePatch).length) return material;
   const update = async (values: Partial<MaterialItem>) =>
     client
       .from("material_items")
