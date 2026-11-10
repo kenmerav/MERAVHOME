@@ -1,6 +1,6 @@
 import type { CompletionRoom } from "./specCompletion";
 
-export const DRAWING_EVIDENCE_VERSION = "spec-drawing-evidence-v1";
+export const DRAWING_EVIDENCE_VERSION = "spec-drawing-evidence-v2-conflicting-counts";
 export type DrawingFact = {
   id: string; room_id: string; label: string;
   field: "presence" | "quantity" | "color" | "finish" | "dimensions" | "price";
@@ -29,7 +29,7 @@ export function drawingCoverageMessage(evidence: DrawingEvidence) {
   const unmatched = evidence.rooms.filter(room => ["unclear", "not_shown"].includes(room.match)).length;
   return [evidence.facts.length ? "" : "The extraction contains no confidently supported drawing facts; plan details remain unverified.",
     unmatched ? `${unmatched} room${unmatched === 1 ? "" : "s"} could not be clearly matched to the drawings.` : "",
-    evidence.uncertainties.length ? `${evidence.uncertainties.length} drawing uncertaint${evidence.uncertainties.length === 1 ? "y remains" : "ies remain"} for manual review.` : ""].filter(Boolean).join(" ");
+    evidence.uncertainties.length ? `${evidence.uncertainties.length} drawing uncertaint${evidence.uncertainties.length === 1 ? "y remains" : "ies remain"} for manual review. ${evidence.uncertainties.slice(0, 5).map(row => `Page ${row.page}: ${row.evidence}`).join(" ")}${evidence.uncertainties.length > 5 ? " Additional uncertainties are not shown here; review the source drawings." : ""}` : ""].filter(Boolean).join(" ");
 }
 
 export function responseJson(value: any) {
@@ -83,8 +83,25 @@ export function cleanDrawingEvidence(value: any, rooms: CompletionRoom[], pages:
     if (!Number.isInteger(row?.page) || row.page < 1 || row.page > pages || !string(row.evidence, 1000)) throw Error("Invalid drawing uncertainty");
     return { page: row.page, evidence: string(row.evidence, 1000) };
   });
+  // A schedule and an elevation can disagree. Never let the comparison pick
+  // whichever count happens to be returned first for the same exact variant.
+  const counts = new Map<string, DrawingFact[]>();
+  for (const fact of facts) {
+    if (fact.field !== "quantity" || fact.quantity_unit !== "count") continue;
+    const identity = normalized(fact.sku || [fact.product, fact.variant].filter(Boolean).join(" | "));
+    if (!identity) continue;
+    const key = `${fact.room_id}|${identity}`;
+    counts.set(key, [...(counts.get(key) || []), fact]);
+  }
+  const disputed = new Set<string>();
+  for (const group of counts.values()) {
+    if (new Set(group.map(fact => fact.quantity)).size < 2) continue;
+    group.forEach(fact => disputed.add(fact.id));
+    const first = group[0];
+    uncertainties.push({ page: first.page, evidence: `Conflicting quantities for ${first.label}: ${group.map(fact => `${fact.quantity} (${fact.sheet}, page ${fact.page})`).join("; ")}. Confirm the correct count.` });
+  }
   return { complete_project_scope: value.complete_project_scope === true && value.rooms.every((r: any) => ["matched", "shared_default"].includes(r.match)),
-    rooms: value.rooms.map((r: any) => ({ room_id: r.room_id, match: r.match })), facts, uncertainties };
+    rooms: value.rooms.map((r: any) => ({ room_id: r.room_id, match: r.match })), facts: facts.filter(fact => !disputed.has(fact.id)), uncertainties };
 }
 
 // The comparison can match a current selection to evidence, but cannot invent

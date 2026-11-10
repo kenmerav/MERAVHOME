@@ -11,16 +11,16 @@ const quantity = { room_id: "bath", item_id: "sink", field: "quantity", confiden
   evidence: "Complete proposed vanity elevation shows two identical selected sinks.", exact_material_match: true,
   quantity: 2, quantity_unit: "count", count_scope: "exact_material" };
 
-it("flags gaps including placeholders and TBD without treating a default quantity as plan-verified", () => {
+it("does not flag an unselected placeholder and still checks selected quantities against plans", () => {
   const gaps = checkSpecDetails([item({ quantity_tbd: true, color: "TBD", product_url: "bad", product: null, product_id: null })], rooms);
-  expect(gaps.map(row => row.field)).toEqual(["quantity", "product", "color", "price", "link"]);
+  expect(gaps).toEqual([]);
   expect(checkSpecDetails([item()], rooms)).toEqual([]);
   expect(cleanCompletionPlanFindings([quantity], [item()], rooms, 14)[0].suggested).toBe("2 count");
 });
-it("handles selected placeholders hidden from the Spec Book but ignores untouched required and removed items", () => {
+it("ignores placeholders and removed items that are not in the current Spec Book", () => {
   const items = [item({ product: null, product_id: null, is_required: true, quantity: null, color: null }),
     item({ id: "removed", not_needed: true }), item({ id: "selected", product: null, product_id: null, quantity_tbd: true })];
-  expect(checkSpecDetails(items, rooms).every(row => row.item_id === "selected")).toBe(true);
+  expect(checkSpecDetails(items, rooms)).toEqual([]);
 });
 it("accepts a useful finish and zero price and identifies obvious price units without a confirmation", () => {
   const finish = item(); finish.color = null; finish.product!.finish = "Matte Black"; finish.product!.price = "$0.00";
@@ -51,6 +51,27 @@ it.each([
     expect(needsCompletionPriceUnit(material)).toBe(false);
     expect(checkSpecDetails([material], rooms).some(row => ["price", "price_unit"].includes(row.field))).toBe(false);
   }
+});
+it.each([["Tile & Stone", "Shower wall"], ["Flooring", "Floor Tile"], ["Wall Coverings", "Wallpaper"]])("does not require a price for %s / %s", (category, label) => {
+  const selection = item({ category, item_label: label });
+  selection.product!.price = null;
+  expect(needsCompletionPrice(selection)).toBe(false);
+});
+it.each(["Tile & Stone", "Flooring", "Countertops", "Cabinetry", "Cabinetry & Hardware", "Doors Base & Case"])("accepts an intentionally TBD measured quantity for %s", category => {
+  const selection = item({ category, item_label: "Material", quantity: null, quantity_tbd: true });
+  expect(checkSpecDetails([selection], rooms).some(row => row.field === "quantity")).toBe(false);
+  selection.quantity_tbd = false;
+  expect(checkSpecDetails([selection], rooms).some(row => row.field === "quantity")).toBe(true);
+});
+it("still flags TBD quantities for cabinet hardware", () => {
+  const selection = item({ category: "Cabinetry", item_label: "Cabinet pull", quantity: null, quantity_tbd: true });
+  expect(checkSpecDetails([selection], rooms).some(row => row.field === "quantity")).toBe(true);
+});
+it("does not suggest drawing quantities for measured materials intentionally marked TBD, but still checks hardware", () => {
+  const material = item({ category: "Tile & Stone", item_label: "Floor Tile", quantity: null, quantity_tbd: true });
+  expect(cleanCompletionPlanFindings([quantity], [material], rooms, 14)).toEqual([]);
+  const hardware = item({ category: "Cabinetry & Hardware", item_label: "Cabinet Pull", quantity: null, quantity_tbd: true });
+  expect(cleanCompletionPlanFindings([quantity], [hardware], rooms, 14)[0].suggested).toBe("2 count");
 });
 it("still requires prices for cabinet hardware and ordinary purchased items while countertop ranges are optional", () => {
   for (const [category, label] of [["Cabinetry", "Cabinet knob"], ["Cabinetry", "Cupboard latch"], ["Cabinetry", "Drawer slide"], ["Plumbing", "Faucet"], ["Lighting", "Painted metal lamp"]]) {

@@ -36,6 +36,13 @@ it("stops an expensive PDF before generation rather than silently downgrading or
   await expect(fetchSpecReview(request, "completion")).rejects.toThrow("exceeds $5");
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+it("uses a smaller budget for option images and stops before a comparison above 25 cents", async () => {
+  await fetchSpecReview(request, "option");
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ max_output_tokens: 1500, reasoning: { effort: "medium" }, store: false });
+  fetchMock.mockReset(); fetchMock.mockResolvedValue(Response.json({ input_tokens: 150000 }));
+  await expect(fetchSpecReview(request, "option")).rejects.toThrow("25-cent");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
 it.each([0, -1, undefined, "50000", 1.5, NaN, Infinity, 1000000])("fails closed for invalid or oversized count %s", async input_tokens => {
   fetchMock.mockResolvedValue(Response.json({ input_tokens }));
   await expect(fetchSpecReview(request, "dimensions")).rejects.toBeInstanceOf(SpecReviewCostError);

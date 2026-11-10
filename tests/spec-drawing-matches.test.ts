@@ -27,8 +27,10 @@ import {
   startDrawingMatchChunk,
   collectDrawingMatchChunk,
   loadDrawingMatchReport,
+  enrichQuantityDrawingTags,
   type DrawingMatchStore,
 } from "@/lib/specDrawingMatchEngine.server";
+import { quantityReviewEligible } from "@/lib/specDrawingMatches";
 const item = {
   id: "item-a",
   ref: "S1",
@@ -609,6 +611,55 @@ describe("grounded item-to-drawing matches", () => {
   });
 });
 describe("saved, cost-bounded drawing scan", () => {
+  it("excludes measurement-dependent selections while retaining cabinet hardware", () => {
+    for (const category of ["Tile & Stone", "Flooring", "Countertops", "Cabinetry", "Paint", "Wall Coverings", "Doors Base & Case"])
+      expect(quantityReviewEligible({ category, item_label: "Material", product: { name: "Material" } })).toBe(false);
+    expect(quantityReviewEligible({ category: "Cabinetry", item_label: "Cabinet pull", product: { name: "Pull" } })).toBe(true);
+    expect(quantityReviewEligible({ category: "Lighting", item_label: "Sconce" })).toBe(true);
+  });
+  it("checks quantity evidence in groups, retains conflicts, and cites original pages", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const { store } = await storage(10);
+    const fixture = { ...item, label: "Pendant", name: "Soren pendant", category: "Lighting", quantity: 7, quantityTbd: false };
+    await store.write("scan/job.json", { ...job, purpose: "quantities", items: [fixture] });
+    await prepareDrawingMatchScan(store, "scan", vi.fn(async () => Response.json({ input_tokens: 200 })) as typeof fetch);
+    const result = (pages: number[], count: number) => completed({ complete: true, reviewedPages: pages, matches: [], uncertainties: [], quantities: [{
+      item: "S1", roomRef: "R1", page: 1, sheet: `ID${count}`, quantity: count, source: "schedule", evidence: `${count} Soren pendants`,
+      confidence: "high", roomVerified: true, exactItem: true, completeRoomScope: true,
+    }] });
+    await startDrawingMatchChunk(store, "scan", 0, vi.fn(async () => Response.json(result([1, 2, 3, 4, 5, 6, 7, 8], 4))) as typeof fetch);
+    await startDrawingMatchChunk(store, "scan", 1, vi.fn(async () => Response.json(result([1, 2], 2))) as typeof fetch);
+    const report = await loadDrawingMatchReport(store, "scan");
+    expect(report?.status).toBe("complete"); expect(report?.reviewedPages).toHaveLength(10);
+    expect(report?.quantityFindings).toMatchObject([{ current: "7", status: "conflict", quantity: null, sources: [{ page: 1, quantity: 4 }, { page: 9, quantity: 2 }] }]);
+  });
+  it("does not recommend tile quantities, unclear counts, or transfer counts across rooms", () => {
+    const fixture = { ...item, category: "Tile & Stone", quantity: 1 };
+    const quantity = { item: "S1", roomRef: "R1", page: 1, sheet: "ID4", quantity: 4, source: "schedule", evidence: "4 lights", confidence: "high", roomVerified: true, exactItem: true, completeRoomScope: true };
+    expect(cleanDrawingMatchChunk({ ...raw([], [1]), quantities: [quantity] }, [10], [fixture], "quantities").quantities).toEqual([]);
+    for (const change of [{ exactItem: false }, { completeRoomScope: false }, { roomRef: "R2" }, { confidence: "low" }, { quantity: 1.5 }])
+      expect(cleanDrawingMatchChunk({ ...raw([], [1]), quantities: [{ ...quantity, ...change }] }, [10], [{ ...fixture, category: "Lighting" }], "quantities").quantities).toEqual([]);
+  });
+  it("uses a schedule tag to connect a later partial elevation and flags a conflicting lower bound", () => {
+    const fixture = { ...item, label: "Hall sconce", category: "Lighting", quantity: 3 };
+    const base = { item: "S1", roomRef: "R1", page: 1, sheet: "ID0.21", quantity: 1, source: "schedule", evidence: "LF-15 hall sconce, QTY 1", confidence: "high", roomVerified: true, exactItem: true, completeRoomScope: true };
+    const schedule = cleanDrawingMatchChunk({ ...raw([], [1]), quantities: [base] }, [9], [fixture], "quantities");
+    const enriched = enrichQuantityDrawingTags({ ...job, purpose: "quantities", items: [fixture] }, [schedule]);
+    expect(enriched.items[0].cad).toBe("LF-15");
+    const elevation = cleanDrawingMatchChunk({ ...raw([], [1]), quantities: [{ ...base, sheet: "ID2.11", quantity: 2, source: "layout_minimum", completeRoomScope: false, evidence: "Two LF-15 sconces visible" }] }, [38], [fixture], "quantities");
+    const report = drawingMatchReport({ ...job, purpose: "quantities", items: [fixture], pages: 2, chunks: [[9], [38]] }, [schedule, elevation]);
+    expect(report.quantityFindings).toMatchObject([{ status: "conflict", quantity: null, sources: [{ page: 9, quantity: 1 }, { page: 38, quantity: 2, source: "layout_minimum" }] }]);
+  });
+  it("suggests an explicitly drawn missing toilet but suppresses existing and shared selections", () => {
+    const candidate = { roomRef: "R1", label: "Toilet", page: 1, sheet: "ID0.6", evidence: "Proposed primary bath shows a toilet", confidence: "high", roomVerified: true, explicitFixture: true };
+    const input = { ...raw([], [1]), quantities: [], missing: [candidate] };
+    expect(cleanDrawingMatchChunk(input, [20], [item], "quantities").missing).toMatchObject([{ label: "Toilet", page: 20 }]);
+    const toilet = { ...item, id: "toilet", ref: "S2", label: "Toilet", name: "Kohler toilet" };
+    expect(cleanDrawingMatchChunk(input, [20], [item, toilet], "quantities").missing).toEqual([]);
+    expect(cleanDrawingMatchChunk(input, [20], [item, { ...toilet, roomId: "shared", room: "Materials Throughout" }], "quantities").missing).toEqual([]);
+    expect(cleanDrawingMatchChunk({ ...input, missing: [{ ...candidate, roomVerified: false }] }, [20], [item], "quantities").missing).toEqual([]);
+    expect(cleanDrawingMatchChunk({ ...input, missing: [{ ...candidate, label: "Unknown item" }] }, [20], [item], "quantities").missing).toEqual([]);
+  });
   it("defaults to direct matching across 88 pages without any AI request or page uploads", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     const { store } = await storage(88);

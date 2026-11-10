@@ -1,7 +1,7 @@
 import { beforeEach,expect,it,vi } from "vitest";
 const mock=vi.hoisted(()=>({authorize:vi.fn(),source:vi.fn(),read:vi.fn(),write:vi.fn(),bucket:vi.fn(),start:vi.fn(),report:vi.fn(),signed:vi.fn()}));
 vi.mock("@/integrations/supabase/client.server",()=>({supabaseAdmin:{storage:{getBucket:mock.bucket,from:()=>({createSignedUrl:mock.signed})}}}));
-vi.mock("@/lib/specDrawingMatchStore.server",()=>({currentDrawingMatchSource:mock.source,productionDrawingMatchStore:()=>({read:mock.read,write:mock.write})}));
+vi.mock("@/lib/specDrawingMatchStore.server",()=>({currentDrawingMatchSource:mock.source,productionDrawingMatchStore:()=>({read:mock.read,write:mock.write}),quantityDrawingKey:(value:string)=>value === "legacy" ? "c".repeat(64) : "b".repeat(64)}));
 vi.mock("@/lib/specDrawingMatchEngine.server",()=>({loadDrawingMatchReport:mock.report}));
 vi.mock("workflow/api",()=>({start:mock.start}));
 vi.mock("@/workflows/specDrawingMatches",()=>({specDrawingMatchesWorkflow:vi.fn()}));
@@ -23,6 +23,17 @@ it("refuses an attempt to enable AI through the request body", async () => {
   expect(mock.write).not.toHaveBeenCalled();
   expect(mock.start).not.toHaveBeenCalled();
 });
+it("starts a separate staff-only quantity scan against the current source and avoids duplicate jobs", async () => {
+  const quantityKey = "b".repeat(64);
+  const request = () => new Request("https://studio.example/api/spec-drawing-matches", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId: id, expectedKey: quantityKey, purpose: "quantities" }) });
+  mock.write.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  expect((await specDrawingMatchesApi(request())).status).toBe(200);
+  expect((await specDrawingMatchesApi(request())).status).toBe(200);
+  expect(mock.source).toHaveBeenCalledWith(id, "quantities");
+  expect(mock.write).toHaveBeenCalledWith(`${quantityKey}/job.json`, expect.objectContaining({ mode: "ai", purpose: "quantities" }), true);
+  expect(mock.start).toHaveBeenCalledTimes(1);
+});
 const id="88e6dcaa-a120-4f6a-95fa-389820199ef4",key="a".repeat(64);
 const actor={staff:true,user:{id:"user"},profile:{role:"Admin",is_active:true},project:{}};
 const get=()=>new Request(`https://studio.example/api/spec-drawing-matches?projectId=${id}`);
@@ -31,6 +42,9 @@ beforeEach(()=>{vi.clearAllMocks();mock.authorize.mockResolvedValue(actor);mock.
 it("rejects an unauthenticated request before reading project or storage data",async()=>{mock.authorize.mockRejectedValue(new ProjectAccessError("Sign in",401));expect((await specDrawingMatchesApi(get())).status).toBe(401);expect(mock.bucket).not.toHaveBeenCalled();expect(mock.source).not.toHaveBeenCalled();});
 it("requires both Spec Book and construction-document visibility for a GC",async()=>{mock.authorize.mockResolvedValue({...actor,staff:false,profile:{role:"Contractor",is_active:true},project:{contractor_can_view_spec_book:true,contractor_can_view_construction_docs:false}});expect((await specDrawingMatchesApi(get())).status).toBe(403);expect(mock.source).not.toHaveBeenCalled();});
 it("requires staff project access before any paid scan can be claimed",async()=>{mock.authorize.mockImplementation(async(_request,_project,_surface,staffOnly)=>{if(staffOnly)throw new ProjectAccessError("Staff only",403);return actor;});expect((await specDrawingMatchesApi(post())).status).toBe(403);expect(mock.authorize).toHaveBeenCalledWith(expect.any(Request),id,"specBook",true);expect(mock.write).not.toHaveBeenCalled();expect(mock.start).not.toHaveBeenCalled();});
+it("keeps quantity-check results restricted to staff",async()=>{mock.authorize.mockImplementation(async(_request,_project,_surface,staffOnly)=>{if(staffOnly)throw new ProjectAccessError("Staff only",403);return actor;});const response=await specDrawingMatchesApi(new Request(`https://studio.example/api/spec-drawing-matches?projectId=${id}&purpose=quantities`));expect(response.status).toBe(403);expect(mock.source).not.toHaveBeenCalled();});
+it("requires staff access to approve quantities and never starts a scan",async()=>{mock.authorize.mockRejectedValue(new ProjectAccessError("Staff only",403));const response=await specDrawingMatchesApi(new Request("https://studio.example/api/spec-drawing-matches",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({projectId:id,purpose:"quantities",action:"apply",expectedKey:"b".repeat(64),itemIds:[id]})}));expect(response.status).toBe(403);expect(mock.start).not.toHaveBeenCalled();});
+it("keeps older saved quantity reports visible but requires a new scan before approval",async()=>{mock.source.mockResolvedValue({key,legacyKey:"legacy",document:{id:"doc",title:"Latest drawings",updated_at:"now",file_url:"private"},items:[{id:"item"}]});mock.report.mockResolvedValueOnce(null).mockResolvedValueOnce({key:"c".repeat(64),status:"partial",matches:[]});const response=await specDrawingMatchesApi(new Request(`https://studio.example/api/spec-drawing-matches?projectId=${id}&purpose=quantities`));const body=await response.json();expect(body.needsFreshScan).toBe(true);expect(body.freshKey).toBe("b".repeat(64));expect(mock.start).not.toHaveBeenCalled();});
 it("refuses a stale source before claiming a new scan",async()=>{expect((await specDrawingMatchesApi(post("b".repeat(64)))).status).toBe(409);expect(mock.write).not.toHaveBeenCalled();expect(mock.start).not.toHaveBeenCalled();});
 it("a saved scan claim prevents duplicate background workflows on repeated clicks",async()=>{mock.write.mockResolvedValueOnce(true).mockResolvedValueOnce(false);await specDrawingMatchesApi(post());await specDrawingMatchesApi(post());expect(mock.start).toHaveBeenCalledTimes(1);expect(mock.write).toHaveBeenNthCalledWith(1,`${key}/job.json`,expect.objectContaining({projectId:id,key}),true);});
 it("opening unsaved results is read-only and signs no construction PDF",async()=>{const response=await specDrawingMatchesApi(get());const body=await response.json();expect(body.status).toBe("unread");expect(mock.write).not.toHaveBeenCalled();expect(mock.start).not.toHaveBeenCalled();expect(mock.signed).not.toHaveBeenCalled();expect(response.headers.get("Cache-Control")).toBe("no-store");});

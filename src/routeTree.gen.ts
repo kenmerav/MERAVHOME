@@ -48,6 +48,7 @@ import { Route as ApiMarvinCronRouteImport } from './routes/api/marvin-cron'
 import { Route as ApiMarvinFathomWebhookRouteImport } from './routes/api/marvin-fathom-webhook'
 import { Route as ApiMarvinGmailCallbackRouteImport } from './routes/api/marvin-gmail-callback'
 import { Route as ApiMarvinUploadRouteImport } from './routes/api/marvin-upload'
+import { Route as ApiMatchBoardOptionRouteImport } from './routes/api/match-board-option'
 import { Route as ApiMaterialCatalogSuggestionsRouteImport } from './routes/api/material-catalog-suggestions'
 import { Route as ApiMeasuredRenderingRouteImport } from './routes/api/measured-rendering'
 import { Route as ApiMyTodosRouteImport } from './routes/api/my-todos'
@@ -327,6 +328,11 @@ const ApiMarvinGmailCallbackRoute = ApiMarvinGmailCallbackRouteImport.update({
 const ApiMarvinUploadRoute = ApiMarvinUploadRouteImport.update({
   id: '/api/marvin-upload',
   path: '/api/marvin-upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMatchBoardOptionRoute = ApiMatchBoardOptionRouteImport.update({
+  id: '/api/match-board-option',
+  path: '/api/match-board-option',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMaterialCatalogSuggestionsRoute =
@@ -777,6 +783,7 @@ export interface FileRoutesByFullPath {
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
+  '/api/match-board-option': typeof ApiMatchBoardOptionRoute
   '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
   '/api/measured-rendering': typeof ApiMeasuredRenderingRoute
   '/api/my-todos': typeof ApiMyTodosRoute
@@ -896,6 +903,7 @@ export interface FileRoutesByTo {
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
+  '/api/match-board-option': typeof ApiMatchBoardOptionRoute
   '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
   '/api/measured-rendering': typeof ApiMeasuredRenderingRoute
   '/api/my-todos': typeof ApiMyTodosRoute
@@ -1016,6 +1024,7 @@ export interface FileRoutesById {
   '/api/marvin-fathom-webhook': typeof ApiMarvinFathomWebhookRoute
   '/api/marvin-gmail-callback': typeof ApiMarvinGmailCallbackRoute
   '/api/marvin-upload': typeof ApiMarvinUploadRoute
+  '/api/match-board-option': typeof ApiMatchBoardOptionRoute
   '/api/material-catalog-suggestions': typeof ApiMaterialCatalogSuggestionsRoute
   '/api/measured-rendering': typeof ApiMeasuredRenderingRoute
   '/api/my-todos': typeof ApiMyTodosRoute
@@ -1137,6 +1146,7 @@ export interface FileRouteTypes {
     | '/api/marvin-fathom-webhook'
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
+    | '/api/match-board-option'
     | '/api/material-catalog-suggestions'
     | '/api/measured-rendering'
     | '/api/my-todos'
@@ -1256,6 +1266,7 @@ export interface FileRouteTypes {
     | '/api/marvin-fathom-webhook'
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
+    | '/api/match-board-option'
     | '/api/material-catalog-suggestions'
     | '/api/measured-rendering'
     | '/api/my-todos'
@@ -1375,6 +1386,7 @@ export interface FileRouteTypes {
     | '/api/marvin-fathom-webhook'
     | '/api/marvin-gmail-callback'
     | '/api/marvin-upload'
+    | '/api/match-board-option'
     | '/api/material-catalog-suggestions'
     | '/api/measured-rendering'
     | '/api/my-todos'
@@ -1495,6 +1507,7 @@ export interface RootRouteChildren {
   ApiMarvinFathomWebhookRoute: typeof ApiMarvinFathomWebhookRoute
   ApiMarvinGmailCallbackRoute: typeof ApiMarvinGmailCallbackRoute
   ApiMarvinUploadRoute: typeof ApiMarvinUploadRoute
+  ApiMatchBoardOptionRoute: typeof ApiMatchBoardOptionRoute
   ApiMaterialCatalogSuggestionsRoute: typeof ApiMaterialCatalogSuggestionsRoute
   ApiMeasuredRenderingRoute: typeof ApiMeasuredRenderingRoute
   ApiMyTodosRoute: typeof ApiMyTodosRoute
@@ -1847,6 +1860,13 @@ declare module '@tanstack/react-router' {
       path: '/api/marvin-upload'
       fullPath: '/api/marvin-upload'
       preLoaderRoute: typeof ApiMarvinUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/match-board-option': {
+      id: '/api/match-board-option'
+      path: '/api/match-board-option'
+      fullPath: '/api/match-board-option'
+      preLoaderRoute: typeof ApiMatchBoardOptionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/material-catalog-suggestions': {
@@ -2451,6 +2471,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMarvinFathomWebhookRoute: ApiMarvinFathomWebhookRoute,
   ApiMarvinGmailCallbackRoute: ApiMarvinGmailCallbackRoute,
   ApiMarvinUploadRoute: ApiMarvinUploadRoute,
+  ApiMatchBoardOptionRoute: ApiMatchBoardOptionRoute,
   ApiMaterialCatalogSuggestionsRoute: ApiMaterialCatalogSuggestionsRoute,
   ApiMeasuredRenderingRoute: ApiMeasuredRenderingRoute,
   ApiMyTodosRoute: ApiMyTodosRoute,

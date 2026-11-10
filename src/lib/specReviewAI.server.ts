@@ -8,10 +8,10 @@ export class CreditsUnavailable extends Error {}
 export class SpecReviewCostError extends Error {}
 
 type ReviewRequest = { instructions: string; input: unknown[]; text?: unknown };
-type ReviewKind = "completion" | "dimensions" | "color";
-const outputLimits: Record<ReviewKind, number> = { completion: 32000, dimensions: 12000, color: 8000 };
+type ReviewKind = "completion" | "dimensions" | "color" | "option";
+const outputLimits: Record<ReviewKind, number> = { completion: 32000, dimensions: 12000, color: 8000, option: 1500 };
 // Full construction-document reviews at high reasoning can exceed two minutes.
-const reviewTimeouts: Record<ReviewKind, number> = { completion: 300000, dimensions: 240000, color: 120000 };
+const reviewTimeouts: Record<ReviewKind, number> = { completion: 300000, dimensions: 240000, color: 120000, option: 120000 };
 
 export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputLimit = outputLimits[kind]) {
   if (!Number.isSafeInteger(outputLimit) || outputLimit < 1000 || outputLimit > 32000)
@@ -31,6 +31,8 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputL
   // errors at the spending boundary (all rates are in tenths of dollars/M).
   const costNumerator = (reservedInput * (longContext ? 50 : 25) + outputLimit * (longContext ? 150 : 100)) * 11;
   const ceilingUsd = Math.ceil(costNumerator / 1000000) / 100;
+  if (kind === "option" && ceilingUsd > 0.25)
+    throw new SpecReviewCostError("This image comparison exceeds its 25-cent estimated limit. Check the option manually.");
   if (ceilingUsd > SPEC_REVIEW_MAX_USD)
     throw new SpecReviewCostError("The AI review was stopped before generation because its estimated cost exceeds $5. Use a smaller construction document. Missing-detail checks still work.");
   return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimit };
@@ -39,7 +41,7 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputL
 export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, background = false, fetcher:typeof fetch = fetch): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) throw new Error("AI configuration unavailable");
   const headers = { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" };
-  const countedRequest = { ...request, model: SPEC_REVIEW_MODEL, reasoning: { effort: "high" } };
+  const countedRequest = { ...request, model: SPEC_REVIEW_MODEL, reasoning: { effort: kind === "option" ? "medium" : "high" } };
   let countResponse: Response;
   try {
     countResponse = await fetcher("https://api.openai.com/v1/responses/input_tokens", {

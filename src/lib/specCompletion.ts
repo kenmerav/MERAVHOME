@@ -26,6 +26,7 @@ export type SpecCompletionReport = {
   board_refresh?: import("@/lib/specBoardSync").SpecBoardSyncSummary;
   catalog_fit_checks?: Record<string, import("@/lib/materialCatalogFit").CatalogPlanFit>;
   spec_drawing_evidence?: Record<string, import("@/lib/specDrawingEvidence").DrawingEvidenceJob>;
+  board_option_matches?: Record<string, { signature: string; checkedAt: string; value: import("./boardOptionMatch").BoardOptionMatch }>;
   checked_at: string; item_count: number; findings: CompletionFinding[];
   plan_status: "checked" | "no_document" | "unavailable" | "checking";
   document: { id: string; title: string; updated_at: string } | null;
@@ -45,7 +46,7 @@ export function hasCompletionValue(value: unknown) {
 
 // Extraction snapshots are private server cache, not part of browser responses.
 export function publicSpecCompletionReport(report: SpecCompletionReport): SpecCompletionReport {
-  const { spec_drawing_evidence: _evidence, catalog_fit_checks: _catalog, ...publicReport } = report;
+  const { spec_drawing_evidence: _evidence, catalog_fit_checks: _catalog, board_option_matches: _options, ...publicReport } = report;
   return publicReport;
 }
 
@@ -74,6 +75,7 @@ export function allowsMissingMaterialPrice(item: MaterialItem) {
   const label = `${item.item_label || ""} ${item.product?.name || ""}`;
   // Cabinet hardware remains a priced product even when grouped with cabinetry.
   if (/\b(?:knobs?|pulls?|handles?|hinges?|latch(?:es)?|catches?|slides?|hardware)\b/i.test(label)) return false;
+  if (/^(?:Tile & Stone|Wall Coverings)$/i.test(item.category || "") || /\b(?:tiles?|wallpaper|wall\s*coverings?)\b/i.test(label)) return true;
   if (/^(?:Paint|Cabinetry|Cabinetry & Hardware)$/i.test(item.category || "")) return true;
   if (/^Paint$/i.test(item.product?.category || "")) return true;
   if (/\b(?:faucets?|sinks?|toilets?|mirrors?|lamps?|sconces?|pendants?|chandeliers?|stools?|chairs?|tables?|dispensers?)\b/i.test(label)) return false;
@@ -92,6 +94,13 @@ export function allowsMissingMaterialPrice(item: MaterialItem) {
 
 const exactCompletionPrice = (item: MaterialItem) =>
   /^\$?\s*\d+(?:,\d{3})*(?:\.\d{1,2})?$/.test(item.product?.price?.trim() || "");
+
+export function allowsMeasurementTbd(item: MaterialItem) {
+  const label = `${item.item_label || ""} ${item.product?.name || ""}`;
+  if (/\b(?:knobs?|pulls?|handles?|hinges?|latch(?:es)?|catches?|slides?|hardware)\b/i.test(label)) return false;
+  if (/^(?:Tile & Stone|Flooring|Countertops|Cabinetry(?: & Hardware)?|Doors Base & Case)$/i.test(item.category || "")) return true;
+  return /\b(?:countertops?|flooring|floor tiles?|wall tiles?|shower tiles?|stone slabs?)\b/i.test(label);
+}
 
 export function needsCompletionPrice(item: MaterialItem) {
   if (isCountertopMaterial(item)) return false;
@@ -119,8 +128,8 @@ export function checkSpecDetails(items: MaterialItem[], rooms: CompletionRoom[])
       if (!item.design_accuracy_fact.designResolved) add("product", "Design decisions remain unresolved. Review the current selection in Room Design.");
       return result;
     }
-    if (item.quantity_tbd || item.quantity == null || !Number.isFinite(item.quantity) || item.quantity <= 0 ||
-      (specQuantityUnit(item) === "count" && !Number.isInteger(item.quantity)))
+    if (!(item.quantity_tbd && allowsMeasurementTbd(item)) && (item.quantity_tbd || item.quantity == null || !Number.isFinite(item.quantity) || item.quantity <= 0 ||
+      (specQuantityUnit(item) === "count" && !Number.isInteger(item.quantity))))
       add("quantity", "Quantity needs confirmation.", item.quantity_tbd ? "TBD" : String(item.quantity ?? ""));
     if (!item.product_id || !item.product) add("product", "No catalog product is assigned. This item does not appear in the Spec Book yet.");
     if (item.product) {
@@ -182,6 +191,7 @@ export function cleanCompletionPlanFindings(value: unknown, items: MaterialItem[
     if (!item || row.exact_material_match !== true) continue;
     const label = item.client_product_name || item.item_label;
     if (row.field === "quantity") {
+      if (item.quantity_tbd && allowsMeasurementTbd(item)) continue;
       const unit = row.quantity_unit;
       let qty = row.quantity;
       if (!["count", "square_feet"].includes(unit) || typeof qty !== "number" || !Number.isFinite(qty) ||

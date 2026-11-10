@@ -13,10 +13,12 @@ import { projectDocumentStoragePath } from "./constructionDocumentPath.server";
 import {
   currentDrawingMatchSource,
   productionDrawingMatchStore,
+  quantityDrawingKey,
 } from "./specDrawingMatchStore.server";
 import type { DrawingMatchJob, DrawingMatchReport } from "./specDrawingMatches";
 import { loadDrawingMatchReport, failDrawingMatchJob } from "./specDrawingMatchEngine.server";
 import { specDrawingMatchesWorkflow } from "@/workflows/specDrawingMatches";
+import { applyDrawingQuantities } from "./specQuantityApproval.server";
 const admin = supabaseAdmin as any;
 const BUCKET = "rendering-studio-files";
 export async function specDrawingMatchesApi(request: Request) {
@@ -28,6 +30,10 @@ export async function specDrawingMatchesApi(request: Request) {
             .object({
               projectId: z.string().uuid(),
               expectedKey: z.string().regex(/^[a-f0-9]{64}$/),
+              purpose: z.enum(["quantities"]).optional(),
+              attempt: z.number().int().min(0).max(5).optional(),
+              action: z.enum(["apply"]).optional(),
+              itemIds: z.array(z.string().uuid()).min(1).max(100).optional(),
             })
             .strict()
             .parse(await boundedJson(request))
@@ -36,11 +42,16 @@ export async function specDrawingMatchesApi(request: Request) {
       .string()
       .uuid()
       .parse(body?.projectId || url.searchParams.get("projectId"));
+    const purpose = body?.purpose || (url.searchParams.get("purpose") === "quantities" ? "quantities" : undefined);
+    if (body?.action === "apply" && (purpose !== "quantities" || !body.itemIds?.length))
+      throw new ProjectAccessError("Choose quantity findings to approve.", 400);
+    if (body?.itemIds && body.action !== "apply") throw new ProjectAccessError("Invalid drawing review request.", 400);
+    const attempt = purpose === "quantities" ? z.coerce.number().int().min(0).max(5).parse(body?.attempt ?? url.searchParams.get("attempt") ?? 0) : 0;
     const actor = await requireProjectAccess(
       request,
       projectId,
       "specBook",
-      request.method === "POST",
+      request.method === "POST" || purpose === "quantities",
     );
     if (!canViewProjectSurface(actor.profile, actor.project, "constructionDocs"))
       throw new ProjectAccessError("Construction drawings are not shared with your account.");
@@ -48,7 +59,8 @@ export async function specDrawingMatchesApi(request: Request) {
     const bucket = await admin.storage.getBucket(BUCKET);
     if (bucket.error || !bucket.data || bucket.data.public !== false)
       throw Error("The private drawing cache is unavailable.");
-    const source = await currentDrawingMatchSource(projectId);
+    const source = await currentDrawingMatchSource(projectId, purpose);
+    const key = purpose === "quantities" && source.key ? quantityDrawingKey(source.key, attempt) : source.key;
     if (!source.document)
       return privateJson({
         key: "",
@@ -62,11 +74,12 @@ export async function specDrawingMatchesApi(request: Request) {
         totalChunks: 0,
         canScan: actor.staff,
       } satisfies DrawingMatchReport);
-    if (body && body.expectedKey !== source.key)
+    if (body && body.expectedKey !== key)
       throw new ProjectAccessError(
         "The construction document or selections changed. Refresh before starting the scan.",
         409,
       );
+    if (body?.action === "apply") return privateJson(await applyDrawingQuantities(projectId, body.expectedKey, attempt, body.itemIds!));
     const store = productionDrawingMatchStore(projectId);
     if (body) {
       if (!source.items.length)
@@ -76,8 +89,9 @@ export async function specDrawingMatchesApi(request: Request) {
         );
       const job: DrawingMatchJob = {
         version: 1,
-        mode: "direct",
-        key: source.key,
+        mode: purpose === "quantities" ? "ai" : "direct",
+        ...(purpose === "quantities" ? { purpose, quantityAttempt: attempt } : {}),
+        key,
         projectId,
         document: source.document,
         items: source.items,
@@ -85,23 +99,27 @@ export async function specDrawingMatchesApi(request: Request) {
         createdBy: actor.user.id,
         status: "queued",
       };
-      const created = await store.write(`${source.key}/job.json`, job, true);
+      const created = await store.write(`${key}/job.json`, job, true);
       if (created) {
         try {
-          await start(specDrawingMatchesWorkflow, [projectId, source.key]);
+          await start(specDrawingMatchesWorkflow, [projectId, key]);
         } catch {
           await failDrawingMatchJob(
             store,
-            source.key,
+            key,
             "The background scan could not be confirmed. Saved request claims prevent an automatic repeat.",
           );
         }
       }
     }
-    const report =
-      (await loadDrawingMatchReport(store, source.key)) ||
+    let report = await loadDrawingMatchReport(store, key);
+    if (!body && !report && purpose === "quantities" && source.legacyKey) {
+      const legacy = await loadDrawingMatchReport(store, quantityDrawingKey(source.legacyKey, attempt));
+      if (legacy) report = { ...legacy, needsFreshScan: true, freshKey: key };
+    }
+    report = report ||
       ({
-        key: source.key,
+        key,
         status: "unread",
         document: {
           id: source.document.id,

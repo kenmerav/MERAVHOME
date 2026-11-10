@@ -1,9 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DesignAccuracySummary } from "@/components/DesignAccuracySummary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, Loader2, ArrowUpRight, ImageOff } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { fetchSpecCompletion, fetchBoardColorSuggestion, fetchPlanDimensionSuggestion, fetchSavedSpecCompletion, updateCompletionIssue } from "@/lib/specCompletionClient";
+import { fetchSpecCompletion, fetchBoardColorSuggestion, fetchBoardOptionMatch, fetchPlanDimensionSuggestion, fetchSavedSpecCompletion, updateCompletionIssue } from "@/lib/specCompletionClient";
+import type { BoardOptionMatch } from "@/lib/boardOptionMatch";
+import { boardOptionBatchCandidates, reusableBoardOptionMatch, runBoardOptionBatch } from "@/lib/boardOptionMatch";
+import { SpecQuantityScan } from "@/components/SpecQuantityScan";
+import { SpecCompletionBatchReview } from "@/components/SpecCompletionBatchReview";
 import type { BoardColorSuggestion } from "@/lib/boardColorSuggestion";
 import type { PlanDimensionSuggestion } from "@/lib/planDimensionSuggestion";
 import { checkSpecDetails, completionItems, type CompletionRoom, type CompletionFinding, type SpecCompletionReport } from "@/lib/specCompletion";
@@ -189,6 +193,8 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
 }) {
   const [filter, setFilter] = useState<"all" | "details" | "plans">("all");
   const [statusFilter, setStatusFilter] = useState<CompletionIssueStatus | "all">("open");
+  const [matchedOptions, setMatchedOptions] = useState<Record<string, BoardOptionMatch | null>>({});
+  const [fullRunSignal, setFullRunSignal] = useState(0);
   const qc = useQueryClient();
   const catalogSaved = async () => {
     await Promise.all([["materialItems", projectId], ["spec-completion-review", projectId], ["roomProducts"], ["procurement"]]
@@ -204,6 +210,11 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
     reviewRooms.push({ id: issue.finding.room_id, name: issue.room_name || "Former room" });
   return <>
     <DesignAccuracySummary projectId={projectId} />
+    {issues && !checking && !stale && <div className="shrink-0 border p-3 text-xs">
+      <p className="font-medium">Full project check</p>
+      <p className="mt-1">Compares {boardOptionBatchCandidates(completionItems(items)).length} eligible board images to retailer options and checks the current construction PDF for quantity differences. The estimated AI maximum is $5 for drawings plus up to ${Math.round(boardOptionBatchCandidates(completionItems(items)).length * 25) / 100} for product comparisons; Firecrawl may also charge. Saved current comparisons are reused. Keep this review open for the product comparisons. Nothing is changed without review.</p>
+      <button type="button" className="mt-2 border px-3 py-2" onClick={() => setFullRunSignal(current => current + 1)}>Run full project check</button>
+    </div>}
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
       {[[itemCount, "Items reviewed"], [counts.open, "Open issues"], [counts.completed, "Completed"], [counts.not_needed, "Change not needed"]].map(([count, label]) =>
         <div key={label} className="border bg-bone/40 px-4 py-3"><div className="font-display text-3xl">{count}</div><div className="text-xs text-muted-foreground mt-1">{label}</div></div>)}
@@ -229,6 +240,11 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
       {onStatusChange && <SpecCompletionPossibleItems projectId={projectId} rooms={rooms} items={items} issues={rows} checkedAt={checkedAt} document={document} disabled={checking || !!savingIssue} onAdded={catalogSaved} />}
     </div>
     <div className="min-h-0 overflow-y-auto space-y-6 pr-1">
+      {issues && !checking && <SpecQuantityScan projectId={projectId} items={items} rooms={rooms} runSignal={fullRunSignal} />}
+      {issues && !checking && !stale && <BoardOptionBatchReview projectId={projectId} items={completionItems(items)}
+        runSignal={fullRunSignal} onMatch={(itemId, result) => setMatchedOptions(current => ({ ...current, [itemId]: result }))} />}
+      {issues && <SpecCompletionBatchReview projectId={projectId} items={items} rooms={rooms} issues={issues}
+        checkedAt={checkedAt} disabled={checking || stale || !!savingIssue} />}
       {!visible.length && <p className="text-sm py-4 text-muted-foreground">{checking ? "Plan review is still running." : filter === "plans" && planStatus !== "checked" ? "Plan quantities and missing items have not been checked." : "No findings in this section. Details that are not specified in the plans still need your review."}</p>}
       {reviewRooms.filter(room => visible.some(issue => issue.finding.room_id === room.id)).map(room => {
         const groups = new Map<string, SavedCompletionIssue[]>();
@@ -280,6 +296,8 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                 <p className="text-xs text-muted-foreground">{item ? "Choose a replacement if the selection needs correction. Quantity is kept." : "Choose a product to fill this missing item."}</p>
               </div>}
               {selectionChanged && <p className="mt-3 text-xs text-amber-900">The selected product has changed since this check. Run the check again to review its current details and fit.</p>}
+              {item && productLink && !selectionChanged && !checking && <BoardOptionReview projectId={projectId} itemId={item.id}
+                onMatch={value => setMatchedOptions(current => ({ ...current, [item.id]: value }))} />}
               {catalogIssue && onStatusChange && ["missing_item", "product", "link"].includes(catalogIssue.finding.field) && !item?.not_needed &&
                 <MaterialProductLinkInput projectId={projectId} roomId={room.id} label={catalogIssue.finding.item_label} existingItem={item || placeholder || null}
                   issue={catalogIssue} disabled={checking || !!savingIssue} onSaved={catalogSaved} />}
@@ -307,7 +325,7 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
                   </div>
                   {onSaveDetail && item && issue.status === "open" && ["color", "finish", "price", "price_unit", "dimensions", "grout", "tile_layout"].includes(row.field) &&
                     item.room_id === row.room_id && (!issue.item_preview?.product_id || issue.item_preview.product_id === item.product_id) && (
-                    <CompletionDetailEditor key={issue.key} item={item} issue={issue} disabled={!!savingIssue}
+                    <CompletionDetailEditor key={issue.key} item={item} issue={issue} disabled={!!savingIssue} optionSuggestion={matchedOptions[item.id]}
                       onSave={draft => onSaveDetail(issue, item, draft)} />
                   )}
                   <div className="mt-3 border-l-2 border-ink/30 bg-bone/30 px-3 py-2.5">
@@ -336,8 +354,8 @@ export function SpecCompletionResults({ projectId, rooms, items = [], findings, 
   </>;
 }
 
-function CompletionDetailEditor({ item, issue, disabled, onSave }: {
-  item: MaterialItem; issue: SavedCompletionIssue; disabled: boolean; onSave: (draft: CompletionDetailDraft) => Promise<void>;
+function CompletionDetailEditor({ item, issue, disabled, onSave, optionSuggestion }: {
+  item: MaterialItem; issue: SavedCompletionIssue; disabled: boolean; onSave: (draft: CompletionDetailDraft) => Promise<void>; optionSuggestion?: BoardOptionMatch | null;
 }) {
   const price = issue.finding.field === "price" || issue.finding.field === "price_unit";
   const dimensions = issue.finding.field === "dimensions";
@@ -380,6 +398,9 @@ function CompletionDetailEditor({ item, issue, disabled, onSave }: {
       </label>}
       <button type="submit" className="h-10 bg-ink px-4 text-sm text-white disabled:opacity-50">{saving ? "Saving…" : "Save & complete"}</button>
       {!price && suggestion && <button type="button" className="text-xs underline" onClick={() => setValue(suggestion)}>{dimensions ? "Use suggested dimensions" : issue.finding.finish_check ? "Use linked finish" : "Use suggested color"}</button>}
+      {["color", "finish"].includes(issue.finding.field) && optionSuggestion && optionSuggestion.optionKind !== "size" &&
+        (optionSuggestion.optionKind !== "variant" || optionSuggestion.attributes?.color || optionSuggestion.attributes?.finish) &&
+        <button type="button" className="text-xs underline" onClick={() => setValue(optionSuggestion.optionKind === "variant" ? optionSuggestion.attributes?.color || optionSuggestion.attributes?.finish || "" : optionSuggestion.option)}>Use image match: {optionSuggestion.optionKind === "variant" ? optionSuggestion.attributes?.color || optionSuggestion.attributes?.finish : optionSuggestion.option}</button>}
     </fieldset>
     <p className="mt-2 text-xs text-muted-foreground">Saves to Materials and the Spec Book, then completes this issue.</p>
     {dimensions && <p className="mt-1 text-xs text-muted-foreground">Include units. Confirm the selected product matches the planned size before saving.</p>}
@@ -425,6 +446,102 @@ function BoardColorReview({ projectId, itemId, initial, allowCheck = true, onSav
       </div>}
     </div>
   </div>;
+}
+
+function BoardOptionReview({ projectId, itemId, onMatch }: { projectId: string; itemId: string; onMatch: (value: BoardOptionMatch | null) => void }) {
+  const [result, setResult] = useState<BoardOptionMatch | null>(null);
+  const [matching, setMatching] = useState(false);
+  const [error, setError] = useState("");
+  const lock = useRef(false);
+  const run = async (cached = false) => {
+    if (lock.current) return;
+    lock.current = true; setMatching(true); setError(""); setResult(null); onMatch(null);
+    try { const matched = await fetchBoardOptionMatch(projectId, itemId, cached); setResult(matched); if (matched.status === "matched") onMatch(matched); }
+    catch (error) { setError(error instanceof Error ? error.message : "Could not compare options."); }
+    finally { lock.current = false; setMatching(false); }
+  };
+  return <div className="mt-3">
+    <button type="button" disabled={matching} onClick={() => void run()} className="inline-flex items-center gap-2 border px-3 py-2 text-xs disabled:opacity-50">
+      {matching ? "Comparing retailer options…" : "Match board to product options"}
+    </button>
+    <button type="button" disabled={matching} onClick={() => void run(true)} className="ml-2 underline disabled:opacity-50">Show saved comparison</button>
+    <p className="mt-1 text-xs text-muted-foreground">Sends the product link to Firecrawl and the board and option images to OpenAI. The AI estimate is capped at 25¢ per comparison; Firecrawl may also charge. Review the result before saving.</p>
+    {error && <p role="alert" className="mt-2 text-xs text-red-800">{error}</p>}
+    {result && <div role="status" className="mt-2 border bg-bone/30 p-3 text-xs leading-5">
+      {result.status === "matched" && <p className="font-medium text-sm">Possible {result.optionKind} match: {result.option}</p>}
+      <p>{result.reason}</p>
+      <LinkedProductOption result={result} />
+      <BoardOptionWarnings result={result} />
+      {result.status === "matched" && <p className="mt-1">Confirm the option before entering it. Image matching cannot verify a SKU, price or dimensions.</p>}
+      {!!result.options?.length && <div className="mt-2 flex flex-wrap gap-3">
+        <div><img src={result.boardImage} alt="Design board selection" className="h-20 w-20 object-contain bg-white" /><span>Board</span></div>
+        {result.options.map(option => <div key={option.label}><img src={option.image} alt={option.label} className="h-20 w-20 object-contain bg-white" /><span>{option.label}</span></div>)}
+      </div>}
+    </div>}
+  </div>;
+}
+
+function LinkedProductOption({ result }: { result: BoardOptionMatch }) {
+  const variant = result.linkedVariant;
+  if (!variant) return null;
+  const source = completionProductLink(variant.sourceUrl);
+  const details = Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(" · ");
+  return <p className="mt-1">Linked product option: {details || `Variant ${variant.variantId}`}{variant.sku ? ` · SKU ${variant.sku}` : ""}{source && <> · <a className="underline" href={source} target="_blank" rel="noopener noreferrer">View source</a></>}. The link identifies this option; confirm it matches the design board.</p>;
+}
+
+function BoardOptionWarnings({ result }: { result: BoardOptionMatch }) {
+  return <>{result.warnings?.map((warning, index) => {
+    const source = completionProductLink(warning.sourceUrl);
+    return <p key={`${warning.evidence}-${index}`} className="mt-1 text-amber-900"><strong>{warning.message}</strong> {warning.evidence}{source && <> · <a className="underline" href={source} target="_blank" rel="noopener noreferrer">View source</a></>}</p>;
+  })}</>;
+}
+
+function BoardOptionBatchReview({ projectId, items, onMatch, runSignal = 0 }: { projectId: string; items: MaterialItem[]; onMatch: (itemId: string, value: BoardOptionMatch | null) => void; runSignal?: number }) {
+  const candidates = boardOptionBatchCandidates(items);
+  const [running, setRunning] = useState(false);
+  const [count, setCount] = useState(0);
+  const [results, setResults] = useState<Array<{ id: string; label: string; roomId: string; result: BoardOptionMatch | null; error: string }>>([]);
+  const stop = useRef(false);
+  const lock = useRef(false);
+  const handledSignal = useRef(0);
+  const run = async (mode: "fresh" | "saved" | "reuse" = "fresh") => {
+    if (lock.current || !candidates.length) return;
+    lock.current = true; stop.current = false; setRunning(true); setCount(0); setResults([]);
+    try {
+      await runBoardOptionBatch(candidates, async item => {
+        if (mode !== "fresh") {
+          const saved = await fetchBoardOptionMatch(projectId, item.id, true);
+          if (mode === "saved" || reusableBoardOptionMatch(saved)) return saved;
+        }
+        return fetchBoardOptionMatch(projectId, item.id);
+      }, (item, result, error) => {
+        setResults(current => [...current, { id: item.id, label: item.client_product_name || item.item_label, roomId: item.room_id, result, error }]);
+        setCount(current => current + 1);
+        onMatch(item.id, result?.status === "matched" ? result : null);
+      }, () => stop.current);
+    } finally { lock.current = false; setRunning(false); }
+  };
+  useEffect(() => {
+    if (!runSignal || handledSignal.current === runSignal) return;
+    handledSignal.current = runSignal;
+    void run("reuse");
+  }, [runSignal]);
+  useEffect(() => () => { stop.current = true; }, []);
+  return <details open={running || !!results.length || undefined} className="shrink-0 border p-3 text-xs">
+    <summary className="cursor-pointer font-medium">Compare board images with product options across this project</summary>
+    <p className="mt-2">Up to {candidates.length} linked selections will be checked one at a time. Links are sent to Firecrawl and available option images to OpenAI. Each AI comparison has a 25¢ estimated maximum (up to ${Math.round(candidates.length * 25) / 100} for the project); Firecrawl may also charge. Results are suggestions and do not change saved selections.</p>
+    <div className="mt-2 flex gap-2">
+      <button type="button" disabled={running || !candidates.length} onClick={() => void run()} className="border px-3 py-2 disabled:opacity-50">{running ? `Checking ${count} of ${candidates.length}…` : "Compare project options"}</button>
+      <button type="button" disabled={running || !candidates.length} onClick={() => void run("saved")} className="border px-3 py-2 disabled:opacity-50">Load saved comparisons</button>
+      {running && <button type="button" onClick={() => { stop.current = true; }} className="border px-3 py-2">Stop after current item</button>}
+    </div>
+    {!!results.length && <ul className="mt-2 max-h-40 overflow-auto space-y-2" aria-live="polite">{results.map(row => <li key={row.id}>
+      <a className="underline" href={completionMaterialsLink(projectId, row.roomId, row.id)} target="_blank" rel="noopener noreferrer">{row.label}</a>
+      {" — "}{row.error || (row.result?.status === "matched" ? `Possible ${row.result.optionKind}: ${row.result.option}` : row.result?.reason || "Needs review")}
+      {row.result && <LinkedProductOption result={row.result} />}
+      {row.result && <BoardOptionWarnings result={row.result} />}
+    </li>)}</ul>}
+  </details>;
 }
 
 function PlanDimensionReview({ projectId, itemId, initial, allowCheck = true, onSaved }: { projectId: string; itemId: string; initial?: PlanDimensionSuggestion; allowCheck?: boolean; onSaved?: () => void }) {

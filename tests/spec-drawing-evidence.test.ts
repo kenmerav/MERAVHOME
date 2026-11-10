@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { cleanDrawingEvidence, groundedCompletionRows, type DrawingEvidence } from "@/lib/specDrawingEvidence";
+import { cleanDrawingEvidence, groundedCompletionRows, drawingCoverageMessage, type DrawingEvidence } from "@/lib/specDrawingEvidence";
+import { publicSpecCompletionReport } from "@/lib/specCompletion";
 const rooms = [{ id: "bath", name: "Bath" }, { id: "casita", name: "Casita Bath" }];
 const quantity = { id: "q1", room_id: "bath", label: "Sink", field: "quantity", page: 2, sheet: "ID2", evidence: "Two S1 sinks in complete proposed vanity layout",
   confidence: "high", proposed: true, quantity: 2, quantity_unit: "count", complete_room_scope: true, exact_variant: true, variant: "S1" };
@@ -55,4 +56,24 @@ it("keeps uncertainty visible without inventing missing products from absent fac
   const evidence: DrawingEvidence = cleanDrawingEvidence({ ...source(), facts: [], uncertainties: [{ page: 3, evidence: "Casita detail illegible" }] }, rooms, 3);
   expect(evidence.uncertainties).toEqual([{ page: 3, evidence: "Casita detail illegible" }]);
   expect(groundedCompletionRows([{ room_id: "casita", field: "missing_item", evidence_ids: ["unknown"] }], evidence)).toEqual([]);
+});
+it("keeps saved product-option evidence out of public completion reports", () => {
+  const report: any = { board_option_matches: { private: true }, spec_drawing_evidence: { private: true }, findings: [] };
+  expect(publicSpecCompletionReport(report)).toEqual({ findings: [] });
+});
+it("flags conflicting counts for the same room and variant instead of suggesting either quantity", () => {
+  const evidence = cleanDrawingEvidence({ ...source(), facts: [quantity,
+    { ...quantity, id: "q2", page: 3, sheet: "ID3", quantity: 3 }] }, rooms, 3);
+  expect(evidence.facts).toEqual([]);
+  expect(groundedCompletionRows([row], evidence)).toEqual([]);
+  expect(drawingCoverageMessage(evidence)).toContain("2 (ID2, page 2); 3 (ID3, page 3)");
+});
+it("keeps a supported four-pendant count distinct from the same fixture in another room", () => {
+  const pendant = { ...quantity, id: "p1", label: "Soren pendant", product: "Soren", variant: "aged iron", quantity: 4,
+    evidence: "Kitchen lighting schedule specifies four island pendants" };
+  const otherRoom = { ...pendant, id: "p2", room_id: "casita", quantity: 1, page: 3, sheet: "ID3" };
+  const evidence = cleanDrawingEvidence({ ...source(), facts: [pendant, otherRoom] }, rooms, 3);
+  expect(evidence.facts).toHaveLength(2);
+  expect(groundedCompletionRows([{ ...row, evidence_ids: ["p1"], quantity: 4 }], evidence)).toMatchObject([{ quantity: 4, sheet: "ID2" }]);
+  expect(groundedCompletionRows([{ ...row, evidence_ids: ["p1"], quantity: 7 }], evidence)).toEqual([]);
 });

@@ -4,17 +4,28 @@ import { isCompletionIssueStatus } from "@/lib/savedSpecCompletion";
 import { readSavedCompletionReview, setCompletionIssueStatus, attachCompletionSaveWorker, CompletionStorageUnavailable, CompletionReviewConflict } from "@/lib/savedSpecCompletion.server";
 import { saveCompletionDetailForStaff, CompletionDetailInputError } from "@/lib/specCompletionEdit.server";
 import { startCompletionSaveWorker } from "@/lib/specCompletionBackground.server";
+import { saveCompletionBatchForStaff } from "@/lib/specCompletionBatch.server";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 export async function savedSpecCompletionRequest(request: Request) {
   const access = await authorizeCompletionProject(request, ["project_id", "action", "issue_key", "status", "expected_updated_at", "value", "price_unit",
-    "expected_material_updated_at", "expected_product_id", "expected_product_updated_at"]);
+    "expected_material_updated_at", "expected_product_id", "expected_product_updated_at", "entries"]);
   if (access instanceof Response) return access;
   const { projectId, userId, body } = access;
   if (body.action === "load" && Object.keys(body).some(key => !["project_id", "action"].includes(key)))
     return json({ error: "Invalid review request." }, 400);
-  if (!["load", "status", "detail"].includes(body.action)) return json({ error: "Choose a review action." }, 400);
+  if (!["load", "status", "detail", "batch_detail"].includes(body.action)) return json({ error: "Choose a review action." }, 400);
   const timestamp = (value: unknown) => typeof value === "string" && value.length < 100 && Number.isFinite(Date.parse(value));
+  if (body.action === "batch_detail") {
+    const allowed = ["issue_key", "expected_updated_at", "expected_material_updated_at", "expected_product_id", "expected_product_updated_at"];
+    if (Object.keys(body).some(key => !["project_id", "action", "entries"].includes(key)) || !Array.isArray(body.entries) ||
+      !body.entries.length || body.entries.length > 100 || new Set(body.entries.map((entry: any) => entry?.issue_key)).size !== body.entries.length ||
+      body.entries.some((entry: any) => !entry || typeof entry !== "object" || Object.keys(entry).some(key => !allowed.includes(key)) ||
+        !/^[a-f0-9]{64}$/.test(entry.issue_key ?? "") || !(entry.expected_updated_at === null || timestamp(entry.expected_updated_at)) ||
+        !timestamp(entry.expected_material_updated_at) || !(entry.expected_product_id === null || cleanUuid(entry.expected_product_id)) ||
+        !(entry.expected_product_updated_at === null || timestamp(entry.expected_product_updated_at))))
+      return json({ error: "Choose valid, current fixes to approve." }, 400);
+  }
   if (body.action === "detail" && (Object.keys(body).some(key => !["project_id", "action", "issue_key", "expected_updated_at", "value", "price_unit",
     "expected_material_updated_at", "expected_product_id", "expected_product_updated_at"].includes(key)) ||
     !/^[a-f0-9]{64}$/.test(body.issue_key ?? "") || !(body.expected_updated_at === null || timestamp(body.expected_updated_at)) ||
@@ -28,6 +39,10 @@ export async function savedSpecCompletionRequest(request: Request) {
       body.expected_updated_at.length < 100 && Number.isFinite(Date.parse(body.expected_updated_at))))))
     return json({ error: "Choose a valid issue and status." }, 400);
   try {
+    if (body.action === "batch_detail") {
+      if (!cleanUuid(userId)) throw new Error("Invalid staff session");
+      return json(await saveCompletionBatchForStaff(projectId, userId, body.entries));
+    }
     if (body.action === "detail") return json(await saveCompletionDetailForStaff(projectId, userId, body));
     if (body.action === "status") {
       if (!cleanUuid(userId)) throw new Error("Invalid staff session");

@@ -3,7 +3,7 @@ import { cleanUuid } from "@/lib/ids";
 import { isCountertopMaterial } from "@/lib/countertopPricing";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { staleSpecBookMaterialIds } from "@/lib/specBookSources";
-import { cleanCompletionPlanFindings, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
+import { cleanCompletionPlanFindings, needsCompletionDimensions, needsCompletionPrice, needsCompletionPriceUnit, allowsMeasurementTbd, type CompletionFinding, type CompletionRoom, type SpecCompletionReport } from "@/lib/specCompletion";
 import { retrieveSpecReview } from "@/lib/specReviewAI.server";
 import { sharedCompletionCoversMissing, sharedCompletionSelections } from "@/lib/specSharedMaterials";
 import { completionOutput } from "@/lib/specCompletionOutput";
@@ -112,7 +112,8 @@ export async function saveCompletionReview(projectId: string, userId: string, re
 function preserveDrawingCaches(report: SpecCompletionReport, current: SpecCompletionReport | undefined) {
   return { ...report,
     ...(current?.catalog_fit_checks ? { catalog_fit_checks: current.catalog_fit_checks } : {}),
-    ...(current?.spec_drawing_evidence ? { spec_drawing_evidence: current.spec_drawing_evidence } : {}) };
+    ...(current?.spec_drawing_evidence ? { spec_drawing_evidence: current.spec_drawing_evidence } : {}),
+    ...(current?.board_option_matches ? { board_option_matches: current.board_option_matches } : {}) };
 }
 
 export function mergeCompletionRecords(prior: Record<string, SavedCompletionIssue>, incoming: Record<string, SavedCompletionIssue>, document: SpecCompletionReport["document"]) {
@@ -239,6 +240,7 @@ export async function readSavedCompletionReview(projectId: string, expectedReque
   const issues = (Object.values(saved.issues ?? {}) as SavedCompletionIssue[]).filter(issue => {
     if (issue.status === "open" && issue.finding.field === "missing_item" && isTileInstallationLabel(issue.finding.item_label)) return false;
     const pricingItem = byItem.get(issue.finding.item_id ?? "");
+    if (issue.status === "open" && issue.finding.field === "quantity" && pricingItem?.quantity_tbd && allowsMeasurementTbd(pricingItem)) return false;
     if (issue.status === "open" && ["price", "price_unit"].includes(issue.finding.field) && pricingItem && isCountertopMaterial(pricingItem)) return false;
     if (issue.status === "open" && issue.finding.source === "plans" && issue.finding.field === "missing_item" &&
       sharedCompletionCoversMissing(items, rooms, issue.finding.room_id, issue.finding.item_label)) return false;

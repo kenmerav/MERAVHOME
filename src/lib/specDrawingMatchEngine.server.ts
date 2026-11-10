@@ -6,6 +6,7 @@ import {
   drawingMatchPageGroups,
   drawingMatchReport,
   DRAWING_MATCH_INSTRUCTIONS,
+  DRAWING_QUANTITY_INSTRUCTIONS,
   nativeDrawingMatches,
   drawingMatchesWithRoomFallback,
   drawingRoomLabelPages,
@@ -27,6 +28,18 @@ const path = (key: string, name: string) => `${key}/${name}`;
 const statePath = (key: string, index: number) => path(key, `chunk-${index}-request.json`);
 type ChunkState = { startedAt: string; responseId?: string; error?: string };
 
+export function enrichQuantityDrawingTags(job: DrawingMatchJob, results: (DrawingMatchChunkResult | null)[]): DrawingMatchJob {
+  if (job.purpose !== "quantities") return job;
+  const quantities = results.flatMap(result => result?.quantities || []).filter(source => source.source === "schedule");
+  return { ...job, items: job.items.map(item => {
+    if (item.cad.trim()) return item;
+    const tags = [...new Set(quantities.filter(source => source.itemId === item.id)
+      .flatMap(source => source.evidence.match(/\b(?:LF|F|PL|FX)[\s-]*\d{1,3}[A-Z]?\b/gi) || [])
+      .map(tag => tag.toUpperCase().replace(/\s+/g, "")))];
+    return tags.length === 1 ? { ...item, cad: tags[0] } : item;
+  }) };
+}
+
 export function drawingMatchRequest(job: DrawingMatchJob, bytes: Uint8Array, index: number) {
   const refs = job.candidateRefs?.[index];
   const roomRefs = drawingMatchRoomRefs(job.items);
@@ -45,8 +58,8 @@ export function drawingMatchRequest(job: DrawingMatchJob, bytes: Uint8Array, ind
     ]);
   return {
     model: SPEC_REVIEW_MODEL,
-    reasoning: { effort: "high" },
-    instructions: DRAWING_MATCH_INSTRUCTIONS,
+    reasoning: { effort: job.purpose === "quantities" ? "medium" : "high" },
+    instructions: job.purpose === "quantities" ? DRAWING_QUANTITY_INSTRUCTIONS : DRAWING_MATCH_INSTRUCTIONS,
     input: [
       {
         role: "user",
@@ -190,7 +203,7 @@ export async function prepareDrawingMatchScan(
       return 0;
     }
     const candidates = job.chunks!.map((pages) =>
-      drawingChunkCandidates(
+      job!.purpose === "quantities" ? job!.items : drawingChunkCandidates(
         textPages.filter((page) => pages.includes(page.page)),
         job!.items,
       ),
@@ -200,9 +213,9 @@ export async function prepareDrawingMatchScan(
       nativeMatches: nativeDrawingMatches(textPages, job.items),
       textIndexed: true,
       candidateRefs: candidates.map((items) => items.map((item) => item.ref)),
-      outputLimits: candidates.map((items) => (items.length > 100 ? 24000 : 12000)),
+      outputLimits: candidates.map((items) => job!.purpose === "quantities" ? 16000 : (items.length > 100 ? 24000 : 12000)),
       pageDetail: job.chunks!.map((pages) =>
-        pages.every(
+        job!.purpose === "quantities" ? "high" : pages.every(
           (number) => (textPages.find((page) => page.page === number)?.text.length || 0) >= 100,
         )
           ? "low"
@@ -252,7 +265,7 @@ async function saveResult(
   index: number,
   value: any,
 ) {
-  const result = cleanDrawingMatchChunk(responseJson(value), job.chunks![index], job.items);
+  const result = cleanDrawingMatchChunk(responseJson(value), job.chunks![index], job.items, job.purpose);
   result.usage = value.usage;
   await store.write(path(job.key, `chunk-${index}-result.json`), result);
 }
@@ -275,8 +288,10 @@ export async function startDrawingMatchChunk(
   // Atomic, permanent claim before the only paid generation for this page group.
   if (!(await store.write(statePath(key, index), { startedAt }, true))) return "checking";
   try {
+    const previous = job.purpose === "quantities" ? await Promise.all((job.chunks || []).map((_, i) =>
+      i === index ? Promise.resolve(null) : store.read<DrawingMatchChunkResult>(path(key, `chunk-${i}-result.json`)))) : [];
     const request = drawingMatchRequest(
-      job,
+      enrichQuantityDrawingTags(job, previous),
       await store.readBytes(path(key, `chunk-${index}.pdf`)),
       index,
     );

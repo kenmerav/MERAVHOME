@@ -13,6 +13,9 @@ import type { DrawingMatchStore } from "./specDrawingMatchEngine.server";
 
 const admin = supabaseAdmin as any;
 const BUCKET = "rendering-studio-files";
+export function quantityDrawingKey(sourceKey: string, attempt = 0) {
+  return createHash("sha256").update(`quantity-review-v2:${sourceKey}:${attempt}`).digest("hex");
+}
 async function rows(table: string, select: string, projectId: string) {
   const all: any[] = [];
   for (let offset = 0; offset < 3000; offset += 1000) {
@@ -28,7 +31,7 @@ async function rows(table: string, select: string, projectId: string) {
   }
   throw new ProjectAccessError("This project exceeds the drawing scan selection limit.", 413);
 }
-export async function currentDrawingMatchSource(projectId: string) {
+export async function currentDrawingMatchSource(projectId: string, purpose?: "quantities") {
   z.string().uuid().parse(projectId);
   const [materials, rooms, board, docs] = await Promise.all([
     rows("material_items", "*,product:products(*)", projectId),
@@ -50,13 +53,19 @@ export async function currentDrawingMatchSource(projectId: string) {
   const items = drawingMatchItems(
     materials.filter((item) => !stale.has(item.id)),
     rooms,
+    purpose === "quantities",
   );
   const key = document
     ? createHash("sha256")
         .update(drawingMatchSignature(projectId, document, items))
         .digest("hex")
     : "";
-  return { document, items, key };
+  // Old quantity jobs lack the identity/version snapshot needed for approval.
+  // Keep them available as read-only evidence without rerunning an AI scan.
+  const legacyItems = items.map(({ quantityUnit, productId, materialUpdatedAt, productUpdatedAt, ...item }) => item);
+  const legacyKey = purpose === "quantities" && document
+    ? createHash("sha256").update(drawingMatchSignature(projectId, document, legacyItems)).digest("hex") : "";
+  return { document, items, key, legacyKey };
 }
 export function productionDrawingMatchStore(projectId: string): DrawingMatchStore {
   z.string().uuid().parse(projectId);
@@ -118,7 +127,8 @@ export function productionDrawingMatchStore(projectId: string): DrawingMatchStor
       return new Uint8Array(await data.arrayBuffer());
     },
     async current(job) {
-      return (await currentDrawingMatchSource(projectId)).key === job.key;
+      const source = await currentDrawingMatchSource(projectId, job.purpose);
+      return (job.purpose === "quantities" ? quantityDrawingKey(source.key, job.quantityAttempt || 0) : source.key) === job.key;
     },
   };
 }

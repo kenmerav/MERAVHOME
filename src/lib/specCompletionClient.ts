@@ -79,6 +79,15 @@ export async function fetchBoardColorSuggestion(projectId: string, itemId: strin
   return completionResponse(response, "Could not suggest a color.");
 }
 
+export async function fetchBoardOptionMatch(projectId: string, itemId: string, cached = false): Promise<import("./boardOptionMatch").BoardOptionMatch> {
+  const request = await createStudioSessionRequest();
+  const response = await request("/api/match-board-option", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId, item_id: itemId, ...(cached ? { action: "cached" } : {}) }),
+  });
+  return completionResponse(response, "Could not compare product options.");
+}
+
 export async function fetchPlanDimensionSuggestion(projectId: string, itemId: string): Promise<PlanDimensionSuggestion> {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("Sign in to suggest dimensions.");
