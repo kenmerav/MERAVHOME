@@ -740,6 +740,20 @@ describe("saved, cost-bounded drawing scan", () => {
     );
     expect(fetcher.mock.calls.every((call) => String(call[0]).endsWith("input_tokens"))).toBe(true);
   });
+  it("prepares a budgeted quantity scan even when the full estimate exceeds $10", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const count = vi.fn(async (_url: string | URL | Request) => Response.json({ input_tokens: 260000 }));
+    const under = await storage(80);
+    await under.store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id" });
+    expect(await prepareDrawingMatchScan(under.store, "scan", count as typeof fetch)).toBe(10);
+    const prepared = await under.store.read<DrawingMatchJob>("scan/job.json");
+    expect(prepared?.ceilingUsd).toBeGreaterThan(5); expect(prepared?.ceilingUsd).toBeLessThanOrEqual(10);
+    const over = await storage(96);
+    await over.store.write("scan/job.json", { ...job, purpose: "quantities", fullCheckRunId: "run-id" });
+    expect(await prepareDrawingMatchScan(over.store, "scan", count as typeof fetch)).toBe(12);
+    expect((await over.store.read<DrawingMatchJob>("scan/job.json"))?.ceilingUsd).toBeGreaterThan(10);
+    expect(count.mock.calls.every(call => String(call[0]).endsWith("input_tokens"))).toBe(true);
+  });
   it("saves results and a second click never repeats the generation", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     const { store } = await storage();

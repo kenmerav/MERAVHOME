@@ -33,7 +33,15 @@ it("counts OpenAI only in the same $10 budget while tracking Firecrawl credits",
   ]) budget = claimFullSpecBudget(budget, user, run, claim).budget;
   expect(budget.reservedCents).toBe(725);
   expect(() => claimFullSpecBudget(budget, user, run, { key: "more", kind: "completion", openAiCents: 500, firecrawlCredits: 0 })).toThrow(/\$10/);
-  expect(() => claimFullSpecBudget(budget, user, run, { key: "more-drawing", kind: "drawing", openAiCents: 1, firecrawlCredits: 0 })).toThrow(/\$5/);
+  expect(claimFullSpecBudget(budget, user, run, { key: "more-drawing", kind: "drawing", openAiCents: 1, firecrawlCredits: 0 }).budget.reservedCents).toBe(726);
+});
+it("allows a drawing chunk up to the shared $10 limit while rejecting any overrun", () => {
+  const initial = createFullSpecBudget(run, user);
+  const near = claimFullSpecBudget(initial, user, run, { key: "completion", kind: "completion", openAiCents: 100, firecrawlCredits: 0 }).budget;
+  const drawing = claimFullSpecBudget(near, user, run, { key: "drawing:1", kind: "drawing", openAiCents: 900, firecrawlCredits: 0 }).budget;
+  expect(drawing.reservedCents).toBe(1000);
+  expect(() => claimFullSpecBudget(drawing, user, run, { key: "drawing:2", kind: "drawing", openAiCents: 1, firecrawlCredits: 0 })).toThrow(/\$10/);
+  expect(() => claimFullSpecBudget(initial, user, run, { key: "too-large", kind: "drawing", openAiCents: 1001, firecrawlCredits: 0 })).toThrow();
 });
 it("counts an unknown or failed provider outcome as reserved and prevents duplicate calls", async () => {
   const { store, get } = makeStore(); await startFullSpecBudget(store, run, user);

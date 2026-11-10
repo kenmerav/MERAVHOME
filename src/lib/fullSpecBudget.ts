@@ -32,7 +32,7 @@ export function claimFullSpecBudget(budget: FullSpecBudget, ownerId: string, run
   assertFullSpecBudget(budget, ownerId, runId);
   if (!/^[a-z0-9:_-]{1,160}$/i.test(claim.key) || !["completion", "scrape", "drawing", "product"].includes(claim.kind) ||
     !Number.isSafeInteger(claim.openAiCents) || claim.openAiCents < 0 || !Number.isSafeInteger(claim.firecrawlCredits) || claim.firecrawlCredits < 0 ||
-    claim.firecrawlCredits > 1000 || claim.openAiCents > (["drawing", "completion"].includes(claim.kind) ? 500 : claim.kind === "product" ? 25 : 0) ||
+    claim.firecrawlCredits > 1000 || claim.openAiCents > (["completion", "drawing"].includes(claim.kind) ? FULL_SPEC_LIMIT_CENTS : claim.kind === "product" ? 25 : 0) ||
     (["drawing", "completion"].includes(claim.kind) && claim.firecrawlCredits !== 0) || (claim.kind === "scrape" && claim.firecrawlCredits < 1))
     throw new FullSpecBudgetError("Could not confirm the cost of this check.");
   // Firecrawl is tracked for idempotence and pending-request protection only;
@@ -45,8 +45,6 @@ export function claimFullSpecBudget(budget: FullSpecBudget, ownerId: string, run
       throw new FullSpecBudgetError("This check has already claimed a different cost. Refresh the review.");
     return { budget, claimed: false };
   }
-  if (claim.kind === "drawing" && budget.claims.filter(row => row.kind === "drawing").reduce((sum, row) => sum + row.openAiCents, 0) + claim.openAiCents > 500)
-    throw new FullSpecBudgetError("The drawing scan's $5 estimated limit has been reached. Remaining pages need review.");
   if (budget.claims.length >= 8192)
     throw new FullSpecBudgetError("This check has reached its reservation limit. Remaining items need review.");
   if (budget.reservedCents + reservedCents > budget.limitCents)

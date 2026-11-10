@@ -120,7 +120,7 @@ const headers = () => {
     "Content-Type": "application/json",
   };
 };
-async function cost(request: unknown, fetcher: typeof fetch, outputLimit: number) {
+async function cost(request: unknown, fetcher: typeof fetch, outputLimit: number, budgeted = false) {
   const response = await fetcher("https://api.openai.com/v1/responses/input_tokens", {
     method: "POST",
     headers: headers(),
@@ -130,7 +130,7 @@ async function cost(request: unknown, fetcher: typeof fetch, outputLimit: number
   const value = await response.json().catch(() => null);
   if (!response.ok)
     throw Error("Could not confirm the scan cost. No matching requests were started.");
-  return reviewCostCeiling(value?.input_tokens, "dimensions", outputLimit).ceilingUsd;
+  return reviewCostCeiling(value?.input_tokens, "dimensions", outputLimit, budgeted ? 10 : 5).ceilingUsd;
 }
 export async function prepareDrawingMatchScan(
   store: DrawingMatchStore,
@@ -243,11 +243,17 @@ export async function prepareDrawingMatchScan(
           ).forEach((page) => chunk.addPage(page));
           const part = await chunk.save();
           await store.writeBytes(path(key, `chunk-${index}.pdf`), part);
-          return cost(drawingMatchRequest(job!, part, index), fetcher, job!.outputLimits![index]);
+          return cost(drawingMatchRequest(job!, part, index), fetcher, job!.outputLimits![index], job!.purpose === "quantities" && !!job!.fullCheckRunId);
         }),
       );
       total = Math.round((total + costs.reduce((sum, value) => sum + value, 0)) * 100) / 100;
-      if (total > Math.min(5, job.budgetLimitUsd || 5))
+      const budgetedQuantities = job.purpose === "quantities" && !!job.fullCheckRunId;
+      const scanLimit = budgetedQuantities ? 10 : 5;
+      // A budgeted full scan may exceed the remaining run budget. Let it
+      // proceed chunk-by-chunk; each enriched request still reserves its
+      // exact ceiling atomically, and unsent pages remain unverified. An
+      // explicitly lower per-job budget remains a hard preflight limit.
+      if ((!budgetedQuantities || job.budgetLimitUsd != null) && total > Math.min(scanLimit, job.budgetLimitUsd || scanLimit))
         throw Error(
           "This scan’s estimated total exceeds its remaining budget. No matching requests were started. Exact text matches are saved; use a smaller drawing set for visual review.",
         );
@@ -306,7 +312,7 @@ export async function startDrawingMatchChunk(
       await assertProductionFullSpecBudget(job.projectId, job.createdBy, job.fullCheckRunId);
       // Count the *enriched* request immediately before reserving and sending
       // that same immutable request, so new schedule tags cannot evade budget.
-      const ceilingUsd = await cost(request, fetcher, job.outputLimits?.[index] || 12000);
+      const ceilingUsd = await cost(request, fetcher, job.outputLimits?.[index] || 12000, true);
       const claimed = await reserveFullSpecBudget(productionFullSpecBudgetStore(job.projectId), job.createdBy, job.fullCheckRunId,
         { key: `drawing:${job.key}:${index}`, kind: "drawing", openAiCents: Math.round(ceilingUsd * 100), firecrawlCredits: 0 });
       if (!claimed) throw Error("This drawing page group was already claimed in this run; it will not be sent again.");

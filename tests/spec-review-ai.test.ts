@@ -36,6 +36,18 @@ it("stops an expensive PDF before generation rather than silently downgrading or
   await expect(fetchSpecReview(request, "completion")).rejects.toThrow("exceeds $5");
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+it("allows a larger request only after the shared $10 budget reserves its full ceiling", async () => {
+  fetchMock.mockImplementation(async (url: string) => url.endsWith("/input_tokens")
+    ? Response.json({ input_tokens: 850000 }) : Response.json({ status: "completed" }));
+  const reserve = vi.fn(async (_budget: ReturnType<typeof reviewCostCeiling>) => {});
+  expect((await fetchSpecReview(request, "completion", true, fetchMock, reserve)).ok).toBe(true);
+  expect(reserve.mock.calls[0][0].ceilingUsd).toBeGreaterThan(5);
+  expect(reserve.mock.calls[0][0].ceilingUsd).toBeLessThanOrEqual(10);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  fetchMock.mockClear(); reserve.mockImplementation(async () => { throw Error("Insufficient run budget"); });
+  await expect(fetchSpecReview(request, "completion", true, fetchMock, reserve)).rejects.toThrow(/Insufficient/);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
 it("reserves the estimated cost before generation and stops when the run budget is exhausted", async () => {
   const reserve = vi.fn(async () => { throw new Error("$10 run budget reached"); });
   await expect(fetchSpecReview(request, "completion", true, fetchMock, reserve)).rejects.toThrow("$10 run budget reached");

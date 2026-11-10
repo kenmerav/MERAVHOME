@@ -4,6 +4,7 @@
 export const SPEC_REVIEW_MODEL = "gpt-6.1-sol";
 export const SPEC_REVIEW_TARGET_USD = 3;
 export const SPEC_REVIEW_MAX_USD = 5;
+const BUDGETED_REVIEW_MAX_USD = 10;
 export class CreditsUnavailable extends Error {}
 export class SpecReviewCostError extends Error {}
 
@@ -13,7 +14,7 @@ const outputLimits: Record<ReviewKind, number> = { completion: 32000, dimensions
 // Full construction-document reviews at high reasoning can exceed two minutes.
 const reviewTimeouts: Record<ReviewKind, number> = { completion: 300000, dimensions: 240000, color: 120000, option: 120000 };
 
-export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputLimit = outputLimits[kind]) {
+export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputLimit = outputLimits[kind], maxUsd = SPEC_REVIEW_MAX_USD) {
   if (!Number.isSafeInteger(outputLimit) || outputLimit < 1000 || outputLimit > 32000)
     throw new SpecReviewCostError("Invalid AI response budget.");
   if (!Number.isSafeInteger(inputTokens) || inputTokens <= 0)
@@ -33,8 +34,9 @@ export function reviewCostCeiling(inputTokens: number, kind: ReviewKind, outputL
   const ceilingUsd = Math.ceil(costNumerator / 1000000) / 100;
   if (kind === "option" && ceilingUsd > 0.25)
     throw new SpecReviewCostError("This image comparison exceeds its 25-cent estimated limit. Check the option manually.");
-  if (ceilingUsd > SPEC_REVIEW_MAX_USD)
-    throw new SpecReviewCostError("The AI review was stopped before generation because its estimated cost exceeds $5. Use a smaller construction document. Missing-detail checks still work.");
+  if (![SPEC_REVIEW_MAX_USD, BUDGETED_REVIEW_MAX_USD].includes(maxUsd)) throw new SpecReviewCostError("Invalid AI review limit.");
+  if (ceilingUsd > maxUsd)
+    throw new SpecReviewCostError(`The AI review was stopped before generation because its estimated cost exceeds $${maxUsd}. Use a smaller construction document. Missing-detail checks still work.`);
   return { ceilingUsd, aboveTarget: ceilingUsd > SPEC_REVIEW_TARGET_USD, maxOutputTokens: outputLimit };
 }
 
@@ -65,7 +67,9 @@ export async function fetchSpecReview(request: ReviewRequest, kind: ReviewKind, 
     if (["credit_balance_exhausted", "insufficient_quota"].includes(count?.error?.code)) throw new CreditsUnavailable();
     throw new SpecReviewCostError("The AI review was stopped because its cost could not be confirmed. Try again later.");
   }
-  const budget = reviewCostCeiling(count?.input_tokens, kind);
+  // Larger requests are permitted only when the server also reserves the
+  // counted ceiling against the shared full-check ledger before generation.
+  const budget = reviewCostCeiling(count?.input_tokens, kind, undefined, beforeGenerate ? BUDGETED_REVIEW_MAX_USD : SPEC_REVIEW_MAX_USD);
   if (beforeGenerate) await beforeGenerate(budget);
   // One generation per button press, no automatic retries or hosted tools.
   // This guards estimated model-token cost, not an account-wide billing limit.

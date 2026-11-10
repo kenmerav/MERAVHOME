@@ -95,12 +95,12 @@ export function SpecQuantityScan({ projectId, items, rooms, runSignal = 0, fullC
   };
   return <details open={working || !!report?.quantityFindings?.length || !!report?.missingFindings?.length || undefined} className="shrink-0 border p-3 text-xs">
     <summary className="cursor-pointer font-medium">Check quantities across construction drawings</summary>
-    <p className="mt-2">Reads the current drawing set in page groups, compares supported room counts with the Spec Book, and looks for possible missing fixtures. It sends the PDF and selections to OpenAI; the estimated scan is capped at $5 before it starts. Counts, conflicts and missing-item suggestions must be reviewed before editing.</p>
+    <p className="mt-2">Reads the current drawing set in page groups, compares supported room counts with the Spec Book, and looks for possible missing fixtures. It sends the PDF and selections to OpenAI and shares the check’s $10 estimated limit. Counts, conflicts and missing-item suggestions must be reviewed before editing.</p>
     <button type="button" onClick={() => void start(report?.status === "partial" || report?.status === "failed")} disabled={busy || working || !report?.key || !report.canScan || !fullCheckRunId || (report.status === "complete" && !report.needsFreshScan) || savedNeedsRefresh}
       className="mt-2 border px-3 py-2 disabled:opacity-50">{working ? "Checking drawings…" : report?.needsFreshScan ? "Check updated drawings and selections" : report?.status === "complete" ? "Drawing check complete" : report?.status === "partial" || report?.status === "failed" ? "Retry drawing check" : "Check drawing quantities"}</button>
     {report && !report.canScan && <p className="mt-1 text-muted-foreground">Only Ken can start a drawing check. Saved findings remain available for review.</p>}
     {report && <p className="mt-2" role="status">{report.status === "no_document" ? "No construction document is attached." :
-      `${report.reviewedPages.length} of ${report.totalPages || "?"} pages checked${report.ceilingUsd != null ? ` · estimated maximum $${report.ceilingUsd.toFixed(2)}` : ""}. ${report.status === "partial" || report.status === "failed" ? "Scan incomplete; unchecked pages remain unverified." : ""}`}</p>}
+      `${report.reviewedPages.length} of ${report.totalPages || "?"} pages checked${report.ceilingUsd != null ? ` · full scan estimate $${report.ceilingUsd.toFixed(2)} before the shared $10 limit` : ""}. ${report.status === "partial" || report.status === "failed" ? "Scan incomplete; unchecked pages remain unverified." : ""}`}</p>}
     {(error || report?.error) && <p role="alert" className="mt-2 text-red-800">{error || report?.error}</p>}
     {(report?.needsFreshScan || savedNeedsRefresh) && <p className="mt-2 text-amber-800">These findings are from an earlier scan. Review the evidence here; run a fresh drawing check before approving more quantities.</p>}
     {!!eligible.length && <div className="mt-3 border p-3">
