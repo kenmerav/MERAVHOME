@@ -38,6 +38,7 @@ import { parseRoomDesignQuantity, roomDesignQuantityLabel } from "../src/lib/roo
 import { mergeAutomaticRoomProduct } from "../src/lib/roomDesignAutoScrape";
 import type { MaterialItem } from "../src/lib/db";
 import { boardMaterialQuantity, boardPageQuantity } from "../src/lib/boardMaterialQuantity";
+import { boardTileInstallationIssues } from "../src/lib/boardTileInstallation";
 import { formatMoney, procurementTotals } from "../src/lib/money";
 
 const at = "2026-10-23T17:00:00Z",
@@ -627,6 +628,40 @@ describe("imports, authorization and persistence", () => {
     expect(item(next).fields.joint.value).toBe("1/8 inch");
     expect(item(next).fields.layout.value).toBe("Stacked");
     expect(fieldConfirmed(next, item(next), "grout")).toBe(false);
+  });
+  it("carries the saved tile answers from link review onto the generated board", () => {
+    const selection = {
+      id: "link-shower-wall-tile",
+      category: "Shower wall tile",
+      productName: "Porcelain tile",
+      vendor: "Supplier",
+      finish: "White",
+      source: "Product link",
+      state: "selected",
+      swatch: "",
+      url: "https://example.com/tile",
+      imageUrl: "https://example.com/tile.jpg",
+      notes: "Stop at the niche edge.",
+    } as const;
+    let state = single(selection.category);
+    state = apply(state, ...accuracyImportCommands(state, "kitchen", [selection]));
+    const boardTile = (current: AccuracyState) => mergeRoomDesignSelectionsIntoBoard({
+      boardState: {},
+      projectName: "Test",
+      roomId: "kitchen",
+      roomName: "Kitchen",
+      selections: accuracyRoomSelections(current, "kitchen", [selection], { includeTileInstallation: true }),
+    }).pages.flatMap((page) => page.elements).find((layer) => layer.type === "image")!;
+    expect(boardTileInstallationIssues(boardTile(state))).toHaveLength(3);
+    state = values(state, { grout: "Warm Gray", joint: "1/8 inch", layout: "Running bond", direction: "Horizontal" });
+    state = apply(state, {
+      type: "field", roomId: "kitchen", itemId: "item", key: "grout", value: "Ivory", proposal: true,
+    });
+    const layer = boardTile(state);
+    expect(boardTileInstallationIssues(layer)).toEqual([]);
+    expect(layer.notes).toContain("Stop at the niche edge.");
+    expect(layer.notes).toContain("Grout color: Warm Gray");
+    expect(layer.notes).not.toContain("Ivory");
   });
   it("requires real authorization for project reads even when a project ID is known", async () => {
     const result = await designAccuracyApi(

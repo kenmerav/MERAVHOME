@@ -1,5 +1,6 @@
 import {
   accuracyOutputs,
+  valueOf,
   type AccuracyCommand,
   type AccuracyOutput,
   type AccuracyState,
@@ -8,7 +9,19 @@ import type { RoomDesignSelection } from "./roomDesignWorkflow";
 import type { MaterialItem, Product } from "./db";
 import { specQuantityUnitFromSelection } from "./specQuantity";
 import { roomDetailValue } from "./roomDesignDetails";
-import { roomDesignTileFields } from "./roomDesignTile";
+import {
+  roomDesignTileFields,
+  roomDesignTileSurface,
+  updateRoomDesignTileNotes,
+} from "./roomDesignTile";
+
+const tileInstallationFields = {
+  grout: "groutColor",
+  joint: "jointWidth",
+  layout: "layout",
+  direction: "direction",
+  edge: "edgeTreatment",
+} as const;
 
 /** Fill empty draft fields from links; changed facts remain proposals, never approval evidence. */
 export function accuracyImportCommands(
@@ -99,6 +112,7 @@ export function accuracyRoomSelections(
   state: AccuracyState,
   roomId: string,
   existing: RoomDesignSelection[],
+  { includeTileInstallation = false } = {},
 ) {
   const room = state.rooms.find((r) => r.id === roomId);
   const rows = accuracyOutputs(state);
@@ -107,8 +121,22 @@ export function accuracyRoomSelections(
     const row = item && rows.find((r) => r.sourceId === item.id);
     if (!item) return selection;
     if (!row) return { ...selection, state: "draft" as const };
+    let notes = selection.notes;
+    if (
+      includeTileInstallation &&
+      roomDesignTileSurface({ ...selection, productName: row.productName || selection.productName }) === "tile"
+    ) {
+      // The board and Materials use the selection's installation notes. Pending proposals
+      // stay in Room Design until the designer applies them to the selection.
+      for (const [key, field] of Object.entries(tileInstallationFields)) {
+        if (!item.fields[key]) continue;
+        const value = valueOf(item, key);
+        notes = updateRoomDesignTileNotes(notes, field, typeof value === "string" ? value : "");
+      }
+    }
     return {
       ...selection,
+      notes,
       scrapeFacts: undefined,
       productName: row.productName || selection.productName,
       vendor: row.manufacturer || selection.vendor,
@@ -120,8 +148,7 @@ export function accuracyRoomSelections(
       imageUrl: row.imageUrl,
       quantity: row.quantity,
       quantityUnit: row.quantityUnit,
-      // Purchasing waste is distinct; it is not copied to the board as an assumed design fact.
-      wastePercent: 0,
+      wastePercent: selection.extensionPurchase ? selection.wastePercent : 0,
       state: row.designResolved ? ("locked" as const) : ("selected" as const),
       accuracySource: { id: row.sourceId, version: row.selectionVersion },
     };

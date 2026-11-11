@@ -27,6 +27,21 @@ it("imports included board selections with exact source references, image and va
   expect(result.state.pages[0].elements[0].materialItemId).toBe(itemId);
   expect(run(result.state, result.inserts).inserts).toHaveLength(0);
 });
+it("reports missing tile installation details when the board is sent by the Spec Book check", () => {
+  const incomplete = layer({
+    label: "Shower wall tile", materialCategory: "Tile & Stone",
+    productName: "Porcelain tile", productId: null, link: "https://vendor.example/tile",
+    notes: "Tile layout: Vertical straight set",
+  });
+  const result = run(board([incomplete]));
+  expect(result.summary.issues).toContainEqual({
+    page: "Materials Throughout",
+    label: "Shower wall tile",
+    message: "Confirm grout color / joint width on the Design Board.",
+  });
+  const completed = { ...incomplete, notes: "Grout color: Warm White\nGrout joint width: 1/8 inch\nTile layout: Vertical straight set" };
+  expect(run(board([completed])).summary.issues).toEqual([]);
+});
 it("defaults a new blank count to one but preserves a deliberate TBD and measured materials", () => {
   expect(run(board([layer({ label: "Couch", materialCategory: "Furniture", materialQuantity: null })])).inserts[0]).toMatchObject({ quantity: 1, quantity_tbd: false });
   expect(run(board([layer({ label: "Couch", materialCategory: "Furniture", materialQuantity: null, materialQuantityTbd: true })])).inserts[0]).toMatchObject({ quantity: null, quantity_tbd: true });

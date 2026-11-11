@@ -9,6 +9,7 @@ type TileSelection = {
   category: string;
   productName?: string;
   catalogProductName?: string;
+  materialCategory?: string | null;
   notes?: string;
 };
 export type RoomDesignTileField =
@@ -149,6 +150,7 @@ export function roomDesignTileSurface(
     isTileInstallationSurface({
       item_label: item.category,
       client_product_name: productName,
+      category: item.materialCategory || undefined,
       is_required: false,
     })
   )
@@ -161,6 +163,41 @@ export function roomDesignTileSurface(
     return surface === "Other material" ? "other" : "unknown";
   }
   return "unrelated";
+}
+
+export function roomDesignTileRequiredDetails(notes = "") {
+  const fields = roomDesignTileFields(notes);
+  const issues: Array<{ field: "grout" | "layout" | "direction"; message: string }> = [];
+  const explicitGrout = Boolean(fields.groutColor || fields.jointWidth);
+  if (explicitGrout) {
+    if (
+      !roomDesignTileAnswerConfirmed(fields.groutColor) ||
+      /^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test(fields.groutColor.trim())
+    )
+      issues.push({ field: "grout", message: "Enter the grout color and joint width." });
+    else if (!roomDesignJointWidthConfirmed(fields.jointWidth))
+      issues.push({
+        field: "grout",
+        message: tileJointWidthNeedsUnit(fields.jointWidth)
+          ? "Add a unit to the grout joint width, for example 1 mm or 1/8 inch."
+          : fields.jointWidth.trim() && !pending.test(fields.jointWidth)
+            ? "Enter a valid grout joint width with units, for example 1 mm or 1/8 inch."
+            : "Enter the grout color and joint width.",
+      });
+  } else if (!tileDetailConfirmed("grout", notes))
+    issues.push({ field: "grout", message: "Enter the grout color and joint width." });
+  const patternNotes = lines(notes)
+    .filter((line) => !/^\s*Tile lay direction\s*:/i.test(line))
+    .join("\n");
+  if (
+    fields.layout
+      ? !roomDesignTileAnswerConfirmed(fields.layout)
+      : !tileDetailConfirmed("tile_layout", patternNotes)
+  )
+    issues.push({ field: "layout", message: "Enter the tile layout / pattern or approved drawing reference." });
+  if (!roomDesignTileDirectionConfirmed(notes))
+    issues.push({ field: "direction", message: "Enter the tile lay direction or approved drawing reference." });
+  return issues;
 }
 
 export function roomDesignTileIssues(item: TileSelection) {
@@ -191,34 +228,7 @@ export function roomDesignTileIssues(item: TileSelection) {
   }
   const location = roomDesignTileLocation(item);
   if (!location.trim() || pending.test(location)) issues.push("Confirm where this tile is used.");
-  const explicitGrout = Boolean(fields.groutColor || fields.jointWidth);
-  if (explicitGrout) {
-    if (
-      !roomDesignTileAnswerConfirmed(fields.groutColor) ||
-      /^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test(fields.groutColor.trim())
-    )
-      issues.push("Enter the grout color and joint width.");
-    else if (!roomDesignJointWidthConfirmed(fields.jointWidth))
-      issues.push(
-        tileJointWidthNeedsUnit(fields.jointWidth)
-          ? "Add a unit to the grout joint width, for example 1 mm or 1/8 inch."
-          : fields.jointWidth.trim() && !pending.test(fields.jointWidth)
-            ? "Enter a valid grout joint width with units, for example 1 mm or 1/8 inch."
-            : "Enter the grout color and joint width.",
-      );
-  } else if (!tileDetailConfirmed("grout", item.notes || ""))
-    issues.push("Enter the grout color and joint width.");
-  const patternNotes = lines(item.notes)
-    .filter((line) => !/^\s*Tile lay direction\s*:/i.test(line))
-    .join("\n");
-  if (
-    fields.layout
-      ? !roomDesignTileAnswerConfirmed(fields.layout)
-      : !tileDetailConfirmed("tile_layout", patternNotes)
-  )
-    issues.push("Enter the tile layout / pattern or approved drawing reference.");
-  if (!roomDesignTileDirectionConfirmed(item.notes))
-    issues.push("Enter the tile lay direction or approved drawing reference.");
+  issues.push(...roomDesignTileRequiredDetails(item.notes).map(({ message }) => message));
   if (pending.test(fields.edgeTreatment)) issues.push("Confirm the tile edge treatment.");
   if (
     /^(?:Metal trim|Pencil \/ bullnose)$/i.test(fields.edgeTreatment) &&

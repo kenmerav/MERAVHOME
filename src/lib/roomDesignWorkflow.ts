@@ -1,4 +1,8 @@
-import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
+import {
+  classifyBoardGroup,
+  selectionChecklistChangesForRoom,
+  selectionItemsForRoom,
+} from "@/lib/selectionChecklist";
 import { cleanRoomDesignFinish } from "./productDetails";
 import { confirmRoomDesignSelection, productAwareQuantityUnit, roomDesignReviewBlockers } from "./roomDesignReview";
 import {
@@ -182,6 +186,10 @@ function normalizedCategory(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function normalizedProductType(value: string) {
+  return normalizedCategory(value.replace(/\(s\)/gi, ""));
+}
+
 export function roomDesignRoomNamesMatch(expectedRoomName: string, actualRoomName: string) {
   return (
     !expectedRoomName || normalizedCategory(expectedRoomName) === normalizedCategory(actualRoomName)
@@ -195,13 +203,21 @@ export function reconcileRoomDesignChecklist(
 ): RoomDesignWorkflowState {
   const isPrimaryBathroom = /primary.*bath/i.test(roomName);
   const isPowderBathroom = /powder.*(?:bath|room)/i.test(roomName);
-  const renamedLinks = state.links.map((link) =>
+  const { addedKeys, retiredKeys } = selectionChecklistChangesForRoom(roomName);
+  const selectedIds = new Set(state.selections.map((selection) => selection.id));
+  const retainedLinks = state.links.filter((link) =>
+    !retiredKeys.includes(link.id) ||
+    link.custom || link.saveToTemplate || link.url.trim() || link.notes.trim() ||
+    link.productId || link.catalogProductName || selectedIds.has(`link-${link.id}`) ||
+    link.quantity !== roomDesignInitialQuantity(link.category),
+  );
+  const renamedLinks = retainedLinks.map((link) =>
     isPrimaryBathroom &&
     (link.id === "freestanding-tub" || normalizedCategory(link.category) === "freestanding tub")
       ? { ...link, category: "Tub", group: classifyBoardGroup("Tub") }
       : link,
   );
-  const categories = new Set(renamedLinks.map((link) => normalizedCategory(link.category)));
+  const categories = new Set(renamedLinks.map((link) => normalizedProductType(link.category)));
   const ids = new Set(renamedLinks.map((link) => link.id));
   const defaultTub = isPrimaryBathroom
     ? createDefaultRoomDesignWorkflowState(roomName).links.find((link) => link.id === "tub")
@@ -209,7 +225,7 @@ export function reconcileRoomDesignChecklist(
   const missingTub =
     defaultTub &&
     !ids.has(defaultTub.id) &&
-    !categories.has(normalizedCategory(defaultTub.category))
+    !categories.has(normalizedProductType(defaultTub.category))
       ? [defaultTub]
       : [];
   const newPowderBathroomCategories = new Set([
@@ -223,11 +239,13 @@ export function reconcileRoomDesignChecklist(
         (link) =>
           newPowderBathroomCategories.has(link.category) &&
           !ids.has(link.id) &&
-          !categories.has(normalizedCategory(link.category)),
+          !categories.has(normalizedProductType(link.category)),
       )
     : [];
   const missingLinks = [...missingTub, ...missingPowderBathroomLinks];
   const newBathroomCategories = new Set([
+    "Bathroom floor tile",
+    "Bathroom wall tile",
     "Recessed lighting",
     "Exhaust fan",
     "Toilet paper holder",
@@ -249,6 +267,7 @@ export function reconcileRoomDesignChecklist(
   const additions = createDefaultRoomDesignWorkflowState(roomName).links.filter(
     (link) =>
       (upgradedRoom ||
+        addedKeys.includes(link.id) ||
         [
           "Ceiling fan",
           "Stair runner",
@@ -257,7 +276,7 @@ export function reconcileRoomDesignChecklist(
         ].includes(link.category) ||
         ((isPrimaryBathroom || isPowderBathroom) && newBathroomCategories.has(link.category))) &&
       !ids.has(link.id) &&
-      !categories.has(normalizedCategory(link.category)) &&
+      !categories.has(normalizedProductType(link.category)) &&
       !missingLinks.some((other) => other.id === link.id),
   );
   missingLinks.push(...additions);
@@ -270,11 +289,11 @@ export function reconcileRoomDesignChecklist(
       : selection;
   });
 
-  const renamed = renamedLinks.some((link, index) => link !== state.links[index]);
+  const renamed = renamedLinks.some((link, index) => link !== retainedLinks[index]);
   const selectionRenamed = selections.some(
     (selection, index) => selection !== state.selections[index],
   );
-  if (missingLinks.length === 0 && !renamed && !selectionRenamed) {
+  if (missingLinks.length === 0 && retainedLinks.length === state.links.length && !renamed && !selectionRenamed) {
     return state;
   }
   return {
@@ -285,12 +304,12 @@ export function reconcileRoomDesignChecklist(
   };
 }
 
-export function addCustomRoomDesignProductType({
+export function addCustomRoomDesignProductType<T extends Pick<RoomDesignWorkflowState, "links">>({
   state,
   label,
   itemId,
 }: {
-  state: RoomDesignWorkflowState;
+  state: T;
   label: string;
   itemId: string;
 }) {
@@ -299,7 +318,7 @@ export function addCustomRoomDesignProductType({
   if (category.length > 80) throw new Error("Product type names must be 80 characters or fewer.");
 
   const existing = state.links.find(
-    (link) => normalizedCategory(link.category) === normalizedCategory(category),
+    (link) => normalizedProductType(link.category) === normalizedProductType(category),
   );
   if (existing) return { state, item: existing, added: false };
   if (!/^custom-[a-z0-9-]+$/i.test(itemId)) throw new Error("Could not create the product type.");

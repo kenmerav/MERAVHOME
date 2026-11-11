@@ -19,6 +19,7 @@ import {
 } from "@/lib/roomDesignWorkflow";
 import { tileDetailConfirmed } from "@/lib/tileInstallation";
 import { tileJointWidthConfirmed } from "@/lib/tileManualAnswers";
+import { boardTileInstallationIssues } from "@/lib/boardTileInstallation";
 
 function selected(notes = ""): RoomDesignSelection {
   return {
@@ -46,6 +47,32 @@ function installationNotes() {
   notes = updateRoomDesignTileNotes(notes, "jointWidth", "3/16 inch");
   return updateRoomDesignTileNotes(notes, "layout", "Vertical broken joint");
 }
+
+it("flags the saved tile details independently on an included design-board image", () => {
+  const tile = {
+    id: "room-design-v2:primary:selection:link-shower-floor-tile",
+    type: "image",
+    label: "Shower floor tile",
+    productName: "Porcelain mosaic",
+    notes: "",
+  };
+  expect(boardTileInstallationIssues(tile)).toEqual([
+    "grout color / joint width",
+    "tile layout",
+    "tile lay direction",
+  ]);
+  const notes = updateRoomDesignTileNotes(installationNotes(), "layout", "Running bond");
+  expect(boardTileInstallationIssues({ ...tile, notes })).toEqual([
+    "tile lay direction",
+  ]);
+  expect(boardTileInstallationIssues({
+    ...tile, notes: updateRoomDesignTileNotes(notes, "direction", "Vertical"),
+  })).toEqual([]);
+  expect(boardTileInstallationIssues({ ...tile, materialExcludeFromMaterials: true })).toEqual([]);
+  expect(boardTileInstallationIssues({
+    ...tile, label: "Tile-in shower drain", productName: "Tile-in shower drain",
+  })).toEqual([]);
+});
 
 it("requires installation choices before a tiled selection can be reviewed or order-ready", () => {
   expect(roomDesignSelectionIssues(selected())).toEqual([

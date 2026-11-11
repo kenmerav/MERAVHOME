@@ -137,6 +137,12 @@ import {
 } from "@/lib/boardQuantityReview";
 import { readBoardSendMaterials, saveReviewedBoardMaterial } from "@/lib/boardQuantitySave";
 import { boardSendError, createBoardSendGate } from "@/lib/boardSendGuard";
+import {
+  boardTileInstallationIssues,
+  hasBoardTileInstallationIssue,
+  isBoardTileSelection,
+} from "@/lib/boardTileInstallation";
+import { roomDesignTileFields, updateRoomDesignTileNotes } from "@/lib/roomDesignTile";
 
 type BoardElementType = "image" | "text" | "shape";
 
@@ -1201,6 +1207,9 @@ function ProjectDesignBoardsPage() {
     () => materialInfoItemsForPages(pendingMaterialSendPages),
     [materialInfoItemsForPages, pendingMaterialSendPages],
   );
+  const pendingTileCount = pendingMaterialIssues.filter((item) =>
+    hasBoardTileInstallationIssue(item.issues),
+  ).length;
   const materialInfoReviewItems = useMemo(() => {
     if (!materialInfoReviewPageIds) return missingMaterialInfoItems;
     const pageIds = new Set(materialInfoReviewPageIds);
@@ -4818,8 +4827,13 @@ function ProjectDesignBoardsPage() {
                   Review needed before the final spec is clean
                 </div>
                 <div className="mt-2 text-xs leading-relaxed text-amber-800">
+                  {pendingTileCount > 0 && (
+                    <p>
+                      {pendingTileCount} tile {pendingTileCount === 1 ? "selection needs" : "selections need"} grout or lay details.
+                    </p>
+                  )}
                   {formatSkippedMaterialReasons(pendingMaterialIssueCounts) ||
-                    "Some images need material info."}
+                    (pendingTileCount === 0 ? "Some images need material info." : null)}
                 </div>
               </div>
               <div className="max-h-72 divide-y divide-stone-100 overflow-y-auto border border-stone-200">
@@ -5144,8 +5158,7 @@ function ProjectDesignBoardsPage() {
                       {activePageMissingInfoCount === 1 ? " needs" : "s need"} material info
                     </div>
                     <p className="mt-1 text-amber-800">
-                      Add label, link, and room for clean specs, approve no-label/no-link items, or
-                      exclude items from Materials.
+                      Review labels, links, room assignments, and tile installation before sending.
                     </p>
                     <button
                       type="button"
@@ -5797,9 +5810,14 @@ function BoardObject({
             </div>
           )}
           {materialIssues.length > 0 && (
-            <div className="pointer-events-none absolute right-1 top-1 z-10 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-1 font-[var(--font-montserrat)] text-[10px] uppercase tracking-[0.12em] text-amber-900 shadow-sm">
+            <div
+              className="pointer-events-none absolute right-1 top-1 z-10 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-1 font-[var(--font-montserrat)] text-[10px] uppercase tracking-[0.12em] text-amber-900 shadow-sm"
+              aria-label={`Needs ${joinMissingInfo(materialIssues)}`}
+            >
               <AlertTriangle className="h-3 w-3" />
-              Needs {materialIssues.join(" + ")}
+              {hasBoardTileInstallationIssue(materialIssues)
+                ? "Tile details needed"
+                : `Needs ${materialIssues.join(" + ")}`}
             </div>
           )}
         </>
@@ -6185,8 +6203,7 @@ function MissingMaterialInfoDialog({
             Review Material Info
           </DialogTitle>
           <DialogDescription>
-            Fix labels, links, rooms, quantities, finishes, and dimensions before sending board
-            items into Materials and Spec Books.
+            Review product details and tile installation before sending board items to Materials.
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -6368,6 +6385,12 @@ function MissingMaterialInfoDialog({
                       </label>
                     </div>
 
+                    {hasBoardTileInstallationIssue(item.issues) && (
+                      <BoardTileInstallationInputs
+                        notes={element.notes}
+                        onChange={(notes) => onUpdateItem(item.pageId, element.id, { notes })}
+                      />
+                    )}
                     <div className="flex flex-wrap gap-2 pt-1">
                       <button
                         type="button"
@@ -6433,6 +6456,38 @@ function MissingMaterialInfoDraftInput({
       placeholder={placeholder}
       className="mt-1 w-full border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
     />
+  );
+}
+
+function BoardTileInstallationInputs({
+  notes,
+  onChange,
+}: {
+  notes?: string;
+  onChange: (notes: string) => void;
+}) {
+  const fields = roomDesignTileFields(notes);
+  return (
+    <fieldset className="border border-stone-200 p-3">
+      <legend className="px-1 text-xs font-medium text-ink">Tile installation</legend>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {([
+          ["groutColor", "Grout color", "e.g. MAPEI Avalanche"],
+          ["jointWidth", "Grout joint width", "e.g. 1/8 inch"],
+          ["layout", "Tile layout", "e.g. 1/3 running bond"],
+          ["direction", "Tile lay direction", "e.g. Vertical or see elevation ID-4"],
+        ] as const).map(([field, label, placeholder]) => (
+          <label key={field} className="block text-xs text-stone-600">
+            {label}
+            <MissingMaterialInfoDraftInput
+              value={fields[field]}
+              placeholder={placeholder}
+              onCommit={(value) => onChange(updateRoomDesignTileNotes(notes, field, value))}
+            />
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
@@ -6824,6 +6879,12 @@ function SelectedPanel({
               className="mt-1 min-h-20 w-full resize-y border border-stone-200 px-3 py-2 text-sm normal-case tracking-normal"
             />
           </label>
+          {isBoardTileSelection(selected, linkedProduct) && (
+            <BoardTileInstallationInputs
+              notes={selected.notes}
+              onChange={(notes) => onUpdate({ notes })}
+            />
+          )}
           <div className="border border-stone-200 bg-[#faf9f5] p-3">
             <div className="eyebrow mb-3">Materials</div>
             <label className="block text-xs uppercase tracking-[0.18em] text-stone-500">
@@ -7251,7 +7312,7 @@ function imageMaterialIssues(element: BoardElement, linkedProduct?: Product | nu
   const issues: string[] = [];
   if (!imageMaterialLabel(element)) issues.push("label");
   if (!boardElementProductUrlForMaterialSync(element, linkedProduct)) issues.push("link");
-  return issues;
+  return [...issues, ...boardTileInstallationIssues(element, linkedProduct)];
 }
 
 function inferRoomFromPageTitle(pageTitle: string, rooms: Room[]) {

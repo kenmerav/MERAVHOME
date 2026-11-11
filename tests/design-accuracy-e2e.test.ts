@@ -46,7 +46,7 @@ describe("kitchen and bathroom design-to-spec local fixture", () => {
     const run = (...commands: AccuracyCommand[]) => {
       state = commands.reduce((s, command) => applyAccuracyCommand(s, command, actor, at), state);
     };
-    const selected = new Set(["k:cabinet-finish", "k:faucet", "b:faucet-s", "b:flooring"]);
+    const selected = new Set(["k:cabinet-finish", "k:faucet", "b:faucet-s", "b:bathroom-floor-tile"]);
     run({
       type: "scope",
       rooms: [
@@ -104,7 +104,7 @@ describe("kitchen and bathroom design-to-spec local fixture", () => {
       location: "Double vanity",
       url: "https://example.com/faucet?variant=black-brass",
     });
-    confirm("b", "b:flooring", {
+    confirm("b", "b:bathroom-floor-tile", {
       productName: "Porcelain tile",
       manufacturer: "Tile maker",
       sku: "T-01",
@@ -165,7 +165,7 @@ describe("kitchen and bathroom design-to-spec local fixture", () => {
     expect(accuracyHandoff(reloaded, "spec").rows).toEqual(
       accuracyHandoff(reloaded, "drawing-handoff").rows,
     );
-    const tile = accuracyOutputs(reloaded).find((row) => row.sourceId === "b:flooring")!;
+    const tile = accuracyOutputs(reloaded).find((row) => row.sourceId === "b:bathroom-floor-tile")!;
     expect(accuracyInvoiceTerms(tile)).toMatchObject({
       quantity: "10",
       quantityUnit: "box",

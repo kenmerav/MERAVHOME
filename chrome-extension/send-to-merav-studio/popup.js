@@ -173,6 +173,8 @@ function renderLocalRoomDesignPreview() {
     "preview-kitchen": roomDesignData.items,
     "preview-primary-bath": localPreviewItems([
       "Flooring",
+      "Bathroom floor tile",
+      "Bathroom wall tile",
       "Transitions",
       "Wall finish",
       "Ceiling finish",
@@ -297,13 +299,13 @@ document.getElementById("roomSelect").addEventListener("change", async (event) =
 
 document.getElementById("requiredItemSelect").addEventListener("change", async (event) => {
   resetSelectionReview();
-  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
   const roomId = document.getElementById("roomSelect").value;
+  restoreQuantity(roomId, event.target.value);
+  if (LOCAL_ROOM_DESIGN_PREVIEW) return;
   const itemByRoom = { ...(settings.itemByRoom || {}) };
   if (roomId) itemByRoom[roomId] = event.target.value;
   settings.itemByRoom = itemByRoom;
   await chrome.storage.sync.set({ itemByRoom });
-  restoreQuantity(roomId, event.target.value);
 });
 
 document.getElementById("showAddProductType").addEventListener("click", () => {
@@ -733,16 +735,27 @@ function renderRequiredItems(items, selectedItemId) {
   ).forEach((item) => {
     const option = document.createElement("option");
     option.value = item.id;
-    option.textContent = item.filled
-      ? `${item.label} · ${item.productName || "Filled"}${item.reviewed === false ? " (needs review)" : ""}`
-      : item.label;
+    const label = item.label.replace(/\(s\)/gi, "").trim();
+    const collides = items.some(
+      (other) => other.id !== item.id && other.label.toLowerCase() === label.toLowerCase(),
+    );
+    option.textContent = collides ? item.label : label;
     select.appendChild(option);
   });
   if (items.some((item) => item.id === selectedItemId)) select.value = selectedItemId;
+  renderSavedRoomProduct(items.find((item) => item.id === select.value));
+}
+
+function renderSavedRoomProduct(item) {
+  const summary = document.getElementById("savedRoomProduct");
+  const product = item?.filled ? item.productName || "Product selected" : "";
+  summary.textContent = product && item.reviewed === false ? `${product} · Needs review` : product;
+  summary.hidden = !product;
 }
 
 function restoreQuantity(roomId, itemId) {
   const item = roomDesignData?.items?.find((candidate) => candidate.id === itemId);
+  renderSavedRoomProduct(item);
   const remembered = settings.quantityByItem?.[`${roomId}:${itemId}`];
   document.getElementById("quantityInput").value = String(
     restoredMeravQuantity(item, item?.filled ? undefined : remembered),

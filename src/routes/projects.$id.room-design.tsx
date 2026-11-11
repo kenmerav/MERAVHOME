@@ -117,7 +117,7 @@ import {
   type ScrapedProductData,
 } from "@/lib/productScrape";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
-import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
+import { classifyBoardGroup, selectionChecklistChangesForRoom, selectionItemsForRoom } from "@/lib/selectionChecklist";
 import { BOARD_GROUPS, type BoardGroup } from "@/lib/selectionTypes";
 import { cn } from "@/lib/utils";
 import { inferVendorFromUrl } from "@/lib/vendorInference";
@@ -133,6 +133,7 @@ import {
 } from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  addCustomRoomDesignProductType,
   mergeRoomDesignSelectionsIntoBoard,
   normalizeRoomDesignWorkflowState,
   reconcileRoomDesignChecklist,
@@ -340,7 +341,11 @@ const LEGACY_LINK_SPLITS: Record<string, string[]> = {
   "Hardware + accessories": ["Hardware", "Accessories"],
 };
 
-function splitLegacyBlankLinks(links: DemoLink[]) {
+function splitLegacyBlankLinks(links: DemoLink[], roomName: string) {
+  const blockedIds = new Set([
+    ...links.map((link) => link.id),
+    ...selectionChecklistChangesForRoom(roomName).retiredKeys,
+  ]);
   return links.flatMap((link) => {
     const replacements = LEGACY_LINK_SPLITS[link.category];
     const hasWork =
@@ -348,12 +353,12 @@ function splitLegacyBlankLinks(links: DemoLink[]) {
       link.quantity !== 1 ||
       link.saveToTemplate === true;
     if (!replacements || hasWork) return [link];
-    return replacements.map((category) => ({
-      ...link,
-      id: itemKey(category),
-      category,
-      group: classifyBoardGroup(category),
-    }));
+    return replacements.flatMap((category) => {
+      const id = itemKey(category);
+      if (blockedIds.has(id)) return [];
+      blockedIds.add(id);
+      return [{ ...link, id, category, group: classifyBoardGroup(category) }];
+    });
   });
 }
 
@@ -473,7 +478,7 @@ function createSavedRoomWorkflowDraft(
 
   return {
     method: normalized.method,
-    links: splitLegacyBlankLinks(normalized.links as DemoLink[]),
+    links: splitLegacyBlankLinks(normalized.links as DemoLink[], roomName),
     linksRoomName: normalized.linksRoomName,
     selections: normalized.selections as DemoSelection[],
     conceptPreview: normalized.conceptImageUrl,
@@ -1263,6 +1268,7 @@ function RoomDesignWorkflow({
         accuracyState,
         roomId,
         boardSelections,
+        { includeTileInstallation: true },
       ) as DemoSelection[];
     const uploadedSelections = await Promise.all(
       boardSelections.map(async (selection) => {
@@ -2079,7 +2085,7 @@ function RoomDesignWorkflow({
                 state: "draft" as const,
                 scrapeStatus: "partial" as const,
                 scrapeError: "Gather the updated product link to review this selection.",
-                ...(selection.extensionPurchase ? { extensionPurchase: extensionPurchaseDetails({}) } : {}),
+                extensionPurchase: undefined,
               }
             : {}),
           ...(materialsSent ? { materialsSyncStatus: "changed" as const } : {}),
@@ -2131,7 +2137,7 @@ function RoomDesignWorkflow({
       patch = {
         ...patch,
         extensionPurchase: sourceChanged
-          ? extensionPurchaseDetails({})
+          ? undefined
           : { ...(patch.extensionPurchase || previous.extensionPurchase), checkedAt: "" },
       };
     }
@@ -2793,6 +2799,7 @@ function StartStep(props: {
   const [newSelectionGroup, setNewSelectionGroup] = useState<BoardGroup>("Architecture / Other");
   const [newSelectionQuantity, setNewSelectionQuantity] = useState<number | null>(null);
   const [newSelectionNotes, setNewSelectionNotes] = useState("");
+  const [newSelectionError, setNewSelectionError] = useState("");
   const [showNotNeeded, setShowNotNeeded] = useState(false);
   const accuracy = useRoomDesignAccuracy();
   const accuracyRoomId = useRoomDesignAccuracyRoom();
@@ -2815,25 +2822,29 @@ function StartStep(props: {
   const visibleLinks = sortedLinks.filter((item) => showNotNeeded || !isNotNeeded(item));
 
   const addCustomSelection = () => {
-    const category = newSelectionName.trim();
-    if (!category) return;
-    props.onLinks([
-      ...props.links,
-      {
-        id: `custom-${crypto.randomUUID()}`,
-        category,
-        url: "",
-        group: newSelectionGroup,
-        quantity: newSelectionQuantity,
-        notes: newSelectionNotes.trim(),
-        custom: true,
-        saveToTemplate: false,
-      },
-    ]);
+    try {
+      const result = addCustomRoomDesignProductType({
+        state: { links: props.links },
+        label: newSelectionName,
+        itemId: `custom-${crypto.randomUUID()}`,
+      });
+      if (!result.added) {
+        setNewSelectionError(`${result.item.category} is already on this room’s checklist.`);
+        return;
+      }
+      props.onLinks([
+        ...props.links,
+        { ...result.item, group: newSelectionGroup, quantity: newSelectionQuantity, notes: newSelectionNotes.trim() },
+      ]);
+    } catch (error) {
+      setNewSelectionError(error instanceof Error ? error.message : "Could not add this selection.");
+      return;
+    }
     setNewSelectionName("");
     setNewSelectionGroup("Architecture / Other");
     setNewSelectionQuantity(null);
     setNewSelectionNotes("");
+    setNewSelectionError("");
     setAddingSelection(false);
   };
 
@@ -2933,8 +2944,8 @@ function StartStep(props: {
             <div>
               <h3 className="text-2xl font-bold sm:text-3xl">{props.roomName} checklist</h3>
               <p className="mt-2 text-sm font-normal text-muted-foreground">
-                Paste product links or choose from the catalog, then click Review products to gather
-                details and see what still needs review. Prices can stay blank.
+                Paste links, choose from the catalog, or send products here from the Chrome extension.
+                Use Review products to gather and check the selections for this room.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -2948,7 +2959,7 @@ function StartStep(props: {
                 size="sm"
                 onClick={() => setAddingSelection((current) => !current)}
               >
-                <Plus /> Add Selection
+                <Plus /> Add Room Item
               </Button>
             </div>
           </div>
@@ -2958,7 +2969,7 @@ function StartStep(props: {
                 <div>
                   <div className="eyebrow">Custom room item</div>
                   <div className="mt-1 text-sm font-medium">
-                    Add anything missing from the template
+                    This item is added to {props.roomName} in this project.
                   </div>
                 </div>
                 <button
@@ -2974,9 +2985,11 @@ function StartStep(props: {
                   <Label>Selection name</Label>
                   <Input
                     autoFocus
+                    maxLength={80}
                     value={newSelectionName}
                     onChange={(event) => {
                       const value = event.target.value;
+                      setNewSelectionError("");
                       setNewSelectionName(value);
                       if (value.trim()) setNewSelectionGroup(classifyBoardGroup(value));
                     }}
@@ -3023,6 +3036,7 @@ function StartStep(props: {
                   <Plus /> Add to checklist
                 </Button>
               </div>
+              {newSelectionError && <p role="alert" className="mt-2 text-sm text-destructive">{newSelectionError}</p>}
             </div>
           )}
           {props.onOpenDefaults && (

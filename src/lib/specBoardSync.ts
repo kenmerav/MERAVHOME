@@ -7,6 +7,7 @@ import { cleanUuid } from "@/lib/ids";
 import { createBoardMaterialsSnapshot, boardMaterialsFingerprint } from "@/lib/boardMaterialsSnapshot";
 import { boardBlankQuantityDefault } from "@/lib/boardBlankQuantityDefault";
 import { boardPageQuantity } from "@/lib/boardMaterialQuantity";
+import { boardTileInstallationIssues } from "@/lib/boardTileInstallation";
 
 type Layer = Record<string, any> & { id: string; type: string };
 type Page = Record<string, any> & { id: string; elements: Layer[] };
@@ -73,13 +74,6 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
       // A copied image assigned to a new room must not move the original row.
       if (item?.room_id !== room.id) item = undefined;
       if (item?.not_needed) continue; // Preserve an explicit staff removal.
-      if (item?.design_accuracy_fact) {
-        // The versioned Room Design decision owns these critical facts. A board edit is a proposal.
-        if (layer.designAccuracySelectionVersion !== item.design_accuracy_fact.selectionVersion) {
-          issue(page, layer, "Design decisions changed. Update this board view from Room Design before sending it."); pageComplete = false;
-        }
-        continue;
-      }
       const linkedProduct = byProduct.get(layer.productId);
       const link = layer.materialLinkCleared ? "" : text(layer.link) || linkedProduct?.product_url || "";
       const product = linkedProduct && (!link || !linkedProduct.product_url || url(linkedProduct.product_url) === url(link)) ? linkedProduct : undefined;
@@ -96,6 +90,15 @@ export function planSpecBoardSync(projectId: string, board: unknown, items: Mate
         item = matches[0];
       }
       if (item?.not_needed) continue;
+      const tileIssues = boardTileInstallationIssues(layer, product);
+      if (tileIssues.length) issue(page, layer, `Confirm ${tileIssues.join(", ")} on the Design Board.`);
+      if (item?.design_accuracy_fact) {
+        // The versioned Room Design decision owns these critical facts. A board edit is a proposal.
+        if (layer.designAccuracySelectionVersion !== item.design_accuracy_fact.selectionVersion) {
+          issue(page, layer, "Design decisions changed. Update this board view from Room Design before sending it."); pageComplete = false;
+        }
+        continue;
+      }
       const variantChanged = !!(item && (!baseline || changed("productId") || changed("link") || changed("materialLinkCleared")) && ((link && item.product_url && url(link) !== url(item.product_url)) ||
         (product && item.product_id && product.id !== item.product_id &&
           (!link || !item.product_url || (product.finish && normalize(product.finish) !== normalize(item.product?.finish))))));

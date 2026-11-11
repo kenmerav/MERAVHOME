@@ -78,6 +78,8 @@ export const SELECTION_ROOM_TEMPLATES: SelectionRoomTemplate[] = [
     name: "Primary Bathroom",
     items: [
       "Flooring",
+      "Bathroom floor tile",
+      "Bathroom wall tile",
       "Transitions",
       "Wall finish",
       "Ceiling finish",
@@ -125,6 +127,8 @@ export const SELECTION_ROOM_TEMPLATES: SelectionRoomTemplate[] = [
     name: "Powder Bathroom",
     items: [
       "Flooring",
+      "Bathroom floor tile",
+      "Bathroom wall tile",
       "Transitions",
       "Wall finish",
       "Ceiling finish",
@@ -279,33 +283,87 @@ const GENERIC_ROOM_ITEM_LABELS = [
   "Accessories",
 ];
 
+const fullBathChanges = {
+  add: ["Tub drain / overflow"],
+  retire: ["Flooring"],
+};
+
+const roomChecklistChanges: Record<string, { add: string[]; retire?: string[] }> = {
+  kitchen: {
+    add: ["Decorative ceiling lighting", "Beverage refrigerator"],
+    retire: ["General lighting", "Specialty appliances", "Shelf rails"],
+  },
+  "primary-bathroom": fullBathChanges,
+  bathroom: fullBathChanges,
+  "powder-bathroom": { add: [], retire: ["Flooring"] },
+  laundry: { add: ["Floor drain", "Exhaust fan", "Wall plates"] },
+  mudroom: { add: ["Wall plates"] },
+  "built-ins-fireplace": { add: ["Fireplace hearth"] },
+  stairs: { add: ["Stair treads", "Stair risers", "Balusters"] },
+  pantry: {
+    add: [
+      "Cabinet finish", "Cabinet hardware", "Countertop", "Backsplash", "Open shelving",
+      "Sink", "Faucet", "Beverage refrigerator",
+    ],
+    retire: ["Furniture", "Fixtures", "Hardware", "Accessories"],
+  },
+  bedroom: { add: ["Bed", "Nightstand", "Bedside lighting", "Area rug"] },
+  dining: { add: ["Dining table", "Dining chair", "Chandelier", "Area rug"] },
+  living: { add: ["Sofa", "Accent chair", "Coffee table", "Area rug"] },
+  entry: { add: ["Entry console", "Mirror", "Area rug"] },
+  office: { add: ["Desk", "Desk chair", "Task lighting"] },
+  closet: { add: ["Closet shelving", "Hanging rail", "Drawer hardware"] },
+};
+
+function roomChecklistKey(roomName: string) {
+  if (/primary.*bath/i.test(roomName)) return "primary-bathroom";
+  if (/powder.*(?:bath|room)|half[ -]?bath/i.test(roomName)) return "powder-bathroom";
+  if (/\b(?:pantry|scullery|butler(?:['’]s)?)\b/i.test(roomName)) return "pantry";
+  if (/kitchen/i.test(roomName)) return "kitchen";
+  if (/bath|restroom|washroom/i.test(roomName)) return "bathroom";
+  if (/laundry|utility/i.test(roomName)) return "laundry";
+  if (/mudroom|mud room/i.test(roomName)) return "mudroom";
+  if (/built.?in|fireplace/i.test(roomName)) return "built-ins-fireplace";
+  if (/project.?wide|whole.?home|whole.?house/i.test(roomName)) return "project-wide";
+  if (/stair/i.test(roomName)) return "stairs";
+  if (/\bcloset\b/i.test(roomName)) return "closet";
+  if (/\bbedroom\b/i.test(roomName)) return "bedroom";
+  if (/\bdining\b/i.test(roomName)) return "dining";
+  if (/\b(?:living|family|great room|den)\b/i.test(roomName)) return "living";
+  if (/\b(?:entry|foyer|entryway)\b/i.test(roomName)) return "entry";
+  if (/\b(?:office|study)\b/i.test(roomName)) return "office";
+  return SELECTION_ROOM_TEMPLATES.find((candidate) =>
+    candidate.name.toLowerCase() === roomName.trim().toLowerCase(),
+  )?.key || "";
+}
+
+export function selectionChecklistChangesForRoom(roomName: string) {
+  const changes = roomChecklistChanges[roomChecklistKey(roomName)];
+  return {
+    addedKeys: (changes?.add || []).map((label) => item(label).key),
+    retiredKeys: (changes?.retire || []).map((label) => item(label).key),
+  };
+}
+
 export function selectionItemsForRoom(roomName: string): RequiredSelection[] {
-  const template = SELECTION_ROOM_TEMPLATES.find((candidate) => {
-    if (/primary.*bath/i.test(roomName)) return candidate.key === "primary-bathroom";
-    if (/powder.*(?:bath|room)/i.test(roomName)) return candidate.key === "powder-bathroom";
-    if (/kitchen/i.test(roomName)) return candidate.key === "kitchen";
-    if (/bath|restroom|washroom/i.test(roomName)) return candidate.key === "bathroom";
-    if (/laundry|utility/i.test(roomName)) return candidate.key === "laundry";
-    if (/mudroom|mud room/i.test(roomName)) return candidate.key === "mudroom";
-    if (/built.?in|fireplace/i.test(roomName)) return candidate.key === "built-ins-fireplace";
-    if (/project.?wide|whole.?home|whole.?house/i.test(roomName))
-      return candidate.key === "project-wide";
-    if (/stair/i.test(roomName)) return candidate.key === "stairs";
-    return candidate.name.toLowerCase() === roomName.toLowerCase();
-  });
+  const key = roomChecklistKey(roomName);
+  const template = SELECTION_ROOM_TEMPLATES.find((candidate) => candidate.key === key);
+  const changes = roomChecklistChanges[key];
   const labels =
     template?.items.map((requiredItem) => requiredItem.label) ?? GENERIC_ROOM_ITEM_LABELS;
   const withFan = /bedroom|living|family|great room|\bden\b/i.test(roomName)
     ? [...labels, "Ceiling fan"]
     : labels;
-  return [...new Set(withFan)].map(item);
+  return [...new Set([...withFan, ...(changes?.add || [])])]
+    .filter((label) => !changes?.retire?.includes(label))
+    .map(item);
 }
 
 export function classifyBoardGroup(...values: Array<string | null | undefined>): BoardGroup {
   const text = values.filter(Boolean).join(" ").toLowerCase();
 
   if (/\b(?:countertop|island) power\b/.test(text)) return "Hardware";
-  if (/\bstair runner\b/.test(text)) return "Materials";
+  if (/\b(stair runner|stair treads?|stair risers?|fireplace hearth|area rug)\b/.test(text)) return "Materials";
   if (/\bceiling fan\b/.test(text)) return "Lighting";
 
   if (
@@ -339,7 +397,7 @@ export function classifyBoardGroup(...values: Array<string | null | undefined>):
   ) {
     return "Appliances";
   }
-  if (/\b(mirror|feature|decor|decorative object|art)\b/.test(text)) {
+  if (/\b(mirror|feature|decor|decorative object|art|sofa|chairs?|nightstand|beds?|(?:coffee|dining) table|entry console|desk)\b/.test(text)) {
     return "Feature / Decor";
   }
   if (
@@ -358,7 +416,7 @@ export function createInitialSelectionRecords(
   const idFactory = options.idFactory ?? (() => crypto.randomUUID());
 
   return SELECTION_ROOM_TEMPLATES.flatMap((room) =>
-    room.items.map((requiredItem) => ({
+    selectionItemsForRoom(room.name).map((requiredItem) => ({
       id: idFactory(),
       localProjectKey,
       roomKey: room.key,

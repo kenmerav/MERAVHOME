@@ -5,6 +5,8 @@ import {
   parseExtensionSelectionReview,
 } from "@/lib/extensionSelectionReview";
 import { extensionSelectionRevision } from "@/lib/extensionSelectionRevision.server";
+import { mergeAutomaticRoomProduct } from "@/lib/roomDesignAutoScrape";
+import { boardTileInstallationIssues } from "@/lib/boardTileInstallation";
 import {
   addCustomRoomDesignProductType,
   createDefaultRoomDesignWorkflowState,
@@ -44,6 +46,105 @@ describe("Room Design extension destination", () => {
     expect(labels).toContain("Tub");
     expect(labels).toContain("Tub filler");
     expect(labels).not.toContain("Freestanding tub");
+  });
+
+  it("updates room defaults while preserving any saved legacy or one-off selections", () => {
+    const roomName = "Hall Bathroom";
+    const state = createDefaultRoomDesignWorkflowState(roomName);
+    const legacyFloor = { id: "flooring", category: "Flooring", group: "Materials", url: "", notes: "", quantity: null };
+    const custom = addCustomRoomDesignProductType({ state, label: "Towel warmer", itemId: "custom-towel-warmer" });
+    const older = { ...custom.state, links: [...custom.state.links.filter((link) => link.id !== "tub-drain-overflow"), legacyFloor] };
+    const updated = reconcileRoomDesignChecklist(older, roomName);
+    expect(updated.links.map((link) => link.category)).toContain("Tub drain / overflow");
+    expect(updated.links.map((link) => link.category)).not.toContain("Flooring");
+    expect(updated.links).toContainEqual(custom.item);
+    expect(state.links).not.toContainEqual(custom.item);
+    const saved = { ...legacyFloor, notes: "Approved oak flooring" };
+    expect(reconcileRoomDesignChecklist({ ...older, links: [...updated.links, saved] }, roomName).links).toContainEqual(saved);
+    expect(reconcileRoomDesignChecklist(updated, roomName)).toBe(updated);
+    expect(addCustomRoomDesignProductType({ state: updated, label: "Sink", itemId: "custom-sink" }).added).toBe(false);
+  });
+
+  it.each([
+    ["Kitchen", "Beverage refrigerator"], ["Butler’s Pantry", "Open shelving"],
+    ["Laundry Room", "Exhaust fan"], ["Mudroom", "Wall plates"],
+    ["Fireplace", "Fireplace hearth"], ["Stairway", "Stair treads"],
+    ["Guest Bedroom", "Nightstand"], ["Dining Room", "Dining table"],
+    ["Great Room", "Coffee table"], ["Foyer", "Entry console"],
+    ["Home Office", "Task lighting"], ["Walk-in Closet", "Closet shelving"],
+  ])("includes %s room-specific choices in new and existing rooms", (roomName, category) => {
+    const state = createDefaultRoomDesignWorkflowState(roomName);
+    expect(state.links.map((link) => link.category)).toContain(category);
+    const older = { ...state, links: state.links.filter((link) => link.category !== category) };
+    expect(reconcileRoomDesignChecklist(older, roomName).links.map((link) => link.category)).toContain(category);
+  });
+
+  it("adds independent bathroom tile surfaces without copying a saved shower selection", () => {
+    for (const roomName of ["Primary Bathroom", "Hall Bathroom", "Powder Room"]) {
+      const defaults = createDefaultRoomDesignWorkflowState(roomName);
+      const upgraded = reconcileRoomDesignChecklist(
+        {
+          ...defaults,
+          links: defaults.links.filter((link) => !/^bathroom-(floor|wall)-tile$/.test(link.id)),
+        },
+        roomName,
+      );
+      expect(upgraded.links.filter((link) => /^bathroom-(floor|wall)-tile$/.test(link.id))).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "bathroom-floor-tile",
+            category: "Bathroom floor tile",
+            quantity: null,
+            url: "",
+          }),
+          expect.objectContaining({
+            id: "bathroom-wall-tile",
+            category: "Bathroom wall tile",
+            quantity: null,
+            url: "",
+          }),
+        ]),
+      );
+      expect(reconcileRoomDesignChecklist(upgraded, roomName)).toBe(upgraded);
+    }
+
+    const roomName = "Primary Bathroom";
+    const defaults = createDefaultRoomDesignWorkflowState(roomName);
+    const oldRoom = {
+      ...defaults,
+      links: defaults.links
+        .filter((link) => !/^bathroom-(floor|wall)-tile$/.test(link.id))
+        .map((link) =>
+          link.id === "shower-floor-tile" ? { ...link, notes: "Shower floor layout" } : link,
+        ),
+    };
+    const tile = { ...product, name: "Porcelain tile" };
+    const shower = mergeExtensionProductIntoRoomDesignWorkflow({
+      state: oldRoom,
+      itemKey: "shower-floor-tile",
+      product: { ...tile, quantity: 18 },
+    });
+    const upgraded = reconcileRoomDesignChecklist(shower.state, roomName);
+    expect(upgraded.selections).toEqual(shower.state.selections);
+    const bathroom = mergeExtensionProductIntoRoomDesignWorkflow({
+      state: upgraded,
+      itemKey: "bathroom-floor-tile",
+      product: { ...tile, quantity: 42 },
+    });
+    expect(bathroom.state.selections).toEqual([
+      expect.objectContaining({
+        id: "link-shower-floor-tile",
+        productId: tile.id,
+        quantity: 18,
+        notes: "Shower floor layout",
+      }),
+      expect.objectContaining({
+        id: "link-bathroom-floor-tile",
+        productId: tile.id,
+        quantity: 42,
+        quantityUnit: "sq ft",
+      }),
+    ]);
   });
 
   it("uses the full Powder Bathroom checklist for common room-name variants", () => {
@@ -247,6 +348,47 @@ describe("Room Design extension destination", () => {
     },
   };
 
+  it("keeps link and extension captures on their individual tile surfaces in the same room", () => {
+    const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
+    const wall = state.links.find((link) => link.category === "Shower wall tile")!;
+    const floor = state.links.find((link) => link.category === "Bathroom floor tile")!;
+    const captured = mergeExtensionProductIntoRoomDesignWorkflow({
+      state,
+      itemKey: wall.id,
+      product: { ...tile, review: parseExtensionSelectionReview(tileDetails, 100) },
+    });
+    const savedWall = captured.state.links.find((link) => link.id === wall.id)!;
+    const gatheredWall = mergeAutomaticRoomProduct(
+      { ...captured.selection, extensionPurchase: undefined },
+      captured.selection,
+      captured.selection,
+      savedWall,
+    );
+    expect(gatheredWall?.extensionPurchase).toEqual(captured.selection.extensionPurchase);
+    expect(gatheredWall?.notes).toContain("Grout color: Warm Gray");
+
+    const gatheredFloor = mergeAutomaticRoomProduct(
+      { ...captured.selection, id: `link-${floor.id}`, category: floor.category, extensionPurchase: undefined },
+      undefined,
+      undefined,
+      { ...floor, url: tile.sourcePageUrl },
+    );
+    const board = mergeRoomDesignSelectionsIntoBoard({
+      boardState: {},
+      projectName: "Test",
+      roomId: "room-1",
+      roomName: "Primary Bathroom",
+      selections: [gatheredWall!, gatheredFloor!],
+    });
+    const layers = board.pages.flatMap((page) => page.elements);
+    expect(boardTileInstallationIssues(layers.find((layer) => layer.label === wall.category)!)).toEqual([]);
+    expect(boardTileInstallationIssues(layers.find((layer) => layer.label === floor.category)!)).toEqual([
+      "grout color / joint width",
+      "tile layout",
+      "tile lay direction",
+    ]);
+  });
+
   it("stores the verified tile with its exact order quantity and passes install notes to the board", () => {
     const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
     const item = state.links.find((link) => link.category === "Shower wall tile")!;
@@ -281,7 +423,9 @@ describe("Room Design extension destination", () => {
     expect(result.state.links.find((link) => link.id === item.id)?.notes).toContain(
       "Grout joint width: 1/8 in",
     );
-    expect(result.selection.notes).toContain("Installation location / reference: Primary Bathroom, elevation A6.2");
+    expect(result.selection.notes).toContain(
+      "Installation location / reference: Primary Bathroom, elevation A6.2",
+    );
     const board = mergeRoomDesignSelectionsIntoBoard({
       boardState: {},
       projectName: "Test",

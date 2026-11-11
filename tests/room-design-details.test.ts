@@ -55,18 +55,18 @@ it("provides specific room templates while keeping powder bathrooms shower-free"
 
 it("starts new measured quantities at TBD without resetting existing quantities or notes", () => {
   const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
-  expect(state.links.find((link) => link.category === "Flooring")?.quantity).toBeNull();
+  expect(state.links.find((link) => link.category === "Bathroom floor tile")?.quantity).toBeNull();
   expect(state.links.find((link) => link.category === "Toilet")?.quantity).toBe(1);
   const older = {
     ...state,
     links: state.links
       .filter((link) => !/shower glass/i.test(link.category))
       .map((link) =>
-        link.category === "Flooring" ? { ...link, quantity: 73, notes: "Keep this choice" } : link,
+        link.category === "Bathroom floor tile" ? { ...link, quantity: 73, notes: "Keep this choice" } : link,
       ),
   };
   const upgraded = reconcileRoomDesignChecklist(older, "Primary Bathroom");
-  expect(upgraded.links.find((link) => link.category === "Flooring")).toMatchObject({
+  expect(upgraded.links.find((link) => link.category === "Bathroom floor tile")).toMatchObject({
     quantity: 73,
     notes: "Keep this choice",
   });

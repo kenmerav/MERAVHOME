@@ -13,8 +13,8 @@ For a project enrolled in the **Room Design V2** pilot:
 5. Check the verification box once confirmed and click **Save Room Selection**. Studio flags
    unresolved details for review. Trade and quote amounts live on the room selection.
 
-If a room needs another selection, click **+ Add product type** below the Product Type menu. The
-new type is saved to that room immediately and becomes the selected destination for the product.
+If a room needs another selection, click **+ Add room item** below the Product Type menu. The item
+is saved to that room in the current project and becomes the selected destination for the product.
 
 The extension remembers the last room and advances to the next unfilled product type after a
 successful import. Room selection review requires the matching Studio API release.
