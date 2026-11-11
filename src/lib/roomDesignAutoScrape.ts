@@ -14,6 +14,13 @@ export function mergeAutomaticRoomProduct<T extends RoomDesignSelection>(
   link: Pick<RoomDesignLink, "url" | "quantity" | "notes">,
 ): T | null {
   if ((scraped.url || "").trim() !== link.url.trim()) return null;
+  if (
+    current?.extensionPurchase &&
+    current.url?.trim() === link.url.trim() &&
+    (!current.productId || !scraped.productId || current.productId === scraped.productId)
+  ) {
+    return { ...current, quantity: link.quantity, notes: link.notes };
+  }
   if (current?.accuracySource) {
     // Carry the new page facts to the card. Empty draft fields can fill automatically;
     // existing decisions receive proposals through the versioned decision API.

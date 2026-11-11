@@ -4,13 +4,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
 import { parseRoomDesignQuantity } from "@/lib/roomDesignQuantity";
+import { extensionOrderEstimate, parseExtensionSelectionReview } from "@/lib/extensionSelectionReview";
+import { extensionRoomWorkflow, extensionSelectionRevision } from "@/lib/extensionSelectionRevision.server";
 import { extensionImportDestination } from "@/lib/extensionDestination";
 import { normalizeExtensionBoardState, type ExtensionBoardState } from "@/lib/extensionBoardState";
 import {
-  createDefaultRoomDesignWorkflowState,
   mergeExtensionProductIntoRoomDesignWorkflow,
-  normalizeRoomDesignWorkflowState,
-  reconcileRoomDesignChecklist,
   roomDesignRoomNamesMatch,
 } from "@/lib/roomDesignWorkflow";
 
@@ -65,6 +64,8 @@ type ExtensionProductPayload = {
   imageDataUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
+  review?: unknown;
+  itemRevision?: string;
   product?: {
     name?: string;
     vendor?: string;
@@ -386,11 +387,10 @@ async function saveBoardWithRetry(projectId: string, updater: (state: BoardState
   throw new Error("Could not save design board because it changed at the same time. Try again.");
 }
 
-function normalizedRoomDesignState(roomName: string, value: unknown) {
-  const initial = createDefaultRoomDesignWorkflowState(roomName);
-  const { version: _version, updatedAt: _updatedAt, ...fallback } = initial;
-  const normalized = normalizeRoomDesignWorkflowState(value, fallback);
-  return reconcileRoomDesignChecklist(normalized.links.length ? normalized : initial, roomName);
+class ExtensionSelectionConflict extends Error {
+  constructor() {
+    super("This item changed in Studio. Reopen the extension and review the latest selection.");
+  }
 }
 
 async function saveRoomDesignSelectionWithRetry({
@@ -398,12 +398,14 @@ async function saveRoomDesignSelectionWithRetry({
   roomId,
   requiredItemKey,
   expectedRoomName,
+  itemRevision,
   product,
 }: {
   projectId: string;
   roomId: string;
   requiredItemKey: string;
   expectedRoomName: string;
+  itemRevision?: string;
   product: Parameters<typeof mergeExtensionProductIntoRoomDesignWorkflow>[0]["product"];
 }) {
   const [{ data: featureFlag }, { data: enrollment }, { data: room, error: roomError }] =
@@ -445,7 +447,9 @@ async function saveRoomDesignSelectionWithRetry({
       .maybeSingle();
     if (error) throw error;
 
-    const currentState = normalizedRoomDesignState((room as any).name, (workflow as any)?.state);
+    const currentState = extensionRoomWorkflow((room as any).name, (workflow as any)?.state);
+    if (itemRevision && extensionSelectionRevision(currentState, requiredItemKey) !== itemRevision)
+      throw new ExtensionSelectionConflict();
     const merged = mergeExtensionProductIntoRoomDesignWorkflow({
       state: currentState,
       itemKey: requiredItemKey,
@@ -542,6 +546,18 @@ export const Route = createFileRoute("/api/extension/import-product")({
           if (destination === "room_design" && !requiredItemKey)
             return json({ error: "Choose a product type before adding the product." }, 400);
 
+          let review: ReturnType<typeof parseExtensionSelectionReview> | undefined;
+          let itemRevision: string | undefined;
+          if (destination === "room_design" && payload.review !== undefined) {
+            itemRevision = cleanText(payload.itemRevision);
+            if (!/^[a-f\d]{64}$/.test(itemRevision))
+              return json({ error: "Reload the room before reviewing this selection." }, 400);
+            try {
+              review = parseExtensionSelectionReview(payload.review, quantity);
+            } catch (error) {
+              return json({ error: error instanceof Error ? error.message : "Check the selection details." }, 400);
+            }
+          }
           if (destination === "room_design") {
             const { data: selectedRoom, error: selectedRoomError } = await supabaseAdmin
               .from("rooms")
@@ -561,6 +577,20 @@ export const Route = createFileRoute("/api/extension/import-product")({
                 409,
               );
             }
+            if (review) {
+              const { data: workflow, error: workflowError } = await supabaseAdmin
+                .from("room_design_workflows" as any)
+                .select("state")
+                .eq("project_id", projectId)
+                .eq("room_id", roomId)
+                .maybeSingle();
+              if (workflowError) throw workflowError;
+              const state = extensionRoomWorkflow(selectedRoom.name, (workflow as any)?.state);
+              if (extensionSelectionRevision(state, requiredItemKey) !== itemRevision)
+                throw new ExtensionSelectionConflict();
+              if (state.selections.some((item) => item.id === `link-${requiredItemKey}` && item.accuracySource))
+                return json({ error: "Review this versioned selection in Room Design before replacing it." }, 409);
+            }
           }
 
           const productData = payload.product ?? {};
@@ -575,7 +605,12 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const finish = isSafeColorFinish(rawFinish) ? rawFinish : "";
           const dimensions = firstText(productData.dimensions);
           const sku = firstText(productData.sku);
-          const price = normalizeMoneyInput(firstText(productData.price));
+          const price = review
+            ? review.confirmed && review.purchase.priceType === "Retail" &&
+              ["sq ft", "each"].includes(review.purchase.priceUnit)
+              ? review.purchase.unitPrice || null
+              : null
+            : normalizeMoneyInput(firstText(productData.price));
           const materialCategory = inferMaterialCategory(
             `${productName} ${productData.category ?? ""}`,
             sourcePageUrl,
@@ -617,9 +652,12 @@ export const Route = createFileRoute("/api/extension/import-product")({
           const normalizedProductName = normalizeProductIdentity(productName);
           const normalizedFinish = normalizeProductIdentity(finish);
           const normalizedDimensions = normalizeProductIdentity(dimensions);
+          const normalizedSku = normalizeProductIdentity(sku);
           const existingProduct =
             (existingProducts ?? []).find((candidate: any) => {
               if (normalizeProductIdentity(candidate.name) !== normalizedProductName) return false;
+              const candidateSku = normalizeProductIdentity(candidate.sku);
+              if (review && candidateSku !== normalizedSku) return false;
               const candidateFinish = normalizeProductIdentity(candidate.finish);
               if (normalizedFinish && candidateFinish && candidateFinish !== normalizedFinish) {
                 return false;
@@ -648,6 +686,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
             sku: sku || null,
             dimensions: dimensions || null,
             price,
+            ...(review && price ? { price_unit: review.purchase.priceUnit === "sq ft" ? "sq_ft" : "unit" } : {}),
             description: null,
             notes: null,
           };
@@ -658,7 +697,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
             finish,
             sku,
             dimensions,
-            price,
+            price: review ? null : price,
           });
 
           const { data: product, error: productError } = existingProduct
@@ -690,10 +729,12 @@ export const Route = createFileRoute("/api/extension/import-product")({
               roomId,
               requiredItemKey,
               expectedRoomName: roomName,
+              itemRevision,
               product: {
                 id: (product as any).id,
                 name: productName,
                 vendor: vendor || "",
+                manufacturer: firstText(productData.manufacturer),
                 finish,
                 sourcePageUrl,
                 imageUrl: imageForProduct,
@@ -704,6 +745,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
                 sizeOptions: (product as any).size_options || undefined,
                 selectedSize: (product as any).selected_size || undefined,
                 quantity,
+                review,
               },
             });
             return json({
@@ -722,6 +764,11 @@ export const Route = createFileRoute("/api/extension/import-product")({
               backgroundRemovedUrl,
               price: price || null,
               warning: colorWarning,
+              ...(review ? {
+                reviewed: merged.selection.state === "locked",
+                issues: merged.issues,
+                orderEstimate: extensionOrderEstimate(merged.selection),
+              } : {}),
               message: `${productName} added to ${merged.item.category} in ${merged.roomName}.`,
               openUrl: `/projects/${projectId}/room-design?roomId=${roomId}`,
             });
@@ -800,6 +847,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
             warning: colorWarning,
           });
         } catch (error) {
+          if (error instanceof ExtensionSelectionConflict) return json({ error: error.message }, 409);
           const message = error instanceof Error ? error.message : "Could not import product.";
           console.error("[Extension Import] Failed", error);
           return json({ error: message }, 500);

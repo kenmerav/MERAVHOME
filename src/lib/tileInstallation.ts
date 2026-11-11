@@ -24,7 +24,11 @@ export type TileInstallationReview = {
 const identity = (item: Partial<MaterialItem>) => [item.item_label, item.client_product_name, item.product?.name, item.product?.subcategory].filter(Boolean).join(" ");
 const inactive = /\b(cancel(?:ed|led)?|superseded|historical reference|reference only|not selected|no installation|do not (?:order|install)|option[, ]+not final)\b/i;
 export function needsTileInstallation(item: Partial<MaterialItem> & { item_label: string }) {
-  if (!materialVisibleInProcurement(item) || inactive.test(item.item_label) ||
+  return materialVisibleInProcurement(item) && isTileInstallationSurface(item);
+}
+
+export function isTileInstallationSurface(item: Partial<MaterialItem> & { item_label: string }) {
+  if (inactive.test(item.item_label) ||
     /^(?:CANCEL(?:ED|LED)|SUPERSEDED|HISTORICAL REFERENCE|REFERENCE ONLY|NOT SELECTED|DO NOT (?:ORDER|INSTALL))\b/i.test((item.notes || "").trim())) return false;
   const name = identity(item);
   // A tile-in drain, a slab countertop, a wood herringbone floor, or a tile

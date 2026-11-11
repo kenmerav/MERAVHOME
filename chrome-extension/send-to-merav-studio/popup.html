@@ -88,6 +88,13 @@
         grid-template-columns: 1fr 1fr;
         gap: 8px;
       }
+      .send-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        background: #f7f5ef;
+        padding-bottom: 8px;
+      }
       .destination-fields {
         margin-top: 12px;
         padding: 12px;
@@ -101,6 +108,21 @@
         margin: 7px 0 0;
         font-size: 11px;
       }
+      .selection-review {
+        margin-top: 12px;
+      }
+      .selection-review details {
+        margin: 10px 0;
+        border: 1px solid #ded9cd;
+        padding: 10px;
+      }
+      .selection-review summary { cursor: pointer; font-size: 13px; }
+      .selection-review .row label { margin-top: 10px; }
+      .review-source { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+      .review-source img { width: 56px; height: 56px; object-fit: contain; background: white; }
+      .review-source a { color: #1f4e5f; overflow-wrap: anywhere; }
+      .review-check { text-transform: none; letter-spacing: 0; font-size: 12px; }
+      .review-check input { width: auto; margin: 0 5px 0 0; }
       .add-product-type {
         margin-top: 8px;
         padding: 10px;
@@ -264,23 +286,47 @@
             </button>
           </div>
         </div>
-        <label>
-          Quantity
-          <input id="quantityInput" type="text" value="1" placeholder="Number or TBD" />
-        </label>
-        <label>
-          Color / Finish
-          <input
-            id="colorFinishInput"
-            type="text"
-            placeholder="Optional — e.g. Aged Brass"
-            autocomplete="off"
-          />
-        </label>
-        <p class="destination-note">
-          Studio gathers the current page link, product name, price, dimensions, SKU, and image,
-          then saves it to the catalog and this room selection.
-        </p>
+        <section id="selectionReview" class="selection-review" hidden aria-label="Selection review">
+          <div class="review-source">
+            <img id="reviewImage" alt="Captured product" />
+            <a id="reviewSource" target="_blank" rel="noopener noreferrer">Open product page</a>
+          </div>
+          <p id="reviewCaptureWarning" class="destination-note" hidden></p>
+          <label>
+            Install location / drawing reference
+            <input id="reviewLocation" maxlength="500" placeholder="If applicable beyond the room and product type" />
+          </label>
+          <details open>
+            <summary>Product and variant</summary>
+            <div id="productReviewFields" class="row"></div>
+          </details>
+          <details open>
+            <summary>Quantity and purchasing</summary>
+            <div class="row">
+              <label>Quantity <input id="quantityInput" type="text" placeholder="Number or TBD" /></label>
+              <label>Quantity unit <select id="quantityUnitInput"></select></label>
+            </div>
+            <div id="purchaseReviewFields" class="row"></div>
+          </details>
+          <label>
+            Installation material
+            <select id="reviewSurface">
+              <option value="">Choose if applicable</option>
+              <option value="Tile">Tile</option>
+              <option value="Other material">Other material</option>
+            </select>
+          </label>
+          <details id="tileReview" open hidden>
+            <summary>Tile installation</summary>
+            <div id="tileReviewFields" class="row"></div>
+          </details>
+          <label class="review-check">
+            <input id="selectionConfirmed" type="checkbox" />
+            I verified the variant, price and project details against their sources.
+          </label>
+          <p class="destination-note">Selections with open details are saved for review in Studio.</p>
+          <button id="rereadProduct" class="tertiary" type="button">Read product page again</button>
+        </section>
       </section>
       <section id="boardFields" class="destination-fields">
         <label>
@@ -293,11 +339,15 @@
           Uses the current manual workflow and adds the product directly to the selected page.
         </p>
       </section>
-      <div class="row">
+      <div class="row send-actions">
         <button id="send">Send Current Product</button>
         <button id="options" class="secondary">Settings</button>
       </div>
       <button id="openRoom" class="secondary" hidden>Open Room in Studio</button>
+      <div id="progress" class="progress" hidden>
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+      <div id="status" class="status" role="status"></div>
       <section class="pricing">
         <h2>Product Pricing</h2>
         <div class="price-actions">
@@ -309,12 +359,9 @@
         <div id="priceReview" class="price-review"></div>
         <button id="approveChanges" hidden>Apply Selected Price Changes</button>
       </section>
-      <div id="progress" class="progress" hidden>
-        <div id="progressBar" class="progress-bar"></div>
-      </div>
-      <div id="status" class="status"></div>
     </main>
     <script src="quantity.js"></script>
+    <script src="selection-review.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

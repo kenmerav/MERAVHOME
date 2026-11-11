@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { selectionItemsForRoom } from "@/lib/selectionChecklist";
 import {
+  extensionOrderEstimate,
+  parseExtensionSelectionReview,
+} from "@/lib/extensionSelectionReview";
+import { extensionSelectionRevision } from "@/lib/extensionSelectionRevision.server";
+import {
   addCustomRoomDesignProductType,
   createDefaultRoomDesignWorkflowState,
   mergeExtensionProductIntoRoomDesignWorkflow,
+  normalizeRoomDesignWorkflowState,
+  mergeRoomDesignSelectionsIntoBoard,
   reconcileRoomDesignChecklist,
   roomDesignRoomNamesMatch,
 } from "@/lib/roomDesignWorkflow";
@@ -201,5 +208,143 @@ describe("Room Design extension destination", () => {
       quantity: 2,
       materialsSyncStatus: "changed",
     });
+  });
+
+  const tile = {
+    ...product,
+    name: "Harbor Porcelain Tile",
+    manufacturer: "Harbor Tile",
+    finish: "Ivory matte",
+    dimensions: "11.8 × 23.8 in, 9 mm thick",
+    quantity: 100,
+  };
+  const tileDetails = {
+    quantityUnit: "sq ft",
+    wastePercent: "10",
+    confirmed: true,
+    installationLocation: "Primary Bathroom, elevation A6.2",
+    purchase: {
+      unitPrice: "55.00",
+      priceUnit: "carton",
+      sellingUnit: "carton",
+      priceType: "Trade",
+      priceSource: "Quote 42",
+      availability: "2 weeks",
+      coverage: "11",
+    },
+    tile: {
+      location: "Shower walls to ceiling",
+      layout: "Running bond, 33% offset",
+      direction: "Horizontal from centerline",
+      groutProduct: "Mapei Ultracolor Plus FA",
+      groutColor: "Warm Gray",
+      jointWidth: "1/8 in",
+      edgeTreatment: "Metal trim",
+      edgeProduct: "Schluter Jolly",
+      edgeFinish: "Brushed brass",
+      edgeSize: "3/8 in",
+      suitability: "Shower wall listed on the manufacturer spec sheet",
+    },
+  };
+
+  it("stores the verified tile with its exact order quantity and passes install notes to the board", () => {
+    const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
+    const item = state.links.find((link) => link.category === "Shower wall tile")!;
+    const result = mergeExtensionProductIntoRoomDesignWorkflow({
+      state,
+      itemKey: item.id,
+      product: { ...tile, price: "", review: parseExtensionSelectionReview(tileDetails, 100) },
+    });
+    expect(result.issues).toEqual([]);
+    expect(result.selection).toMatchObject({ state: "locked", quantity: 100, wastePercent: 10 });
+    expect(result.selection.extensionPurchase?.checkedAt).toBeTruthy();
+    expect(extensionOrderEstimate(result.selection)).toEqual({
+      quantity: 10,
+      unit: "carton",
+      total: "$550.00",
+    });
+    expect(
+      extensionOrderEstimate({
+        ...result.selection,
+        extensionPurchase: {
+          ...result.selection.extensionPurchase!,
+          minimumOrder: 12,
+          priceUnit: "sq ft",
+          unitPrice: "$5.00",
+        },
+      }),
+    ).toEqual({ quantity: 12, unit: "carton", total: "$660.00" });
+    expect(
+      normalizeRoomDesignWorkflowState(JSON.parse(JSON.stringify(result.state)), state)
+        .selections[0].extensionPurchase,
+    ).toEqual(result.selection.extensionPurchase);
+    expect(result.state.links.find((link) => link.id === item.id)?.notes).toContain(
+      "Grout joint width: 1/8 in",
+    );
+    expect(result.selection.notes).toContain("Installation location / reference: Primary Bathroom, elevation A6.2");
+    const board = mergeRoomDesignSelectionsIntoBoard({
+      boardState: {},
+      projectName: "Test",
+      roomId: "room-1",
+      roomName: "Primary Bathroom",
+      selections: result.state.selections,
+    });
+    expect(board.pages.flatMap((page) => page.elements)).toContainEqual(
+      expect.objectContaining({
+        materialQuantity: 100,
+        materialQuantityUnit: "sq ft",
+        materialWastePercent: 10,
+        notes: expect.stringContaining("Tile layout: Running bond, 33% offset"),
+      }),
+    );
+    expect(JSON.stringify(board)).not.toContain("Quote 42");
+  });
+
+  it("keeps unchecked or incomplete captures open for verification and guards per-item revisions", () => {
+    const state = createDefaultRoomDesignWorkflowState("Primary Bathroom");
+    const item = state.links.find((link) => link.category === "Shower wall tile")!;
+    const result = mergeExtensionProductIntoRoomDesignWorkflow({
+      state,
+      itemKey: item.id,
+      product: {
+        ...tile,
+        quantity: null,
+        review: parseExtensionSelectionReview(
+          {
+            ...tileDetails,
+            purchase: { ...tileDetails.purchase, coverage: "" },
+            tile: { ...tileDetails.tile, jointWidth: "1/8" },
+          },
+          null,
+        ),
+      },
+    });
+    expect(result.selection.state).toBe("selected");
+    expect(result.selection.extensionPurchase?.checkedAt).toBe("");
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/unit to the grout joint width/),
+        expect.stringMatching(/square feet per selling unit/),
+        expect.stringMatching(/quantity.*TBD/),
+      ]),
+    );
+    expect(extensionOrderEstimate(result.selection)).toBeNull();
+    const other = state.links.find((link) => link.id !== item.id)!;
+    expect(extensionSelectionRevision(result.state, item.id)).not.toBe(
+      extensionSelectionRevision(state, item.id),
+    );
+    expect(extensionSelectionRevision(result.state, other.id)).toBe(
+      extensionSelectionRevision(state, other.id),
+    );
+    const unchecked = mergeExtensionProductIntoRoomDesignWorkflow({
+      state,
+      itemKey: item.id,
+      product: {
+        ...tile,
+        review: parseExtensionSelectionReview({ ...tileDetails, confirmed: false }, 100),
+      },
+    });
+    expect(unchecked.issues).toEqual([]);
+    expect(unchecked.selection.state).toBe("selected");
   });
 });

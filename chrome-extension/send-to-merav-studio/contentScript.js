@@ -1,7 +1,7 @@
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "MERAV_EXTRACT_PRODUCT") return false;
   try {
-    sendResponse(extractProduct(message.clickedImageUrl, message.pageUrl));
+  sendResponse(extractProduct(message.clickedImageUrl, message.pageUrl, message.roomReview === true));
   } catch (error) {
     sendResponse({
       sourcePageUrl: message.pageUrl || location.href,
@@ -40,12 +40,24 @@ if (location.hostname === "studio.meravinteriors.com" || location.hostname.endsW
   }
 }
 
-function extractProduct(clickedImageUrl, pageUrl) {
+function extractProduct(clickedImageUrl, pageUrl, roomReview) {
   const jsonLdProducts = getJsonLdProducts();
-  const jsonLd = jsonLdProducts[0] || {};
-  const offers = firstOffer(jsonLd.offers);
-  const selectedImage = absoluteUrl(clickedImageUrl) || firstImage(jsonLd.image) || metaImage() || largestVisibleImage();
   const sourcePageUrl = absoluteUrl(pageUrl || location.href) || location.href;
+  const url = new URL(sourcePageUrl);
+  const visibleModel = visibleSku();
+  const variantIds = [visibleModel, ...Array.from(url.searchParams.entries())
+    .filter(([key]) => /^(?:sku|variant|pid|itemno|uid|productid|piid)$/i.test(key))
+    .map(([, value]) => value)].filter(Boolean);
+  const matches = jsonLdProducts.filter((product) =>
+    [product.sku, product.mpn, product.productID].some((id) => variantIds.includes(String(id))),
+  );
+  const parent = jsonLdProducts[0] || {};
+  const variantOptions = Array.isArray(parent.hasVariant) ? parent.hasVariant : [];
+  const ambiguous = roomReview && matches.length !== 1 &&
+    (variantOptions.length > 1 || jsonLdProducts.length > 1 || Array.isArray(parent.offers) && parent.offers.length > 1);
+  const jsonLd = matches.length === 1 ? matches[0] : parent;
+  const offers = ambiguous ? null : firstOffer(jsonLd.offers);
+  const selectedImage = absoluteUrl(clickedImageUrl) || firstImage(jsonLd.image) || metaImage() || largestVisibleImage();
   const productName =
     clean(jsonLd.name) ||
     meta("og:title") ||
@@ -53,21 +65,31 @@ function extractProduct(clickedImageUrl, pageUrl) {
     productHeading() ||
     clean(document.title);
   const vendor =
-    brandName(jsonLd.brand) ||
-    clean(jsonLd.manufacturer?.name) ||
     meta("og:site_name") ||
     location.hostname.replace(/^www\./, "");
-  const manufacturer = brandName(jsonLd.manufacturer) || vendor;
-  const price = priceText(offers?.price, offers?.priceCurrency) || visiblePrice();
-  const sku = clean(jsonLd.sku) || clean(jsonLd.mpn) || visibleSku();
+  const manufacturer = brandName(jsonLd.manufacturer) || brandName(jsonLd.brand);
+  const pagePrice = roomReview ? visibleReviewPrice() : "";
+  const structuredPrice = priceText(offers?.price, offers?.priceCurrency);
+  const price = ambiguous ? "" : roomReview ? pagePrice || structuredPrice : structuredPrice || visiblePrice();
+  const sku = ambiguous ? visibleModel : clean(jsonLd.sku) || clean(jsonLd.mpn) || visibleModel;
   const colorFinish = productColorFinish(jsonLd);
   const dimensions = productDimensions(jsonLd);
+  const properties = jsonLdProperties(jsonLd);
+  const coverageText = properties.find(({ name }) => /(?:coverage|sq\.?\s*ft\.?\s+per)\b/i.test(name) &&
+    /(?:carton|case|box)/i.test(name))?.value || "";
+  const coverage = /^(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft\.?|square feet)?$/i.exec(coverageText)?.[1] || "";
+  const specificationLinks = [...document.querySelectorAll("main a[href], article a[href]")].filter((link) =>
+    /^(?:product\s+)?(?:spec(?:ification)?\s+sheet|technical\s+data\s+sheet)$/i.test(clean(link.textContent)),
+  );
 
   return {
     sourcePageUrl,
     imageUrl: selectedImage,
     imageWidth: naturalImageSize(selectedImage).width,
     imageHeight: naturalImageSize(selectedImage).height,
+    ...(ambiguous ? {
+      warning: "The page lists several options. Verify the exact SKU, image, dimensions and price for your selected variant.",
+    } : {}),
     product: {
       name: productName,
       vendor,
@@ -76,6 +98,13 @@ function extractProduct(clickedImageUrl, pageUrl) {
       price,
       colorFinish,
       dimensions,
+      coverage,
+      priceUnit: /(?:\/|\bper\s+)\s*(?:sq\.?\s*ft\.?|square\s+(?:foot|feet))/i.test(price)
+        ? "sq ft" : /(?:\/|\bper\s+)(?:box|carton|case|sheet|each)\b/i.exec(price.replace(/\/\s+/g, "/"))?.[0]
+          ?.replace(/^(?:\/|per\s+)/i, "").toLowerCase().replace(/^case$/, "carton") || "",
+      availability: clean(offers?.availability).split("/").at(-1)
+        ?.replace(/([a-z])([A-Z])/g, "$1 $2") || "",
+      specSheet: specificationLinks.length === 1 ? absoluteUrl(specificationLinks[0].href) : "",
     },
   };
 }
@@ -102,8 +131,9 @@ function collectProducts(value, products) {
   if (typeof value !== "object") return;
   const type = value["@type"];
   const types = Array.isArray(type) ? type : [type];
-  if (types.some((item) => String(item).toLowerCase() === "product")) products.push(value);
+  if (types.some((item) => /^Product(?:Group)?$/i.test(String(item)))) products.push(value);
   if (Array.isArray(value["@graph"])) collectProducts(value["@graph"], products);
+  if (Array.isArray(value.hasVariant)) collectProducts(value.hasVariant, products);
 }
 
 function firstOffer(offers) {
@@ -146,7 +176,7 @@ function brandName(value) {
 }
 
 function priceText(price, currency) {
-  const value = clean(price);
+  const value = typeof price === "number" && Number.isFinite(price) ? String(price) : clean(price);
   if (!value) return "";
   if (value.startsWith("$")) return value;
   return currency === "USD" || !currency ? `$${value}` : `${currency} ${value}`;
@@ -166,6 +196,17 @@ function visiblePrice() {
   }
   const bodyMatch = clean(document.body.innerText).match(/\$ ?\d[\d,]*(?:\.\d{2})?/);
   return bodyMatch ? bodyMatch[0].replace(/\s+/g, "") : "";
+}
+
+function visibleReviewPrice() {
+  const root = document.querySelector("main, [role=main]") || document;
+  const selector = "[itemprop=price], [data-testid=product-price], [data-testid=price]";
+  const prices = [...new Set([...root.querySelectorAll(selector)].flatMap((node) => {
+    const value = clean(node.textContent);
+    return /^\$\s*\d[\d,]*(?:\.\d{1,2})?(?:\s*(?:\/|per)\s*(?:sq\.?\s*ft\.?|square (?:foot|feet)|box|carton|case|sheet|each))?$/i.test(value)
+      ? [value] : [];
+  }))];
+  return prices.length === 1 ? prices[0] : "";
 }
 
 function visibleSku() {

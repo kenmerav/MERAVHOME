@@ -1,7 +1,19 @@
 import { classifyBoardGroup, selectionItemsForRoom } from "@/lib/selectionChecklist";
 import { cleanRoomDesignFinish } from "./productDetails";
-import { productAwareQuantityUnit } from "./roomDesignReview";
-import { roomDesignInitialQuantity, roomItemStatus } from "./roomDesignDetails";
+import { confirmRoomDesignSelection, productAwareQuantityUnit, roomDesignReviewBlockers } from "./roomDesignReview";
+import {
+  roomDesignInitialQuantity,
+  roomDetailValue,
+  roomItemStatus,
+  updateRoomDetail,
+} from "./roomDesignDetails";
+import {
+  applyExtensionTileReview,
+  extensionPurchaseDetails,
+  type ExtensionPurchaseDetails,
+  type ExtensionSelectionReview,
+} from "./extensionSelectionReview";
+import { updateRoomDesignTileNotes } from "./roomDesignTile";
 
 export type RoomDesignMethod = "manual" | "links" | "concept";
 
@@ -12,6 +24,7 @@ export type RoomDesignSelection = {
   productName: string;
   vendor: string;
   manufacturer?: string;
+  extensionPurchase?: ExtensionPurchaseDetails;
   colorOptions?: string[];
   colorOptionImages?: Record<string, string>;
   surfaceFinish?: string;
@@ -325,6 +338,7 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     id: string;
     name: string;
     vendor: string;
+    manufacturer?: string;
     finish: string;
     sourcePageUrl: string;
     imageUrl: string;
@@ -335,6 +349,7 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     sizeOptions?: string[];
     selectedSize?: string;
     quantity: number | null;
+    review?: ExtensionSelectionReview;
   };
 }) {
   const target = state.links.find((link) => link.id === itemKey);
@@ -346,12 +361,28 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     throw new Error(
       "This selection has versioned design decisions. Import as a new selection or review the replacement in Room Design first.",
     );
-  const nextSelection: RoomDesignSelection = {
+  const review = product.review;
+  let notes = target.notes || existingSelection?.notes || "";
+  if (review) {
+    notes = updateRoomDetail(notes, "Selection responsibility", "Choose product");
+    notes = updateRoomDetail(notes, "Installation location / reference", review.installationLocation);
+    if (review.tile) notes = applyExtensionTileReview(notes, review.tile);
+    else if (review.surface) notes = updateRoomDesignTileNotes(notes, "surface", review.surface);
+    if (existingSelection?.productId && existingSelection.productId !== product.id &&
+        /^Approved for /.test(roomDetailValue(notes, "Selection decision"))) {
+      notes = updateRoomDetail(notes, "Selection decision", "Needs confirmation");
+      notes = updateRoomDetail(notes, "Decision approved by / date", "");
+    }
+  }
+  let nextSelection: RoomDesignSelection = {
     ...existingSelection,
     id: selectionId,
     category: target.category,
     productName: product.name,
     vendor: product.vendor,
+    manufacturer: product.manufacturer || undefined,
+    extensionPurchase: review?.purchase,
+    ...(review ? { colorOptions: undefined, colorOptionImages: undefined, surfaceFinish: undefined, scrapeFacts: undefined } : {}),
     finish: product.finish || "Finish needs review",
     source: "Product link",
     state: "selected",
@@ -362,10 +393,10 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     group: target.group,
     quantity: product.quantity,
     quantityUnit:
-      existingSelection?.quantityUnit ||
+      review?.quantityUnit || existingSelection?.quantityUnit ||
       roomDesignDefaultQuantityUnit(target.category, product.name),
-    wastePercent: existingSelection?.wastePercent ?? roomDesignDefaultWastePercent(target.category),
-    notes: target.notes || existingSelection?.notes,
+    wastePercent: review ? review.wastePercent : existingSelection?.wastePercent ?? roomDesignDefaultWastePercent(target.category),
+    notes: notes || undefined,
     price: product.price || undefined,
     sku: product.sku || undefined,
     dimensions: product.dimensions || undefined,
@@ -377,6 +408,15 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
     scrapeError: product.finish ? undefined : "Color/finish needs review.",
     materialsSyncStatus: state.materialsSent ? "changed" : existingSelection?.materialsSyncStatus,
   };
+  const issues = review ? roomDesignReviewBlockers(nextSelection) : [];
+  if (review) {
+    if (review.confirmed && !issues.length) {
+      nextSelection = confirmRoomDesignSelection(nextSelection);
+    } else {
+      nextSelection.scrapeStatus = "partial";
+      nextSelection.scrapeError = "Review the edited product details.";
+    }
+  }
   const selections = state.selections.some((selection) => selection.id === selectionId)
     ? state.selections.map((selection) =>
         selection.id === selectionId ? nextSelection : selection,
@@ -388,6 +428,7 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
           ...link,
           url: product.sourcePageUrl,
           quantity: product.quantity,
+          ...(review ? { notes } : {}),
           productId: product.id,
           catalogProductName: product.name,
         }
@@ -415,6 +456,8 @@ export function mergeExtensionProductIntoRoomDesignWorkflow({
       updatedAt: new Date().toISOString(),
     },
     item: target,
+    selection: nextSelection,
+    issues,
     nextItem,
     replaced: Boolean(existingSelection),
   };
@@ -535,6 +578,9 @@ export function normalizeRoomDesignWorkflowState(
                 : undefined,
             notes: optionalString(item.notes),
             price: optionalString(item.price),
+            extensionPurchase: item.extensionPurchase
+              ? extensionPurchaseDetails(item.extensionPurchase)
+              : undefined,
             sku: optionalString(item.sku),
             dimensions: optionalString(item.dimensions),
             sizeOptions: Array.isArray(item.sizeOptions)

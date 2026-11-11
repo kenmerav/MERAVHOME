@@ -5,18 +5,19 @@ This unpacked Chrome extension adds two destinations and three product-capture m
 For a project enrolled in the **Room Design V2** pilot:
 
 1. Open a product page and click the extension.
-2. Choose the project, **Room Design Selections _NEW_**, room, product type, quantity, and an optional
-   color/finish override.
-3. Click **Add to Room Selections**.
-4. Studio reuses or creates the catalog product and fills that room selection. The existing design
-   board is populated later from Room Design, after the selections are reviewed.
+2. Choose the project, **Room Design Selections _NEW_**, room and product type.
+3. Click **Read Product Details**. Check the captured image, link, SKU, color/finish, and dimensions
+   against the exact vendor variant. Enter the quantity, selling unit, pricing basis and lead time.
+4. For tile, confirm the installation area, pattern and direction, grout, edges and manufacturer
+   suitability. Enter waste and coverage when ordering by the box, carton or sheet.
+5. Check the verification box once confirmed and click **Save Room Selection**. Studio flags
+   unresolved details for review. Trade and quote amounts live on the room selection.
 
 If a room needs another selection, click **+ Add product type** below the Product Type menu. The
 new type is saved to that room immediately and becomes the selected destination for the product.
 
-The extension gathers the current product page link, product name, price, dimensions, SKU, and
-image. It remembers the last room and advances to the next unfilled product type after a successful
-import.
+The extension remembers the last room and advances to the next unfilled product type after a
+successful import. Room selection review requires the matching Studio API release.
 
 The existing direct-to-board workflow remains available as **Design Board Direct**:
 
@@ -37,8 +38,8 @@ Or:
 3. Choose a project and board page.
 4. Click **Send Current Product**.
 
-The extension remembers the last destination, project, room/product type, or board page, so
-right-click sends can run without opening Studio or asking again.
+Right-click on a product or image opens the review popup when the last destination is Room Design.
+For Design Board Direct, right-click continues to send to the selected board page.
 
 ## Setup
 

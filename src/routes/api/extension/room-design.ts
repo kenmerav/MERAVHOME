@@ -3,12 +3,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   addCustomRoomDesignProductType,
-  createDefaultRoomDesignWorkflowState,
-  normalizeRoomDesignWorkflowState,
-  reconcileRoomDesignChecklist,
   roomDesignRoomNamesMatch,
+  roomDesignDefaultQuantityUnit,
 } from "@/lib/roomDesignWorkflow";
 import { randomUUID } from "node:crypto";
+import { roomDetailValue } from "@/lib/roomDesignDetails";
+import { roomDesignTileFields } from "@/lib/roomDesignTile";
+import { extensionRoomWorkflow, extensionSelectionRevision } from "@/lib/extensionSelectionRevision.server";
 
 function corsHeaders() {
   return {
@@ -30,13 +31,6 @@ function isAuthorized(request: Request) {
   }
   const header = request.headers.get("authorization") ?? "";
   return header.replace(/^Bearer\s+/i, "").trim() === configuredToken;
-}
-
-function workflowState(roomName: string, value: unknown) {
-  const initial = createDefaultRoomDesignWorkflowState(roomName);
-  const { version: _version, updatedAt: _updatedAt, ...fallback } = initial;
-  const normalized = normalizeRoomDesignWorkflowState(value, fallback);
-  return reconcileRoomDesignChecklist(normalized.links.length ? normalized : initial, roomName);
 }
 
 function cleanText(value: unknown) {
@@ -92,7 +86,7 @@ async function saveCustomProductType(
       .maybeSingle();
     if (error) throw error;
 
-    const currentState = workflowState(room.name, (workflow as any)?.state);
+    const currentState = extensionRoomWorkflow(room.name, (workflow as any)?.state);
     const result = addCustomRoomDesignProductType({
       state: currentState,
       label,
@@ -218,7 +212,7 @@ export const Route = createFileRoute("/api/extension/room-design")({
               409,
             );
           }
-          if (!selectedRoom) return json({ rooms: [], selectedRoomId: "", items: [] });
+          if (!selectedRoom) return json({ selectionReviewVersion: 1, rooms: [], selectedRoomId: "", items: [] });
 
           const { data: workflow, error: workflowError } = await supabaseAdmin
             .from("room_design_workflows" as any)
@@ -228,7 +222,7 @@ export const Route = createFileRoute("/api/extension/room-design")({
             .maybeSingle();
           if (workflowError) throw workflowError;
 
-          const state = workflowState(selectedRoom.name, (workflow as any)?.state);
+          const state = extensionRoomWorkflow(selectedRoom.name, (workflow as any)?.state);
           const selectionsById = new Map(
             state.selections.map((selection) => [selection.id.replace(/^link-/, ""), selection]),
           );
@@ -236,14 +230,29 @@ export const Route = createFileRoute("/api/extension/room-design")({
             const selection = selectionsById.get(item.id);
             return {
               id: item.id,
+              revision: extensionSelectionRevision(state, item.id),
               label: item.category,
               filled: Boolean(selection && selection.state !== "draft"),
               productName: selection?.productName || item.catalogProductName || "",
               quantity: selection?.quantity !== undefined ? selection.quantity : item.quantity,
+              quantityUnit: selection?.quantityUnit || roomDesignDefaultQuantityUnit(item.category),
+              reviewed: selection?.extensionPurchase ? selection.state === "locked" : undefined,
+              wastePercent: selection?.wastePercent,
+              installationLocation: roomDetailValue(item.notes, "Installation location / reference"),
+              ...(item.notes ? {
+                tile: {
+                  ...roomDesignTileFields(item.notes),
+                  groutProduct: roomDetailValue(item.notes, "Grout product"),
+                  suitability: roomDetailValue(item.notes, "Manufacturer-listed tile use"),
+                  installationNotes: roomDetailValue(item.notes, "Installation notes"),
+                  sample: roomDetailValue(item.notes, "Tile sample / lot"),
+                },
+              } : {}),
             };
           });
 
           return json({
+            selectionReviewVersion: 1,
             rooms: roomRows.map((room) => ({ id: room.id, name: room.name })),
             selectedRoomId: selectedRoom.id,
             selectedRoomName: selectedRoom.name,

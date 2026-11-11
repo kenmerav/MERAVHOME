@@ -1,4 +1,4 @@
-import { needsTileInstallation, tileDetailConfirmed } from "./tileInstallation";
+import { isTileInstallationSurface, tileDetailConfirmed } from "./tileInstallation";
 import {
   tileManualAnswerConfirmed as roomDesignTileAnswerConfirmed,
   tileJointWidthConfirmed as roomDesignJointWidthConfirmed,
@@ -146,18 +146,19 @@ export function roomDesignTileSurface(
   )
     return "other";
   if (
-    needsTileInstallation({
+    isTileInstallationSurface({
       item_label: item.category,
       client_product_name: productName,
       is_required: false,
     })
   )
     return "tile";
+  const surface = roomDesignTileFields(item.notes).surface;
+  if (surface === "Tile") return "tile";
   if (
     /\b(flooring|backsplash|wall finish|wall covering|fireplace surround)\b/i.test(item.category)
   ) {
-    const surface = roomDesignTileFields(item.notes).surface;
-    return surface === "Tile" ? "tile" : surface === "Other material" ? "other" : "unknown";
+    return surface === "Other material" ? "other" : "unknown";
   }
   return "unrelated";
 }

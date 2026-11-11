@@ -22,11 +22,21 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;
   try {
-    if (info.menuItemId === IMAGE_MENU_ID) {
-      await sendImageToStudio(info, tab);
-    } else if (info.menuItemId === PAGE_MENU_ID) {
-      await sendCurrentTabToStudio();
+    if (![IMAGE_MENU_ID, PAGE_MENU_ID].includes(info.menuItemId)) return;
+    const settings = await chrome.storage.sync.get(["projectId", "lastStudioProjectId", "destinationByProject"]);
+    const projectId = settings.projectId || settings.lastStudioProjectId;
+    if (settings.destinationByProject?.[projectId] === "room_design") {
+      await chrome.storage.session.set({
+        roomReviewContext: { tabId: tab.id, pageUrl: tab.url, imageUrl: info.srcUrl || "" },
+      });
+      try {
+        await chrome.action.openPopup();
+      } catch {
+        notify("Review product in Studio", "Open the MERAV extension to review this room selection.");
+      }
+      return;
     }
+    await sendImageToStudio(info, tab);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not send product.";
     await updateProgress(0, "", { clearBadge: true });
@@ -35,6 +45,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "MERAV_CAPTURE_PRODUCT") {
+    captureActiveProduct()
+      .then((capture) => sendResponse({ ok: true, capture }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type === "MERAV_SEND_CURRENT_TAB") {
     sendCurrentTabToStudio({
       projectId: message.projectId,
@@ -45,6 +61,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       requiredItemKey: message.requiredItemKey,
       quantity: message.quantity,
       colorFinish: message.colorFinish,
+      review: message.review,
+      capture: message.capture,
+      itemRevision: message.itemRevision,
     })
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => {
@@ -104,6 +123,24 @@ async function sendCurrentTabToStudio(overrides = {}) {
   return sendImageToStudio({ pageUrl: tab.url, srcUrl: "" }, tab, overrides);
 }
 
+async function captureActiveProduct() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !/^https?:\/\//i.test(tab.url || ""))
+    throw new Error("Open a product page first.");
+  const { roomReviewContext } = await chrome.storage.session.get("roomReviewContext");
+  const clickedImageUrl = roomReviewContext?.tabId === tab.id &&
+    roomReviewContext.pageUrl === tab.url ? roomReviewContext.imageUrl : "";
+  const extraction = await extractFromTab(tab.id, { clickedImageUrl, pageUrl: tab.url, roomReview: true });
+  if (!extraction?.product?.name || !extraction.imageUrl)
+    throw new Error("Could not read a product name and image on this page.");
+  return { tabId: tab.id, pageUrl: tab.url, clickedImageUrl, extraction };
+}
+
+function capturedProductIdentity(extraction) {
+  const { name, sku, colorFinish, dimensions, price } = extraction.product || {};
+  return JSON.stringify([extraction.sourcePageUrl, extraction.imageUrl, name, sku, colorFinish, dimensions, price]);
+}
+
 async function sendImageToStudio(info, tab, overrides = {}) {
   await updateProgress(8, "Starting MERAV import...");
   const [settings, localRoomSettings] = await Promise.all([
@@ -154,12 +191,19 @@ async function sendImageToStudio(info, tab, overrides = {}) {
   if (destination === "room_design" && !requiredItemKey) {
     throw new Error("Open the extension and choose a product type first.");
   }
+  if (destination === "room_design" &&
+      (!overrides.review || overrides.capture?.tabId !== tab.id || overrides.capture?.pageUrl !== tab.url))
+    throw new Error("Review the current product page before saving this room selection.");
 
   await updateProgress(20, "Reading product details...");
   const pageExtraction = await extractFromTab(tab.id, {
-    clickedImageUrl: info.srcUrl,
+    clickedImageUrl: overrides.capture?.clickedImageUrl || info.srcUrl,
     pageUrl: info.pageUrl || tab.url,
+    roomReview: destination === "room_design",
   });
+  if (destination === "room_design" &&
+      capturedProductIdentity(pageExtraction) !== capturedProductIdentity(overrides.capture.extraction))
+    throw new Error("The product page changed. Read the current product again before saving.");
   const payload = {
     ...pageExtraction,
     projectId,
@@ -172,6 +216,12 @@ async function sendImageToStudio(info, tab, overrides = {}) {
     imageUrl: pageExtraction.imageUrl || info.srcUrl,
     sourcePageUrl: pageExtraction.sourcePageUrl || info.pageUrl || tab.url,
   };
+  if (destination === "room_design") {
+    const review = overrides.review;
+    payload.product = { ...pageExtraction.product, ...review.product };
+    payload.review = review.details;
+    payload.itemRevision = overrides.itemRevision;
+  }
   if (colorFinish) {
     payload.product = { ...(payload.product || {}), colorFinish };
   }
@@ -206,8 +256,10 @@ async function sendImageToStudio(info, tab, overrides = {}) {
     const itemByRoom = { ...(settings.itemByRoom || {}), [roomId]: body.nextItemId };
     await chrome.storage.sync.set({ itemByRoom });
   }
+  if (destination === "room_design") await chrome.storage.session.remove("roomReviewContext");
 
-  const title = body.warning ? "Imported with review needed" : "Sent to MERAV Studio";
+  const title = body.warning || body.reviewed === false
+    ? "Imported with review needed" : "Sent to MERAV Studio";
   const message =
     body.warning ||
     body.message ||

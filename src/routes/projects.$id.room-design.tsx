@@ -49,6 +49,13 @@ import {
   RoomDesignAccuracyItem,
 } from "@/components/RoomDesignAccuracy";
 import { useRoomDesignAccuracy, useRoomDesignAccuracyRoom } from "@/lib/roomDesignAccuracyContext";
+import {
+  EXTENSION_PRICE_TYPES,
+  EXTENSION_SELLING_UNITS,
+  extensionOrderEstimate,
+  extensionPurchaseDetails,
+  type ExtensionPurchaseDetails,
+} from "@/lib/extensionSelectionReview";
 import { ACCURACY_FIXTURE_ID } from "@/lib/designAccuracyFixtures";
 import { accuracyItemIssues, valueOf } from "@/lib/designAccuracy";
 import { accuracyRoomSelections } from "@/lib/designAccuracyProjection";
@@ -242,6 +249,7 @@ type DemoSelection = {
   imageUrl?: string;
   originalImageUrl?: string;
   price?: string;
+  extensionPurchase?: ExtensionPurchaseDetails;
   sku?: string;
   dimensions?: string;
   sizeOptions?: string[];
@@ -2071,6 +2079,7 @@ function RoomDesignWorkflow({
                 state: "draft" as const,
                 scrapeStatus: "partial" as const,
                 scrapeError: "Gather the updated product link to review this selection.",
+                ...(selection.extensionPurchase ? { extensionPurchase: extensionPurchaseDetails({}) } : {}),
               }
             : {}),
           ...(materialsSent ? { materialsSyncStatus: "changed" as const } : {}),
@@ -2114,9 +2123,18 @@ function RoomDesignWorkflow({
       detailsChanged ||
       Object.keys(patch).some(
         (key) =>
-          ["quantity", "quantityUnit", "wastePercent", "notes"].includes(key) &&
+          ["quantity", "quantityUnit", "wastePercent", "notes", "manufacturer", "extensionPurchase"].includes(key) &&
           previous?.[key as keyof DemoSelection] !== patch[key as keyof DemoSelection],
       );
+    if (invalidatesReview && previous?.extensionPurchase) {
+      const sourceChanged = "url" in patch && patch.url !== previous.url;
+      patch = {
+        ...patch,
+        extensionPurchase: sourceChanged
+          ? extensionPurchaseDetails({})
+          : { ...(patch.extensionPurchase || previous.extensionPurchase), checkedAt: "" },
+      };
+    }
     if (invalidatesReview) {
       setBoardReady(false);
       setRenderReady(false);
@@ -5572,7 +5590,7 @@ function ProductDetailsEditor({
   onReview: (id: string) => void;
 }) {
   const accuracy = useRoomDesignAccuracy();
-  return accuracy?.state ? (
+  return accuracy?.state && (selection.accuracySource || !selection.extensionPurchase) ? (
     <RoomDesignAccuracyItem
       selection={selection}
       onUpdate={(id, patch) => onUpdate(id, patch as Partial<DemoSelection>)}
@@ -5707,6 +5725,14 @@ function LegacyProductDetailsEditor({
           )}
         </RoomDesignDisclosure>
       )}
+      {selection.extensionPurchase && (
+        <ExtensionPurchaseEditor
+          key={selection.id}
+          selection={selection}
+          purchase={selection.extensionPurchase}
+          onUpdate={(patch) => onUpdate(selection.id, patch)}
+        />
+      )}
       <div className="space-y-3">
         <RoomDesignItemDetails
           category={selection.category}
@@ -5738,12 +5764,127 @@ function LegacyProductDetailsEditor({
           {selection.state === "locked" ? "Reviewed" : "Confirm & mark reviewed"}
         </Button>
         {!!blockers.length && (
-          <p role="status" className="text-amber-800">
-            Complete the missing details listed above to mark this item reviewed.
-          </p>
+          <ul role="status" className="list-disc space-y-1 pl-4 text-amber-800">
+            {blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+          </ul>
         )}
       </div>
     </div>
+  );
+}
+
+function ExtensionPurchaseEditor({
+  selection,
+  purchase,
+  onUpdate,
+}: {
+  selection: DemoSelection;
+  purchase: ExtensionPurchaseDetails;
+  onUpdate: (patch: Partial<DemoSelection>) => void;
+}) {
+  const estimate = extensionOrderEstimate(selection);
+  const [expanded, setExpanded] = useState(selection.state !== "locked");
+  const update = (key: keyof ExtensionPurchaseDetails, value: string) => {
+    const next = extensionPurchaseDetails({ ...purchase, [key]: value });
+    if (next[key] !== purchase[key]) onUpdate({ extensionPurchase: next });
+  };
+  const fields = [
+    ["unitPrice", "Unit price (USD)"],
+    ["priceSource", "Price source"],
+    ["availability", "Stock / lead time"],
+    ["minimumOrder", "Minimum order (selling units)"],
+    ["coverage", "Sq ft per box, carton or sheet"],
+    ["specSheet", "Spec sheet URL"],
+  ] as const;
+  const tileFields = [
+    "Grout product",
+    "Manufacturer-listed tile use",
+    "Installation notes",
+    "Tile sample / lot",
+  ];
+  const installationFields = [
+    "Installation location / reference",
+    ...(roomItemShowsTileFields(selection) ? tileFields : []),
+  ];
+  return (
+    <RoomDesignDisclosure
+      title="Purchasing details"
+      label={`${selection.category} purchasing details`}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      description={
+        estimate
+          ? `${estimate.quantity} ${estimate.unit}${estimate.total ? ` · ${estimate.total}` : ""}`
+          : "Unit pricing and availability"
+      }
+    >
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <label>
+          Manufacturer
+          <Input
+            value={selection.manufacturer || ""}
+            onChange={(event) => onUpdate({ manufacturer: event.target.value })}
+          />
+        </label>
+        {([
+          ["priceUnit", "Price per", EXTENSION_SELLING_UNITS],
+          ["sellingUnit", "Sold by", EXTENSION_SELLING_UNITS],
+          ["priceType", "Price type", EXTENSION_PRICE_TYPES],
+        ] as const).map(([key, label, options]) => (
+          <label key={key}>
+            {label}
+            <select
+              className="mt-1 block w-full rounded-md border border-input bg-background p-2"
+              value={purchase[key]}
+              onChange={(event) => update(key, event.target.value)}
+            >
+              <option value="">Choose</option>
+              {options.map((option) => (
+                <option key={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+        {fields.map(([key, label]) => (
+          <label key={key}>
+            {label}
+            <Input
+              key={purchase[key]}
+              defaultValue={purchase[key] ?? ""}
+              onBlur={(event) => {
+                update(key, event.target.value);
+                const normalized = extensionPurchaseDetails({ [key]: event.target.value });
+                event.target.value = String(normalized[key] ?? "");
+              }}
+            />
+          </label>
+        ))}
+      </div>
+      {purchase.checkedAt && (
+        <p className="mt-2 text-muted-foreground">
+          Price verified {new Date(purchase.checkedAt).toLocaleDateString()}.
+        </p>
+      )}
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {installationFields.map((label) => {
+          const value = roomDetailValue(selection.notes, label);
+          return (
+            <label key={label}>
+              {label}
+              <Input
+                key={value}
+                defaultValue={value}
+                onBlur={(event) => {
+                  if (event.target.value.trim() === value) return;
+                  const notes = updateRoomDetail(selection.notes, label, event.target.value);
+                  onUpdate({ notes });
+                }}
+              />
+            </label>
+          );
+        })}
+      </div>
+    </RoomDesignDisclosure>
   );
 }
 

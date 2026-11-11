@@ -6,6 +6,14 @@ const LOCAL_ROOM_DESIGN_PREVIEW =
 let settings = {};
 let projects = [];
 let roomDesignData = null;
+let selectionCapture = null;
+
+function resetSelectionReview() {
+  selectionCapture = null;
+  document.getElementById("selectionReview").hidden = true;
+  if (document.getElementById("destinationSelect").value === "room_design")
+    document.getElementById("send").textContent = "Read Product Details";
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (LOCAL_ROOM_DESIGN_PREVIEW) {
@@ -240,6 +248,7 @@ function localPreviewItems(labels) {
 
 document.getElementById("projectSelect").addEventListener("change", async (event) => {
   if (LOCAL_ROOM_DESIGN_PREVIEW) return;
+  resetSelectionReview();
   const projectId = event.target.value;
   await chrome.storage.sync.set({ projectId });
   settings.projectId = projectId;
@@ -258,6 +267,7 @@ document.getElementById("destinationSelect").addEventListener("change", async (e
 });
 
 document.getElementById("roomSelect").addEventListener("change", async (event) => {
+  resetSelectionReview();
   if (LOCAL_ROOM_DESIGN_PREVIEW) {
     roomDesignData.selectedRoomId = event.target.value;
     roomDesignData.items = roomDesignData.itemsByRoom?.[event.target.value] || [];
@@ -286,6 +296,7 @@ document.getElementById("roomSelect").addEventListener("change", async (event) =
 });
 
 document.getElementById("requiredItemSelect").addEventListener("change", async (event) => {
+  resetSelectionReview();
   if (LOCAL_ROOM_DESIGN_PREVIEW) return;
   const roomId = document.getElementById("roomSelect").value;
   const itemByRoom = { ...(settings.itemByRoom || {}) };
@@ -351,10 +362,6 @@ document.getElementById("send").addEventListener("click", async () => {
   const roomName =
     document.getElementById("roomSelect").selectedOptions?.[0]?.textContent?.trim() || "";
   const requiredItemKey = document.getElementById("requiredItemSelect").value;
-  let quantity;
-  try { quantity = parseMeravQuantity(document.getElementById("quantityInput").value); }
-  catch (error) { setStatus(error.message, true); return; }
-  const colorFinish = document.getElementById("colorFinishInput").value.trim();
   const status = document.getElementById("status");
   if (!projectId) {
     setStatus("Choose a project first.", true);
@@ -376,10 +383,36 @@ document.getElementById("send").addEventListener("click", async () => {
     setStatus("Choose a product type first.", true);
     return;
   }
+  const item = roomDesignData?.items?.find((candidate) => candidate.id === requiredItemKey);
+  if (destination === "room_design" && (roomDesignData.selectionReviewVersion !== 1 || !item?.revision)) {
+    setStatus("This Studio server needs the selection review update before saving from this extension.", true);
+    return;
+  }
 
   setSending(true);
-  setProgress(8, "Starting import...");
   try {
+    let quantity;
+    let review;
+    if (destination === "room_design") {
+      if (!selectionCapture) {
+        setStatus("Reading the current product page…");
+        const response = await chrome.runtime.sendMessage({ type: "MERAV_CAPTURE_PRODUCT" });
+        if (!response?.ok) throw new Error(response?.error || "Could not read this product.");
+        if (document.getElementById("projectSelect").value !== projectId ||
+            document.getElementById("destinationSelect").value !== destination ||
+            document.getElementById("roomSelect").value !== roomId ||
+            document.getElementById("requiredItemSelect").value !== requiredItemKey) return;
+        selectionCapture = response.capture;
+        showSelectionReview(selectionCapture, item);
+        document.getElementById("send").textContent = "Save Room Selection";
+        setStatus("");
+        return;
+      }
+      quantity = parseMeravQuantity(document.getElementById("quantityInput").value || "TBD");
+      review = selectionReviewValues();
+      if (!review.product.name) throw new Error("Enter the product name.");
+    }
+    setProgress(8, "Starting import...");
     const response = await chrome.runtime.sendMessage({
       type: "MERAV_SEND_CURRENT_TAB",
       projectId,
@@ -389,9 +422,13 @@ document.getElementById("send").addEventListener("click", async () => {
       roomName,
       requiredItemKey,
       quantity,
-      colorFinish,
+      review,
+      capture: destination === "room_design" ? selectionCapture : undefined,
+      itemRevision: item?.revision,
     });
     if (!response?.ok) throw new Error(response?.error || "Could not send product.");
+    if (destination === "room_design" && typeof response.reviewed !== "boolean")
+      throw new Error("Studio did not confirm the review details. Check the room before trying again.");
     if (response.destination !== destination ||
       (destination === "room_design" && (response.roomId !== roomId || response.requiredItemKey !== requiredItemKey))) {
       throw new Error("Studio did not confirm the selected destination. Check the project's design board before sending again, then reload the MERAV extension and reselect the room and product type.");
@@ -407,9 +444,17 @@ document.getElementById("send").addEventListener("click", async () => {
       true,
     );
     if (destination === "room_design") {
-      document.getElementById("colorFinishInput").value = "";
-      document.getElementById("openRoom").hidden = false;
-      await loadRoomDesign(projectId, roomId, response.nextItemId || "");
+      resetSelectionReview();
+      const loaded = await loadRoomDesign(projectId, roomId, response.nextItemId || "");
+      document.getElementById("openRoom").hidden = !loaded;
+      if (loaded && response.reviewed !== undefined) {
+        const estimate = response.orderEstimate;
+        const order = estimate ? ` Order estimate: ${estimate.quantity} ${estimate.unit}${estimate.total ? ` · ${estimate.total}` : ""}.` : "";
+        const issues = response.issues || [];
+        setStatus(response.reviewed
+          ? `Saved and verified.${order}`
+          : `Saved · Needs review. ${issues.length ? issues.join(" ") : "Confirm the selection in Studio."}${order}`);
+      }
     }
   } catch (error) {
     setProgress(0, "", false);
@@ -417,6 +462,11 @@ document.getElementById("send").addEventListener("click", async () => {
   } finally {
     setSending(false);
   }
+});
+
+document.getElementById("rereadProduct").addEventListener("click", () => {
+  resetSelectionReview();
+  document.getElementById("send").click();
 });
 
 document.getElementById("openRoom").addEventListener("click", async () => {
@@ -585,11 +635,12 @@ function renderDestinationSelect(hasRoomDesign, selectedDestination) {
 
 async function showDestination(projectId, destination) {
   const roomDesign = destination === "room_design";
+  resetSelectionReview();
   document.getElementById("roomDesignFields").hidden = !roomDesign;
   document.getElementById("boardFields").hidden = roomDesign;
   document.getElementById("openRoom").hidden = true;
   document.getElementById("send").textContent = roomDesign
-    ? "Add to Room Selections"
+    ? "Read Product Details"
     : "Send Current Product";
   if (!projectId) {
     renderBoardPageSelect([], "");
@@ -683,7 +734,7 @@ function renderRequiredItems(items, selectedItemId) {
     const option = document.createElement("option");
     option.value = item.id;
     option.textContent = item.filled
-      ? `${item.label} · ${item.productName || "Filled"}`
+      ? `${item.label} · ${item.productName || "Filled"}${item.reviewed === false ? " (needs review)" : ""}`
       : item.label;
     select.appendChild(option);
   });
@@ -693,7 +744,9 @@ function renderRequiredItems(items, selectedItemId) {
 function restoreQuantity(roomId, itemId) {
   const item = roomDesignData?.items?.find((candidate) => candidate.id === itemId);
   const remembered = settings.quantityByItem?.[`${roomId}:${itemId}`];
-  document.getElementById("quantityInput").value = String(restoredMeravQuantity(item, remembered));
+  document.getElementById("quantityInput").value = String(
+    restoredMeravQuantity(item, item?.filled ? undefined : remembered),
+  );
   document.getElementById("quantityInput").setCustomValidity("");
 }
 
@@ -858,6 +911,8 @@ function setProgress(percent, message, done = false) {
 
 function setSending(isSending) {
   document.getElementById("send").disabled = isSending;
+  for (const id of ["projectSelect", "destinationSelect", "roomSelect", "requiredItemSelect", "rereadProduct", "showAddProductType"])
+    document.getElementById(id).disabled = isSending;
 }
 
 async function requestVendorAccess() {

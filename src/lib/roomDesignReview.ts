@@ -3,6 +3,7 @@ import { exactProductPrice } from "./productPricing";
 import { parseSpecQuantity, specQuantityUnitFromSelection } from "./specQuantity";
 import type { RoomDesignSelection } from "./roomDesignWorkflow";
 import { roomDesignTileIssues } from "./roomDesignTile";
+import { extensionOrderEstimate, extensionSelectionIssues } from "./extensionSelectionReview";
 import {
   roomItemCanOrder,
   roomItemNeedsProduct,
@@ -147,7 +148,13 @@ export function roomDesignSelectionIssues(item: RoomDesignSelection): string[] {
         ? roomDesignTileIssues(item)
         : []),
     ];
-  const issues: string[] = [...roomDesignTileIssues(item), ...roomDecisionIssues(item)];
+  const issues: string[] = [
+    ...roomDesignTileIssues(item), ...roomDecisionIssues(item), ...extensionSelectionIssues(item),
+  ];
+  if (item.extensionPurchase && item.quantity != null &&
+      item.extensionPurchase.sellingUnit && item.extensionPurchase.priceUnit &&
+      item.extensionPurchase.unitPrice && !extensionOrderEstimate(item)?.total)
+    issues.push("Confirm how the measured quantity converts to the selling and price units.");
   if (
     roomItemDetailFields(item.category, item).some((field) =>
       /\bTBD\b|to be (?:decided|confirmed)/i.test(roomDetailValue(item.notes, field.label)),
@@ -192,6 +199,12 @@ export function confirmRoomDesignSelection<T extends RoomDesignSelection>(item: 
       ? updateRoomDetail(item.notes, "Related change review", "")
       : item.notes,
     state: "locked",
+    ...(item.extensionPurchase ? {
+      extensionPurchase: {
+        ...item.extensionPurchase,
+        checkedAt: item.extensionPurchase.checkedAt || new Date().toISOString(),
+      },
+    } : {}),
     scrapeStatus: "complete",
     scrapeError: undefined,
     reviewFields: undefined,
@@ -201,13 +214,14 @@ export function confirmRoomDesignSelection<T extends RoomDesignSelection>(item: 
 export function roomDesignOrderReady(item: RoomDesignSelection) {
   return (
     roomItemCanOrder(item) &&
+    !/\b(out of stock|sold out|unavailable|discontinued)\b/i.test(item.extensionPurchase?.availability || "") &&
     item.state === "locked" &&
     !roomDesignConfirmationMessage(item) &&
     !roomDesignSelectionIssues(item).length &&
     Boolean(
       cleanProductDetail(item.finish) &&
       cleanProductDetail(item.sku) &&
-      exactProductPrice(item.price),
+      (item.extensionPurchase ? extensionOrderEstimate(item)?.total : exactProductPrice(item.price)),
     )
   );
 }

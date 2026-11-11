@@ -230,7 +230,8 @@ export function calculateProcurementOrderQuantity(input: {
     };
   }
   const squareFeetWithWaste = quantity * (1 + waste / 100);
-  const boxes = Math.ceil(squareFeetWithWaste / coverage);
+  // A floating-point remainder at an exact carton boundary must not add a carton.
+  const boxes = Math.ceil(Number((squareFeetWithWaste / coverage).toPrecision(15)));
   return {
     quantity: boxes,
     unit: "boxes",
