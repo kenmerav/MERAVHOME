@@ -98,6 +98,7 @@ type ProductInvoiceDraft = {
   stripeLink: string;
   stripePaymentLinkId: string;
   notes: string;
+  showVendorNames: boolean;
   showDesignerDiscount: boolean;
   lines: ProductInvoiceLine[];
 };
@@ -576,6 +577,13 @@ export function ProductInvoiceCreator({
 
           <aside className="space-y-4">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={draft.showVendorNames}
+                onCheckedChange={(checked) => updateDraft({ showVendorNames: checked === true })}
+              />
+              Show vendor names on invoice
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <Checkbox checked={draft.showDesignerDiscount} onCheckedChange={(checked) => updateDraft({ showDesignerDiscount: checked === true })} />
               Show designer discount on invoice
             </label>
@@ -657,6 +665,7 @@ export function makeProductInvoiceDraft({
     stripeLink: "",
     stripePaymentLinkId: "",
     notes: "",
+    showVendorNames: true,
     showDesignerDiscount: false,
     lines: (onlyApproved
       ? items.filter((item) => item.room_product?.approval_status === "approved")
@@ -740,6 +749,7 @@ export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknow
     terms: stringValue(source.terms, base.terms),
     taxRate: stringValue(source.taxRate, base.taxRate),
     notes: stringValue(source.notes),
+    showVendorNames: source.showVendorNames !== false,
     showDesignerDiscount: source.showDesignerDiscount === true,
     lines,
   };
@@ -880,7 +890,7 @@ export function buildProductInvoiceHtml(
           }
           <div>
             <strong>${escapeHtml(line.name)}</strong>
-            <div class="muted">${escapeHtml([line.room.trim(), line.vendor, line.finish].filter(Boolean).join(" - "))}</div>
+            <div class="muted">${escapeHtml([line.room.trim(), draft.showVendorNames ? line.vendor : "", line.finish].filter(Boolean).join(" - "))}</div>
           </div>
         </div>
       </div>
