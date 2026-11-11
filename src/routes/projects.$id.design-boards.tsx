@@ -138,6 +138,13 @@ import {
 import { readBoardSendMaterials, saveReviewedBoardMaterial } from "@/lib/boardQuantitySave";
 import { boardSendError, createBoardSendGate } from "@/lib/boardSendGuard";
 import {
+  boardMaterialFieldsForChanges,
+  boardMaterialWasRemoved,
+  planBoardMaterialLayer,
+  type BoardMaterialChange,
+  type BoardMaterialSnapshotItem,
+} from "@/lib/boardMaterialChanges";
+import {
   boardTileInstallationIssues,
   hasBoardTileInstallationIssue,
   isBoardTileSelection,
@@ -204,28 +211,7 @@ type BoardElement = {
   imageCropY?: number | null;
 };
 
-type PageMaterialsSyncImageSnapshot = {
-  id: string;
-  src: string | null;
-  label: string | null;
-  notes: string | null;
-  link: string | null;
-  materialLinkCleared: boolean;
-  productId: string | null;
-  productName: string | null;
-  finish: string | null;
-  materialRoomId: string | null;
-  materialCategory: string | null;
-  materialQuantity: number | null;
-  materialQuantityTbd?: boolean;
-  materialQuantityUnit?: string;
-  materialWastePercent?: number;
-  materialFinish: string | null;
-  materialDimensions: string | null;
-  materialInfoNotNeeded: boolean;
-  materialInfoSkipApproved: boolean;
-  materialExcludeFromMaterials: boolean;
-};
+type PageMaterialsSyncImageSnapshot = BoardMaterialSnapshotItem;
 
 type PageMaterialsSyncSnapshot = {
   version: 1;
@@ -347,6 +333,12 @@ type SendMaterialResult =
       quantity: number | null;
     }
   | { status: "skipped" };
+
+type BoardSendPageResult = {
+  expected: string;
+  synced: boolean;
+  links: Map<string, Pick<BoardElement, "productId" | "materialItemId" | "materialRoomId">>;
+};
 
 type BoardMaterialTrayItem = MaterialItem & {
   room?: Room | null;
@@ -517,7 +509,7 @@ function createPageMaterialsSyncSnapshot(page: BoardPage): PageMaterialsSyncSnap
     .filter((element) => element.type === "image")
     .map((element) => ({
       id: element.id,
-      src: element.src ?? null,
+      src: element.src || element.backgroundRemovedUrl || null,
       label: element.label ?? null,
       notes: element.notes ?? null,
       link: element.link ?? null,
@@ -779,6 +771,7 @@ function ProjectDesignBoardsPage() {
   const [pendingMaterialSend, setPendingMaterialSend] = useState<{
     scope: "page" | "board";
     pageIds: string[];
+    changedLayers: Set<string>;
   } | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [activeUsers, setActiveUsers] = useState<ActiveBoardUser[]>([]);
@@ -1204,8 +1197,10 @@ function ProjectDesignBoardsPage() {
     return pages.filter((page) => pageIds.has(page.id));
   }, [pages, pendingMaterialSend]);
   const pendingMaterialIssues = useMemo(
-    () => materialInfoItemsForPages(pendingMaterialSendPages),
-    [materialInfoItemsForPages, pendingMaterialSendPages],
+    () => materialInfoItemsForPages(pendingMaterialSendPages).filter(
+      ({ pageId, element }) => pendingMaterialSend?.changedLayers.has(`${pageId}:${element.id}`),
+    ),
+    [materialInfoItemsForPages, pendingMaterialSend, pendingMaterialSendPages],
   );
   const pendingTileCount = pendingMaterialIssues.filter((item) =>
     hasBoardTileInstallationIssue(item.issues),
@@ -1530,14 +1525,22 @@ function ProjectDesignBoardsPage() {
   );
 
   const markPagesMaterialsSynced = useCallback(
-    (pageIds: string[]) => {
-      const pageIdSet = new Set(pageIds);
+    (results: Map<string, BoardSendPageResult>) => {
       const materialsSyncedAt = new Date().toISOString();
       applyLocalBoardUpdate((current) => ({
         ...current,
         pages: current.pages.map((page) => {
-          if (!pageIdSet.has(page.id)) return page;
-          const materialsSyncSnapshot = createPageMaterialsSyncSnapshot(page);
+          const result = results.get(page.id);
+          if (!result || JSON.stringify(createPageMaterialsSyncSnapshot(page)) !== result.expected) return page;
+          const elements = page.elements.map((element) => {
+            const link = result.links.get(element.id);
+            return link ? { ...element, ...link } : element;
+          });
+          const next = { ...page, elements };
+          if (result.links.size && !applyingRemoteRef.current) broadcastElementDiff(page.id, page.elements, elements);
+          if (!result.synced) return next;
+          const materialsSyncSnapshot = createPageMaterialsSyncSnapshot(next);
+          if (JSON.stringify(page.materialsSyncSnapshot) === JSON.stringify(materialsSyncSnapshot)) return next;
           const patch = {
             materialsSyncFingerprint: materialsSyncSnapshotFingerprint(materialsSyncSnapshot),
             materialsSyncSnapshot,
@@ -1546,11 +1549,11 @@ function ProjectDesignBoardsPage() {
           if (!applyingRemoteRef.current) {
             broadcastPatch({ kind: "patch-page", pageId: page.id, patch });
           }
-          return { ...page, ...patch };
+          return { ...next, ...patch };
         }),
       }));
     },
-    [applyLocalBoardUpdate, broadcastPatch],
+    [applyLocalBoardUpdate, broadcastElementDiff, broadcastPatch],
   );
 
   const clearSelection = useCallback(() => {
@@ -1948,6 +1951,7 @@ function ProjectDesignBoardsPage() {
       allowMissingInfo?: boolean;
       materials?: MaterialItem[];
       quantityDecisions?: BoardQuantityDecisions;
+      bulk?: { existing: MaterialItem | null; changes: ReadonlySet<BoardMaterialChange> };
     } = {},
   ): Promise<SendMaterialResult> => {
     if (element.type !== "image") return { status: "skipped" };
@@ -1975,7 +1979,9 @@ function ProjectDesignBoardsPage() {
       linkedProduct?.category ||
       toProductCategory(element.materialCategory || inferredMaterialCategory);
     const finish = cleanProductDetail(element.materialFinish || element.finish) || null;
-    const dimensions = element.materialDimensions || linkedProduct?.dimensions || null;
+    const dimensions = options.bulk?.changes.has("dimensions")
+      ? element.materialDimensions?.trim() || null
+      : element.materialDimensions || linkedProduct?.dimensions || null;
     const vendor = inferVendorFromUrl(productUrl) || linkedProduct?.vendor || null;
     // Use the exact image currently visible on the board. If a user restores the
     // original before sending to materials, the catalog should follow that choice
@@ -1983,7 +1989,7 @@ function ProjectDesignBoardsPage() {
     const productImageUrl = element.src || element.backgroundRemovedUrl || null;
     const quantityFields = boardMaterialQuantity(boardBlankQuantityDefault({ ...element, materialCategory }), quantityOverride);
     const quantity = quantityFields.quantity;
-    const existingMaterial = findBoardMaterialForSend(
+    const existingMaterial = options.bulk ? options.bulk.existing : findBoardMaterialForSend(
       {
         roomId: room.id,
         boardElementId: element.id,
@@ -1997,7 +2003,8 @@ function ProjectDesignBoardsPage() {
       currentMaterials,
     );
     const existingMaterialId = existingMaterial?.id || null;
-    const conflict = existingMaterial
+    const reviewedQuantity = !options.bulk || options.bulk.changes.has("quantity") ? quantityFields : null;
+    const conflict = existingMaterial && reviewedQuantity
       ? boardQuantityConflict(existingMaterial, quantityFields, room.name, {
           imageUrl: productImageUrl, productName: element.productName || linkedProduct?.name,
           productUrl, boardPageId: page.id, boardElementId: element.id,
@@ -2031,7 +2038,7 @@ function ProjectDesignBoardsPage() {
         "finish", "materialRoomId", "materialCategory", "materialFinish", "materialDimensions"] as const)
         .every((key) => previousSelection[key] === currentSelection[key]);
     if (
-      existingMaterial?.source_board_element_id === element.id &&
+      !options.bulk && existingMaterial?.source_board_element_id === element.id &&
       existingMaterial.room_id === room.id &&
       unchangedSelection
     ) {
@@ -2051,6 +2058,13 @@ function ProjectDesignBoardsPage() {
     }
 
     const actualProductName = element.productName?.trim() || itemLabel;
+    const changes = options.bulk?.changes;
+    const replaced = Boolean(existingMaterial && changes && (
+      (changes.has("product") && element.productId && element.productId !== existingMaterial.product_id) ||
+      (changes.has("link") && productUrl &&
+        normalizeMaterialIdentityUrl(productUrl) !== normalizeMaterialIdentityUrl(existingMaterial.product_url || existingMaterial.product?.product_url))
+    ));
+    const keepSavedProduct = Boolean(changes && existingMaterial && !replaced);
     const linkedProductNameMatches =
       linkedProduct &&
       normalizeMaterialIdentityText(linkedProduct.name) ===
@@ -2075,20 +2089,28 @@ function ProjectDesignBoardsPage() {
       boardProductId: element.productId, boardLink: productUrl, boardColor: finish,
       materialId: element.materialItemId, material: existingMaterial, productLink: linkedProductUrl,
     });
-    let product =
+    let product = keepSavedProduct ? existingMaterial?.product ?? null :
       linkedProduct &&
       (linkedProductNameMatches || preserveNamedProduct) &&
       (!productUrl || !linkedProductUrl || linkedProductUrl === productUrl) &&
       (productVariantMatches(linkedProduct) || preserveNamedProduct)
         ? linkedProduct
         : null;
-    if (productUrl && !product) {
+    if (keepSavedProduct && product && changes?.has("dimensions") && product.dimensions !== dimensions) {
+      // Product records can be shared. A dimension edit belongs to this selection only.
+      const { id: _id, created_at: _created, updated_at: _updated, ...copy } = product;
+      product = await db.createProduct({ ...copy, dimensions });
+      if (!product) throw new Error("Could not save this selection’s dimensions.");
+    }
+    if (!keepSavedProduct && productUrl && !product) {
       const productCandidates =
-        (await db.findProductsByUrlAndName(productUrl, actualProductName)) ?? [];
+        (replaced && changes?.has("link") && !changes.has("product")
+          ? await db.listProductsByUrl(productUrl)
+          : await db.findProductsByUrlAndName(productUrl, actualProductName)) ?? [];
       product = productCandidates.find(productVariantMatches) ?? null;
     }
 
-    if (!product) {
+    if (!product && !keepSavedProduct) {
       product = await db.createProduct({
         name: actualProductName,
         category,
@@ -2097,10 +2119,10 @@ function ProjectDesignBoardsPage() {
         image_url: productImageUrl,
         finish,
         dimensions,
-        sku: element.sku || null,
-        price: element.price || null,
+        sku: replaced && !changes?.has("product") ? null : element.sku || null,
+        price: replaced && !changes?.has("product") ? null : element.price || null,
       });
-    } else {
+    } else if (product && !options.bulk) {
       category = product.category || category;
       const productPatch: Partial<Product> = {};
       if (!product.product_url && productUrl) productPatch.product_url = productUrl;
@@ -2111,7 +2133,7 @@ function ProjectDesignBoardsPage() {
         product = await db.updateProduct(product.id, productPatch);
       }
     }
-    if (!product) throw new Error("Could not create catalog product.");
+    if (!product && !keepSavedProduct) throw new Error("Could not create catalog product.");
 
     const sortOrder =
       existingMaterial?.sort_order ??
@@ -2120,7 +2142,7 @@ function ProjectDesignBoardsPage() {
         0,
         ...materialItems.filter((item) => item.room_id === room.id).map((item) => item.sort_order),
       ) + 1;
-    const finalMaterialCategory = existingMaterial?.category || materialCategory;
+    const finalMaterialCategory = changes?.has("category") ? materialCategory : existingMaterial?.category || materialCategory;
     const materialPatch = {
       room_id: room.id,
       project_id: id,
@@ -2130,14 +2152,14 @@ function ProjectDesignBoardsPage() {
       is_required: false,
       sort_order: sortOrder,
       cad_label: null,
-      product_url: productUrl,
+      product_url: element.materialLinkCleared ? "" : productUrl,
       ...specQuantityDatabasePatch(quantityFields),
-      color: finish,
+      color: replaced && !changes?.has("color") ? product?.finish ?? null : finish,
       image_url: productImageUrl,
       notes: element.notes || null,
       not_needed: false,
-      product_id: product.id,
-      source_board_id: sharedBoard?.project_id ?? null,
+      product_id: product?.id ?? existingMaterial?.product_id ?? null,
+      source_board_id: id,
       source_board_page_id: page.id,
       source_board_element_id: element.id,
       scrape_status: "scraped",
@@ -2146,9 +2168,18 @@ function ProjectDesignBoardsPage() {
 
     let materialItem = existingMaterial ?? null;
     if (existingMaterialId) {
+      const savedRoomName = rooms.find((candidate) => candidate.id === existingMaterial?.room_id)?.name;
+      const keepClientName = existingMaterial?.client_product_name && (!savedRoomName ||
+        existingMaterial.client_product_name !== buildClientProductName(savedRoomName, existingMaterial.item_label));
+      const patch = changes ? boardMaterialFieldsForChanges(
+        { ...materialPatch, client_product_name: keepClientName ? undefined : materialPatch.client_product_name },
+        changes,
+        replaced,
+      ) : materialPatch;
       materialItem = {
         ...(await saveReviewedBoardMaterial(
-          supabase, id, existingMaterialId, materialPatch, quantityFields, quantityDecisions,
+          supabase, id, existingMaterialId, patch, reviewedQuantity, quantityDecisions,
+          options.bulk ? existingMaterial?.updated_at : undefined,
         )),
         product,
       };
@@ -2170,14 +2201,26 @@ function ProjectDesignBoardsPage() {
       materialItem = data as MaterialItem | null;
     }
 
-    const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
-    if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
-      await db.addRoomProduct({
-        room_id: room.id,
-        product_id: product.id,
-        is_key_selection: false,
-      });
+    if (product && (!options.bulk || !existingMaterial || existingMaterial.product_id !== product.id || existingMaterial.room_id !== room.id)) {
+      const roomProducts = (await db.listRoomProducts(room.id)) ?? [];
+      if (!roomProducts.some((roomProduct) => roomProduct.product_id === product.id)) {
+        await db.addRoomProduct({
+          room_id: room.id,
+          product_id: product.id,
+          is_key_selection: false,
+        });
+      }
     }
+    if (options.bulk) {
+      return {
+        status: "sent",
+        materialItemId: materialItem?.id ?? null,
+        productId: product?.id ?? materialItem?.product_id ?? null,
+        roomId: room.id,
+        quantity,
+      };
+    }
+    if (!product) throw new Error("Could not save catalog product.");
 
     setElementsForPage(page.id, (current) =>
       current.map((candidate) =>
@@ -2273,64 +2316,112 @@ function ProjectDesignBoardsPage() {
       toast.error("A send to Materials is already in progress.");
       return;
     }
-    const unresolvedItems = materialInfoItemsForPages(targetPages);
-    if (unresolvedItems.length && !options.proceedWithMissing) {
-      releaseSend();
-      setPendingMaterialSend({ scope, pageIds: targetPages.map((page) => page.id) });
-      toast.error(
-        `${unresolvedItems.length} item${unresolvedItems.length === 1 ? "" : "s"} need material review before final specs.`,
-      );
-      return;
-    }
     setPendingMaterialSend(null);
     setBulkMaterialScope(scope);
     try {
       let sent = 0;
+      let unchanged = 0;
       let removed = 0;
       let skipped = 0;
       const skippedReasons = { label: 0, link: 0, room: 0 };
       const nextSortOrderByRoom = new Map<string, number>();
       const syncedMaterialIds = new Set<string>();
+      const savedRoomProductPairs = new Set<string>();
       const protectedMaterialIds = new Set<string>();
+      const changedLayers = new Set<string>();
+      const boardAtStart = boardStateRef.current.pages;
+      const scopedPages = scope === "board" ? boardAtStart : targetPages;
+      const pageResults = new Map<string, BoardSendPageResult>(
+        scopedPages.map((page) => [page.id, {
+          expected: JSON.stringify(createPageMaterialsSyncSnapshot(page)),
+          synced: true,
+          links: new Map(),
+        }]),
+      );
+      const currentMaterials = await readBoardSendMaterials(supabase, id);
+      const materialsById = new Map(currentMaterials.map((item) => [item.id, item]));
+      const sourceIds = new Set<string>();
+      for (const page of boardAtStart) {
+        if (page.hidden || page.roomApprovalStatus === "declined") continue;
+        for (const element of page.elements) {
+          if (element.type !== "image" || element.materialExcludeFromMaterials) continue;
+          sourceIds.add(element.id);
+          if (element.materialItemId) protectedMaterialIds.add(element.materialItemId);
+        }
+      }
       const groups = new Map<
         string,
         {
           page: BoardPage;
           primary: BoardElement;
-          elements: Array<{ page: BoardPage; element: BoardElement }>;
+          elements: Array<{ page: BoardPage; element: BoardElement; changes: Set<BoardMaterialChange>; pending: boolean }>;
           quantity: number | null;
           roomId: string;
+          existing: MaterialItem | null;
+          changes: Set<BoardMaterialChange>;
+          pending: boolean;
         }
       >();
 
       for (const page of targetPages) {
+        const previous = page.materialsSyncSnapshot;
+        const previousById = new Map(previous?.materialImages.map((item) => [item.id, item]));
+        const snapshotById = new Map(createPageMaterialsSyncSnapshot(page).materialImages.map((item) => [item.id, item]));
         for (const element of page.elements) {
           if (element.type !== "image") continue;
           if (element.materialExcludeFromMaterials) continue;
           if (element.materialItemId) protectedMaterialIds.add(element.materialItemId);
           const room = resolveMaterialRoom(element, page);
-          const missingInfo = imageMaterialReadinessIssues(element, page);
+          const before = previousById.get(element.id);
+          const previousRoomId = before && previous ? resolveMaterialRoom(
+            { ...element, materialRoomId: before.materialRoomId },
+            { ...page, roomId: previous.roomId, title: previous.title },
+          )?.id ?? null : null;
+          const itemLabel = imageMaterialLabelForSend(element);
+          const linkedProduct = latestBoardProduct(element.materialItemId, element.productId, currentMaterials,
+            element.productId ? productById.get(element.productId) : null);
+          const productUrl = boardElementProductUrlForMaterialSync(element, linkedProduct) ?? "";
+          const finish = (element.materialFinish || element.finish || "").trim();
+          const dimensions = (element.materialDimensions || linkedProduct?.dimensions || "").trim();
+          const linked = element.materialItemId ? materialsById.get(element.materialItemId) : null;
+          const target = room ? {
+            roomId: room.id, boardElementId: element.id, materialItemId: element.materialItemId,
+            label: itemLabel, productUrl, color: cleanProductDetail(finish), dimensions,
+            materialLinkCleared: element.materialLinkCleared,
+          } : null;
+          const sourceMatches = currentMaterials.filter((item) =>
+            !item.not_needed && item.source_board_element_id === element.id,
+          );
+          const layer = snapshotById.get(element.id)!;
+          const restored = previous?.hidden || previous?.roomApprovalStatus === "declined";
+          const preflight = planBoardMaterialLayer(before, layer, previousRoomId, room?.id ?? null, true, restored);
+          const existing = !target ? null : sourceMatches.length
+            ? preflight.send ? findBoardMaterialForSend(target, sourceMatches)
+              : sourceMatches.find((item) => item.id === element.materialItemId) ?? sourceMatches[0]
+            : linked && !linked.not_needed && linked.room_id === target.roomId ? linked
+              : !before ? findBoardMaterialForSend(target, currentMaterials) : null;
+          if (existing) protectedMaterialIds.add(existing.id);
+          const { changes, send: pending } = planBoardMaterialLayer(
+            before, layer, previousRoomId, room?.id ?? null, Boolean(existing), restored,
+          );
+          if (!pending) unchanged += 1;
+          const missingInfo = pending ? imageMaterialReadinessIssues(element, page) : [];
+          if (missingInfo.length) changedLayers.add(`${page.id}:${element.id}`);
           if (!room || (missingInfo.length && !options.proceedWithMissing)) {
+            if (!pending) continue;
             for (const issue of missingInfo) {
               if (issue === "label" || issue === "link" || issue === "room") {
                 skippedReasons[issue] += 1;
               }
             }
             skipped += 1;
+            const result = pageResults.get(page.id);
+            if (result) result.synced = false;
             continue;
           }
-          const itemLabel = imageMaterialLabelForSend(element);
-          const linkedProduct = element.productId
-            ? productById.get(element.productId) ?? null
-            : null;
-          const productUrl = boardElementProductUrlForMaterialSync(element, linkedProduct) ?? "";
-          const finish = (element.materialFinish || element.finish || "").trim();
-          const dimensions = (
-            element.materialDimensions ||
-            linkedProduct?.dimensions ||
-            ""
-          ).trim();
+          if (!pending && !existing) continue;
           const key = [
+            existing?.id || "",
             room.id,
             normalizeMaterialIdentityText(itemLabel),
             normalizeMaterialIdentityUrl(productUrl),
@@ -2340,22 +2431,59 @@ function ProjectDesignBoardsPage() {
             String(element.materialWastePercent || 0),
           ].join("::");
           const quantity = boardPageQuantity([boardBlankQuantityDefault(element)]);
-          const existing = groups.get(key);
-          if (existing) {
-            existing.elements.push({ page, element });
+          const group = groups.get(key);
+          if (group) {
+            group.elements.push({ page, element, changes, pending });
+            if (pending && (!group.pending || (
+              ![...group.changes].some((change) => change !== "quantity") &&
+              [...changes].some((change) => change !== "quantity")
+            ))) {
+              group.primary = element;
+              group.page = page;
+              group.changes = changes;
+              group.pending = true;
+            }
           } else {
             groups.set(key, {
               page,
               primary: element,
-              elements: [{ page, element }],
+              elements: [{ page, element, changes, pending }],
               quantity,
               roomId: room.id,
+              existing, changes, pending,
             });
           }
         }
       }
 
+      if (changedLayers.size && !options.proceedWithMissing) {
+        setPendingMaterialSend({ scope, pageIds: targetPages.map((page) => page.id), changedLayers });
+        toast.error(`${changedLayers.size} changed item${changedLayers.size === 1 ? "" : "s"} need material review.`);
+        return;
+      }
+      const existingGroups = new Map<string, typeof groups extends Map<string, infer G> ? G[] : never>();
       for (const group of groups.values()) {
+        if (!group.existing) continue;
+        existingGroups.set(group.existing.id, [...(existingGroups.get(group.existing.id) || []), group]);
+      }
+      for (const matches of existingGroups.values()) {
+        if (matches.length > 1 && matches.some((group) => group.pending)) {
+          throw new Error(`"${matches[0].existing!.item_label}" has board references with different details. Add a replacement as a separate board item before sending.`);
+        }
+      }
+      for (const group of groups.values()) {
+        if (!group.pending) continue;
+        if (group.elements.some((entry) => entry.changes.has("quantity"))) group.changes.add("quantity");
+        if (group.elements.filter((entry) => [...entry.changes].some((change) => change !== "quantity")).length > 1) {
+          const edited = group.elements.filter((entry) => [...entry.changes].some((change) => change !== "quantity"));
+          // If several aliases changed, send one only when their selected details agree.
+          const snapshots = edited.map(({ page, element }) => {
+            const { id: _id, materialQuantity: _qty, materialQuantityTbd: _tbd, ...fields } =
+              createPageMaterialsSyncSnapshot({ ...page, elements: [element] }).materialImages[0];
+            return JSON.stringify(fields);
+          });
+          if (new Set(snapshots).size > 1) throw new Error(`Review the different board edits for "${group.existing?.item_label || imageMaterialLabelForSend(group.primary)}" before sending.`);
+        }
         // Repeated products across multiple pages for the same room are references, not extra qty.
         // Duplicates on the same page still count, but don't multiply by a prior synced total.
         const elementsByPage = new Map<string, BoardElement[]>();
@@ -2368,38 +2496,18 @@ function ProjectDesignBoardsPage() {
         group.quantity = pageQuantities.includes(null)
           ? null
           : Math.max(...(pageQuantities as number[]));
-        const primaryMaterialId =
-          group.primary.materialItemId ||
-          group.elements.find(({ element }) => element.materialItemId)?.element.materialItemId ||
-          null;
-        const primaryElement = primaryMaterialId
-          ? { ...group.primary, materialItemId: primaryMaterialId }
-          : { ...group.primary, materialRoomId: group.roomId };
-        group.primary = primaryElement;
       }
       // Read current Spec Book quantities before any material or catalog writes.
-      const currentMaterials = await readBoardSendMaterials(supabase, id);
       const conflicts: BoardQuantityConflict[] = [];
       for (const group of groups.values()) {
+        if (!group.pending || !group.changes.has("quantity")) continue;
         const element = group.primary;
         const linkedProduct = element.productId ? productById.get(element.productId) : null;
-        const existing = findBoardMaterialForSend(
-          {
-            roomId: group.roomId,
-            boardElementId: element.id,
-            materialItemId: element.materialItemId,
-            label: imageMaterialLabelForSend(element),
-            productUrl: boardElementProductUrlForMaterialSync(element, linkedProduct),
-            color: cleanProductDetail(element.materialFinish || element.finish),
-            dimensions: element.materialDimensions || linkedProduct?.dimensions,
-            materialLinkCleared: element.materialLinkCleared,
-          },
-          currentMaterials,
-        );
+        const existing = group.existing;
         const conflict = existing
           ? boardQuantityConflict(
               existing,
-              boardMaterialQuantity(element, group.quantity),
+              boardMaterialQuantity(boardBlankQuantityDefault(element), group.quantity),
               rooms.find(room => room.id === group.roomId)?.name || group.page.title,
               { imageUrl: element.src || element.backgroundRemovedUrl || null,
                 productName: element.productName || linkedProduct?.name,
@@ -2423,15 +2531,16 @@ function ProjectDesignBoardsPage() {
           "The design board changed during quantity review. Send it again to review the latest values.",
         );
       for (const group of groups.values()) {
+        if (!group.pending) continue;
         const primaryElement = group.primary;
-        const primaryMaterialId = primaryElement.materialItemId;
+        const primaryMaterialId = group.existing?.id;
         let sortOrderOverride: number | undefined;
         if (!primaryMaterialId) {
           const nextSortOrder =
             nextSortOrderByRoom.get(group.roomId) ??
             Math.max(
               0,
-              ...materialItems
+              ...currentMaterials
                 .filter((item) => item.room_id === group.roomId)
                 .map((item) => item.sort_order),
             ) + 1;
@@ -2447,88 +2556,67 @@ function ProjectDesignBoardsPage() {
             allowMissingInfo: options.proceedWithMissing,
             materials: currentMaterials,
             quantityDecisions,
+            bulk: { existing: group.existing, changes: group.changes },
           },
         );
         if (result.status === "sent") {
           sent += 1;
           if (result.materialItemId) syncedMaterialIds.add(result.materialItemId);
-          const groupElementIds = new Set(group.elements.map(({ element }) => element.id));
-          const duplicateMaterialIds = Array.from(
-            new Set(
-              group.elements
-                .map(({ element }) => element.materialItemId)
-                .filter((materialItemId): materialItemId is string =>
-                  Boolean(materialItemId && materialItemId !== result.materialItemId),
-                ),
-            ),
-          ).filter((materialItemId) => {
-            const duplicateMaterial = materialItems.find((item) => item.id === materialItemId);
-            return Boolean(
-              duplicateMaterial?.source_board_element_id &&
-                groupElementIds.has(duplicateMaterial.source_board_element_id),
-            );
-          });
-          for (const materialItemId of duplicateMaterialIds) {
-            await db.deleteMaterialItem(materialItemId);
-          }
+          if (result.productId) savedRoomProductPairs.add(`${result.roomId}:${result.productId}`);
           for (const { page, element } of group.elements) {
-            setElementsForPage(page.id, (current) =>
-              current.map((candidate) =>
-                candidate.id === element.id
-                  ? {
-                      ...candidate,
-                      productId: result.productId,
-                      materialItemId: result.materialItemId,
-                      materialRoomId: result.roomId,
-                      materialDimensions: element.materialDimensions,
-                    }
-                  : candidate,
-              ),
-            );
+            pageResults.get(page.id)?.links.set(element.id, {
+              productId: result.productId, materialItemId: result.materialItemId, materialRoomId: result.roomId,
+            });
           }
         } else {
           skipped += group.elements.length;
+          for (const { page } of group.elements) {
+            const result = pageResults.get(page.id);
+            if (result) result.synced = false;
+          }
         }
       }
-      const cleanupPageIds =
-        scope === "board"
-          ? new Set(pages.map((page) => page.id))
-          : new Set(targetPages.map((page) => page.id));
-      const staleMaterialItems = materialItems.filter(
-        (item) =>
-          item.source_board_page_id &&
-          cleanupPageIds.has(item.source_board_page_id) &&
-          !syncedMaterialIds.has(item.id) &&
-          !protectedMaterialIds.has(item.id),
+      const cleanupPageIds = new Set(scopedPages.map((page) => page.id));
+      const retainedMaterialIds = new Set([...protectedMaterialIds, ...syncedMaterialIds]);
+      const staleMaterialItems = currentMaterials.filter((item) =>
+        boardMaterialWasRemoved(item, id, cleanupPageIds, sourceIds, retainedMaterialIds),
       );
       const staleMaterialIds = new Set(staleMaterialItems.map((item) => item.id));
       const roomProductIdsToRemove = new Set<string>();
       for (const item of staleMaterialItems) {
-        await db.deleteMaterialItem(item.id);
-        if (item.room_product?.id && item.product_id) {
-          const stillUsed = materialItems.some(
+        const livePages = boardStateRef.current.pages;
+        if (livePages.some((page) => !page.hidden && page.roomApprovalStatus !== "declined" &&
+          page.elements.some((element) => element.type === "image" && !element.materialExcludeFromMaterials &&
+            (element.id === item.source_board_element_id || element.materialItemId === item.id)))) continue;
+        const { data, error } = await supabase.from("material_items").delete()
+          .eq("project_id", id).eq("id", item.id).eq("updated_at", item.updated_at).select("id").maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error("A removed board item changed in Materials. Send again to review the current board.");
+        const roomProductId = materialById.get(item.id)?.room_product?.id;
+        if (roomProductId && item.product_id) {
+          const stillUsed = currentMaterials.some(
             (candidate) =>
               candidate.id !== item.id &&
               !staleMaterialIds.has(candidate.id) &&
               candidate.room_id === item.room_id &&
               candidate.product_id === item.product_id,
           );
-          if (!stillUsed) roomProductIdsToRemove.add(item.room_product.id);
+          if (!stillUsed && !savedRoomProductPairs.has(`${item.room_id}:${item.product_id}`)) {
+            roomProductIdsToRemove.add(roomProductId);
+          }
         }
         removed += 1;
       }
       for (const roomProductId of roomProductIdsToRemove) {
         await db.removeRoomProduct(roomProductId);
       }
-      if (skipped === 0) {
-        markPagesMaterialsSynced(
-          scope === "board" ? pages.map((page) => page.id) : targetPages.map((page) => page.id),
-        );
-      }
-      if (removed) {
+      markPagesMaterialsSynced(pageResults);
+      if (sent || removed) {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["materialItems", id] }),
           queryClient.invalidateQueries({ queryKey: ["procurement"] }),
+          queryClient.invalidateQueries({ queryKey: ["roomProducts"] }),
+          queryClient.invalidateQueries({ queryKey: ["catalog"] }),
         ]);
       }
       if (sent || removed) {
@@ -2536,7 +2624,7 @@ function ProjectDesignBoardsPage() {
         toast.success(
           `${sent ? `Synced ${sent} ${sent === 1 ? "item" : "items"}` : "Updated Materials"}${
             removed ? ` and removed ${removed} stale ${removed === 1 ? "item" : "items"}` : ""
-          }${skipped ? `, skipped ${skipped}${skippedReasonText}.` : "."}`,
+          }${unchanged ? `, kept ${unchanged} unchanged` : ""}${skipped ? `, skipped ${skipped}${skippedReasonText}.` : "."}`,
         );
       } else if (skipped === 0) {
         toast.success("Materials are up to date.");

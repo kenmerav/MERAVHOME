@@ -101,7 +101,7 @@ export function buildSpecSpreadsheetRows(
         priceUnit: materialPriceUnit(item),
         orderedBy: item.ordered_by ?? "",
         ordered: item.ordered ? "Yes" : "No",
-        productUrl: item.product_url || product?.product_url || "",
+        productUrl: item.product_url ?? product?.product_url ?? "",
         notes: item.notes ?? "",
         status: item.room_product?.approval_status === "declined" ? "Needs re-selection" : item.design_accuracy_fact ? item.design_accuracy_fact.designResolved ? "Design decisions confirmed" : "Design draft — decisions outstanding" : "",
       };

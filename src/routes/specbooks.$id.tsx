@@ -35,6 +35,7 @@ import {
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { materialImageUrl } from "@/lib/materialImages";
 import { setProjectMaterialRemoved } from "@/lib/specBookMaterialRemoval";
+import { syncMaterialLinkToBoard } from "@/lib/materialBoardLinkSave";
 import { ProcurementCartBuilder } from "@/components/ProcurementCartBuilder";
 import { SpecSpreadsheetTextValue, SpecSpreadsheetWrapContext } from "@/components/SpecSpreadsheetTextValue";
 import { SpecConstructionDrawingsView } from "@/components/SpecConstructionDrawingsView";
@@ -48,6 +49,15 @@ export const Route = createFileRoute("/specbooks/$id")({
   head: () => ({ meta: [{ title: "Spec Book — MERAV Studio" }] }),
   component: SpecBookPage,
 });
+
+async function mirrorSavedSpecLink(materialId: string, previous: string, next: string) {
+  try {
+    const result = await syncMaterialLinkToBoard(materialId, previous, next);
+    if (result.conflicts) toast.warning("Spec link saved. A linked board item has a different unsent link; review it before sending.");
+  } catch {
+    toast.warning("Spec link saved, but the linked design board could not be updated.");
+  }
+}
 
 // Spec-book section ordering per room type. Each section maps to one or more
 // material_items.category values. Items whose category doesn't match anything
@@ -828,10 +838,11 @@ export function SpecSpreadsheetView({
     value: string,
   ) => {
     const next = value.trim();
-    await db.updateSpecMaterialItem(row.id, { [key]: next || null });
-    if (key === "product_url" && !(await db.updateProduct(row.productId, { product_url: next || null }))) {
-      await refreshSpec(row.productId);
-      throw new Error("The Materials link was saved, but the catalog link could not be updated.");
+    // An empty per-selection link explicitly hides the catalog fallback.
+    await db.updateSpecMaterialItem(row.id, { [key]: key === "product_url" ? next : next || null });
+    if (key === "product_url") {
+      await mirrorSavedSpecLink(row.id, row.productUrl, next);
+      await qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
     }
     await refreshSpec(row.productId);
     toast.success("Spec updated");
@@ -1778,7 +1789,7 @@ export function SpecCard({
 }) {
   const p = item.product;
   const imageLoading = useContext(SpecImageLoadingContext);
-  const productUrl = item.product_url || p?.product_url || "";
+  const productUrl = item.product_url ?? p?.product_url ?? "";
   const qc = useQueryClient();
   const saveQuantity = async (patch: SpecQuantityPatch) => {
     await db.updateMaterialQuantity(item.id, patch);
@@ -2013,7 +2024,7 @@ export function SpecProductEditDialog({
     category: product.category,
     subcategory: product.subcategory,
     vendor: product.vendor,
-    product_url: product.product_url,
+    product_url: item.product_url ?? product.product_url,
     image_url: item.image_url || product.image_url,
     finish: product.finish,
     sku: product.sku,
@@ -2068,17 +2079,25 @@ export function SpecProductEditDialog({
     if (!form.name.trim()) return toast.error("Product name required");
     setSaving(true);
     try {
+      const previousLink = item.product_url ?? product.product_url ?? "";
+      const nextLink = form.product_url?.trim() || "";
+      const linkChanged = nextLink !== previousLink.trim();
       await db.updateSpecMaterialItem(item.id, {
         category: materialCategory,
         image_url: clean(form.image_url),
         notes: clean(materialNotes),
+        ...(linkChanged ? { product_url: nextLink } : {}),
       });
+      if (linkChanged) {
+        await mirrorSavedSpecLink(item.id, previousLink, nextLink);
+        await qc.invalidateQueries({ queryKey: ["designBoard", projectId] });
+      }
+      const { product_url: _projectLink, ...productFields } = form;
       const savedProduct = await db.updateProduct(product.id, {
-        ...form,
+        ...productFields,
         name: form.name.trim(),
         vendor: clean(form.vendor),
         subcategory: clean(form.subcategory),
-        product_url: clean(form.product_url),
         finish: clean(form.finish),
         sku: clean(form.sku),
         dimensions: clean(form.dimensions),

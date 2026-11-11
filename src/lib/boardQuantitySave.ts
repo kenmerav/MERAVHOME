@@ -35,8 +35,9 @@ export async function saveReviewedBoardMaterial(
   projectId: string,
   materialId: string,
   patch: Partial<MaterialItem>,
-  proposed: SpecQuantity,
+  proposed: SpecQuantity | null,
   decisions: BoardQuantityDecisions,
+  expectedUpdatedAt?: string,
 ): Promise<MaterialItem> {
   const { data: current, error: readError } = await client
     .from("material_items")
@@ -47,11 +48,13 @@ export async function saveReviewedBoardMaterial(
   if (readError) throw readError;
   if (!current?.updated_at)
     throw new Error("This material changed. Send the board again to review its current quantity.");
+  if (expectedUpdatedAt && current.updated_at !== expectedUpdatedAt)
+    throw new Error("A material changed while sending. Send the board again to use its latest details.");
   // The domain type includes selection_quantity_unit, not yet included in the generated DB types.
   const material = current as unknown as MaterialItem;
-  const key = boardQuantityReviewKey(materialId, material, proposed);
-  const differs = boardQuantitiesDiffer(material, proposed);
-  const priorReviewForItem = Object.keys(decisions).some((candidate) => {
+  const key = proposed ? boardQuantityReviewKey(materialId, material, proposed) : null;
+  const differs = proposed && boardQuantitiesDiffer(material, proposed);
+  const priorReviewForItem = proposed && Object.keys(decisions).some((candidate) => {
     try {
       const identity = JSON.parse(candidate);
       return Array.isArray(identity) && identity[0] === materialId;
@@ -59,14 +62,14 @@ export async function saveReviewedBoardMaterial(
       return false;
     }
   });
-  if ((differs || priorReviewForItem) && !decisions[key])
+  if (key && (differs || priorReviewForItem) && !decisions[key])
     throw new Error(
       "A Spec Book quantity changed since review. Send the board again to review the latest values.",
     );
   // Even when values match, omit quantity columns unless the user explicitly chose replacement.
-  const decision = decisions[key];
+  const decision = key ? decisions[key] : undefined;
   let replacement;
-  if (decision === "board") replacement = validateSpecQuantityPatch(quantityForReview(proposed));
+  if (decision === "board" && proposed) replacement = validateSpecQuantityPatch(quantityForReview(proposed));
   else if (decision && typeof decision === "object" && decision.kind === "custom") {
     replacement = validateSpecQuantityPatch(decision.quantity);
     const saved = quantityForReview(material);
@@ -81,10 +84,15 @@ export async function saveReviewedBoardMaterial(
   } else if (decision !== undefined && decision !== "keep") {
     throw new Error("The quantity choice is invalid. Review the item and send again.");
   }
-  const safePatch = {
+  const reviewedPatch = {
     ...boardMaterialUpdatePatch(patch, false),
     ...(replacement ? specQuantityDatabasePatch(replacement) : {}),
   };
+  const safePatch = expectedUpdatedAt
+    ? Object.fromEntries(Object.entries(reviewedPatch).filter(
+        ([key, value]) => value !== material[key as keyof MaterialItem],
+      )) as Partial<MaterialItem>
+    : reviewedPatch;
   if (!Object.keys(safePatch).length) return material;
   const update = async (values: Partial<MaterialItem>) =>
     client

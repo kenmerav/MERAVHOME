@@ -729,7 +729,7 @@ function ProcurementPage() {
                 const r = item.room_product?.room;
                 const m = (item as typeof item & { material?: ProcurementMaterialDetails | null })
                   .material;
-                const link = m?.product_url || p?.product_url || null;
+                const link = m?.product_url ?? p?.product_url ?? null;
                 const linkHref = externalHref(link);
                 const imageUrl = m?.image_url || p?.image_url || null;
                 const clientName =
