@@ -108,6 +108,15 @@
         margin: 7px 0 0;
         font-size: 11px;
       }
+      .existing-selection {
+        margin-top: 8px;
+        padding: 8px 10px;
+        border: 1px solid #e2bf77;
+        background: #fff6df;
+        color: #624009;
+        overflow-wrap: anywhere;
+      }
+      .existing-selection p { margin: 4px 0 0; color: inherit; }
       .selection-review {
         margin-top: 12px;
       }
@@ -235,7 +244,7 @@
   <body>
     <main>
       <h1>Send to Studio</h1>
-      <p>Source into Room Design, or send directly to an existing design board.</p>
+      <p>Choose a room selection or a board page to place this product.</p>
       <div id="connection" class="connection">
         <p>Connect this extension to your MERAV Studio login before sending products.</p>
         <button id="connect" class="connect">Connect to Studio</button>
@@ -265,7 +274,11 @@
             <option value="">Choose a room first</option>
           </select>
         </label>
-        <p id="savedRoomProduct" class="destination-note" hidden></p>
+        <div id="existingSelectionNotice" class="existing-selection" role="status" hidden>
+          <strong>Already has a product</strong>
+          <p id="savedRoomProduct"></p>
+          <p>Saving here replaces this selection. To keep both, add a room item.</p>
+        </div>
         <button id="showAddProductType" class="tertiary" type="button" data-preview-enabled>
           + Add room item
         </button>
@@ -338,7 +351,7 @@
           </select>
         </label>
         <p class="destination-note">
-          Uses the current manual workflow and adds the product directly to the selected page.
+          Places the product on the selected page.
         </p>
       </section>
       <div class="row send-actions">

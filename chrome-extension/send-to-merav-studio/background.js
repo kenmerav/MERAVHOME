@@ -148,6 +148,7 @@ async function sendImageToStudio(info, tab, overrides = {}) {
       "studioUrl",
       "projectId",
       "boardPageId",
+      "boardPageByProject",
       "extensionToken",
       "lastStudioProjectId",
       "destinationByProject",
@@ -162,7 +163,7 @@ async function sendImageToStudio(info, tab, overrides = {}) {
   const projectId = overrides.projectId || settings.projectId || settings.lastStudioProjectId;
   const destination =
     overrides.destination || settings.destinationByProject?.[projectId] || "design_board";
-  const boardPageId = overrides.boardPageId || settings.boardPageId || "";
+  const boardPageId = overrides.boardPageId || settings.boardPageByProject?.[projectId] || settings.boardPageId || "";
   const roomByProject = {
     ...(settings.roomByProject || {}),
     ...(localRoomSettings.roomByProject || {}),
@@ -261,7 +262,7 @@ async function sendImageToStudio(info, tab, overrides = {}) {
   const title = body.warning || body.reviewed === false
     ? "Imported with review needed" : "Sent to MERAV Studio";
   const message =
-    body.warning ||
+    (body.boardPageTitle && body.roomName ? body.message : body.warning) ||
     body.message ||
     (destination === "room_design"
       ? "Product added to the room selections."

@@ -1002,7 +1002,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      save_extension_room_and_board: {
+        Args: {
+          p_project_id: string
+          p_room_id: string
+          p_board_updated_at: string | null
+          p_room_updated_at: string | null
+          p_board_state: Json
+          p_room_state: Json
+          p_event_details: Json
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_user_role: "Admin" | "Employee" | "Contractor" | "Client"

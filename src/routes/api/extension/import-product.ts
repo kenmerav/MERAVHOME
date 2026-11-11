@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Room Design pilot and design-board tables are server-only until generated Supabase types include their migrations. */
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 import { inferMaterialCategory, toProductCategory } from "@/lib/roomTemplates";
 import { normalizeMoneyInput } from "@/lib/money";
 import { parseRoomDesignQuantity } from "@/lib/roomDesignQuantity";
@@ -9,7 +10,14 @@ import { extensionRoomWorkflow, extensionSelectionRevision } from "@/lib/extensi
 import { extensionImportDestination } from "@/lib/extensionDestination";
 import { normalizeExtensionBoardState, type ExtensionBoardState } from "@/lib/extensionBoardState";
 import {
+  extensionBoardDirectSelection,
+  extensionBoardPageRoom,
+  placeLinkedExtensionSelection,
+  type ExtensionImportLayer,
+} from "@/lib/extensionRoomBoardImport";
+import {
   mergeExtensionProductIntoRoomDesignWorkflow,
+  roomDesignBoardElementId,
   roomDesignRoomNamesMatch,
 } from "@/lib/roomDesignWorkflow";
 
@@ -19,37 +27,9 @@ const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
 const BOARD_WIDTH = 1400;
 const BOARD_HEIGHT = 900;
 
-type BoardElement = {
-  materialQuantityTbd?: boolean;
-  id: string;
-  type: "image" | "text" | "shape";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation?: number;
-  zIndex: number;
-  src?: string;
-  originalSrc?: string;
-  backgroundRemovedUrl?: string | null;
-  autoRemoveBackground?: boolean;
-  backgroundRemovalStatus?: "pending" | "processing" | "complete" | "failed";
-  label?: string;
-  notes?: string;
-  link?: string;
-  productId?: string | null;
-  productName?: string | null;
-  vendor?: string | null;
-  price?: string | null;
-  finish?: string | null;
-  materialCategory?: string | null;
-  materialQuantity?: number | null;
-  materialFinish?: string | null;
-  materialDimensions?: string | null;
-  visible?: boolean;
-};
-
+type BoardElement = ExtensionImportLayer;
 type BoardState = ExtensionBoardState<BoardElement>;
+type Room = { id: string; name: string };
 
 type ExtensionProductPayload = {
   projectId?: string;
@@ -393,109 +373,97 @@ class ExtensionSelectionConflict extends Error {
   }
 }
 
-async function saveRoomDesignSelectionWithRetry({
+async function readExtensionBoard(projectId: string) {
+  const { data, error } = await supabaseAdmin.from("design_boards" as any)
+    .select("board_state,updated_at").eq("project_id", projectId).maybeSingle();
+  if (error) throw error;
+  return {
+    state: normalizeExtensionBoardState<BoardElement>((data as any)?.board_state),
+    updatedAt: (data as any)?.updated_at ?? null,
+  };
+}
+
+async function saveLinkedExtensionImport({
   projectId,
-  roomId,
+  projectName,
+  room,
+  rooms,
   requiredItemKey,
-  expectedRoomName,
+  pageId,
   itemRevision,
   product,
+  layer,
 }: {
   projectId: string;
-  roomId: string;
+  projectName: string;
+  room: Room;
+  rooms: Room[];
   requiredItemKey: string;
-  expectedRoomName: string;
+  pageId?: string;
   itemRevision?: string;
   product: Parameters<typeof mergeExtensionProductIntoRoomDesignWorkflow>[0]["product"];
+  layer: Omit<BoardElement, "id" | "x" | "y" | "zIndex">;
 }) {
-  const [{ data: featureFlag }, { data: enrollment }, { data: room, error: roomError }] =
-    await Promise.all([
-      supabaseAdmin
-        .from("studio_feature_flags" as any)
-        .select("enabled")
-        .eq("key", "room_design_v2")
-        .maybeSingle(),
-      supabaseAdmin
-        .from("room_design_projects" as any)
-        .select("project_id")
-        .eq("project_id", projectId)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("rooms")
-        .select("id,name")
-        .eq("id", roomId)
-        .eq("project_id", projectId)
-        .maybeSingle(),
-    ]);
-  if (roomError) throw roomError;
-  if ((featureFlag as any)?.enabled !== true || !enrollment) {
-    throw new Error("This project is not using the new Room Design process.");
-  }
-  if (!room) throw new Error("That room does not belong to the selected project.");
-  if (!roomDesignRoomNamesMatch(expectedRoomName, cleanText((room as any).name))) {
-    throw new Error(
-      `Room selection changed. Reopen the extension and choose ${expectedRoomName} again.`,
-    );
-  }
-
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const { data: workflow, error } = await supabaseAdmin
-      .from("room_design_workflows" as any)
-      .select("id,state,updated_at")
-      .eq("project_id", projectId)
-      .eq("room_id", roomId)
-      .maybeSingle();
+    const [board, { data: workflow, error }] = await Promise.all([
+      readExtensionBoard(projectId),
+      supabaseAdmin.from("room_design_workflows" as any).select("state,updated_at")
+        .eq("project_id", projectId).eq("room_id", room.id).maybeSingle(),
+    ]);
     if (error) throw error;
 
-    const currentState = extensionRoomWorkflow((room as any).name, (workflow as any)?.state);
-    if (itemRevision && extensionSelectionRevision(currentState, requiredItemKey) !== itemRevision)
+    const state = extensionRoomWorkflow(room.name, (workflow as any)?.state);
+    if (itemRevision && extensionSelectionRevision(state, requiredItemKey) !== itemRevision)
       throw new ExtensionSelectionConflict();
-    const merged = mergeExtensionProductIntoRoomDesignWorkflow({
-      state: currentState,
-      itemKey: requiredItemKey,
-      product,
+    const reviewed = pageId ? null : mergeExtensionProductIntoRoomDesignWorkflow({
+      state, itemKey: requiredItemKey, product,
     });
-
-    if (!workflow) {
-      const { error: insertError } = await supabaseAdmin
-        .from("room_design_workflows" as any)
-        .insert({
-          project_id: projectId,
-          room_id: roomId,
-          version: 1,
-          state: merged.state,
-          updated_by: null,
-        } as any);
-      if (insertError && /duplicate key|already exists/i.test(insertError.message)) continue;
-      if (insertError) throw insertError;
-    } else {
-      const { data: saved, error: updateError } = await supabaseAdmin
-        .from("room_design_workflows" as any)
-        .update({ state: merged.state, updated_by: null } as any)
-        .eq("id", (workflow as any).id)
-        .eq("updated_at", (workflow as any).updated_at)
-        .select("id")
-        .maybeSingle();
-      if (updateError) throw updateError;
-      if (!saved) continue;
-    }
-
-    await supabaseAdmin.from("room_design_events" as any).insert({
-      project_id: projectId,
-      room_id: roomId,
-      event_type: "extension_selection_imported",
-      details: {
-        requiredItemKey,
-        requiredItemLabel: merged.item.category,
-        productId: product.id,
-        replaced: merged.replaced,
+    const merged = reviewed ? { ...reviewed, itemKey: reviewed.item.id } : extensionBoardDirectSelection({
+      state, product, materialCategory: layer.materialCategory || "", roomId: room.id,
+      board: board.state, pageId: pageId!,
+    });
+    const selection = merged.selection;
+    const boardImport = placeLinkedExtensionSelection({
+      board: board.state, room, rooms, projectName, pageId, selection,
+      layer: {
+        ...layer,
+        productName: selection.productName,
+        vendor: selection.vendor || null,
+        finish: selection.finish === "Finish needs review" ? null : selection.finish,
+        price: selection.price || null,
+        link: selection.url,
+        sku: selection.sku || null,
+        materialFinish: selection.finish === "Finish needs review" ? null : selection.finish,
+        materialDimensions: selection.dimensions || null,
       },
-      created_by: null,
-    } as any);
+      placement: (elements) => nextBoardPlacement(elements, layer.width, layer.height),
+    });
+    const layerIds = new Set(boardImport.board.pages.flatMap((page) => page.elements.map(({ id }) => id)));
+    const boardReady = merged.state.selections.every((item) =>
+      item.state === "draft" || layerIds.has(roomDesignBoardElementId(room.id, item.id)),
+    );
+    const { error: saveError } = await supabaseAdmin.rpc("save_extension_room_and_board", {
+      p_project_id: projectId,
+      p_room_id: room.id,
+      p_board_updated_at: board.updatedAt,
+      p_room_updated_at: (workflow as any)?.updated_at ?? null,
+      p_board_state: boardImport.board as Json,
+      p_room_state: { ...merged.state, boardReady },
+      p_event_details: {
+        requiredItemKey: merged.itemKey,
+        requiredItemLabel: selection.category,
+        productId: product.id,
+        replaced: reviewed?.replaced ?? false,
+        boardPageId: boardImport.page.id,
+        boardLayerId: boardImport.layerId,
+      },
+    });
+    if (saveError?.code === "40001") continue;
+    if (saveError) throw new Error(saveError.message);
 
-    return { ...merged, roomName: (room as any).name as string };
+    return { ...boardImport, itemKey: merged.itemKey, selection, reviewed };
   }
-  throw new Error("Room Design changed at the same time. Open the room and try again.");
+  throw new Error("The board or room changed during import. Open the extension and try again.");
 }
 
 export const Route = createFileRoute("/api/extension/import-product")({
@@ -527,7 +495,7 @@ export const Route = createFileRoute("/api/extension/import-product")({
 
           const { data: project } = await supabaseAdmin
             .from("projects")
-            .select("id")
+            .select("id,name")
             .eq("id", projectId)
             .maybeSingle();
           if (!project) return json({ error: "Studio project was not found." }, 404);
@@ -546,6 +514,39 @@ export const Route = createFileRoute("/api/extension/import-product")({
           if (destination === "room_design" && !requiredItemKey)
             return json({ error: "Choose a product type before adding the product." }, 400);
 
+          let linkedRoom: Room | undefined;
+          let rooms: Room[] = [];
+          let linkedBoardPageId: string | undefined;
+          if (enrollment) {
+            const [{ data: featureFlag, error: flagError }, { data: projectRooms, error: roomsError }] =
+              await Promise.all([
+                supabaseAdmin.from("studio_feature_flags" as any).select("enabled")
+                  .eq("key", "room_design_v2").maybeSingle(),
+                supabaseAdmin.from("rooms").select("id,name").eq("project_id", projectId),
+              ]);
+            if (flagError || roomsError) throw flagError || roomsError;
+            if ((featureFlag as any)?.enabled === true) {
+              rooms = projectRooms ?? [];
+              if (destination === "room_design") {
+                linkedRoom = rooms.find((room) => room.id === roomId);
+                if (!linkedRoom)
+                  return json({ error: "That room does not belong to the selected project." }, 400);
+                if (!roomDesignRoomNamesMatch(roomName, linkedRoom.name))
+                  return json({ error: "The room changed. Reopen the extension and select the room again." }, 409);
+              } else {
+                const { state: board } = await readExtensionBoard(projectId);
+                const page = board.pages.find((page) => page.id === (boardPageId || board.selectedPageId));
+                if (!page) return json({ error: "That board page changed. Select a page again in the extension." }, 409);
+                linkedRoom = extensionBoardPageRoom(page, rooms);
+                if (!linkedRoom)
+                  return json({ error: "Assign this board page to a room in Studio, or use Room Design Selections to choose a room." }, 400);
+                linkedBoardPageId = page.id;
+              }
+            }
+          }
+          if (destination === "room_design" && !linkedRoom)
+            return json({ error: "This project is not using the new Room Design process." }, 400);
+
           let review: ReturnType<typeof parseExtensionSelectionReview> | undefined;
           let itemRevision: string | undefined;
           if (destination === "room_design" && payload.review !== undefined) {
@@ -558,39 +559,19 @@ export const Route = createFileRoute("/api/extension/import-product")({
               return json({ error: error instanceof Error ? error.message : "Check the selection details." }, 400);
             }
           }
-          if (destination === "room_design") {
-            const { data: selectedRoom, error: selectedRoomError } = await supabaseAdmin
-              .from("rooms")
-              .select("id,name")
-              .eq("id", roomId)
+          if (linkedRoom && review) {
+            const { data: workflow, error: workflowError } = await supabaseAdmin
+              .from("room_design_workflows" as any)
+              .select("state")
               .eq("project_id", projectId)
+              .eq("room_id", roomId)
               .maybeSingle();
-            if (selectedRoomError) throw selectedRoomError;
-            if (!selectedRoom) {
-              return json({ error: "That room does not belong to the selected project." }, 400);
-            }
-            if (!roomDesignRoomNamesMatch(roomName, cleanText((selectedRoom as any).name))) {
-              return json(
-                {
-                  error: `Room selection changed. Reopen the extension and choose ${roomName} again.`,
-                },
-                409,
-              );
-            }
-            if (review) {
-              const { data: workflow, error: workflowError } = await supabaseAdmin
-                .from("room_design_workflows" as any)
-                .select("state")
-                .eq("project_id", projectId)
-                .eq("room_id", roomId)
-                .maybeSingle();
-              if (workflowError) throw workflowError;
-              const state = extensionRoomWorkflow(selectedRoom.name, (workflow as any)?.state);
-              if (extensionSelectionRevision(state, requiredItemKey) !== itemRevision)
-                throw new ExtensionSelectionConflict();
-              if (state.selections.some((item) => item.id === `link-${requiredItemKey}` && item.accuracySource))
-                return json({ error: "Review this versioned selection in Room Design before replacing it." }, 409);
-            }
+            if (workflowError) throw workflowError;
+            const state = extensionRoomWorkflow(linkedRoom.name, (workflow as any)?.state);
+            if (extensionSelectionRevision(state, requiredItemKey) !== itemRevision)
+              throw new ExtensionSelectionConflict();
+            if (state.selections.some((item) => item.id === `link-${requiredItemKey}` && item.accuracySource))
+              return json({ error: "Review this versioned selection in Room Design before replacing it." }, 409);
           }
 
           const productData = payload.product ?? {};
@@ -723,13 +704,40 @@ export const Route = createFileRoute("/api/extension/import-product")({
                 ? "Product imported. Color/finish was not detected, so review it in Room Design or Board Tools."
                 : null;
 
-          if (destination === "room_design") {
-            const merged = await saveRoomDesignSelectionWithRetry({
+          const imageSize = fitBoardImage(payload.imageWidth, payload.imageHeight);
+          const layer: Omit<BoardElement, "id" | "x" | "y" | "zIndex"> = {
+            type: "image",
+            src: imageForProduct,
+            originalSrc: originalUpload.publicUrl,
+            backgroundRemovedUrl,
+            autoRemoveBackground: !backgroundRemovedUrl,
+            backgroundRemovalStatus: backgroundRemovedUrl ? "complete" : "pending",
+            label: productName,
+            notes: "",
+            link: sourcePageUrl,
+            productId: (product as any).id,
+            productName,
+            vendor: vendor || null,
+            price: price || null,
+            finish: finish || null,
+            materialCategory,
+            materialQuantity: null,
+            materialQuantityTbd: true,
+            materialFinish: finish || null,
+            materialDimensions: dimensions || null,
+            ...imageSize,
+            visible: true,
+          };
+          if (linkedRoom) {
+            const merged = await saveLinkedExtensionImport({
               projectId,
-              roomId,
+              projectName: project.name,
+              room: linkedRoom,
+              rooms,
               requiredItemKey,
-              expectedRoomName: roomName,
+              pageId: linkedBoardPageId,
               itemRevision,
+              layer,
               product: {
                 id: (product as any).id,
                 name: productName,
@@ -752,29 +760,29 @@ export const Route = createFileRoute("/api/extension/import-product")({
               ok: true,
               destination,
               productId: (product as any).id,
-              roomId,
-              roomName: merged.roomName,
-              requiredItemKey,
-              requiredItemLabel: merged.item.category,
-              nextItemId: merged.nextItem?.id || null,
-              nextItemLabel: merged.nextItem?.category || null,
-              replaced: merged.replaced,
+              roomId: linkedRoom.id,
+              roomName: linkedRoom.name,
+              requiredItemKey: merged.itemKey,
+              requiredItemLabel: merged.selection.category,
+              nextItemId: merged.reviewed?.nextItem?.id || null,
+              nextItemLabel: merged.reviewed?.nextItem?.category || null,
+              replaced: merged.reviewed?.replaced ?? false,
+              layerId: merged.layerId,
+              pageId: merged.page.id,
+              boardPageTitle: merged.page.title,
               imageUrl: imageForProduct,
               originalImageUrl: originalUpload.publicUrl,
               backgroundRemovedUrl,
               price: price || null,
               warning: colorWarning,
-              ...(review ? {
-                reviewed: merged.selection.state === "locked",
-                issues: merged.issues,
-                orderEstimate: extensionOrderEstimate(merged.selection),
-              } : {}),
-              message: `${productName} added to ${merged.item.category} in ${merged.roomName}.`,
-              openUrl: `/projects/${projectId}/room-design?roomId=${roomId}`,
+              reviewed: merged.selection.state === "locked",
+              issues: merged.reviewed?.issues || [],
+              orderEstimate: extensionOrderEstimate(merged.selection),
+              message: `${productName} saved to ${merged.page.title} and ${linkedRoom.name} room selections.`,
+              openUrl: `/projects/${projectId}/room-design?roomId=${linkedRoom.id}`,
             });
           }
 
-          const imageSize = fitBoardImage(payload.imageWidth, payload.imageHeight);
           const layerId = crypto.randomUUID();
           let addedPageId = "";
           await saveBoardWithRetry(projectId, (state) => {
@@ -792,35 +800,14 @@ export const Route = createFileRoute("/api/extension/import-product")({
                   imageSize.height,
                 );
                 const maxZ = Math.max(0, ...page.elements.map((element) => element.zIndex ?? 0));
-                const layer: BoardElement = {
+                const element: BoardElement = {
+                  ...layer,
                   id: layerId,
-                  type: "image",
-                  src: imageForProduct,
-                  originalSrc: originalUpload.publicUrl,
-                  backgroundRemovedUrl,
-                  autoRemoveBackground: !backgroundRemovedUrl,
-                  backgroundRemovalStatus: backgroundRemovedUrl ? "complete" : "pending",
-                  label: productName,
-                  notes: "",
-                  link: sourcePageUrl,
-                  productId: (product as any).id,
-                  productName,
-                  vendor: vendor || null,
-                  price: price || null,
-                  finish: finish || null,
-                  materialCategory,
-                  materialQuantity: null,
-                  materialQuantityTbd: true,
-                  materialFinish: finish || null,
-                  materialDimensions: dimensions || null,
                   x: placement.x,
                   y: placement.y,
-                  width: imageSize.width,
-                  height: imageSize.height,
                   zIndex: maxZ + 1,
-                  visible: true,
                 };
-                return { ...page, elements: [...page.elements, layer] };
+                return { ...page, elements: [...page.elements, element] };
               }),
             };
           });

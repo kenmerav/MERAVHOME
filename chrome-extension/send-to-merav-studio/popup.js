@@ -406,7 +406,9 @@ document.getElementById("send").addEventListener("click", async () => {
             document.getElementById("requiredItemSelect").value !== requiredItemKey) return;
         selectionCapture = response.capture;
         showSelectionReview(selectionCapture, item);
-        document.getElementById("send").textContent = "Save Room Selection";
+        document.getElementById("send").textContent = item.filled
+          ? "Replace Room Selection"
+          : "Save Room Selection";
         setStatus("");
         return;
       }
@@ -438,7 +440,7 @@ document.getElementById("send").addEventListener("click", async () => {
     status.classList.remove("error");
     setProgress(
       100,
-      response.warning ||
+      (response.boardPageTitle && response.roomName ? response.message : response.warning) ||
         response.message ||
         (destination === "room_design"
           ? "Product added to the room selections."
@@ -453,10 +455,16 @@ document.getElementById("send").addEventListener("click", async () => {
         const estimate = response.orderEstimate;
         const order = estimate ? ` Order estimate: ${estimate.quantity} ${estimate.unit}${estimate.total ? ` · ${estimate.total}` : ""}.` : "";
         const issues = response.issues || [];
+        const saved = response.replaced ? "Selection replaced" : "Selection saved";
+        const board = response.boardPageTitle ? ` Also placed on ${response.boardPageTitle}.` : "";
         setStatus(response.reviewed
-          ? `Saved and verified.${order}`
-          : `Saved · Needs review. ${issues.length ? issues.join(" ") : "Confirm the selection in Studio."}${order}`);
+          ? `${saved} and verified.${board}${order}`
+          : `${saved} · Needs review.${board} ${issues.length ? issues.join(" ") : "Confirm the selection in Studio."}${order}`);
       }
+    } else if (response.openUrl) {
+      const openRoom = document.getElementById("openRoom");
+      openRoom.dataset.url = response.openUrl;
+      openRoom.hidden = false;
     }
   } catch (error) {
     setProgress(0, "", false);
@@ -472,9 +480,10 @@ document.getElementById("rereadProduct").addEventListener("click", () => {
 });
 
 document.getElementById("openRoom").addEventListener("click", async () => {
-  if (!roomDesignData?.openUrl) return;
+  const openUrl = document.getElementById("openRoom").dataset.url || roomDesignData?.openUrl;
+  if (!openUrl) return;
   const studioUrl = normalizeStudioUrl(settings.studioUrl);
-  await chrome.tabs.create({ url: `${studioUrl}${roomDesignData.openUrl}` });
+  await chrome.tabs.create({ url: `${studioUrl}${openUrl}` });
 });
 
 document.getElementById("fillMissing").addEventListener("click", () => startPriceQueue("missing"));
@@ -641,6 +650,7 @@ async function showDestination(projectId, destination) {
   document.getElementById("roomDesignFields").hidden = !roomDesign;
   document.getElementById("boardFields").hidden = roomDesign;
   document.getElementById("openRoom").hidden = true;
+  document.getElementById("openRoom").dataset.url = "";
   document.getElementById("send").textContent = roomDesign
     ? "Read Product Details"
     : "Send Current Product";
@@ -748,9 +758,10 @@ function renderRequiredItems(items, selectedItemId) {
 
 function renderSavedRoomProduct(item) {
   const summary = document.getElementById("savedRoomProduct");
+  const notice = document.getElementById("existingSelectionNotice");
   const product = item?.filled ? item.productName || "Product selected" : "";
   summary.textContent = product && item.reviewed === false ? `${product} · Needs review` : product;
-  summary.hidden = !product;
+  notice.hidden = !product;
 }
 
 function restoreQuantity(roomId, itemId) {

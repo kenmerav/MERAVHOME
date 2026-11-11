@@ -62,8 +62,9 @@ For Design Board Direct, right-click continues to send to the selected board pag
 
 - The extension never stores Supabase service-role keys.
 - Studio stores the original image and tries free background removal.
-- After saving or reusing the catalog product and image, Room Design imports update only the
-  selected room workflow. They do not write to Materials or the design board until the designer
-  uses the existing Studio handoff controls.
+- For Room Design projects, both import options update the room checklist and its board together.
+  Room Design Selections places the reviewed item on its room board. Design Board Direct uses the
+  selected page’s assigned room and fills an available matching checklist item or adds a new one.
+  Send the board to Materials when ready.
 - If background removal fails, Studio imports the original image and returns a review warning.
 - Product extraction priority is JSON-LD, Open Graph metadata, page HTML, then visible text.

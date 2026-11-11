@@ -653,7 +653,7 @@ function generatedPageId(roomId: string, pageIndex: number) {
   return `${PAGE_PREFIX}:${roomId}:${pageIndex + 1}`;
 }
 
-function generatedElementId(roomId: string, selectionId: string) {
+export function roomDesignBoardElementId(roomId: string, selectionId: string) {
   return `${PAGE_PREFIX}:${roomId}:selection:${selectionId}`;
 }
 
@@ -834,9 +834,16 @@ export function mergeRoomDesignSelectionsIntoBoard({
   pageCount?: number;
 }) {
   const base = normalizeBoardState(boardState);
+  const retainedPages = base.pages.filter(
+    (page) => !isGeneratedRoomPage(page, roomId) && !isUntouchedDefaultPage(base, page),
+  );
+  const retainedLayerIds = new Set(
+    retainedPages.flatMap((page) => page.elements.map(({ id }) => id)),
+  );
   const usableSelections = selections.filter(
     (selection) =>
       selection.state !== "draft" &&
+      !retainedLayerIds.has(roomDesignBoardElementId(roomId, selection.id)) &&
       roomItemStatus(selection) !== "Not needed" &&
       (Boolean(selection.imageUrl) || roomItemStatus(selection) !== "Choose product"),
   );
@@ -854,9 +861,11 @@ export function mergeRoomDesignSelectionsIntoBoard({
     ),
   );
   const pageCountChanged = priorGeneratedPages.length > 0 && priorGeneratedPages.length !== count;
-  const retainedPages = base.pages.filter(
-    (page) => !isGeneratedRoomPage(page, roomId) && !isUntouchedDefaultPage(base, page),
-  );
+  if (
+    !usableSelections.length &&
+    !priorGeneratedPages.length &&
+    selections.some((selection) => retainedLayerIds.has(roomDesignBoardElementId(roomId, selection.id)))
+  ) return base;
   const generatedPages: BoardPage[] = Array.from({ length: count }, (_, pageIndex) => ({
     id: generatedPageId(roomId, pageIndex),
     title: `${roomName} — Design Board ${pageIndex + 1}`,
@@ -874,7 +883,7 @@ export function mergeRoomDesignSelectionsIntoBoard({
     cursor += pageSize;
     page.elements.push(
       ...pageSelections.map((selection, index) => {
-        const id = generatedElementId(roomId, selection.id);
+        const id = roomDesignBoardElementId(roomId, selection.id);
         const existing = priorElements.get(id);
         const stockPlacement = placement(index, pageSelections.length, selection.category);
         if (!selection.imageUrl) {
