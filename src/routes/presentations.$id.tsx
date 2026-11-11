@@ -1791,7 +1791,7 @@ function PresentationPage() {
     const current = slides[Math.min(slide, total - 1)];
     return (
       <div className="present-mode flex flex-col">
-        <div className="flex-1 overflow-hidden flex items-center justify-center">
+        <div className="@container/presentation flex-1 overflow-hidden flex items-center justify-center">
           {current.kind === "cover" ? (
             <CoverSlide project={project} />
           ) : current.kind === "board-page" ? (
@@ -2082,7 +2082,7 @@ function PresentationPage() {
         )}
 
         <div
-          className="pointer-events-none fixed left-[-10000px] top-0 z-[-1]"
+          className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] print:hidden"
           aria-hidden="true"
         >
           {slides.map((current) => (
@@ -2092,7 +2092,7 @@ function PresentationPage() {
                 if (node) exportSlideRefs.current.set(current.slideKey, node);
                 else exportSlideRefs.current.delete(current.slideKey);
               }}
-              className="h-[900px] w-[1400px] overflow-hidden bg-bone"
+              className="@container/presentation h-[900px] w-[1400px] overflow-hidden bg-bone"
             >
               {current.kind === "cover" ? (
                 <CoverSlide project={project} />
@@ -2617,9 +2617,11 @@ function BrandCover({
 function PresentationFooter({
   align = "center",
   sidePaddingPx = 48,
+  inSlide = false,
 }: {
   align?: "center" | "mainColumn";
   sidePaddingPx?: number;
+  inSlide?: boolean;
 }) {
   const style =
     align === "mainColumn"
@@ -2631,11 +2633,19 @@ function PresentationFooter({
   return (
     <div
       style={style}
-      className={`absolute bottom-5 z-10 -translate-x-1/2 text-center pointer-events-none print:bottom-4 ${
-        align === "mainColumn" ? "left-1/2 lg:left-[var(--presentation-footer-left)]" : "left-1/2"
+      className={`absolute bottom-5 left-1/2 z-10 -translate-x-1/2 text-center pointer-events-none print:bottom-4 ${
+        align === "mainColumn"
+          ? inSlide
+            ? "@5xl/presentation:left-[var(--presentation-footer-left)]"
+            : "lg:left-[var(--presentation-footer-left)]"
+          : ""
       }`}
     >
-      <div className="font-display text-ink uppercase leading-none tracking-[-0.07em] text-[clamp(2rem,4vw,4.25rem)] whitespace-nowrap">
+      <div
+        className={`whitespace-nowrap font-display uppercase leading-none tracking-[-0.07em] text-ink ${
+          inSlide ? "text-[clamp(2rem,4cqw,4.25rem)]" : "text-[clamp(2rem,4vw,4.25rem)]"
+        }`}
+      >
         MERAV INTERIORS
       </div>
       <div className="mt-2 text-[#9b9793] uppercase tracking-[0.38em] text-[clamp(0.45rem,0.85vw,0.75rem)] font-light">
@@ -2715,7 +2725,7 @@ function PresentationImagePair({
   ];
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-6 md:grid-cols-2 print:grid-cols-2">
+    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-2 gap-6 md:grid-cols-2 md:grid-rows-1 @3xl/presentation:grid-cols-2 @3xl/presentation:grid-rows-1 print:grid-cols-2 print:grid-rows-1">
       {images.map(({ key, label, image }) => (
         <div key={key} className="flex min-h-0 flex-col">
           <div className="mb-2 text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -2783,19 +2793,19 @@ function RoomSlide({
 }) {
   if (pageLayout === "images-only") {
     return (
-      <div className="relative flex h-full w-full flex-col bg-bone px-8 pb-24 pt-8 lg:px-12 lg:pb-28 lg:pt-12">
+      <div className="relative flex h-full w-full flex-col bg-bone px-8 pb-24 pt-8 @5xl/presentation:px-12 @5xl/presentation:pb-28 @5xl/presentation:pt-12">
         <div className="mb-4 shrink-0">
           <div className="eyebrow text-[11px]">
             {project.name} · {project.client_name}
           </div>
-          <h2 className="mt-2 font-display text-4xl leading-tight text-ink lg:text-6xl">
+          <h2 className="mt-2 font-display text-4xl leading-tight text-ink @5xl/presentation:text-6xl">
             {room.name}
           </h2>
         </div>
         <div className="min-h-0 flex-1">
           <PresentationImagePair roomName={room.name} data={data} view={view} />
         </div>
-        <PresentationFooter />
+        <PresentationFooter inSlide />
       </div>
     );
   }
@@ -2806,10 +2816,10 @@ function RoomSlide({
   const expandedImageLayout = !hasMaterials;
   return (
     <div
-      className={`relative h-full w-full bg-bone px-8 pb-24 pt-8 lg:px-12 lg:pb-28 lg:pt-12 ${
+      className={`relative h-full w-full bg-bone px-8 pb-24 pt-8 @5xl/presentation:px-12 @5xl/presentation:pb-28 @5xl/presentation:pt-12 ${
         expandedImageLayout && !comparisonImage
           ? "flex flex-col"
-          : "grid gap-6 lg:grid-cols-[1.6fr_1fr]"
+          : "grid grid-rows-2 gap-6 @5xl/presentation:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] @5xl/presentation:grid-rows-1"
       }`}
     >
       <div
@@ -2817,11 +2827,11 @@ function RoomSlide({
           expandedImageLayout && !comparisonImage ? "flex-1" : ""
         }`}
       >
-        <div className="mb-4">
+        <div className="mb-4 shrink-0">
           <div className="eyebrow text-[11px]">
             {project.name} · {project.client_name}
           </div>
-          <h2 className="font-display text-4xl lg:text-6xl text-ink mt-2 leading-tight">
+          <h2 className="mt-2 font-display text-4xl leading-tight text-ink @5xl/presentation:text-6xl">
             {room.name}
           </h2>
         </div>
@@ -2840,11 +2850,11 @@ function RoomSlide({
           <PresentationComparisonPanel comparisonImage={comparisonImage} />
         ) : null
       ) : (
-        <SpreadSidebar data={data} room={room} view={view} hiddenSections={hiddenSections} />
+        <SpreadSidebar data={data} room={room} view={view} hiddenSections={hiddenSections} fitSlide />
       )}
       <PresentationFooter
         align={expandedImageLayout && !comparisonImage ? "center" : "mainColumn"}
-        sidePaddingPx={48}
+        inSlide
       />
     </div>
   );
@@ -3473,6 +3483,7 @@ function SpreadSidebar({
   view,
   comparisonImage,
   hiddenSections = [],
+  fitSlide = false,
   onPick,
   onUpdateViewSketch,
   onUpdateViewRendering,
@@ -3483,6 +3494,7 @@ function SpreadSidebar({
   view: RoomData["views"][number];
   comparisonImage?: ReturnType<typeof comparisonPresentationImage>;
   hiddenSections?: PresentationSidebarSection[];
+  fitSlide?: boolean;
   onPick?: (patch: Record<string, string | string[] | null>) => void;
   onUpdateViewSketch?: (sketchupId: string | null) => void;
   onUpdateViewRendering?: (renderingId: string) => void;
@@ -3506,7 +3518,7 @@ function SpreadSidebar({
   };
 
   return (
-    <div className="flex flex-col gap-6 print:gap-3">
+    <div className="flex min-h-0 flex-col gap-6 print:gap-3">
       {onPick && view.hero && onUpdateViewRendering && (
         <Card label="Presentation Image">
           <div className="print:hidden">
@@ -3521,8 +3533,8 @@ function SpreadSidebar({
         </Card>
       )}
       {activeComparisonImage && (
-        <Card label={activeComparisonImage.label}>
-          <div className="aspect-[4/3] bg-bone overflow-hidden">
+        <Card label={activeComparisonImage.label} fitSlide={fitSlide}>
+          <div className={`overflow-hidden bg-bone ${fitSlide ? "min-h-0 flex-1" : "aspect-[4/3]"}`}>
             {activeComparisonImage.image ? (
               <img src={normalizeSupabaseImageUrl(activeComparisonImage.image.url)} alt="" className="w-full h-full object-contain" />
             ) : (
@@ -3580,6 +3592,7 @@ function SpreadSidebar({
 
       {showPalette && (
         <Card
+          fitSlide={fitSlide}
           label={
             <EditableSectionLabel
               value={room?.presentation_palette_label}
@@ -3589,9 +3602,12 @@ function SpreadSidebar({
             />
           }
         >
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className={`grid grid-cols-2 gap-1.5 ${fitSlide ? "min-h-0 flex-1 auto-rows-fr" : ""}`}>
             {paletteItems.map((m) => (
-              <div key={m.id} className="aspect-square bg-bone overflow-hidden">
+              <div
+                key={m.id}
+                className={`overflow-hidden bg-bone ${fitSlide ? "min-h-0" : "aspect-square"}`}
+              >
                 {materialImageUrl(m) && (
                   <img
                     src={normalizeSupabaseImageUrl(materialImageUrl(m)!)}
@@ -3709,10 +3725,22 @@ function EditableSectionLabel({
   );
 }
 
-function Card({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+function Card({
+  label,
+  children,
+  fitSlide = false,
+}: {
+  label: React.ReactNode;
+  children: React.ReactNode;
+  fitSlide?: boolean;
+}) {
   return (
-    <div className="border border-border p-4 lg:p-5 print:p-3 bg-background">
-      <div className="eyebrow text-[10px] mb-3">{label}</div>
+    <div
+      className={`border border-border bg-background p-4 lg:p-5 print:p-3 ${
+        fitSlide ? "flex min-h-0 flex-1 flex-col @5xl/presentation:p-5" : ""
+      }`}
+    >
+      <div className="eyebrow mb-3 shrink-0 text-[10px]">{label}</div>
       {children}
     </div>
   );
