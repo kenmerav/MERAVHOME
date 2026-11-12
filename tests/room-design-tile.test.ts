@@ -3,6 +3,7 @@ import {
   roomDesignTileFields,
   roomDesignTileIssues,
   roomDesignTileLocation,
+  roomDesignTileRequiredDetails,
   roomDesignTileSurface,
   updateRoomDesignTileNotes,
 } from "@/lib/roomDesignTile";
@@ -47,6 +48,24 @@ function installationNotes() {
   notes = updateRoomDesignTileNotes(notes, "jointWidth", "3/16 inch");
   return updateRoomDesignTileNotes(notes, "layout", "Vertical broken joint");
 }
+
+it("opens and edits tile installation details when a saved board layer has null notes", () => {
+  expect(roomDesignTileFields(null)).toMatchObject({
+    groutColor: "", jointWidth: "", layout: "", direction: "",
+  });
+  expect(roomDesignTileRequiredDetails(null).map(issue => issue.field)).toEqual([
+    "grout", "layout", "direction",
+  ]);
+  expect(updateRoomDesignTileNotes(null, "groutColor", "Ivory")).toBe("Grout color: Ivory");
+});
+
+it("only asks for joint width and direction when the grout color and pattern were entered", () => {
+  const issues = roomDesignTileRequiredDetails("Grout color: Off-white\nTile layout: Straight set");
+  expect(issues.map(issue => issue.message)).toEqual([
+    "Enter the grout joint width.",
+    "Enter the tile lay direction or approved drawing reference.",
+  ]);
+});
 
 it("flags the saved tile details independently on an included design-board image", () => {
   const tile = {
@@ -179,7 +198,7 @@ it("does not treat TBD grout or manufacturer alone as a confirmed choice", () =>
       grout,
     );
     expect(roomDesignTileIssues(selected(notes))).toContain(
-      "Enter the grout color and joint width.",
+      "Enter the grout color.",
     );
   }
 });
@@ -214,13 +233,13 @@ it("keeps unknown grout or layout decisions flagged, including manufacturer-only
       roomDesignTileIssues(
         selected(updateRoomDesignTileNotes(installationNotes(), "groutColor", value)),
       ),
-    ).toContain("Enter the grout color and joint width.");
+    ).toContain("Enter the grout color.");
   }
   expect(
     roomDesignTileIssues(
       selected(updateRoomDesignTileNotes(installationNotes(), "jointWidth", "")),
     ),
-  ).toContain("Enter the grout color and joint width.");
+  ).toContain("Enter the grout joint width.");
   expect(
     roomDesignTileIssues(
       selected(updateRoomDesignTileNotes(installationNotes(), "layout", "TBD: stacked or offset")),
@@ -258,7 +277,7 @@ it("preserves existing approved installation notes and explicit groutless detail
   expect(updated).toContain("Keep trim.");
   expect(updated).not.toContain("3/16");
   expect(roomDesignTileIssues(selected(updated))).toContain(
-    "Enter the grout color and joint width.",
+    "Enter the grout joint width.",
   );
 });
 it("retains project installation decisions through saving, board creation, and the Materials/Spec checker", () => {

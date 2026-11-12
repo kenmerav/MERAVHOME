@@ -35,9 +35,9 @@ const labels = {
   edgeFinish: "Tile edge finish",
   edgeSize: "Tile edge size",
 };
-const lines = (notes = "") => notes.replace(/\\n/g, "\n").split("\n");
+const lines = (notes?: string | null) => (notes ?? "").replace(/\\n/g, "\n").split("\n");
 
-export function roomDesignTileFields(notes = "") {
+export function roomDesignTileFields(notes?: string | null) {
   const read = (field: RoomDesignTileField) =>
     lines(notes)
       .find((line) => line.trim().toLowerCase().startsWith(`${labels[field].toLowerCase()}:`))
@@ -85,7 +85,7 @@ export function roomDesignTileLocation(item: TileSelection) {
 
 /** Project installation choices travel through the existing notes -> board -> Materials path. */
 export function updateRoomDesignTileNotes(
-  notes: string | undefined,
+  notes: string | null | undefined,
   field: RoomDesignTileField,
   value: string,
 ) {
@@ -147,18 +147,23 @@ export function roomDesignTileSurface(
   return "unrelated";
 }
 
-export function roomDesignTileRequiredDetails(notes = "") {
+export function roomDesignTileRequiredDetails(notes?: string | null) {
   const fields = roomDesignTileFields(notes);
-  const details = tileInstallationEvidence(notes);
+  const details = tileInstallationEvidence(notes ?? "");
   const issues: Array<{ field: "grout" | "layout" | "direction"; message: string }> = [];
-  if (!details.color || !details.jointWidth) {
+  if (!details.color) {
     issues.push({
       field: "grout",
-      message: details.color && tileJointWidthNeedsUnit(fields.jointWidth)
+      message: details.jointWidth ? "Enter the grout color." : "Enter the grout color and joint width.",
+    });
+  } else if (!details.jointWidth) {
+    issues.push({
+      field: "grout",
+      message: tileJointWidthNeedsUnit(fields.jointWidth)
         ? "Add a unit to the grout joint width, for example 1 mm or 1/8 inch."
-        : details.color && fields.jointWidth.trim() && !pending.test(fields.jointWidth)
+        : fields.jointWidth.trim() && !pending.test(fields.jointWidth)
           ? "Enter a valid grout joint width with units, for example 1 mm or 1/8 inch."
-          : "Enter the grout color and joint width.",
+          : "Enter the grout joint width.",
     });
   }
   if (!details.layout)
