@@ -35,10 +35,10 @@ function findButton(node: any, label: string): any {
   if (node.type === "button" && JSON.stringify(children).includes(label)) return node;
   return findButton(children, label);
 }
-function editor() {
+function editor(sourceDraft?: unknown) {
   const onSaved = vi.fn();
   const tree = ProductInvoiceCreator({
-    projectId: "project-a", projectName: "Bella Vista", clientName: "Kip", defaultTaxRate: "8",
+    projectId: "project-a", projectName: "Bella Vista", clientName: "Kip", defaultTaxRate: "8", sourceDraft,
     items: [{ id: "material-a", material: {
       client_product_name: "Bathroom sink", category: "Plumbing", quantity: 2, quantity_unit: "count",
       image_url: null, color: "White", product_url: null, cad_label: null, notes: null,
@@ -113,4 +113,35 @@ it("still supports Save Invoice without a download window", async () => {
   expect(mocks.create).toHaveBeenCalledOnce();
   expect(form.onSaved).toHaveBeenCalledOnce();
   expect(openWindow).not.toHaveBeenCalled();
+});
+
+it("carries named fees into the saved invoice, printable totals, and payment amount", async () => {
+  const serviceFees = [
+    { name: "Receiving & Installation", amount: "$1,250.50", taxable: false },
+    { name: "Site Setup", amount: "100", taxable: true },
+  ];
+  const form = editor({ lines: [{ sourceId: "material-a" }], serviceFees });
+  await form.download();
+  const [invoice, payments] = mocks.create.mock.calls[0];
+  const saved = JSON.parse(invoice.raw_text);
+  expect(saved.draft.serviceFees).toMatchObject(serviceFees);
+  expect(saved.totals).toMatchObject({ subtotal: 500, shipping: 20, tax: 48, total: 1918.50 });
+  expect(invoice).toMatchObject({ total_amount: 1918.50, balance_due: 1918.50 });
+  expect(payments[0].amount).toBe(1918.50);
+  const html = printWindow.document.write.mock.calls[0][0];
+  expect(html).toContain("<span>Receiving &amp; Installation</span><span>$1,250.50</span>");
+  expect(html).toContain("<span>Site Setup</span><span>$100.00</span>");
+  expect(html.match(/Shipping:/g)).toHaveLength(1);
+  expect(html).toContain("$1,918.50");
+});
+
+it.each([
+  { name: "", amount: "1200" },
+  { name: "Receiving", amount: "-1200" },
+  { name: "Installation", amount: "1,200.555" },
+])("requires a name and valid dollar amount before saving fees", async (fee) => {
+  const form = editor({ lines: [{ sourceId: "material-a" }], serviceFees: [fee] });
+  await form.save();
+  expect(mocks.create).not.toHaveBeenCalled();
+  expect(mocks.error).toHaveBeenCalledWith(expect.stringContaining("service fee"));
 });

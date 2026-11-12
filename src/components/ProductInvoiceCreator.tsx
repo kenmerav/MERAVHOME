@@ -90,6 +90,13 @@ type ProductInvoiceLine = ProductInvoicePricing & {
   sourceAvailable?: boolean;
 };
 
+type ProductInvoiceServiceFee = {
+  id: string;
+  name: string;
+  amount: string;
+  taxable: boolean;
+};
+
 type ProductInvoiceDraft = {
   invoiceName: string;
   invoiceDate: string;
@@ -105,9 +112,11 @@ type ProductInvoiceDraft = {
   showVendorNames: boolean;
   showDesignerDiscount: boolean;
   lines: ProductInvoiceLine[];
+  serviceFees: ProductInvoiceServiceFee[];
 };
 
 type ProductInvoiceApprovalFilter = "all" | "approved" | "not_approved" | "declined";
+const invalidServiceFeeMessage = "Enter a name and a positive dollar amount for each service fee.";
 
 export function ProductInvoiceCreator({
   projectId,
@@ -177,7 +186,8 @@ export function ProductInvoiceCreator({
     line.selected && line.sourceAvailable &&
     (!isKnownPrice(line.unitPrice) || !priceMatchesQuantityUnit(line.priceUnit, line.quantityUnit)),
   );
-  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0 && invalidCurrentPrices.length === 0 && (!draft.showDesignerDiscount || discount.incomplete === 0);
+  const invalidServiceFees = totals.serviceFees.length !== draft.serviceFees.length;
+  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0 && invalidCurrentPrices.length === 0 && !invalidServiceFees && (!draft.showDesignerDiscount || discount.incomplete === 0);
   const html = useMemo(() => buildProductInvoiceHtml(draft, totals), [draft, totals]);
 
   const updateDraft = (patch: Partial<ProductInvoiceDraft>) =>
@@ -190,8 +200,24 @@ export function ProductInvoiceCreator({
       ),
     }));
   };
+  const updateServiceFees = (edit: (fees: ProductInvoiceServiceFee[]) => ProductInvoiceServiceFee[]) => {
+    setDraft((current) => {
+      const next = { ...current, serviceFees: edit(current.serviceFees) };
+      if (
+        (current.stripeLink || current.stripePaymentLinkId) &&
+        Math.round(productInvoiceTotals(current).balance * 100) !== Math.round(productInvoiceTotals(next).balance * 100)
+      ) {
+        return { ...next, stripeLink: "", stripePaymentLinkId: "" };
+      }
+      return next;
+    });
+  };
+  const updateServiceFee = (id: string, patch: Partial<Omit<ProductInvoiceServiceFee, "id">>) => {
+    updateServiceFees((fees) => fees.map((fee) => fee.id === id ? { ...fee, ...patch } : fee));
+  };
 
   const generateStripeLink = async () => {
+    if (invalidServiceFees) return toast.error(invalidServiceFeeMessage);
     if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check prices, quantities and units before showing the discount." : "Select at least one product with a client price first.");
     setGeneratingLink(true);
     try {
@@ -226,6 +252,7 @@ export function ProductInvoiceCreator({
     if (saveInProgress.current || generatingLink) return;
     if (!projectId)
       return toast.error("Choose a single project before creating a product invoice.");
+    if (invalidServiceFees) return toast.error(invalidServiceFeeMessage);
     if (!canCreate) return toast.error(draft.showDesignerDiscount && discount.incomplete ? "Check prices, quantities and units before showing the discount." : "Select products with a client price before saving.");
     saveInProgress.current = true;
     setSaving(true);
@@ -287,7 +314,7 @@ export function ProductInvoiceCreator({
 
   return (
     <Dialog open={open} onOpenChange={(next) => {
-      if (saveInProgress.current) return;
+      if (saveInProgress.current || generatingLink) return;
       if (next && !open) {
         setDraft(makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved, sourceDraft }));
         setApprovalFilter("all"); setRoomFilter("__all"); setCategoryFilter("__all");
@@ -316,7 +343,7 @@ export function ProductInvoiceCreator({
           </div>
         )}
 
-        <fieldset disabled={saving} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+        <fieldset disabled={saving || generatingLink} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
           <div className="space-y-6">
             {sourceInvoiceName && <p className="border border-border bg-bone/30 p-3 text-sm">New draft based on {sourceInvoiceName}, with pricing and shipping updates from Procurement.</p>}
             {draft.lines.some((line) => line.sourceAvailable === false) && <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Some saved invoice items no longer have a matching product in Procurement. Review their saved details before creating the new invoice.</p>}
@@ -579,6 +606,61 @@ export function ProductInvoiceCreator({
               </div>
             </section>
 
+            <section className="border border-border p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="eyebrow">Service Fees</h3>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-ink"
+                  onClick={() => {
+                    const fee = { id: crypto.randomUUID(), name: "", amount: "", taxable: false };
+                    updateServiceFees((fees) => [...fees, fee]);
+                  }}
+                >
+                  <Plus className="w-4 h-4" /> Add Service Fee
+                </button>
+              </div>
+              {draft.serviceFees.map((fee) => (
+                <div key={fee.id} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,8rem)_auto_auto] sm:items-end">
+                  <label className="block">
+                    <span className="eyebrow mb-2 block">Fee Name</span>
+                    <Input
+                      value={fee.name}
+                      onChange={(event) => updateServiceFee(fee.id, { name: event.target.value })}
+                      placeholder="Receiving and Installation"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="eyebrow mb-2 block">Fee Amount</span>
+                    <Input
+                      inputMode="decimal"
+                      value={fee.amount}
+                      onChange={(event) => updateServiceFee(fee.id, { amount: event.target.value })}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm sm:h-10">
+                    <Checkbox
+                      checked={fee.taxable}
+                      onCheckedChange={(checked) => updateServiceFee(fee.id, { taxable: checked === true })}
+                    />
+                    Taxable
+                  </label>
+                  <button
+                    type="button"
+                    aria-label={fee.name.trim() ? `Remove ${fee.name.trim()} fee` : "Remove service fee"}
+                    className="justify-self-start px-2 text-sm underline-offset-4 hover:underline sm:h-10"
+                    onClick={() => updateServiceFees((fees) => fees.filter((entry) => entry.id !== fee.id))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {invalidServiceFees && (
+                <p role="alert" className="text-sm text-amber-900">{invalidServiceFeeMessage}</p>
+              )}
+            </section>
+
             <div>
               <Label className="eyebrow mb-2 block">Notes</Label>
               <Textarea
@@ -616,6 +698,9 @@ export function ProductInvoiceCreator({
             </>)}
             <SummaryStat label="Subtotal" value={totals.subtotal} />
             <SummaryStat label="Shipping" value={totals.shipping} />
+            {totals.serviceFees.map((fee) => (
+              <SummaryStat key={fee.id} label={fee.name} value={fee.amount} />
+            ))}
             <SummaryStat label={`Tax (${draft.taxRate || "0"}%)`} value={totals.tax} />
             <SummaryStat label="Total" value={totals.total} strong />
             <SummaryStat label="Balance" value={totals.balance} strong />
@@ -681,6 +766,7 @@ export function makeProductInvoiceDraft({
     notes: "",
     showVendorNames: true,
     showDesignerDiscount: false,
+    serviceFees: [],
     lines: (onlyApproved
       ? items.filter((item) => item.room_product?.approval_status === "approved")
       : items
@@ -779,6 +865,18 @@ export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknow
       sourceAvailable: Boolean(current),
     }];
   });
+  const serviceFees = Array.isArray(source.serviceFees)
+    ? source.serviceFees.flatMap((value, index): ProductInvoiceServiceFee[] => {
+        if (!value || typeof value !== "object") return [];
+        const fee = value as Record<string, unknown>;
+        return [{
+          id: `saved-service-fee-${index}`,
+          name: stringValue(fee.name),
+          amount: stringValue(fee.amount),
+          taxable: fee.taxable === true,
+        }];
+      })
+    : [];
   return {
     ...base,
     invoiceName: `${stringValue(source.invoiceName, "Product Invoice")} (Copy)`,
@@ -788,6 +886,7 @@ export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknow
     showVendorNames: source.showVendorNames !== false,
     showDesignerDiscount: source.showDesignerDiscount === true,
     lines,
+    serviceFees,
   };
 }
 
@@ -805,10 +904,19 @@ export function productInvoiceTotals(draft: ProductInvoiceDraft) {
     (sum, line) => sum + moneyValue(line.shipping) * quantityValue(line.quantity),
     0,
   );
-  const tax = subtotal * ((Number(draft.taxRate) || 0) / 100);
+  const serviceFees = draft.serviceFees.flatMap((fee) => {
+    const name = fee.name.trim();
+    const amount = moneyValue(fee.amount);
+    const validAmount = /^\$?\s*(?:(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?|\.\d{1,2})$/.test(fee.amount.trim()) &&
+      amount > 0 && Number.isSafeInteger(Math.round(amount * 100));
+    return name && validAmount ? [{ ...fee, name, amount }] : [];
+  });
+  const feeSubtotal = serviceFees.reduce((sum, fee) => sum + fee.amount, 0);
+  const taxableFees = serviceFees.reduce((sum, fee) => sum + (fee.taxable ? fee.amount : 0), 0);
+  const tax = (subtotal + taxableFees) * ((Number(draft.taxRate) || 0) / 100);
   const paid = moneyValue(draft.paid);
-  const total = subtotal + shipping + tax;
-  return { subtotal, shipping, tax, paid, total, balance: Math.max(total - paid, 0) };
+  const total = subtotal + shipping + feeSubtotal + tax;
+  return { subtotal, shipping, serviceFees, tax, paid, total, balance: Math.max(total - paid, 0) };
 }
 
 function lineSubtotal(line: ProductInvoiceLine) {
@@ -1010,6 +1118,7 @@ export function buildProductInvoiceHtml(
       <div class="summary-row"><span>Designer discount:</span><span>${formatMoney(discount.discount === 0 ? 0 : -discount.discount)}</span></div>` : ""}
       <div class="summary-row"><span>Subtotal:</span><span>${formatMoney(totals.subtotal)}</span></div>
       <div class="summary-row"><span>Shipping:</span><span>${formatMoney(totals.shipping)}</span></div>
+      ${totals.serviceFees.map((fee) => `<div class="summary-row"><span>${escapeHtml(fee.name)}</span><span>${formatMoney(fee.amount)}</span></div>`).join("")}
       <div class="summary-row"><span>Tax:</span><span>${formatMoney(totals.tax)}</span></div>
       <div class="summary-row"><strong>Total:</strong><strong class="total">${formatMoney(totals.total)}</strong></div>
       <div class="summary-row"><span>Paid:</span><span>${totals.paid ? formatMoney(totals.paid) : ""}</span></div>
