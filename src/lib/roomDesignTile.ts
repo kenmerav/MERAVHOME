@@ -1,4 +1,4 @@
-import { isTileInstallationSurface, tileDetailConfirmed } from "./tileInstallation";
+import { isTileInstallationSurface, tileInstallationEvidence } from "./tileInstallation";
 import {
   tileManualAnswerConfirmed as roomDesignTileAnswerConfirmed,
   tileJointWidthConfirmed as roomDesignJointWidthConfirmed,
@@ -71,8 +71,6 @@ export function roomDesignTileFields(notes = "") {
 
 const pending =
   /\b(tbd|tbc|pending|unknown|unsure|undecided|not sure|to be (?:confirmed|selected|determined))\b/i;
-const drawingReference =
-  /\b(?:layout|installation|lay|direction).{0,40}(?:like|per|as shown|see).{0,40}(?:example|photo|image|board|drawing|reference)\b/i;
 
 export function roomDesignTileLocation(item: TileSelection) {
   const location = roomDesignTileFields(item.notes).location;
@@ -83,22 +81,6 @@ export function roomDesignTileLocation(item: TileSelection) {
   )
     ? item.category
     : "";
-}
-
-export function roomDesignTileDirectionConfirmed(notes = "") {
-  const fields = roomDesignTileFields(notes);
-  const text = fields.direction || notes;
-  if (fields.direction) return roomDesignTileAnswerConfirmed(fields.direction);
-  return lines(text).some(
-    (line) =>
-      !pending.test(line) &&
-      (/\b(horizontal|vertical|diagonal|lengthwise|crosswise|parallel|perpendicular|long edge|short edge|north.south|east.west)\b/i.test(
-        line,
-      ) ||
-        /\b(?:run|running|runs).{0,35}(?:toward|along|across|from|to the)\b/i.test(line) ||
-        /\b(?:as supplied|factory|pre.?mounted).{0,25}(?:sheet|mosaic)\b/i.test(line) ||
-        drawingReference.test(line)),
-  );
 }
 
 /** Project installation choices travel through the existing notes -> board -> Materials path. */
@@ -151,12 +133,12 @@ export function roomDesignTileSurface(
       item_label: item.category,
       client_product_name: productName,
       category: item.materialCategory || undefined,
+      notes: item.notes,
       is_required: false,
     })
   )
     return "tile";
   const surface = roomDesignTileFields(item.notes).surface;
-  if (surface === "Tile") return "tile";
   if (
     /\b(flooring|backsplash|wall finish|wall covering|fireplace surround)\b/i.test(item.category)
   ) {
@@ -167,35 +149,21 @@ export function roomDesignTileSurface(
 
 export function roomDesignTileRequiredDetails(notes = "") {
   const fields = roomDesignTileFields(notes);
+  const details = tileInstallationEvidence(notes);
   const issues: Array<{ field: "grout" | "layout" | "direction"; message: string }> = [];
-  const explicitGrout = Boolean(fields.groutColor || fields.jointWidth);
-  if (explicitGrout) {
-    if (
-      !roomDesignTileAnswerConfirmed(fields.groutColor) ||
-      /^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test(fields.groutColor.trim())
-    )
-      issues.push({ field: "grout", message: "Enter the grout color and joint width." });
-    else if (!roomDesignJointWidthConfirmed(fields.jointWidth))
-      issues.push({
-        field: "grout",
-        message: tileJointWidthNeedsUnit(fields.jointWidth)
-          ? "Add a unit to the grout joint width, for example 1 mm or 1/8 inch."
-          : fields.jointWidth.trim() && !pending.test(fields.jointWidth)
-            ? "Enter a valid grout joint width with units, for example 1 mm or 1/8 inch."
-            : "Enter the grout color and joint width.",
-      });
-  } else if (!tileDetailConfirmed("grout", notes))
-    issues.push({ field: "grout", message: "Enter the grout color and joint width." });
-  const patternNotes = lines(notes)
-    .filter((line) => !/^\s*Tile lay direction\s*:/i.test(line))
-    .join("\n");
-  if (
-    fields.layout
-      ? !roomDesignTileAnswerConfirmed(fields.layout)
-      : !tileDetailConfirmed("tile_layout", patternNotes)
-  )
+  if (!details.color || !details.jointWidth) {
+    issues.push({
+      field: "grout",
+      message: details.color && tileJointWidthNeedsUnit(fields.jointWidth)
+        ? "Add a unit to the grout joint width, for example 1 mm or 1/8 inch."
+        : details.color && fields.jointWidth.trim() && !pending.test(fields.jointWidth)
+          ? "Enter a valid grout joint width with units, for example 1 mm or 1/8 inch."
+          : "Enter the grout color and joint width.",
+    });
+  }
+  if (!details.layout)
     issues.push({ field: "layout", message: "Enter the tile layout / pattern or approved drawing reference." });
-  if (!roomDesignTileDirectionConfirmed(notes))
+  if (!details.direction)
     issues.push({ field: "direction", message: "Enter the tile lay direction or approved drawing reference." });
   return issues;
 }

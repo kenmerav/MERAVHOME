@@ -19,6 +19,14 @@ it("targets tile, mosaics, backsplashes and stone flooring, excluding fixtures, 
   expect(needsTileInstallation(tile({ not_needed: true }))).toBe(false);
   expect(needsTileInstallation(tile({ notes: "SUPERSEDED by plaster shower walls. Do not install this tile." }))).toBe(false);
   expect(needsTileInstallation(tile({ notes: "Hood wall tile is selected. Exclude the canceled sink/window surround." }))).toBe(true);
+  expect(needsTileInstallation(tile({
+    item_label: "Nieve Punto",
+    category: "Materials",
+  }))).toBe(true);
+  expect(needsTileInstallation(tile({
+    item_label: "Reno-T",
+    product: { name: "Reno-T", category: "Tile", subcategory: "Trim" } as MaterialItem["product"],
+  }))).toBe(false);
 });
 it("recognizes real past-project wording and flags only the still-missing grout width", () => {
   const r = review([tile({ notes: "vertical, rows offset, offwhite grout" })]);
@@ -30,7 +38,7 @@ it("recognizes real past-project wording and flags only the still-missing grout 
 });
 it("accepts selected color plus joint width, preserves independent layout when grout is pending", () => {
   expect(review([tile({ notes: 'Grout: medium greige, 1/8-inch joints. Vertical straight set.' })]).findings).toEqual([]);
-  const r = review([tile({ notes: "Running bond. Grout color and joint width TBD." })]);
+  const r = review([tile({ notes: "Vertical running bond. Grout color and joint width TBD." })]);
   expect(r.findings.map(f => f.field)).toEqual(["grout"]);
   expect(tileDetailConfirmed("grout", 'Off-white grout, ⅛ inch joints')).toBe(true);
   expect(tileDetailConfirmed("grout", 'Grout off white OR match subway tile, 1/8 inch')).toBe(false);
@@ -48,10 +56,32 @@ it("honors an explicit groutless installation instead of demanding grout on ever
   expect(r.findings.some(f => f.field === "grout")).toBe(false);
   expect(tileInstallationNote("grout", "No grout required", null)).toBe("Grout: No grout required");
 });
-it("accepts a fixed mosaic pattern but does not infer field-tile layout from its product photo/name", () => {
+it("accepts a fixed mosaic pattern while checking its installed direction", () => {
   const mosaic = tile({ product: { name: "Bianco Perlino 1.5x4 Herringbone Brushed Marble Mosaic Tile" } as any });
-  expect(review([mosaic]).findings.map(f => f.field)).toEqual(["grout"]);
+  expect(review([mosaic]).findings.find(f => f.field === "tile_layout")?.message).toBe("Confirm tile lay direction for this tiled area.");
+  expect(review([{ ...mosaic, notes: "Tile lay direction: Along the vanity wall" }]).findings.map(f => f.field)).toEqual(["grout"]);
   expect(review([tile()]).findings.map(f => f.field)).toEqual(["grout", "tile_layout"]);
+});
+it("checks manually entered tile selections even before a catalog product is assigned", () => {
+  const manual = tile({
+    item_label: "Shower wall",
+    category: "Materials",
+    product_id: null,
+    product: null,
+    notes: "Installation surface: Tile\nGrout color: Off-white\nGrout joint width: 1/8 inch\nTile layout: Running bond",
+  });
+  expect(review([manual]).findings.map(f => f.message)).toEqual(["Confirm tile lay direction for this tiled area."]);
+  expect(needsTileInstallation({ item_label: "Shower wall tile", is_required: true })).toBe(false);
+  expect(needsTileInstallation({ item_label: "Shower wall tile", is_required: false })).toBe(true);
+});
+it("combines decisions for the same surface across notes and a matched plan without reading nearby geometry as the direction", () => {
+  const material = tile({ notes: "Grout color: Off-white\nTile layout: Running bond" });
+  const planProofs = { tile: [{ text: 'VERTICAL PLUMBING CHASE\nGROUT JOINT WIDTH: 1/8 inch', source: "plans", page: 1, sheet: "ID79" }] };
+  const missing = review([material], { planProofs });
+  expect(missing.findings.map(f => f.message)).toEqual(["Confirm tile lay direction for this tiled area."]);
+  expect(missing.covered[0].evidence.map(p => p.source)).toEqual(["notes", "plans"]);
+  planProofs.tile[0].text += "\nTILE LAY DIRECTION: Along the vanity wall";
+  expect(review([material], { planProofs }).findings).toEqual([]);
 });
 it("checks only linked board notes, preserving room and product boundaries", () => {
   const board = { pages: [{ id: "page", elements: [
@@ -96,6 +126,14 @@ it("saves project-specific installation notes without changing other notes or ca
   expect(tileInstallationNote("grout", 'Warm grey, 1/8 inch joints', notes)).toBe('Keep pencil trim.\nTile layout: Vertical straight set\nGrout: Warm grey, 1/8 inch joints');
   expect(() => tileInstallationNote("grout", "TBD", notes)).toThrow();
   expect(() => tileInstallationNote("tile_layout", "TBD", notes)).toThrow();
+  expect(() => tileInstallationNote("tile_layout", "Running bond", notes)).toThrow();
+  expect(() => tileInstallationNote("tile_layout", "Vertical", notes)).toThrow();
+  expect(tileInstallationNote("tile_layout", "Per approved drawing ID79", "Keep trim.\nTile layout: TBD\nTile lay direction: TBD"))
+    .toBe("Keep trim.\nTile layout: Per approved drawing ID79");
+  expect(tileDetailConfirmed("grout", tileInstallationNote("grout", "MAPEI Avalanche, 1/8 inch joints", "Grout color: TBD\nGrout joint width: TBD"))).toBe(true);
+  expect(tileDetailConfirmed("grout", "Grout: MAPEI, 1/16 inch joints")).toBe(false);
+  expect(tileInstallationNote("grout", "Ivory, 1/8 inch joints", "Grout: Off-white, 1/8 inch joints. Vertical straight set."))
+    .toBe("Vertical straight set.\nGrout: Ivory, 1/8 inch joints");
 });
 it("does not duplicate installation findings as generic missing catalog items in the AI plan review", () => {
   const row = { room_id: "bath", item_id: null, field: "missing_item", confidence: "high", page: 1, sheet: "ID79",

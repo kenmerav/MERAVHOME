@@ -1,6 +1,6 @@
 import type { MaterialItem } from "./db";
 import type { CompletionFinding } from "./specCompletion";
-import { materialVisibleInProcurement } from "./materialSelection";
+import { materialHasUserSelection } from "./materialSelection";
 import { drawingMatchItems, nativeDrawingMatches, drawingRoomHeadings } from "./specDrawingMatches";
 import { drawingNameEvidence } from "./specDrawingNameMatches";
 import { tileManualAnswerConfirmed, tileJointWidthConfirmed } from "./tileManualAnswers";
@@ -24,7 +24,9 @@ export type TileInstallationReview = {
 const identity = (item: Partial<MaterialItem>) => [item.item_label, item.client_product_name, item.product?.name, item.product?.subcategory].filter(Boolean).join(" ");
 const inactive = /\b(cancel(?:ed|led)?|superseded|historical reference|reference only|not selected|no installation|do not (?:order|install)|option[, ]+not final)\b/i;
 export function needsTileInstallation(item: Partial<MaterialItem> & { item_label: string }) {
-  return materialVisibleInProcurement(item) && isTileInstallationSurface(item);
+  return !item.not_needed &&
+    (item.is_required === false || materialHasUserSelection(item) || !!item.design_accuracy_fact) &&
+    isTileInstallationSurface(item);
 }
 
 export function isTileInstallationSurface(item: Partial<MaterialItem> & { item_label: string }) {
@@ -33,11 +35,14 @@ export function isTileInstallationSurface(item: Partial<MaterialItem> & { item_l
   const name = identity(item);
   // A tile-in drain, a slab countertop, a wood herringbone floor, or a tile
   // manufacturer's vanity is not an installed tiled surface.
-  if (/\b(drains?|faucets?|sinks?|vanit(?:y|ies)|toilets?|mirrors?|pendants?|sconces?|lamps?|chandeliers?|grout|refractory|firebox|wallpaper|vinyl|laminate|hardwood|white oak|wood(?:en)? panels?|mdf)\b/i.test(name)) return false;
+  if (/\b(drains?|faucets?|sinks?|vanit(?:y|ies)|toilets?|mirrors?|pendants?|sconces?|lamps?|chandeliers?|grout|tile (?:edge|trim) profiles?|tile trim|refractory|firebox|wallpaper|vinyl|laminate|hardwood|white oak|wood(?:en)? panels?|mdf)\b/i.test(name) ||
+    /^trim$/i.test(item.product?.subcategory || "")) return false;
   if (/\b(countertops?|slabs?|plaster|limewash|roman clay)\b/i.test(name) && !/\b(?:tile|mosaic)\b/i.test(name)) return false;
   return /\b(tiles?|mosaics?|zellige|terracotta|porcelain|ceramic|pavers?)\b/i.test(name) ||
     (/\b(stone|marble|travertine|limestone)\b/i.test(name) && /\b(floor|flooring|wall|backsplash|surround)\b/i.test(name)) ||
-    (/^(?:Tile|Tile & Stone)$/i.test(item.category || item.product?.category || "") && /\b(floor|wall|backsplash|shower|surround|border)\b/i.test(name));
+    [item.category, item.product?.category].some(category => /^Tile$/i.test(category || "")) ||
+    (/^Tile & Stone$/i.test(item.category || "") && /\b(floor|wall|backsplash|shower|surround|border)\b/i.test(name)) ||
+    /^\s*Installation surface\s*:\s*Tile\s*$/im.test(item.notes || "");
 }
 
 // A pending choice mentioning a pattern/color is not a selection. Scope this
@@ -48,46 +53,86 @@ function confirmedSegments(value: string) {
     !inactive.test(s) && !/\b(?:not|no) (?:yet )?(?:confirmed|selected|specified)\b/i.test(s));
 }
 const layout = /\b(straight[ -]?(?:set|lay)|stack(?:ed)?(?:[ -]bond)?|running[ -]bond|broken[ -]joint|herringbone|herringbione|chevron|basket[ -]?weave|brick[ -]bond|crosshatch|diagonal|checkerboard|offset(?: (?:lay|rows|pattern))?|rows? offset|octagon|hexagon|penny round)\b/i;
+const direction = /\b(?:horizontal(?:ly)?|vertical(?:ly)?|diagonal(?:ly)?|lengthwise|crosswise|parallel|perpendicular|long edge|short edge|north.south|east.west)\b|\b(?:run|running|runs).{0,35}(?:toward|along|across|from|to the)\b|\b(?:as supplied|factory|pre.?mounted).{0,25}(?:sheet|mosaic)\b/i;
+const orientationOnly = /^(?:horizontal(?:ly)?|vertical(?:ly)?|lengthwise|crosswise)\.?$/i;
+const layoutReference = /\b(?:tile lay|tile layout|layout|installation|laid|lay|direction).{0,35}(?:like|per|as shown|see).{0,35}(?:example|photo|image|board|drawing|reference)\b/i;
+const sheetReference = /\b(?:see|per|as shown (?:in|on))\s+(?:(?:approved|sheet|detail)\s+)*[A-Z]{1,4}[- ]?\d+(?:[.-]\d+)*\b/i;
 const width = /(?:\b(?:\d+\s+)?\d+\s*\/\s*\d+|\b\d+(?:\.\d+)?|[⅛¼⅜½¾])\s*[-–]?\s*(?:["″]|inch(?:es)?\b|in\b|mm\b|millimet(?:er|re)s?\b)/i;
 const color = /\b(?:off[ -]?white|offwhite|white|black|gr[ae]y|greige|beige|ivory|cream|almond|charcoal|silver|taupe|sand|brown|tan|buff|pewter|linen|frost|bone|alabaster|bright white|warm gr[ae]y)\b/i;
 const groutColor = new RegExp(`(?:${color.source})\\s+(?:colou?red\\s+)?grout\\b|\\bgrout(?:\\s+colou?r)?\\s*[:=-]?\\s*(?:(?:to be|is|in)\\s+)?(?:(?:light|medium|dark|warm|cool|bright|pure|antique)\\s+)?(?:${color.source})`, "i");
 const groutWidth = new RegExp(`(?:${width.source})\\s*(?:wide\\s+)?(?:grout|joints?)\\b|\\b(?:grout|joint(?:s| width)?)\\s*[:=,-]?\\s*(?:(?:width|is|of)\\s*)?(?:${width.source})`, "i");
-function groutParts(value: string) {
+const groutColorCode = /\b(?:mapei|laticrete|spectralock|prism|polyblend|custom building|ardex|tec)\b[^,;]{0,60}(?:#\s*\w+|(?<![\d/])\b\d{2,}\b(?!\s*(?:["″/]|inch|mm|joint)))/i;
+
+function groutParts(segments: string[]) {
   // Only inspect grout/joint sentences, never mistake a tile's color/size for grout.
-  const segments = confirmedSegments(value).filter(s => /\b(grout|joint(?:s)?)\b/i.test(s));
+  const grout = segments.filter(s => /\b(grout|joint(?:s)?)\b/i.test(s));
   return {
-    color: segments.some(s => /\bgrout\b/i.test(s) && (/^grout colou?r\s*:\s*(?!(?:n\/a|na|none|not applicable)\s*$)\S.{1,}/i.test(s) || groutColor.test(s) || /\b(?:match(?:ing)?|blend(?:ing)?)\b/i.test(s) ||
-      /\b(?:mapei|laticrete|spectralock|prism|polyblend|custom building|ardex|tec)\b.{0,60}(?:#\s*\w+|\d{2,})/i.test(s))),
-    width: segments.some(s => groutWidth.test(s)),
+    color: grout.some(s => /\bgrout\b/i.test(s) && (
+      groutColor.test(s) || groutColorCode.test(s) || /\b(?:match(?:ing)?|blend(?:ing)?)\b/i.test(s) ||
+      groutColorConfirmed(/^Grout\s*:\s*(.+?),\s*(?=\d|[⅛¼⅜½¾])/i.exec(s)?.[1] || "")
+    )),
+    width: grout.some(s => {
+      const match = groutWidth.exec(s)?.[0] || (/^Grout\s*:/i.test(s) ? s : "");
+      return tileJointWidthConfirmed(width.exec(match)?.[0] || "");
+    }),
   };
 }
+
+function groutColorConfirmed(value: string) {
+  return tileManualAnswerConfirmed(value) && !/^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test(value.trim());
+}
+
+/** Read project decisions from the explicit fields and older freeform installation notes. */
+export function tileInstallationEvidence(notes = "", source: TileProof["source"] = "notes") {
+  const lines = notes.replace(/\\n/g, "\n").split("\n");
+  const explicit = (label: RegExp) => lines.find(line => label.test(line))?.replace(label, "").trim();
+  const color = explicit(/^\s*Grout colou?r\s*:/i);
+  const jointWidth = explicit(/^\s*Grout joint width\s*:/i);
+  const legacyGrout = explicit(/^\s*Grout\s*:/i);
+  const pattern = explicit(/^\s*Tile layout\s*:/i);
+  const layDirection = explicit(/^\s*Tile lay direction\s*:/i);
+  const installationNotes = confirmedSegments(lines.filter(line => !/^\s*Tile (?:layout|lay direction)\s*:/i.test(line)).join("\n"));
+  const segments = confirmedSegments(notes);
+  const grout = groutParts(segments);
+  const groutPending = legacyGrout !== undefined && !tileManualAnswerConfirmed(legacyGrout);
+  const noGrout = !groutPending && color === undefined && jointWidth === undefined &&
+    segments.some(s => /\b(no grout(?: is)? (?:required|needed)|grout(?: is)? not (?:required|needed)|groutless|dry[ -]stack)\b/i.test(s));
+  const explicitLayout = pattern !== undefined && tileManualAnswerConfirmed(pattern);
+  const documentedDirection = installationNotes.some(s =>
+    layoutReference.test(s) ||
+    (direction.test(s) && (layout.test(s) || /\b(?:install(?:ation)?|tile lay|direction|laid)\b/i.test(s))) ||
+    (source !== "plans" && orientationOnly.test(s)),
+  );
+  const directionInLayout = explicitLayout &&
+    (direction.test(pattern) || layoutReference.test(`Tile layout: ${pattern}`) || sheetReference.test(pattern));
+  return {
+    color: noGrout || (color === undefined ? !groutPending && grout.color : groutColorConfirmed(color)),
+    jointWidth: noGrout || (jointWidth === undefined ? !groutPending && grout.width : tileJointWidthConfirmed(jointWidth)),
+    layout: pattern === undefined
+      ? installationNotes.some(s => layout.test(s) || layoutReference.test(s))
+      : explicitLayout && !orientationOnly.test(pattern),
+    direction: layDirection === undefined
+      ? documentedDirection || directionInLayout
+      : tileManualAnswerConfirmed(layDirection),
+  };
+}
+
 export function tileDetailConfirmed(field: TileField, value: string) {
-  // Explicit unfinished fields must not be hidden by an older pattern or grout note.
-  const labelled = value.replace(/\\n/g, "\n").split("\n").filter(line =>
-    (field === "grout" ? /^\s*Grout(?: color| joint width)?\s*:/i : /^\s*Tile (?:layout|lay direction)\s*:/i).test(line));
-  if (labelled.some(line => /:\s*(?:$|(?:tbd|tbc|pending|unknown|unsure|undecided|not sure|n\/a|none|not applicable)\b)/i.test(line))) return false;
-  const explicit = (label: string) => value.replace(/\\n/g, "\n").split("\n")
-    .find(line => new RegExp(`^\\s*${label}\\s*:`, "i").test(line))?.split(":").slice(1).join(":").trim();
-  if (field === "tile_layout") {
-    const pattern = explicit("Tile layout"), direction = explicit("Tile lay direction");
-    if (pattern !== undefined) return tileManualAnswerConfirmed(pattern) && (direction === undefined || tileManualAnswerConfirmed(direction));
-  }
-  if (field === "grout") {
-    const groutColor = explicit("Grout color"), jointWidth = explicit("Grout joint width");
-    if (groutColor !== undefined || jointWidth !== undefined) return tileManualAnswerConfirmed(groutColor || "") &&
-      !/^(?:mapei|laticrete|ardex|tec|prism|polyblend)$/i.test((groutColor || "").trim()) && tileJointWidthConfirmed(jointWidth || "");
-  }
-  if (field === "grout" && confirmedSegments(value).some(s => /\b(no grout(?: is)? (?:required|needed)|grout(?: is)? not (?:required|needed)|groutless|dry[ -]stack)\b/i.test(s))) return true;
-  if (field === "grout") { const p = groutParts(value); return p.color && p.width; }
-  return confirmedSegments(value).some(s => layout.test(s) || /\b(?:tile lay|tile layout|installation|laid|lay).{0,30}(?:like|per|as shown|see).{0,35}(?:example|photo|image|board|drawing|reference)\b/i.test(s));
+  const details = tileInstallationEvidence(value);
+  return field === "grout" ? details.color && details.jointWidth : details.layout && details.direction;
 }
 export function tileInstallationNote(field: TileField, value: string, notes: string | null) {
   const text = value.trim();
   if (!text || text.length > 1000 || !tileDetailConfirmed(field, `${field === "grout" ? "Grout" : "Tile layout"}: ${text}`))
-    throw Error(field === "grout" ? 'Enter a confirmed grout color and joint width, for example "Off-white, 1/8 inch joints".' : 'Enter a confirmed tile pattern / direction, for example "Vertical straight set".');
+    throw Error(field === "grout" ? 'Enter a confirmed grout color and joint width, for example "Off-white, 1/8 inch joints".' : 'Enter both the tile pattern and lay direction, for example "Vertical straight set", or reference an approved drawing.');
   const label = field === "grout" ? "Grout" : "Tile layout";
-  // Replace only our own labelled line; keep every other project note intact.
-  return [...(notes || "").split("\n").filter(line => !new RegExp(`^${label}:`, "i").test(line)), `${label}: ${text}`].filter(Boolean).join("\n");
+  const replaced = field === "grout" ? /^\s*Grout(?: colou?r| joint width)?\s*:/i : /^\s*Tile (?:layout|lay direction)\s*:/i;
+  const remaining = (notes || "").replace(/\\n/g, "\n").split("\n").flatMap(line => {
+    if (!replaced.test(line)) return [line];
+    // Older notes sometimes continue with another instruction after the labelled field.
+    return line.split(/(?<=[.!?])\s+/).filter(sentence => !replaced.test(sentence));
+  });
+  return [...remaining, `${label}: ${text}`].filter(Boolean).join("\n");
 }
 
 function boardNotes(item: MaterialItem, board: any): TileProof[] {
@@ -137,7 +182,7 @@ export function tilePlanProofs(items: MaterialItem[], rooms: { id: string; name:
       let text = line;
       for (const following of lines.slice(index + 1, index + 4)) {
         if (!/^(?:GROUT|JOINT|INSTALL|PATTERN|LAYOUT)\b/i.test(following)) break;
-        text += " " + following;
+        text += "\n" + following;
       }
       return [{ area: all[1], universal, roomId: headings[0]?.roomId,
         proof: { text, source: "plans" as const, page: page.page, sheet: "" } }];
@@ -157,7 +202,7 @@ export function tilePlanProofs(items: MaterialItem[], rooms: { id: string; name:
         const next = drawingNameEvidence(other, lines.slice(index + 3, end), drawingItems, true);
         if (next?.basis === "product_name") end = Math.min(end, index + 3 + next.index);
       }
-      (proofs[item.id] ??= []).push({ text: lines.slice(index, end).join(" "), source: "plans", page: match.page, sheet: match.sheet });
+      (proofs[item.id] ??= []).push({ text: lines.slice(index, end).join("\n"), source: "plans", page: match.page, sheet: match.sheet });
     }
     for (const note of general) {
       if (note.area && !new RegExp(`\\b${note.area}\\b`, "i").test(identity(item))) continue;
@@ -183,13 +228,15 @@ export function reviewTileInstallation(items: MaterialItem[], rooms: { id: strin
   for (const item of tiles) {
     const notes = notesFor(item, active, options.board);
     const sources = [...notes, ...(proofs[item.id] || [])];
+    const evidence = sources.map(proof => ({ proof, details: tileInstallationEvidence(proof.text, proof.source) }));
     for (const field of ["grout", "tile_layout"] as const) {
-      const confirmed = sources.filter(x => tileDetailConfirmed(field, x.text));
-      // Color and width can be split between notes and an explicit PDF callout.
-      const grout = sources.map(x => groutParts(x.text));
-      const complete = field === "grout" ? !!confirmed.length || (grout.some(x => x.color) && grout.some(x => x.width)) : !!confirmed.length;
-      if (complete) { result.covered.push({ item_id: item.id, field, evidence: confirmed.length ? confirmed : sources }); continue; }
-      const missing = field === "grout" ? [!grout.some(x => x.color) && "grout color", !grout.some(x => x.width) && "joint width"].filter(Boolean).join(" and ") : "tile pattern / direction";
+      const checks = field === "grout" ? [["color", "grout color"], ["jointWidth", "grout joint width"]] as const
+        : [["layout", "tile pattern"], ["direction", "tile lay direction"]] as const;
+      const missing = checks.filter(([key]) => !evidence.some(({ details }) => details[key])).map(([, label]) => label).join(" and ");
+      if (!missing) {
+        result.covered.push({ item_id: item.id, field, evidence: evidence.filter(({ details }) => checks.some(([key]) => details[key])).map(({ proof }) => proof) });
+        continue;
+      }
       const unverified = options.planStatus === "unavailable" || (options.document && !(proofs[item.id]?.length));
       if (unverified) result.unverified.push({ item_id: item.id, message: `${missing}: not confirmed in saved notes; the matching construction callout needs review.` });
       result.findings.push({ id: `${item.id}:${field}`, room_id: item.room_id, item_id: item.id,

@@ -30,17 +30,17 @@ export function TileInstallationCheck({ projectId, items, rooms }: {
   }
   return <>
     <button type="button" onClick={() => void run()} className="inline-flex items-center gap-2 border border-ink px-5 py-3 text-sm text-ink">
-      <ClipboardCheck className="h-4 w-4" />Check grout & tile layout
+      <ClipboardCheck className="h-4 w-4" />Check tile installation
     </button>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle className="font-display text-3xl">Grout & tile layout</DialogTitle>
+        <DialogHeader><DialogTitle className="font-display text-3xl">Tile installation review</DialogTitle>
           <DialogDescription>{busy ? "Checking saved notes and construction callouts…" : review?.message || "Review installation details for selected tiled areas."}</DialogDescription></DialogHeader>
         {busy && <Loader2 className="h-5 w-5 animate-spin" />}
         {error && <p role="alert" className="text-sm text-red-800">{error}</p>}
         {review && <>
           <p className="text-sm text-muted-foreground">{review.checked_items} tiled {review.checked_items === 1 ? "area" : "areas"} checked · {review.findings.length} {review.findings.length === 1 ? "detail" : "details"} to review</p>
-          {!review.findings.length && <p className="border p-5">{review.checked_items ? "Grout color, joint width and layout are documented for the selected tiled areas." : "No current tiled surfaces need installation review."}</p>}
+          {!review.findings.length && <p className="border p-5">{review.checked_items ? "Grout, joint width, tile pattern and lay direction are documented where needed." : "No current tiled surfaces need installation review."}</p>}
           {review.findings.map(f => {
             const item = items.find(x => x.id === f.item_id);
             return item && <div key={f.id} className="border p-5 space-y-3">
@@ -49,7 +49,7 @@ export function TileInstallationCheck({ projectId, items, rooms }: {
                 <div><p className="text-xs uppercase tracking-widest text-muted-foreground">{rooms.find(r => r.id === f.room_id)?.name}</p>
                   <h3 className="font-display text-2xl">{f.item_label}</h3></div>
               </div>
-              <p className="font-medium">{f.field === "grout" ? "Grout color / joint width" : "Tile layout"}</p>
+              <p className="font-medium">{f.field === "grout" ? "Grout color / joint width" : "Tile pattern & lay direction"}</p>
               <p className="text-sm text-muted-foreground">{f.message}</p>
               <TileNoteEditor key={item.updated_at + f.field} item={item} field={f.field as TileField} onSaved={async () => {
                 await Promise.all([["materialItems", projectId], ["spec-completion-review", projectId]].map(queryKey => qc.invalidateQueries({ queryKey })));
@@ -59,7 +59,7 @@ export function TileInstallationCheck({ projectId, items, rooms }: {
           })}
           {!!review.covered.length && <details className="text-sm border p-4"><summary className="cursor-pointer">{review.covered.length} {review.covered.length === 1 ? "detail" : "details"} already documented</summary>
             {review.covered.map(row => <div key={row.item_id + row.field} className="mt-3 border-t pt-3">
-              <p className="font-medium">{items.find(i => i.id === row.item_id)?.client_product_name || items.find(i => i.id === row.item_id)?.item_label} · {row.field === "grout" ? "Grout" : "Tile layout"}</p>
+              <p className="font-medium">{items.find(i => i.id === row.item_id)?.client_product_name || items.find(i => i.id === row.item_id)?.item_label} · {row.field === "grout" ? "Grout" : "Tile pattern & lay direction"}</p>
               {row.evidence.map((p, i) => <p key={i} className="text-muted-foreground">{p.source === "plans" ? `Drawing page ${p.page}${p.sheet ? ` · ${p.sheet}` : ""}` : p.source === "board" ? "Design Board notes" : "Saved notes"}: {p.text}</p>)}
             </div>)}
           </details>}
@@ -71,7 +71,7 @@ export function TileInstallationCheck({ projectId, items, rooms }: {
 function TileNoteEditor({ item, field, onSaved }: { item: MaterialItem; field: TileField; onSaved: () => Promise<void> }) {
   const [value, setValue] = useState(""), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const lock = useRef(false);
-  const label = field === "grout" ? "Grout color and joint width" : "Tile pattern / direction";
+  const label = field === "grout" ? "Grout color and joint width" : "Tile pattern and lay direction";
   async function save() {
     if (lock.current) return;
     lock.current = true; setSaving(true); setError("");

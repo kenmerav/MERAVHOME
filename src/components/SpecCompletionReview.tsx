@@ -30,7 +30,7 @@ import { MaterialProductLinkInput } from "@/components/MaterialProductLinkInput"
 const fieldLabels: Record<CompletionFinding["field"], string> = {
   quantity: "Quantity", color: "Color / finish", finish: "Finish", dimensions: "Dimensions",
   price: "Price", price_unit: "Price basis", product: "Product assignment", link: "Product link", missing_item: "Missing item",
-  grout: "Grout color / joint width", tile_layout: "Tile layout",
+  grout: "Grout color / joint width", tile_layout: "Tile pattern & lay direction",
 };
 
 type CompletionReviewProps = { projectId: string; items: MaterialItem[]; rooms: CompletionRoom[] };
@@ -385,7 +385,7 @@ function CompletionDetailEditor({ item, issue, disabled, onSave, optionSuggestio
   const price = issue.finding.field === "price" || issue.finding.field === "price_unit";
   const dimensions = issue.finding.field === "dimensions";
   const tile = issue.finding.field === "grout" || issue.finding.field === "tile_layout";
-  const tileLabel = issue.finding.field === "grout" ? "Grout color and joint width" : "Tile pattern / direction";
+  const tileLabel = issue.finding.field === "grout" ? "Grout color and joint width" : "Tile pattern and lay direction";
   const initial = tile ? "" : price ? item.product?.price : dimensions ? item.product?.dimensions || item.product?.selected_size : item.color;
   const [value, setValue] = useState(hasCompletionValue(initial) ? initial! : "");
   const [priceUnit, setPriceUnit] = useState<CompletionDetailDraft["priceUnit"]>(materialPriceUnit(item) || "");

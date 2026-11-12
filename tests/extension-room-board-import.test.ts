@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeExtensionBoardState } from "@/lib/extensionBoardState";
+import { boardTileInstallationIssues } from "@/lib/boardTileInstallation";
+import { roomDesignTileIssues } from "@/lib/roomDesignTile";
 import {
   extensionBoardDirectSelection,
   extensionBoardPageRoom,
@@ -174,6 +176,37 @@ describe("linked extension imports", () => {
       selections: first.state.selections,
     });
     expect(composed.pages).toEqual(placed.board.pages);
+  });
+
+  it("flags installation decisions after a quick direct tile import", () => {
+    const board = makeBoard();
+    const tile = { ...product, name: "Porcelain floor tile" };
+    const { selection } = extensionBoardDirectSelection({
+      state: createDefaultRoomDesignWorkflowState(room.name),
+      product: tile,
+      materialCategory: "Flooring",
+      roomId: room.id,
+      pageId: "bedroom",
+      board,
+    });
+    const placed = placeLinkedExtensionSelection({
+      board, rooms, room, projectName, pageId: "bedroom",
+      selection,
+      layer: { ...layer, productName: tile.name },
+      placement,
+    });
+    expect(roomDesignTileIssues(selection)).toEqual(expect.arrayContaining([
+      "Enter the grout color and joint width.",
+      "Enter the tile lay direction or approved drawing reference.",
+    ]));
+    const imported = placed.board.pages.flatMap(page => page.elements).find(item => item.id === placed.layerId)!;
+    expect(boardTileInstallationIssues(imported)).toEqual([
+      "grout color / joint width", "tile layout", "tile lay direction",
+    ]);
+    expect(boardTileInstallationIssues(
+      { ...imported, productName: "Nieve Punto", label: "Nieve Punto", materialCategory: "Tile & Stone" },
+      { name: "Nieve Punto", category: "Tile" },
+    )).toEqual(["grout color / joint width", "tile layout", "tile lay direction"]);
   });
 
   it("leaves a previously selected product in place on a direct send", () => {

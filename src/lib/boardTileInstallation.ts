@@ -11,7 +11,7 @@ type TileLayer = {
   notes?: string | null;
 };
 
-type TileProduct = { name?: string | null; category?: string | null };
+type TileProduct = { name?: string | null; category?: string | null; subcategory?: string | null };
 
 const tileIssueLabels = {
   grout: "grout color / joint width",
@@ -21,10 +21,11 @@ const tileIssueLabels = {
 
 export function isBoardTileSelection(layer: TileLayer, product?: TileProduct | null) {
   if (layer.type !== "image" || layer.materialExcludeFromMaterials) return false;
+  if (product?.category === "Tile" && /^(?:Trim|Grout)$/i.test(product.subcategory || "")) return false;
   return roomDesignTileSurface({
     category: roomDesignBoardDisplayLabel(layer) || layer.materialCategory || "",
     productName: layer.productName || product?.name || "",
-    materialCategory: layer.materialCategory || product?.category,
+    materialCategory: product?.category === "Tile" ? product.category : layer.materialCategory || product?.category,
     notes: layer.notes || "",
   }) === "tile";
 }
