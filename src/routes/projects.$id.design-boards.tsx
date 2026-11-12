@@ -174,6 +174,7 @@ type BoardElement = {
   label?: string;
   notes?: string;
   text?: string;
+  textRole?: "annotation";
   background?: string;
   color?: string;
   fontSize?: number;
@@ -4017,8 +4018,9 @@ function ProjectDesignBoardsPage() {
                   addElement({
                     type: "text",
                     text: "Add text",
-                    x: 540,
-                    y: 90,
+                    textRole: "annotation",
+                    x: 550,
+                    y: 180,
                     width: 300,
                     height: 56,
                     color: DEFAULT_BOARD_TEXT_COLOR,
@@ -5928,7 +5930,12 @@ function BoardObject({
             </div>
           )}
           <textarea
+            aria-label="Board text"
+            autoFocus={editable && selected && element.textRole === "annotation" && element.text === "Add text"}
             value={element.text ?? ""}
+            onFocus={(event) => {
+              if (element.text === "Add text") event.currentTarget.select();
+            }}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
@@ -8466,6 +8473,7 @@ function diffBoardElement(before: BoardElement, after: BoardElement): Partial<Bo
     "label",
     "notes",
     "text",
+    "textRole",
     "background",
     "color",
     "fontSize",

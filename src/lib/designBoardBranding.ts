@@ -24,6 +24,7 @@ type BrandingElement = {
   originalSrc?: string;
   label?: string;
   text?: string;
+  textRole?: "annotation";
   fontSize?: number;
 };
 
@@ -50,7 +51,9 @@ export function isDesignBoardLogo(element: BrandingElement) {
           metadata,
         ) ||
         LEGACY_LOGO_FILES.some((file) => metadata.includes(file)))) ||
-    (element.type === "text" && /\bmerav\s+interiors\b/i.test(element.text ?? ""))
+    (element.type === "text" &&
+      element.textRole !== "annotation" &&
+      /\bmerav\s+interiors\b/i.test(element.text ?? ""))
   );
 }
 
@@ -64,16 +67,19 @@ function isCornerLogo(element: BrandingElement) {
 }
 
 function isRoomHeading(element: BrandingElement) {
+  const text = element.text?.trim() ?? "";
   return (
-      element.type === "text" &&
-      (element.text?.trim().length ?? 0) >= 3 &&
-      (element.text?.trim().split(/\s+/).length ?? 0) <= 9 &&
-      !isDesignBoardLogo(element) &&
-      element.y + element.height > 0 &&
-      element.y < 160 &&
-      element.x + element.width / 2 >= 650 &&
-      (element.width >= 250 || element.x >= 900) &&
-      (element.fontSize ?? 24) >= 18
+    element.type === "text" &&
+    element.textRole !== "annotation" &&
+    text.length >= 3 &&
+    text.toLowerCase() !== "add text" &&
+    text.split(/\s+/).length <= 9 &&
+    !isDesignBoardLogo(element) &&
+    element.y + element.height > 0 &&
+    element.y < 160 &&
+    element.x + element.width / 2 >= 650 &&
+    (element.width >= 250 || element.x >= 900) &&
+    (element.fontSize ?? 24) >= 18
   );
 }
 
@@ -82,9 +88,15 @@ function boardRoomHeading(page: BrandingPage, roomName?: string | null) {
   const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const room = normalize(roomName?.trim() || page.title.replace(/\s*[—–-]\s*Design Board\s*\d*$/i, ""));
   // Some older templates have the project name above the room. Prefer the room line.
-  return candidates.find(element => normalize(element.text ?? "") === room)
-    ?? candidates.find(element => room && normalize(element.text ?? "").includes(room))
-    ?? [...candidates].sort((a, b) => a.y - b.y)[0];
+  const exactHeading = candidates.find(element => normalize(element.text ?? "") === room);
+  if (exactHeading) return exactHeading;
+
+  // Recover saved toolbar text boxes that were mistaken for headings at the old insertion point.
+  const legacyHeadings = candidates.filter(
+    ({ x, y, width, height }) => x !== 540 || y !== 90 || width !== 300 || height !== 56,
+  );
+  return legacyHeadings.find(element => room && normalize(element.text ?? "").includes(room))
+    ?? legacyHeadings.sort((a, b) => a.y - b.y)[0];
 }
 
 export function designBoardLogoRect() {

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -34,7 +35,7 @@ const logo = {
 describe("automatic design-board corner branding", () => {
   it("uses a genuinely transparent wordmark without opaque white pixels", async () => {
     const image = await loadImage(
-      new URL(`../public${DESIGN_BOARD_LOGO}`, import.meta.url).pathname,
+      fileURLToPath(new URL(`../public${DESIGN_BOARD_LOGO}`, import.meta.url)),
     );
     const canvas = createCanvas(image.width, image.height);
     const ctx = canvas.getContext("2d");
@@ -242,6 +243,26 @@ describe("automatic design-board corner branding", () => {
     const page = { title: "Guest Bedroom", elements: [{ ...heading, x: 540, y: 90, width: 316.28, text: "guest bedroom" }] };
     expect(designBoardContentElements(page)).toEqual([]);
     expect(designBoardBranding(page).title).toBe("guest bedroom");
+  });
+
+  it.each(["Add text", "Kitchen countertop detail"])(
+    "keeps previously added toolbar text visible without using it as the room heading (%s)",
+    (text) => {
+      const textBox = { ...heading, x: 540, y: 90, width: 300, height: 56, text };
+      const page = { title: "Kitchen — Design Board 1", elements: [textBox] };
+      expect(designBoardContentElements(page, "Kitchen")).toEqual([textBox]);
+      expect(designBoardBranding(page, "Kitchen").title).toBe("Kitchen");
+    },
+  );
+
+  it("keeps annotation layers separate from legacy branding even when moved into the header", () => {
+    const title = { ...heading, text: "Kitchen" };
+    const annotation = { ...title, textRole: "annotation" } as const;
+    const logoNote = { ...annotation, x: 50, text: "MERAV INTERIORS" };
+    const page = { title: "Kitchen", elements: [annotation, logoNote, title] };
+
+    expect(designBoardContentElements(page)).toEqual([annotation, logoNote]);
+    expect(designBoardBranding(page).title).toBe("Kitchen");
   });
 
   it("keeps product content and notes while suppressing every duplicate legacy header", () => {
