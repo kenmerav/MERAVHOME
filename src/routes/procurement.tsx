@@ -620,7 +620,7 @@ function ProcurementPage() {
                     disabled={!selectedProductInvoice.documentUrl}
                     className="h-9 flex-1 border border-border px-3 text-xs hover:border-ink disabled:opacity-50"
                   >
-                    View Invoice
+                    View Saved Invoice
                   </button>
                   <button
                     type="button"

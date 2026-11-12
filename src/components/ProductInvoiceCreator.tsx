@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { saveAndPrintInvoice } from "@/lib/saveAndPrintInvoice";
 import { normalizeSupabaseImageUrl, supabaseImageTransformUrl } from "@/lib/local-assets";
-import { formatMoney as formatKnownMoney, moneyValue, normalizeMoneyInput } from "@/lib/money";
+import { formatMoney as formatKnownMoney, isKnownPrice, moneyValue, normalizeMoneyInput } from "@/lib/money";
 import { invoiceQuantityInput, invoiceQuantityNumber, invoiceQuantityReady, specQuantityUnit, specQuantityUnitLabel, validSpecQuantityUnit, type SpecQuantityUnit } from "@/lib/specQuantity";
 import { supabase } from "@/integrations/supabase/client";
 import { accuracyInvoiceTerms } from "@/lib/designAccuracyProjection";
@@ -62,7 +62,15 @@ type ProcurementInvoiceItem = {
   } | null;
 };
 
-type ProductInvoiceLine = {
+type ProductInvoicePricing = {
+  unitPrice: string;
+  retailUnitPrice: string;
+  priceUnit: ProductPriceUnit | null;
+  unitCost: string;
+  shipping: string;
+};
+
+type ProductInvoiceLine = ProductInvoicePricing & {
   sourceId: string;
   productId: string | null;
   selected: boolean;
@@ -78,11 +86,7 @@ type ProductInvoiceLine = {
   sku: string;
   quantity: string;
   quantityUnit: SpecQuantityUnit;
-  unitPrice: string;
-  retailUnitPrice: string;
-  priceUnit: ProductPriceUnit | null;
-  unitCost: string;
-  shipping: string;
+  procurementPricing?: ProductInvoicePricing;
   sourceAvailable?: boolean;
 };
 
@@ -169,7 +173,11 @@ export function ProductInvoiceCreator({
     [visibleLines],
   );
   const invalidQuantities = draft.lines.filter((line) => line.selected && !invoiceQuantityReady(line.quantity, line.quantityUnit));
-  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0 && (!draft.showDesignerDiscount || discount.incomplete === 0);
+  const invalidCurrentPrices = draft.lines.filter((line) =>
+    line.selected && line.sourceAvailable &&
+    (!isKnownPrice(line.unitPrice) || !priceMatchesQuantityUnit(line.priceUnit, line.quantityUnit)),
+  );
+  const canCreate = !!projectId && selectedCount > 0 && totals.total > 0 && invalidQuantities.length === 0 && invalidCurrentPrices.length === 0 && (!draft.showDesignerDiscount || discount.incomplete === 0);
   const html = useMemo(() => buildProductInvoiceHtml(draft, totals), [draft, totals]);
 
   const updateDraft = (patch: Partial<ProductInvoiceDraft>) =>
@@ -310,8 +318,8 @@ export function ProductInvoiceCreator({
 
         <fieldset disabled={saving} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
           <div className="space-y-6">
-            {sourceInvoiceName && <p className="border border-border bg-bone/30 p-3 text-sm">Starting a new invoice from {sourceInvoiceName}. You can edit its items below; the original invoice stays unchanged.</p>}
-            {draft.lines.some((line) => line.sourceAvailable === false) && <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Some saved invoice items are no longer in current Procurement. Their saved details are included; review them before creating the new invoice.</p>}
+            {sourceInvoiceName && <p className="border border-border bg-bone/30 p-3 text-sm">New draft based on {sourceInvoiceName}, with pricing and shipping updates from Procurement.</p>}
+            {draft.lines.some((line) => line.sourceAvailable === false) && <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Some saved invoice items no longer have a matching product in Procurement. Review their saved details before creating the new invoice.</p>}
             {draft.lines.some((line) => line.quantity === "TBD") && (
               <p className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Items with TBD quantities start unchecked. Confirm their quantity before including them in an invoice.</p>
             )}
@@ -319,6 +327,12 @@ export function ProductInvoiceCreator({
               <div role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                 Enter a known, positive quantity for every selected item before saving, downloading, or creating a payment link.
                 <ul className="mt-2 list-disc pl-5">{invalidQuantities.map((line) => <li key={line.sourceId}>{line.name}{line.room ? ` — ${line.room}` : ""}</li>)}</ul>
+              </div>
+            )}
+            {invalidCurrentPrices.length > 0 && (
+              <div role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                Review the client price and quantity unit for these items before saving. For changes made in Procurement, reopen the draft to pick them up.
+                <ul className="mt-2 list-disc pl-5">{invalidCurrentPrices.map((line) => <li key={line.sourceId}>{line.name}{line.room ? ` — ${line.room}` : ""}</li>)}</ul>
               </div>
             )}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -673,10 +687,18 @@ export function makeProductInvoiceDraft({
     ).map((item) => {
       const product = item.room_product?.product;
       const material = item.material;
+      const accuracyTerms = material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact) : null;
+      const procurementPricing: ProductInvoicePricing = {
+        unitPrice: normalizeMoneyInput(accuracyTerms ? accuracyTerms.unitPrice : product?.price) || "",
+        retailUnitPrice: normalizeMoneyInput(product?.retail_price) || "",
+        priceUnit: materialPriceUnit({ ...material, product }),
+        unitCost: normalizeMoneyInput(product?.unit_cost) || "",
+        shipping: normalizeMoneyInput(product?.shipping) || "",
+      };
       return {
         sourceId: item.id,
         productId: product?.id ?? null,
-        selected: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).selected : material?.quantity_tbd !== true,
+        selected: accuracyTerms?.selected ?? (material?.quantity_tbd !== true),
         name: material?.client_product_name || product?.name || "Product",
         vendor: product?.vendor || "",
         room: item.room_product?.room?.name || "",
@@ -687,20 +709,17 @@ export function makeProductInvoiceDraft({
         finish: material?.color || product?.finish || "",
         dimensions: product?.dimensions || "",
         sku: product?.sku || "",
-        quantity: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).quantity : invoiceQuantityInput(material),
-        quantityUnit: material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).quantityUnit : specQuantityUnit(material ?? { quantity: null }),
-        unitPrice: normalizeMoneyInput(material?.design_accuracy_fact ? accuracyInvoiceTerms(material.design_accuracy_fact).unitPrice : product?.price) || "",
-        retailUnitPrice: normalizeMoneyInput(product?.retail_price) || "",
-        priceUnit: materialPriceUnit({ ...material, product }),
-        unitCost: normalizeMoneyInput(product?.unit_cost) || "",
-        shipping: normalizeMoneyInput(product?.shipping) || "",
+        quantity: accuracyTerms?.quantity ?? invoiceQuantityInput(material),
+        quantityUnit: accuracyTerms?.quantityUnit ?? specQuantityUnit(material ?? { quantity: null }),
+        ...procurementPricing,
+        procurementPricing,
       };
     }),
   };
   return sourceDraft ? copyProductInvoiceDraft(draft, sourceDraft) : draft;
 }
 
-/** Start a new invoice from the saved selected lines, preserving invoice-only edits. */
+/** Refresh Procurement pricing while keeping invoice-only edits to fields whose source value is unchanged. */
 export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknown): ProductInvoiceDraft {
   if (!saved || typeof saved !== "object") throw new Error("This invoice has no saved item details.");
   const source = saved as Record<string, unknown>;
@@ -711,17 +730,33 @@ export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknow
     if (!value || typeof value !== "object" || value.selected === false) return [];
     const row = value as Record<string, unknown>;
     const sourceId = stringValue(row.sourceId) || `saved-invoice-line-${index}`;
-    const current = currentById.get(sourceId);
+    const matchingLine = currentById.get(sourceId);
+    const savedProductId = typeof row.productId === "string" ? row.productId : null;
+    const current = matchingLine?.productId && (!savedProductId || savedProductId === matchingLine.productId)
+      ? matchingLine
+      : undefined;
     const name = stringValue(row.name, current?.name || "Product");
     const category = stringValue(row.category, current?.category);
     const productUrl = stringValue(row.productUrl, current?.productUrl);
-    const unitPrice = stringValue(row.unitPrice, current?.unitPrice);
-    const priceUnit = row.priceUnit === undefined
+    const previousPricing = row.procurementPricing && typeof row.procurementPricing === "object"
+      ? row.procurementPricing as Partial<ProductInvoicePricing>
+      : undefined;
+    const priceBasisChanged = current && previousPricing?.priceUnit !== current.priceUnit;
+    const updatedPrice = <K extends keyof ProductInvoicePricing>(key: K, savedValue: ProductInvoicePricing[K]) =>
+      current && (priceBasisChanged || previousPricing?.[key] !== current[key]) ? current[key] : savedValue;
+    const unitPrice = updatedPrice("unitPrice", stringValue(row.unitPrice, current?.unitPrice));
+    const priceUnit = updatedPrice("priceUnit", row.priceUnit === undefined
       ? current?.priceUnit ?? inferProductPriceUnit({ name, category, product_url: productUrl, price: unitPrice })
-      : productPriceUnit(row.priceUnit);
+      : productPriceUnit(row.priceUnit));
+    const savedQuantityUnit = validSpecQuantityUnit(row.quantityUnit) ? row.quantityUnit : current?.quantityUnit ?? "count";
+    const currentQuantity = current &&
+      !priceMatchesQuantityUnit(priceUnit, savedQuantityUnit) &&
+      priceMatchesQuantityUnit(priceUnit, current.quantityUnit)
+      ? current
+      : undefined;
     return [{
       sourceId,
-      productId: typeof row.productId === "string" ? row.productId : current?.productId ?? null,
+      productId: savedProductId ?? current?.productId ?? null,
       selected: true,
       approvalStatus: stringValue(row.approvalStatus, current?.approvalStatus || "undecided"),
       name,
@@ -733,13 +768,14 @@ export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknow
       finish: stringValue(row.finish, current?.finish),
       dimensions: stringValue(row.dimensions, current?.dimensions),
       sku: stringValue(row.sku, current?.sku),
-      quantity: stringValue(row.quantity, current?.quantity),
-      quantityUnit: validSpecQuantityUnit(row.quantityUnit) ? row.quantityUnit : current?.quantityUnit ?? "count",
+      quantity: currentQuantity?.quantity ?? stringValue(row.quantity, current?.quantity),
+      quantityUnit: currentQuantity?.quantityUnit ?? savedQuantityUnit,
       unitPrice,
-      retailUnitPrice: stringValue(row.retailUnitPrice, current?.retailUnitPrice),
+      retailUnitPrice: updatedPrice("retailUnitPrice", stringValue(row.retailUnitPrice, current?.retailUnitPrice)),
       priceUnit,
-      unitCost: stringValue(row.unitCost, current?.unitCost),
-      shipping: stringValue(row.shipping, current?.shipping),
+      unitCost: updatedPrice("unitCost", stringValue(row.unitCost, current?.unitCost)),
+      shipping: updatedPrice("shipping", stringValue(row.shipping, current?.shipping)),
+      procurementPricing: current?.procurementPricing,
       sourceAvailable: Boolean(current),
     }];
   });
@@ -753,6 +789,10 @@ export function copyProductInvoiceDraft(base: ProductInvoiceDraft, saved: unknow
     showDesignerDiscount: source.showDesignerDiscount === true,
     lines,
   };
+}
+
+function priceMatchesQuantityUnit(priceUnit: ProductPriceUnit | null, quantityUnit: SpecQuantityUnit) {
+  return priceUnit === null || (priceUnit === "sq_ft") === (quantityUnit === "square_feet");
 }
 
 export function productInvoiceTotals(draft: ProductInvoiceDraft) {
