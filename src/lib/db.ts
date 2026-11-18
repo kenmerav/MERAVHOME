@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { requireSavedSpecMaterial } from "./specMaterialWrite";
 import { canViewFinancials, canViewProjectSurface, isSharedProjectRole, isStudioTeamRole } from "@/lib/permissions";
 import { stripePaidReceipt } from "@/lib/stripePaidReceipts";
+import type { ProductInvoiceInternalCosts } from "@/lib/productInvoiceProfit";
 import { materialVisibleInProcurement } from "@/lib/materialSelection";
 import { cleanProductDetail } from "./productDetails";
 import { projectMaterialAccuracy } from "./designAccuracyProjection";
@@ -1348,6 +1349,41 @@ export const db = {
       .data?.[0] as Product | null,
 
   /* FINANCIALS */
+  getProductInvoiceCosts: async (invoiceId: string) => {
+    const { data, error } = await supabase
+      .from("product_invoice_internal_costs")
+      .select("shipping_cost, fee_costs, revision")
+      .eq("invoice_id", invoiceId)
+      .maybeSingle();
+    if (error) throw new Error("Could not load invoice costs.");
+    return data as (ProductInvoiceInternalCosts & { revision: number }) | null;
+  },
+  saveProductInvoiceCosts: async (
+    invoiceId: string,
+    costs: ProductInvoiceInternalCosts,
+    revision: number | null,
+  ) => {
+    const conflictMessage = "These costs were changed elsewhere. Copy any unsaved amounts, then close and reopen the editor to see the latest costs.";
+    if (revision === null) {
+      const { error } = await supabase
+        .from("product_invoice_internal_costs")
+        .insert({ invoice_id: invoiceId, ...costs });
+      if (error?.code === "23505") throw new Error(conflictMessage);
+      if (error) throw new Error("Could not save invoice costs. Try again.");
+      return { ...costs, revision: 1 };
+    }
+
+    const { data, error } = await supabase
+      .from("product_invoice_internal_costs")
+      .update({ ...costs, revision: revision + 1 })
+      .eq("invoice_id", invoiceId)
+      .eq("revision", revision)
+      .select("revision")
+      .maybeSingle();
+    if (error) throw new Error("Could not save invoice costs. Try again.");
+    if (!data) throw new Error(conflictMessage);
+    return { ...costs, revision: data.revision };
+  },
   listAllFinancialInvoices: async () =>
     (
       await supabase

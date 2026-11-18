@@ -21,6 +21,8 @@ import {
 } from "@/lib/money";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { ProductInvoiceCreator } from "@/components/ProductInvoiceCreator";
+import { ProductInvoiceCosts } from "@/components/ProductInvoiceCosts";
+import type { ProductInvoiceCostLine, ProductInvoiceFee } from "@/lib/productInvoiceProfit";
 import { SpecQuantityEditor } from "@/components/SpecQuantityEditor";
 import type { SpecQuantityPatch, SpecQuantityUnit } from "@/lib/specQuantity";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,12 +57,13 @@ type ProductInvoiceSummary = {
     subtotal?: number;
     shipping?: number;
     tax?: number;
-    fees: { name: string; amount: number }[];
+    fees: ProductInvoiceFee[];
     adjustment: number;
   };
   sortDate: string;
   sourceIds: Set<string>;
   sourceLineCount: number;
+  costLines: ProductInvoiceCostLine[];
   sourceDraft: unknown;
 };
 
@@ -553,6 +556,15 @@ function ProcurementPage() {
           {selectedProductInvoice ? (
             <>
               <SavedProductInvoiceTotals invoice={selectedProductInvoice} />
+              <ProductInvoiceCosts
+                key={selectedProductInvoice.id}
+                invoiceId={selectedProductInvoice.id}
+                subtotal={selectedProductInvoice.amounts.subtotal}
+                shipping={selectedProductInvoice.amounts.shipping}
+                fees={selectedProductInvoice.amounts.fees}
+                lines={selectedProductInvoice.costLines}
+                hasAdjustments={selectedProductInvoice.amounts.adjustment !== 0}
+              />
               <details className="mt-4 border border-border p-4">
                 <summary className="cursor-pointer text-sm font-medium">Current product pricing</summary>
                 <div className="mt-4">{productPricing}</div>
@@ -1600,8 +1612,8 @@ function SavedProductInvoiceTotals({ invoice }: { invoice: ProductInvoiceSummary
         {shipping !== undefined && <MoneyStat label="Shipping" value={shipping} />}
         {fees.length > 0 && <MoneyStat label="Invoice Fees" value={fees.reduce((sum, fee) => sum + fee.amount, 0)}>
           <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-            {fees.map((fee, index) => (
-              <li key={index} className="flex flex-wrap justify-between gap-x-2">
+            {fees.map((fee) => (
+              <li key={fee.key} className="flex flex-wrap justify-between gap-x-2">
                 <span className="min-w-0 break-words">{fee.name}</span>
                 {fees.length > 1 && <span>{formatMoney(fee.amount)}</span>}
               </li>
@@ -1664,7 +1676,7 @@ function productInvoiceFromFinancialInvoice(
       type?: string;
       draft?: {
         invoiceName?: string;
-        lines?: Array<{ sourceId?: string; selected?: boolean }>;
+        lines?: Array<({ sourceId?: string; selected?: boolean } & ProductInvoiceCostLine) | null>;
       };
       totals?: {
         subtotal?: unknown;
@@ -1674,21 +1686,18 @@ function productInvoiceFromFinancialInvoice(
       };
     };
     if (parsed.type !== "product_invoice") return null;
-    const sourceIds = new Set(
-      (parsed.draft?.lines ?? [])
-        .filter((line) => line?.sourceId && line.selected !== false)
-        .map((line) => line.sourceId as string),
-    );
+    const selectedLines = (parsed.draft?.lines ?? []).filter((line) => line && line.selected !== false);
+    const sourceIds = new Set(selectedLines.flatMap((line) => line?.sourceId ? [line.sourceId] : []));
     const ledger = financialInvoiceLedger(invoice);
     const originalTotal = invoice.total_amount ?? ledger.originalTotal;
     const adjustment = ledger.chargeTotal - ledger.creditTotal;
     const savedAmount = (value: unknown) =>
       typeof value === "number" && Number.isFinite(value) ? value : undefined;
     const fees = Array.isArray(parsed.totals?.serviceFees)
-      ? parsed.totals.serviceFees.flatMap((fee) => {
+      ? parsed.totals.serviceFees.flatMap((fee, index) => {
           const amount = savedAmount(fee?.amount);
           return typeof fee?.name === "string" && fee.name.trim() && amount !== undefined && amount > 0
-            ? [{ name: fee.name, amount }]
+            ? [{ key: String(index), name: fee.name, amount }]
             : [];
         })
       : [];
@@ -1716,7 +1725,8 @@ function productInvoiceFromFinancialInvoice(
       },
       sortDate: invoice.invoice_date || invoice.created_at || "",
       sourceIds,
-      sourceLineCount: (parsed.draft?.lines ?? []).filter((line) => line && line.selected !== false).length,
+      sourceLineCount: selectedLines.length,
+      costLines: selectedLines.map((line) => ({ unitCost: line?.unitCost, quantity: line?.quantity })),
       sourceDraft: parsed.draft,
     };
   } catch {

@@ -262,6 +262,35 @@ export type Database = {
           },
         ]
       }
+      product_invoice_internal_costs: {
+        Row: {
+          invoice_id: string
+          shipping_cost: number | null
+          fee_costs: Json
+          revision: number
+        }
+        Insert: {
+          invoice_id: string
+          shipping_cost?: number | null
+          fee_costs?: Json
+          revision?: number
+        }
+        Update: {
+          invoice_id?: string
+          shipping_cost?: number | null
+          fee_costs?: Json
+          revision?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_invoice_internal_costs_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: true
+            referencedRelation: "financial_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       material_items: {
         Row: {
           cad_label: string | null
