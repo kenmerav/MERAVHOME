@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildProductInvoiceHtml, copyProductInvoiceDraft, makeProductInvoiceDraft, productInvoiceTotals } from "@/components/ProductInvoiceCreator";
 
-function baseDraft(shipping: string | null = null, price = "$150") {
+function baseDraft(shipping: string | null = null, price = "$150", quantity = 1) {
   return makeProductInvoiceDraft({ projectName: "Lovesy", clientName: "Client", defaultTaxRate: "8", onlyApproved: false,
-    items: [{ id: "lamp", material: { client_product_name: "Current lamp", category: "Lighting", quantity: 1, quantity_unit: "count", image_url: null, color: null, product_url: null, cad_label: null, notes: null }, room_product: { product: { id: "p", name: "Lamp", category: "Lighting", vendor: null, image_url: null, price, retail_price: "$180", unit_cost: "$120", shipping, finish: null, dimensions: null, sku: null, product_url: null } } }],
+    items: [{ id: "lamp", material: { client_product_name: "Current lamp", category: "Lighting", quantity, quantity_unit: "count", image_url: null, color: null, product_url: null, cad_label: null, notes: null }, room_product: { product: { id: "p", name: "Lamp", category: "Lighting", vendor: null, image_url: null, price, retail_price: "$180", unit_cost: "$120", shipping, finish: null, dimensions: null, sku: null, product_url: null } } }],
   });
 }
 
@@ -18,20 +18,73 @@ describe("starting a new invoice from a saved invoice", () => {
     const original = structuredClone(saved);
     const copied = copyProductInvoiceDraft(baseDraft("$5"), saved);
     expect(copied.lines).toHaveLength(1);
-    expect(copied.lines[0]).toMatchObject({ sourceId: "lamp", selected: true, name: "Edited lamp", quantity: "3", unitPrice: "$150", retailUnitPrice: "$180", unitCost: "$120", shipping: "$5", sourceAvailable: true });
+    expect(copied.lines[0]).toMatchObject({ sourceId: "lamp", selected: true, name: "Edited lamp", quantity: "1", unitPrice: "$150", retailUnitPrice: "$180", unitCost: "$120", shipping: "$5", sourceAvailable: true });
     expect(copied).toMatchObject({ invoiceName: "Product Invoice (Copy)", taxRate: "6", paid: "", stripeLink: "", stripePaymentLinkId: "", dueDate: "", showDesignerDiscount: true });
     const totals = productInvoiceTotals(copied);
-    expect(totals).toMatchObject({ shipping: 15, total: 492 });
+    expect(totals).toMatchObject({ shipping: 5, total: 164 });
     const html = buildProductInvoiceHtml(copied, totals);
     expect(html.match(/Shipping:/g)).toHaveLength(1);
-    expect(html).toContain("<span>Shipping:</span><span>$15.00</span>");
-    expect(html).toContain('<div class="cell right" role="cell">$450.00</div>');
+    expect(html).toContain("<span>Shipping:</span><span>$5.00</span>");
+    expect(html).toContain('<div class="cell right" role="cell">$150.00</div>');
     expect(html).not.toContain("Additional items & credits");
     copied.lines[0].quantity = "4";
     copied.lines[0].unitPrice = "$90";
     expect(saved).toEqual(original);
     expect(productInvoiceTotals(copied).total).toBe(401.6);
     expect(buildProductInvoiceHtml(copied, productInvoiceTotals(copied))).toContain("Edited lamp");
+  });
+
+  it("carries current quantities into a fresh draft and an older saved invoice", () => {
+    const current = baseDraft("$5", "$150", 2);
+    expect(current.lines[0]).toMatchObject({
+      quantity: "2",
+      procurementQuantity: { quantity: "2", quantityUnit: "count" },
+    });
+    const saved = baseDraft("$5");
+    delete saved.lines[0].procurementQuantity;
+    const original = structuredClone(saved);
+    const copied = copyProductInvoiceDraft(current, saved);
+    expect(copied.lines[0]).toMatchObject({
+      quantity: "2",
+      quantityUnit: "count",
+      procurementQuantity: { quantity: "2", quantityUnit: "count" },
+    });
+    expect(productInvoiceTotals(copied)).toMatchObject({ subtotal: 300, shipping: 10, total: 334 });
+    expect(saved).toEqual(original);
+  });
+
+  it("updates a quantity changed in Procurement while preserving an unchanged invoice-only price", () => {
+    const saved = baseDraft("$5");
+    saved.lines[0].unitPrice = "$80";
+    saved.lines[0].quantity = "3";
+    const copied = copyProductInvoiceDraft(baseDraft("$5", "$150", 2), saved);
+    expect(copied.lines[0]).toMatchObject({ unitPrice: "$80", quantity: "2" });
+    expect(productInvoiceTotals(copied)).toMatchObject({ subtotal: 160, shipping: 10, total: 182.8 });
+  });
+
+  it("preserves invoice-only quantity edits until the Procurement quantity changes", () => {
+    const saved = baseDraft("$5");
+    saved.lines[0].quantity = "3";
+    const copied = copyProductInvoiceDraft(baseDraft("$5"), saved);
+    expect(copied.lines[0]).toMatchObject({
+      quantity: "3",
+      procurementQuantity: { quantity: "1", quantityUnit: "count" },
+    });
+    expect(copyProductInvoiceDraft(baseDraft("$5", "$150", 2), copied).lines[0].quantity).toBe("2");
+  });
+
+  it("carries changed units together with their quantity and deselects a newly TBD item", () => {
+    const saved = baseDraft();
+    const current = baseDraft();
+    Object.assign(current.lines[0], { quantity: "2", quantityUnit: "pair" });
+    expect(copyProductInvoiceDraft(current, saved).lines[0]).toMatchObject({
+      quantity: "2", quantityUnit: "pair",
+      procurementQuantity: { quantity: "2", quantityUnit: "pair" },
+    });
+    Object.assign(current.lines[0], { quantity: "TBD", selected: false });
+    expect(copyProductInvoiceDraft(current, saved).lines[0]).toMatchObject({
+      quantity: "TBD", selected: false,
+    });
   });
 
   it("keeps an invoice-only price while Procurement pricing is unchanged", () => {
@@ -59,14 +112,14 @@ describe("starting a new invoice from a saved invoice", () => {
     ["$0", "$0", 0],
     [null, "", 0],
   ])("updates an old shipping charge when current shipping is %s", (currentShipping, draftShipping, totalShipping) => {
-    const copied = copyProductInvoiceDraft(baseDraft(currentShipping), { lines: [{ sourceId: "lamp", quantity: "2", unitPrice: "$90", shipping: "$5" }] });
+    const copied = copyProductInvoiceDraft(baseDraft(currentShipping, "$150", 2), { lines: [{ sourceId: "lamp", quantity: "2", unitPrice: "$90", shipping: "$5" }] });
     expect(copied.lines[0].shipping).toBe(draftShipping);
     expect(productInvoiceTotals(copied).shipping).toBe(totalShipping);
   });
 
   it("retains saved shipping when the same source row now has a different product", () => {
     const copied = copyProductInvoiceDraft(baseDraft("$20"), { lines: [{ sourceId: "lamp", productId: "old-p", quantity: "2", unitPrice: "$90", shipping: "$5" }] });
-    expect(copied.lines[0]).toMatchObject({ productId: "old-p", shipping: "$5", sourceAvailable: false });
+    expect(copied.lines[0]).toMatchObject({ productId: "old-p", quantity: "2", shipping: "$5", sourceAvailable: false });
   });
 
   it("keeps saved items that no longer exist in current Procurement", () => {
