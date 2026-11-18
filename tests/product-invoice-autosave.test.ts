@@ -69,6 +69,7 @@ it("saves the exact preview and payment totals before opening the printable invo
   expect(printedHtml).toBe(decodeURIComponent(invoice.pdf_data_url.split(",")[1]));
   expect(printedHtml).toContain("Bathroom sink");
   expect(form.onSaved).toHaveBeenCalledTimes(1);
+  expect(form.onSaved).toHaveBeenCalledWith("saved-invoice");
   printWindow.setTimeout.mock.calls[0][0]();
   expect(printWindow.print).toHaveBeenCalledOnce();
 });
@@ -112,6 +113,7 @@ it("still supports Save Invoice without a download window", async () => {
   const form = editor(); await form.save();
   expect(mocks.create).toHaveBeenCalledOnce();
   expect(form.onSaved).toHaveBeenCalledOnce();
+  expect(form.onSaved).toHaveBeenCalledWith("saved-invoice");
   expect(openWindow).not.toHaveBeenCalled();
 });
 

@@ -5,7 +5,7 @@ export async function saveAndPrintInvoice<T>({
   html: string;
   fileName: string;
   save: () => Promise<T | null>;
-  onSaved: () => void;
+  onSaved: (saved: T) => void;
 }) {
   const target = window.open("", "_blank");
   if (!target) throw new Error("Allow popups to save and download the invoice PDF.");
@@ -21,7 +21,7 @@ export async function saveAndPrintInvoice<T>({
     throw error;
   }
   // Close the creator after persistence, even if printing fails, to prevent duplicates.
-  onSaved();
+  onSaved(saved);
   try {
     if (target.closed) throw new Error("Print window closed");
     target.document.open();

@@ -139,7 +139,7 @@ export function ProductInvoiceCreator({
   onlyApproved?: boolean;
   buttonLabel?: string;
   disabled?: boolean;
-  onSaved?: () => void;
+  onSaved?: (invoiceId: string) => void;
   sourceDraft?: unknown;
   sourceInvoiceName?: string;
 }) {
@@ -299,16 +299,17 @@ export function ProductInvoiceCreator({
           },
         ],
       );
-      const finishSave = () => {
+      const finishSave = (invoice: { id: string }) => {
         toast.success("Product invoice saved");
         setOpen(false);
-        onSaved?.();
+        onSaved?.(invoice.id);
       };
       if (download) {
         await saveAndPrintInvoice({ html: finalHtml, fileName, save: persist, onSaved: finishSave });
       } else {
-        if (!await persist()) throw new Error("Could not save the invoice. Please try again.");
-        finishSave();
+        const saved = await persist();
+        if (!saved) throw new Error("Could not save the invoice. Please try again.");
+        finishSave(saved);
       }
     } catch (e: unknown) {
       toast.error(errorMessage(e, "Could not save product invoice."));

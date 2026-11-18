@@ -51,6 +51,13 @@ type ProductInvoiceSummary = {
   paymentUrl: string | null;
   documentOptions: Parameters<typeof openInvoiceDocument>[2];
   total: number;
+  amounts: {
+    subtotal?: number;
+    shipping?: number;
+    tax?: number;
+    fees: { name: string; amount: number }[];
+    adjustment: number;
+  };
   sortDate: string;
   sourceIds: Set<string>;
   sourceLineCount: number;
@@ -454,6 +461,13 @@ function ProcurementPage() {
     projectFilter === "__overall"
       ? null
       : (projectOptions.find((project) => project.id === projectFilter) ?? null);
+  const handleProductInvoiceSaved = (invoiceId: string) => {
+    setInvoiceFilter(invoiceId);
+    void Promise.all([
+      qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] }),
+      qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] }),
+    ]);
+  };
 
   if (loadingProfile) {
     return (
@@ -489,6 +503,40 @@ function ProcurementPage() {
     );
   }
 
+  const productPricing = (
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        <MoneyStat label="Subtotal" value={money.subtotal} />
+        <MoneyStat label="Tax" value={money.tax}>
+          <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+            Rate
+            <input
+              value={taxRate}
+              onChange={(e) => setTaxRate(e.target.value)}
+              className="h-7 w-16 border border-input bg-background px-2 text-right text-xs text-ink"
+              inputMode="decimal"
+            />
+            %
+          </label>
+        </MoneyStat>
+        <MoneyStat label="Shipping" value={money.shipping} />
+        <MoneyStat label="Client Total" value={money.total} />
+        <MoneyStat label="Our Price" value={money.cost} />
+        <MoneyStat label="Profit" value={money.profit} />
+      </div>
+
+      {(money.unknownQuantities > 0 || money.missingPrices > 0 || money.missingCosts > 0 || money.incompatibleUnits > 0) && (
+        <p className="mt-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Totals count TBD amounts as $0 until the missing information is filled in. Totals and profit may change.
+          {money.unknownQuantities > 0 && ` ${money.unknownQuantities} missing or TBD quantities.`}
+          {money.missingPrices > 0 && ` ${money.missingPrices} missing prices.`}
+          {money.missingCosts > 0 && ` ${money.missingCosts} missing our prices.`}
+          {money.incompatibleUnits > 0 && ` ${money.incompatibleUnits} price and quantity units need review and are excluded from price totals.`}
+        </p>
+      )}
+    </>
+  );
+
   return (
     <AppShell>
       <div className="page-pad max-w-[1700px]">
@@ -501,35 +549,17 @@ function ProcurementPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
-          <MoneyStat label="Subtotal" value={money.subtotal} />
-          <MoneyStat label="Tax" value={money.tax}>
-            <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-              Rate
-              <input
-                value={taxRate}
-                onChange={(e) => setTaxRate(e.target.value)}
-                className="h-7 w-16 border border-input bg-background px-2 text-right text-xs text-ink"
-                inputMode="decimal"
-              />
-              %
-            </label>
-          </MoneyStat>
-          <MoneyStat label="Shipping" value={money.shipping} />
-          <MoneyStat label="Client Total" value={money.total} />
-          <MoneyStat label="Our Price" value={money.cost} />
-          <MoneyStat label="Profit" value={money.profit} />
+        <div className="mb-6">
+          {selectedProductInvoice ? (
+            <>
+              <SavedProductInvoiceTotals invoice={selectedProductInvoice} />
+              <details className="mt-4 border border-border p-4">
+                <summary className="cursor-pointer text-sm font-medium">Current product pricing</summary>
+                <div className="mt-4">{productPricing}</div>
+              </details>
+            </>
+          ) : productPricing}
         </div>
-
-        {(money.unknownQuantities > 0 || money.missingPrices > 0 || money.missingCosts > 0 || money.incompatibleUnits > 0) && (
-          <p className="mb-6 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Totals count TBD amounts as $0 until the missing information is filled in. Totals and profit may change.
-            {money.unknownQuantities > 0 && ` ${money.unknownQuantities} missing or TBD quantities.`}
-            {money.missingPrices > 0 && ` ${money.missingPrices} missing prices.`}
-            {money.missingCosts > 0 && ` ${money.missingCosts} missing our prices.`}
-            {money.incompatibleUnits > 0 && ` ${money.incompatibleUnits} price and quantity units need review and are excluded from price totals.`}
-          </p>
-        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-12">
           <Stat label="Total Items" n={total} />
@@ -671,10 +701,7 @@ function ProcurementPage() {
                 sourceInvoiceName={selectedProductInvoice?.name}
                 defaultTaxRate={taxRate}
                 disabled={!selectedProject || (selectedProductInvoice ? selectedProductInvoice.sourceLineCount === 0 : orderableVisibleItems.length === 0)}
-                onSaved={() => {
-                  qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
-                  qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
-                }}
+                onSaved={handleProductInvoiceSaved}
               />
               <ProductInvoiceCreator
                 projectId={selectedProject?.id ?? null}
@@ -685,10 +712,7 @@ function ProcurementPage() {
                 onlyApproved
                 buttonLabel="Invoice Approved"
                 disabled={!selectedProject || approvedVisibleItems.length === 0}
-                onSaved={() => {
-                  qc.invalidateQueries({ queryKey: ["financialInvoices", selectedProject?.id] });
-                  qc.invalidateQueries({ queryKey: ["financialInvoices", "all"] });
-                }}
+                onSaved={handleProductInvoiceSaved}
               />
             </div>
             {!selectedProject && (
@@ -1565,6 +1589,33 @@ function MultiFilter({
   );
 }
 
+function SavedProductInvoiceTotals({ invoice }: { invoice: ProductInvoiceSummary }) {
+  const { subtotal, shipping, tax, fees, adjustment } = invoice.amounts;
+  return (
+    <section aria-label="Saved invoice totals">
+      <h2 className="eyebrow mb-2">Saved Invoice</h2>
+      <p className="mb-4 text-sm">{invoice.name}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+        {subtotal !== undefined && <MoneyStat label="Subtotal" value={subtotal} />}
+        {shipping !== undefined && <MoneyStat label="Shipping" value={shipping} />}
+        {fees.length > 0 && <MoneyStat label="Invoice Fees" value={fees.reduce((sum, fee) => sum + fee.amount, 0)}>
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {fees.map((fee, index) => (
+              <li key={index} className="flex flex-wrap justify-between gap-x-2">
+                <span className="min-w-0 break-words">{fee.name}</span>
+                {fees.length > 1 && <span>{formatMoney(fee.amount)}</span>}
+              </li>
+            ))}
+          </ul>
+        </MoneyStat>}
+        {tax !== undefined && <MoneyStat label="Tax" value={tax} />}
+        {adjustment !== 0 && <MoneyStat label="Adjustments" value={adjustment} />}
+        <MoneyStat label="Invoice Total" value={invoice.total} />
+      </div>
+    </section>
+  );
+}
+
 function MoneyStat({
   label,
   value,
@@ -1615,14 +1666,32 @@ function productInvoiceFromFinancialInvoice(
         invoiceName?: string;
         lines?: Array<{ sourceId?: string; selected?: boolean }>;
       };
+      totals?: {
+        subtotal?: unknown;
+        shipping?: unknown;
+        tax?: unknown;
+        serviceFees?: Array<{ name?: unknown; amount?: unknown } | null>;
+      };
     };
     if (parsed.type !== "product_invoice") return null;
     const sourceIds = new Set(
       (parsed.draft?.lines ?? [])
-        .filter((line) => line.selected !== false && line.sourceId)
+        .filter((line) => line?.sourceId && line.selected !== false)
         .map((line) => line.sourceId as string),
     );
     const ledger = financialInvoiceLedger(invoice);
+    const originalTotal = invoice.total_amount ?? ledger.originalTotal;
+    const adjustment = ledger.chargeTotal - ledger.creditTotal;
+    const savedAmount = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) ? value : undefined;
+    const fees = Array.isArray(parsed.totals?.serviceFees)
+      ? parsed.totals.serviceFees.flatMap((fee) => {
+          const amount = savedAmount(fee?.amount);
+          return typeof fee?.name === "string" && fee.name.trim() && amount !== undefined && amount > 0
+            ? [{ name: fee.name, amount }]
+            : [];
+        })
+      : [];
     return {
       id: invoice.id,
       projectId: invoice.project_id,
@@ -1637,7 +1706,14 @@ function productInvoiceFromFinancialInvoice(
           totalAmount: ledger.originalTotal, paidAmount: ledger.grossPaid, balanceDue: ledger.balanceDue,
         },
       } : {},
-      total: ledger.adjustedTotal,
+      total: Math.max(originalTotal + adjustment, 0),
+      amounts: {
+        subtotal: savedAmount(parsed.totals?.subtotal),
+        shipping: savedAmount(parsed.totals?.shipping),
+        tax: savedAmount(parsed.totals?.tax),
+        fees,
+        adjustment,
+      },
       sortDate: invoice.invoice_date || invoice.created_at || "",
       sourceIds,
       sourceLineCount: (parsed.draft?.lines ?? []).filter((line) => line && line.selected !== false).length,
