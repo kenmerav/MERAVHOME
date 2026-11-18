@@ -150,6 +150,7 @@ export function ProductInvoiceCreator({
   const [approvalFilter, setApprovalFilter] = useState<ProductInvoiceApprovalFilter>("all");
   const [roomFilter, setRoomFilter] = useState("__all");
   const [categoryFilter, setCategoryFilter] = useState("__all");
+  const [newFeeId, setNewFeeId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProductInvoiceDraft>(() =>
     makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved, sourceDraft }),
   );
@@ -214,6 +215,11 @@ export function ProductInvoiceCreator({
   };
   const updateServiceFee = (id: string, patch: Partial<Omit<ProductInvoiceServiceFee, "id">>) => {
     updateServiceFees((fees) => fees.map((fee) => fee.id === id ? { ...fee, ...patch } : fee));
+  };
+  const addServiceFee = () => {
+    const fee = { id: crypto.randomUUID(), name: "", amount: "", taxable: false };
+    updateServiceFees((fees) => [...fees, fee]);
+    setNewFeeId(fee.id);
   };
 
   const generateStripeLink = async () => {
@@ -317,6 +323,7 @@ export function ProductInvoiceCreator({
       if (saveInProgress.current || generatingLink) return;
       if (next && !open) {
         setDraft(makeProductInvoiceDraft({ projectName, clientName, items, defaultTaxRate, onlyApproved, sourceDraft }));
+        setNewFeeId(null);
         setApprovalFilter("all"); setRoomFilter("__all"); setCategoryFilter("__all");
       }
       setOpen(next);
@@ -345,6 +352,9 @@ export function ProductInvoiceCreator({
 
         <fieldset disabled={saving || generatingLink} className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
           <div className="space-y-6">
+            <button type="button" onClick={addServiceFee} className="inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-ink lg:hidden">
+              <Plus className="h-4 w-4" /> Add Fee
+            </button>
             {sourceInvoiceName && <p className="border border-border bg-bone/30 p-3 text-sm">New draft based on {sourceInvoiceName}, with pricing and shipping updates from Procurement.</p>}
             {draft.lines.some((line) => line.sourceAvailable === false) && <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Some saved invoice items no longer have a matching product in Procurement. Review their saved details before creating the new invoice.</p>}
             {draft.lines.some((line) => line.quantity === "TBD") && (
@@ -606,61 +616,6 @@ export function ProductInvoiceCreator({
               </div>
             </section>
 
-            <section className="border border-border p-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="eyebrow">Service Fees</h3>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-ink"
-                  onClick={() => {
-                    const fee = { id: crypto.randomUUID(), name: "", amount: "", taxable: false };
-                    updateServiceFees((fees) => [...fees, fee]);
-                  }}
-                >
-                  <Plus className="w-4 h-4" /> Add Service Fee
-                </button>
-              </div>
-              {draft.serviceFees.map((fee) => (
-                <div key={fee.id} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,8rem)_auto_auto] sm:items-end">
-                  <label className="block">
-                    <span className="eyebrow mb-2 block">Fee Name</span>
-                    <Input
-                      value={fee.name}
-                      onChange={(event) => updateServiceFee(fee.id, { name: event.target.value })}
-                      placeholder="Receiving and Installation"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="eyebrow mb-2 block">Fee Amount</span>
-                    <Input
-                      inputMode="decimal"
-                      value={fee.amount}
-                      onChange={(event) => updateServiceFee(fee.id, { amount: event.target.value })}
-                      placeholder="0.00"
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 text-sm sm:h-10">
-                    <Checkbox
-                      checked={fee.taxable}
-                      onCheckedChange={(checked) => updateServiceFee(fee.id, { taxable: checked === true })}
-                    />
-                    Taxable
-                  </label>
-                  <button
-                    type="button"
-                    aria-label={fee.name.trim() ? `Remove ${fee.name.trim()} fee` : "Remove service fee"}
-                    className="justify-self-start px-2 text-sm underline-offset-4 hover:underline sm:h-10"
-                    onClick={() => updateServiceFees((fees) => fees.filter((entry) => entry.id !== fee.id))}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              {invalidServiceFees && (
-                <p role="alert" className="text-sm text-amber-900">{invalidServiceFeeMessage}</p>
-              )}
-            </section>
-
             <div>
               <Label className="eyebrow mb-2 block">Notes</Label>
               <Textarea
@@ -698,6 +653,62 @@ export function ProductInvoiceCreator({
             </>)}
             <SummaryStat label="Subtotal" value={totals.subtotal} />
             <SummaryStat label="Shipping" value={totals.shipping} />
+            <section aria-label="Invoice fees" className="border border-border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="eyebrow">Fees</h3>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-ink"
+                  onClick={addServiceFee}
+                >
+                  <Plus className="h-4 w-4" /> Add Fee
+                </button>
+              </div>
+              {draft.serviceFees.map((fee) => (
+                <div key={fee.id} className="mt-3 space-y-2 border-t border-border pt-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-2">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Fee name</span>
+                      <Input
+                        autoFocus={fee.id === newFeeId}
+                        value={fee.name}
+                        onChange={(event) => updateServiceFee(fee.id, { name: event.target.value })}
+                        placeholder="Installation"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Amount</span>
+                      <Input
+                        inputMode="decimal"
+                        value={fee.amount}
+                        onChange={(event) => updateServiceFee(fee.id, { amount: event.target.value })}
+                        placeholder="0.00"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={fee.taxable}
+                        onCheckedChange={(checked) => updateServiceFee(fee.id, { taxable: checked === true })}
+                      />
+                      Taxable
+                    </label>
+                    <button
+                      type="button"
+                      aria-label={fee.name.trim() ? `Remove ${fee.name.trim()} fee` : "Remove fee"}
+                      className="text-sm underline-offset-4 hover:underline"
+                      onClick={() => updateServiceFees((fees) => fees.filter((entry) => entry.id !== fee.id))}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {invalidServiceFees && (
+                <p role="alert" className="mt-3 text-sm text-amber-900">{invalidServiceFeeMessage}</p>
+              )}
+            </section>
             {totals.serviceFees.map((fee) => (
               <SummaryStat key={fee.id} label={fee.name} value={fee.amount} />
             ))}
