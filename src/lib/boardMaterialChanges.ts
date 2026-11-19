@@ -72,8 +72,9 @@ export function boardMaterialFieldsForChanges(
   if (changes.has("room")) fields.room_id = patch.room_id;
   if (changes.has("label")) {
     fields.item_label = patch.item_label;
-    if (patch.client_product_name !== undefined) fields.client_product_name = patch.client_product_name;
   }
+  if ((changes.has("label") || changes.has("room")) && patch.client_product_name !== undefined)
+    fields.client_product_name = patch.client_product_name;
   if (changes.has("category")) fields.category = patch.category;
   if (changes.has("notes")) fields.notes = patch.notes;
   if (changes.has("link") || replacement) fields.product_url = patch.product_url;

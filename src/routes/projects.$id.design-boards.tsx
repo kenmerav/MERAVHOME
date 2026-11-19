@@ -62,7 +62,7 @@ import {
   type Room,
   type UserProfile,
 } from "@/lib/db";
-import { buildClientProductName } from "@/lib/clientProductName";
+import { buildClientProductName, clientProductNameForBoardSync } from "@/lib/clientProductName";
 import { normalizeSupabaseImageUrl } from "@/lib/local-assets";
 import { createDesignBoardExportImageLoader } from "@/lib/designBoardExportImages";
 import { materialImageUrl } from "@/lib/materialImages";
@@ -2170,10 +2170,11 @@ function ProjectDesignBoardsPage() {
     let materialItem = existingMaterial ?? null;
     if (existingMaterialId) {
       const savedRoomName = rooms.find((candidate) => candidate.id === existingMaterial?.room_id)?.name;
-      const keepClientName = existingMaterial?.client_product_name && (!savedRoomName ||
-        existingMaterial.client_product_name !== buildClientProductName(savedRoomName, existingMaterial.item_label));
+      const clientName = existingMaterial
+        ? clientProductNameForBoardSync(existingMaterial, savedRoomName, room.name, itemLabel)
+        : materialPatch.client_product_name;
       const patch = changes ? boardMaterialFieldsForChanges(
-        { ...materialPatch, client_product_name: keepClientName ? undefined : materialPatch.client_product_name },
+        { ...materialPatch, client_product_name: clientName },
         changes,
         replaced,
       ) : materialPatch;

@@ -6,6 +6,7 @@ import {
 } from "@/lib/boardMaterialChanges";
 import { boardMaterialsFingerprint } from "@/lib/boardMaterialsSnapshot";
 import { planMaterialBoardLink } from "@/lib/materialBoardLink";
+import { clientProductNameForBoardSync } from "@/lib/clientProductName";
 
 function layer(id: string, link: string): BoardMaterialSnapshotItem {
   return {
@@ -26,6 +27,56 @@ const asImage = (item: BoardMaterialSnapshotItem) => ({
 });
 
 describe("sending board changes after a Spec Book edit", () => {
+  it("updates the generated client name when only the board room changes", () => {
+    const before = layer("mirror", "https://example.com/mirror");
+    const { changes } = planBoardMaterialLayer(before, before, "powder-2", "powder-1", true);
+    const saved = { item_label: "mirror", client_product_name: "Powder Room 2 mirror" };
+    const patch = boardMaterialFieldsForChanges({
+      room_id: "powder-1",
+      item_label: "mirror",
+      client_product_name: clientProductNameForBoardSync(
+        saved, "Powder Room 2", "Powder Bathroom", "mirror",
+      ),
+      quantity: 1,
+      product_url: before.link,
+      notes: "Old note",
+    }, changes, false);
+    expect(patch).toEqual({
+      room_id: "powder-1", client_product_name: "Powder Bathroom mirror",
+    });
+  });
+
+  it("keeps a custom description while replacing its previous room prefix", () => {
+    expect(clientProductNameForBoardSync(
+      { item_label: "mirror", client_product_name: "Powder Bathroom oval brass mirror" },
+      "Powder Bathroom", "Powder Room 2", "mirror",
+    )).toBe("Powder Room 2 oval brass mirror");
+    expect(clientProductNameForBoardSync(
+      { item_label: "mirror", client_product_name: "Custom oval brass mirror" },
+      "Powder Bathroom", "Powder Room 2", "mirror",
+    )).toBe("Custom oval brass mirror");
+  });
+
+  it("replaces a generated unlabeled name and handles simultaneous room and label changes", () => {
+    expect(clientProductNameForBoardSync(
+      { item_label: "vanity stone", client_product_name: "Powder Room 2 Unlabeled Item" },
+      "Powder Room 2", "Powder Bathroom", "vanity stone",
+    )).toBe("Powder Bathroom vanity stone");
+    const { changes } = planBoardMaterialLayer(
+      layer("old-label", ""), { ...layer("old-label", ""), label: "new-label" },
+      "powder-2", "powder-1", true,
+    );
+    const saved = { item_label: "old-label", client_product_name: "Powder Room 2 old-label" };
+    expect(boardMaterialFieldsForChanges({
+      room_id: "powder-1", item_label: "new-label",
+      client_product_name: clientProductNameForBoardSync(
+        saved, "Powder Room 2", "Powder Bathroom", "new-label",
+      ),
+    }, changes, false)).toEqual({
+      room_id: "powder-1", item_label: "new-label", client_product_name: "Powder Bathroom new-label",
+    });
+  });
+
   it("preserves the couch after a link correction and only sends the added/removed end table", () => {
     const couch = layer("couch", "https://example.com/old-couch");
     const oldTable = layer("old-table", "https://example.com/old-table");
