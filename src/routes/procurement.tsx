@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
-import { db, type FinancialInvoice, type Product } from "@/lib/db";
+import { db, type FinancialInvoice, type Product, type ProcurementItem } from "@/lib/db";
 import { saveMaterialProductDetails } from "@/lib/materialProductEdit";
 import { productPricingPatch, type ProductPricingDraft } from "@/lib/productPricingEdit";
 import { materialPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
@@ -49,11 +49,12 @@ const procurementStatuses = {
   ordered: "Ordered",
   received: "Received",
   installed: "Installed",
+  out_of_stock: "Out of stock",
 } as const;
 type ProcurementStatus = keyof typeof procurementStatuses;
 type StatusFilter = "all" | "yes" | "no";
 type StatusFilters = Record<ProcurementStatus, StatusFilter>;
-const allStatuses: StatusFilters = { ordered: "all", received: "all", installed: "all" };
+const allStatuses: StatusFilters = { ordered: "all", received: "all", installed: "all", out_of_stock: "all" };
 
 type ProductInvoiceSummary = {
   id: string;
@@ -323,15 +324,21 @@ function ProcurementPage() {
     }));
     try {
       await qc.cancelQueries({ queryKey: ["procurement"] });
-      const saved = await db.updateProcurement(materialItemId, { [key]: value });
+      const saved: Pick<ProcurementItem, "id"> & Partial<ProcurementItem> = key === "out_of_stock"
+        ? await db.updateProcurementAvailability(materialItemId, value)
+        : await db.updateProcurement(materialItemId, { [key]: value });
+      const savedValue = saved[key];
+      if (typeof savedValue !== "boolean") throw new Error("Could not confirm the saved status. Please try again.");
       // Cancel any refresh started during the save before applying the confirmed field.
       await qc.cancelQueries({ queryKey: ["procurement"] });
       qc.setQueryData<typeof procurementItems>(["procurement"], (current) => current?.map((item) =>
         item.material?.id === saved.id ? {
           ...item,
-          [key]: saved[key],
-          updated_at: saved.updated_at,
-          material: { ...item.material, [key]: saved[key] },
+          [key]: savedValue,
+          updated_at: saved.updated_at ?? item.updated_at,
+          material: key === "out_of_stock"
+            ? { ...item.material, availability: { ...item.material.availability, out_of_stock: savedValue } }
+            : { ...item.material, [key]: savedValue },
         } : item
       ));
       void qc.invalidateQueries({ queryKey: ["materialItems"], refetchType: "none" });
@@ -349,6 +356,20 @@ function ProcurementPage() {
         return next;
       });
     }
+  };
+
+  const saveProcurementNote = async (materialItemId: string, notes: string) => {
+    const saved = await db.updateProcurementNote(materialItemId, notes);
+    if (typeof saved.notes !== "string") throw new Error("Could not confirm the saved note. Please try again.");
+    await qc.cancelQueries({ queryKey: ["procurement"] });
+    qc.setQueryData<typeof procurementItems>(["procurement"], (current) => current?.map((item) =>
+      item.material?.id === saved.id ? {
+        ...item,
+        notes: saved.notes,
+        material: { ...item.material, availability: { ...item.material.availability, out_of_stock: Boolean(item.out_of_stock), notes: saved.notes } },
+      } : item
+    ));
+    void qc.invalidateQueries({ queryKey: ["procurement"], refetchType: "none" });
   };
 
   const saveProductPatch = async (productId: string | undefined, materialId: string | undefined, patch: Partial<Product>) => {
@@ -844,12 +865,13 @@ function ProcurementPage() {
                 <th className="px-3 py-3 text-center w-[70px]">Ordered</th>
                 <th className="px-3 py-3 text-center w-[70px]">Received</th>
                 <th className="px-3 py-3 text-center w-[70px]">Installed</th>
+                <th className="px-3 py-3 text-center w-[90px]">Out of stock</th>
               </tr>
             </thead>
             <tbody>
               {visibleItems.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="py-20 text-center text-sm text-muted-foreground">
+                  <td colSpan={12} className="py-20 text-center text-sm text-muted-foreground">
                     {projectItems.length > 0
                       ? "No items match these filters."
                       : "No procurement items for this view yet. Add products to a room to populate."}
@@ -926,6 +948,17 @@ function ProcurementPage() {
                               .join(" · ")}
                           </div>
                           {needsReselection && <NeedsReselectionBadge />}
+                          {item.out_of_stock && (
+                            <span className="mt-1 inline-flex border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-900">
+                              Out of stock
+                            </span>
+                          )}
+                          <ProcurementNoteEditor
+                            productName={clientName}
+                            value={item.notes ?? ""}
+                            disabled={!m?.id}
+                            onSave={(notes) => m?.id ? saveProcurementNote(m.id, notes) : Promise.reject(new Error("Could not find this item."))}
+                          />
                           {!p && (
                             <div className="mt-1 text-[11px] text-amber-800">
                               Product details pending
@@ -1012,7 +1045,7 @@ function ProcurementPage() {
                       <div className="truncate max-w-[140px]">{r?.project?.name}</div>
                       <div className="text-ink truncate max-w-[140px]">{r?.name}</div>
                     </td>
-                    {(["ordered", "received", "installed"] as const).map((k) => (
+                    {(Object.keys(procurementStatuses) as ProcurementStatus[]).map((k) => (
                       <td key={k} className="px-3 py-3">
                         <div className="flex justify-center">
                           <button
@@ -1021,11 +1054,11 @@ function ProcurementPage() {
                             aria-label={`${procurementStatuses[k]} for ${clientName}`}
                             aria-checked={Boolean(item[k])}
                             aria-busy={pendingStatuses[m?.id ?? ""]?.[k] !== undefined}
-                            disabled={needsReselection || !m?.id || pendingStatuses[m?.id ?? ""]?.[k] !== undefined}
+                            disabled={(needsReselection && k !== "out_of_stock") || !m?.id || pendingStatuses[m?.id ?? ""]?.[k] !== undefined}
                             onClick={() => m?.id && toggle(m.id, k, !item[k])}
                             className={cn(
                               "w-6 h-6 border flex items-center justify-center transition-colors",
-                              needsReselection && "cursor-not-allowed opacity-40",
+                              needsReselection && k !== "out_of_stock" && "cursor-not-allowed opacity-40",
                               item[k]
                                 ? "bg-ink border-ink text-primary-foreground"
                                 : "border-border hover:border-ink",
@@ -1183,6 +1216,67 @@ function BulkMarkupEditor({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function ProcurementNoteEditor({
+  productName,
+  value,
+  disabled,
+  onSave,
+}: {
+  productName: string;
+  value: string;
+  disabled?: boolean;
+  onSave: (notes: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the note. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="mt-2 max-w-[280px]">
+      {value && <p className="whitespace-pre-wrap break-words text-xs leading-5 text-ink">{value}</p>}
+      <Popover open={open} onOpenChange={(next) => {
+        if (saving) return;
+        if (next) setDraft(value);
+        setOpen(next);
+      }}>
+        <PopoverTrigger asChild>
+          <button type="button" disabled={disabled} aria-label={`${value ? "Edit" : "Add"} procurement note for ${productName}`} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-ink disabled:opacity-40">
+            {value ? "Edit note" : "Add note"}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 max-w-[calc(100vw-2rem)] p-4" align="start">
+          <div className="font-semibold text-sm">Procurement note</div>
+          <div className="mt-1 text-xs text-muted-foreground">{productName}</div>
+          <textarea
+            aria-label={`Procurement note for ${productName}`}
+            placeholder="e.g. Won’t ship until mid-March"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={saving}
+            rows={4}
+            className="mt-3 w-full resize-y border border-input bg-background px-3 py-2 text-sm"
+          />
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" disabled={saving} onClick={() => setOpen(false)} className="h-9 border border-border px-3 text-xs">Cancel</button>
+            <button type="button" disabled={saving} onClick={save} className="h-9 bg-ink px-3 text-xs text-primary-foreground disabled:opacity-40">{saving ? "Saving…" : "Save note"}</button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 

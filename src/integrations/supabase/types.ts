@@ -262,6 +262,32 @@ export type Database = {
           },
         ]
       }
+      procurement_item_availability: {
+        Row: {
+          material_item_id: string
+          out_of_stock: boolean
+          notes: string | null
+        }
+        Insert: {
+          material_item_id: string
+          out_of_stock?: boolean
+          notes?: string | null
+        }
+        Update: {
+          material_item_id?: string
+          out_of_stock?: boolean
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procurement_item_availability_material_item_id_fkey"
+            columns: ["material_item_id"]
+            isOneToOne: true
+            referencedRelation: "material_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_invoice_internal_costs: {
         Row: {
           invoice_id: string

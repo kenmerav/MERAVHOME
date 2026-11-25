@@ -127,6 +127,30 @@ describe("Materials flowing into Procurement", () => {
     });
   });
 
+  it("keeps availability on its material selection when the same catalog product is used twice", async () => {
+    const product = { id: "product", name: "Lamp" };
+    state.materials = [
+      material("unavailable", { product_id: product.id, product, availability: { out_of_stock: true } }),
+      material("unflagged", { product_id: product.id, product }),
+    ];
+    expect((await db.listProcurement()).map((item) => ({
+      id: item.material?.id, outOfStock: item.out_of_stock,
+    }))).toEqual([
+      { id: "unavailable", outOfStock: true },
+      { id: "unflagged", outOfStock: false },
+    ]);
+  });
+
+  it("shows private procurement notes and preserves an intentional clear over older notes", async () => {
+    const product = { id: "product", name: "Lamp" };
+    state.materials = [
+      material("delayed", { product_id: product.id, product, procurement_notes: "Old note", availability: { out_of_stock: true, notes: "Ships mid-March" } }),
+      material("cleared", { product_id: product.id, product, procurement_notes: "Old note", availability: { out_of_stock: false, notes: "" } }),
+      material("older", { product_id: product.id, product, procurement_notes: "Existing note" }),
+    ];
+    expect((await db.listProcurement()).map((item) => item.notes)).toEqual(["Ships mid-March", "", "Existing note"]);
+  });
+
   it("includes a newly added item beyond the first database page", async () => {
     state.materials = Array.from({ length: 1000 }, (_, i) =>
       material(`template-${i}`, { is_required: true }),

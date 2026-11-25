@@ -393,6 +393,7 @@ export interface ProcurementItem {
   ordered: boolean;
   received: boolean;
   installed: boolean;
+  out_of_stock?: boolean;
   notes: string | null;
   updated_at: string;
 }
@@ -1084,7 +1085,7 @@ export const db = {
       const { data, error } = await supabase
         .from("material_items")
         .select(
-          "*, product:products(*), room:rooms!material_items_room_id_fkey(*, project:projects(id, name, client_name, status))",
+          "*, product:products(*), availability:procurement_item_availability(out_of_stock, notes), room:rooms!material_items_room_id_fkey(*, project:projects(id, name, client_name, status))",
         )
         .order("updated_at", { ascending: false })
         .order("id")
@@ -1174,7 +1175,8 @@ export const db = {
           ordered: Boolean(material.ordered ?? legacy?.ordered),
           received: Boolean(material.received ?? legacy?.received),
           installed: Boolean(material.installed ?? legacy?.installed),
-          notes: material.procurement_notes ?? legacy?.notes ?? null,
+          out_of_stock: Boolean(material.availability?.out_of_stock),
+          notes: material.availability?.notes ?? material.procurement_notes ?? legacy?.notes ?? null,
           updated_at: material.updated_at,
           material,
           room_product: {
@@ -1193,6 +1195,7 @@ export const db = {
           room: Room & { project: Pick<Project, "id" | "name" | "client_name" | "status"> };
         };
         material?: {
+          availability?: { out_of_stock: boolean; notes?: string | null } | null;
           design_accuracy_fact?: import("./designAccuracy").AccuracyOutput | null;
           client_product_name: string | null;
           category: string | null;
@@ -1209,7 +1212,25 @@ export const db = {
       }
     >;
   },
-  updateProcurement: async (materialItemId: string, p: Partial<ProcurementItem>) => {
+  updateProcurementAvailability: async (materialItemId: string, outOfStock: boolean) => {
+    const result = await supabase
+      .from("procurement_item_availability")
+      .upsert({ material_item_id: materialItemId, out_of_stock: outOfStock })
+      .select("id:material_item_id, out_of_stock")
+      .maybeSingle();
+    requireSavedSpecMaterial(result);
+    return result.data!;
+  },
+  updateProcurementNote: async (materialItemId: string, notes: string) => {
+    const result = await supabase
+      .from("procurement_item_availability")
+      .upsert({ material_item_id: materialItemId, notes: notes.trim() })
+      .select("id:material_item_id, notes")
+      .maybeSingle();
+    requireSavedSpecMaterial(result);
+    return result.data!;
+  },
+  updateProcurement: async (materialItemId: string, p: Partial<Pick<ProcurementItem, "ordered" | "received" | "installed" | "notes">>) => {
     const patch: Partial<Pick<MaterialItem, "ordered" | "received" | "installed" | "procurement_notes">> = {};
     if ("ordered" in p) patch.ordered = p.ordered;
     if ("received" in p) patch.received = p.received;
