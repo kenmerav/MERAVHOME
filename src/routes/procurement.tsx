@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { db, type FinancialInvoice, type Product } from "@/lib/db";
 import { saveMaterialProductDetails } from "@/lib/materialProductEdit";
 import { productPricingPatch, type ProductPricingDraft } from "@/lib/productPricingEdit";
 import { materialPriceUnit, type ProductPriceUnit } from "@/lib/productPriceUnit";
-import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, DollarSign, ExternalLink, LoaderCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { canViewProcurement } from "@/lib/permissions";
@@ -44,6 +44,16 @@ type ProcurementMaterialDetails = {
   product_url: string | null;
   cad_label: string | null;
 };
+
+const procurementStatuses = {
+  ordered: "Ordered",
+  received: "Received",
+  installed: "Installed",
+} as const;
+type ProcurementStatus = keyof typeof procurementStatuses;
+type StatusFilter = "all" | "yes" | "no";
+type StatusFilters = Record<ProcurementStatus, StatusFilter>;
+const allStatuses: StatusFilters = { ordered: "all", received: "all", installed: "all" };
 
 type ProductInvoiceSummary = {
   id: string;
@@ -103,6 +113,9 @@ function ProcurementPage() {
   const [vendorFilters, setVendorFilters] = useState<string[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState("__all");
   const [approvalFilter, setApprovalFilter] = useState<"all" | "needs_reselection">("all");
+  const [statusFilters, setStatusFilters] = useState<StatusFilters>(allStatuses);
+  const [pendingStatuses, setPendingStatuses] = useState<Record<string, Partial<Record<ProcurementStatus, boolean>>>>({});
+  const statusWrites = useRef(new Set<string>());
   const [showDesignerDiscount, setShowDesignerDiscount] = useState(false);
   const [taxRate, setTaxRate] = useState(() => {
     if (typeof window === "undefined") return "0";
@@ -155,12 +168,18 @@ function ProcurementPage() {
     setVendorFilters([]);
     setInvoiceFilter("__all");
     setApprovalFilter("all");
+    setStatusFilters(allStatuses);
   }, [search.project]);
+
+  const displayedItems = useMemo(() => procurementItems.map((item) => {
+    const pending = item.material?.id ? pendingStatuses[item.material.id] : undefined;
+    return pending ? { ...item, ...pending } : item;
+  }), [procurementItems, pendingStatuses]);
 
   const projectItems =
     projectFilter === "__overall"
-      ? procurementItems
-      : procurementItems.filter((item) => item.room_product?.room?.project?.id === projectFilter);
+      ? displayedItems
+      : displayedItems.filter((item) => item.room_product?.room?.project?.id === projectFilter);
 
   const roomOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -265,6 +284,9 @@ function ProcurementPage() {
           return false;
         }
         if (selectedInvoiceItemIds && !selectedInvoiceItemIds.has(item.id)) return false;
+        if (Object.entries(statusFilters).some(([key, filter]) =>
+          filter !== "all" && Boolean(item[key as ProcurementStatus]) !== (filter === "yes")
+        )) return false;
         return true;
       }),
     [
@@ -274,6 +296,7 @@ function ProcurementPage() {
       categoryFilters,
       selectedInvoiceItemIds,
       vendorFilters,
+      statusFilters,
     ],
   );
 
@@ -288,11 +311,44 @@ function ProcurementPage() {
 
   const toggle = async (
     materialItemId: string,
-    key: "ordered" | "received" | "installed",
+    key: ProcurementStatus,
     value: boolean,
   ) => {
-    await db.updateProcurement(materialItemId, { [key]: value });
-    qc.invalidateQueries({ queryKey: ["procurement"] });
+    const writeKey = `${materialItemId}:${key}`;
+    if (statusWrites.current.has(writeKey)) return;
+    statusWrites.current.add(writeKey);
+    setPendingStatuses((current) => ({
+      ...current,
+      [materialItemId]: { ...current[materialItemId], [key]: value },
+    }));
+    try {
+      await qc.cancelQueries({ queryKey: ["procurement"] });
+      const saved = await db.updateProcurement(materialItemId, { [key]: value });
+      // Cancel any refresh started during the save before applying the confirmed field.
+      await qc.cancelQueries({ queryKey: ["procurement"] });
+      qc.setQueryData<typeof procurementItems>(["procurement"], (current) => current?.map((item) =>
+        item.material?.id === saved.id ? {
+          ...item,
+          [key]: saved[key],
+          updated_at: saved.updated_at,
+          material: { ...item.material, [key]: saved[key] },
+        } : item
+      ));
+      void qc.invalidateQueries({ queryKey: ["materialItems"], refetchType: "none" });
+      void qc.invalidateQueries({ queryKey: ["procurement"], refetchType: "none" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not save ${procurementStatuses[key].toLowerCase()} status. Please try again.`);
+    } finally {
+      statusWrites.current.delete(writeKey);
+      setPendingStatuses((current) => {
+        const next = { ...current };
+        const remaining = { ...next[materialItemId] };
+        delete remaining[key];
+        if (Object.keys(remaining).length) next[materialItemId] = remaining;
+        else delete next[materialItemId];
+        return next;
+      });
+    }
   };
 
   const saveProductPatch = async (productId: string | undefined, materialId: string | undefined, patch: Partial<Product>) => {
@@ -525,7 +581,7 @@ function ProcurementPage() {
         <MoneyStat label="Shipping" value={money.shipping} />
         <MoneyStat label="Client Total" value={money.total} />
         <MoneyStat label="Our Price" value={money.cost} />
-        <MoneyStat label="Profit" value={money.profit} />
+        <MoneyStat label="Product Profit" value={money.profit} />
       </div>
 
       {(money.unknownQuantities > 0 || money.missingPrices > 0 || money.missingCosts > 0 || money.incompatibleUnits > 0) && (
@@ -552,26 +608,20 @@ function ProcurementPage() {
           </p>
         </div>
 
-        <div className="mb-6">
-          {selectedProductInvoice ? (
-            <>
-              <SavedProductInvoiceTotals invoice={selectedProductInvoice} />
-              <ProductInvoiceCosts
-                key={selectedProductInvoice.id}
-                invoiceId={selectedProductInvoice.id}
-                subtotal={selectedProductInvoice.amounts.subtotal}
-                shipping={selectedProductInvoice.amounts.shipping}
-                fees={selectedProductInvoice.amounts.fees}
-                lines={selectedProductInvoice.costLines}
-                hasAdjustments={selectedProductInvoice.amounts.adjustment !== 0}
-              />
-              <details className="mt-4 border border-border p-4">
-                <summary className="cursor-pointer text-sm font-medium">Current product pricing</summary>
-                <div className="mt-4">{productPricing}</div>
-              </details>
-            </>
-          ) : productPricing}
-        </div>
+        {selectedProductInvoice && (
+          <div className="mb-6">
+            <SavedProductInvoiceTotals invoice={selectedProductInvoice} />
+            <ProductInvoiceCosts
+              key={selectedProductInvoice.id}
+              invoiceId={selectedProductInvoice.id}
+              subtotal={selectedProductInvoice.amounts.subtotal}
+              shipping={selectedProductInvoice.amounts.shipping}
+              fees={selectedProductInvoice.amounts.fees}
+              lines={selectedProductInvoice.costLines}
+              hasAdjustments={selectedProductInvoice.amounts.adjustment !== 0}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-12">
           <Stat label="Total Items" n={total} />
@@ -591,6 +641,7 @@ function ProcurementPage() {
                 setCategoryFilters([]);
                 setVendorFilters([]);
                 setInvoiceFilter("__all");
+                setStatusFilters(allStatuses);
               }}
               className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
             >
@@ -735,6 +786,49 @@ function ProcurementPage() {
           </div>
         </div>
 
+        <fieldset aria-label="Status filters" className="mb-6 flex flex-wrap items-end gap-4">
+          {(Object.keys(procurementStatuses) as ProcurementStatus[]).map((key) => (
+            <div key={key} className="min-w-[160px] flex-1 sm:flex-none">
+              <label htmlFor={`procurement-${key}-filter`} className="eyebrow mb-2 block">
+                {procurementStatuses[key]}
+              </label>
+              <select
+                id={`procurement-${key}-filter`}
+                value={statusFilters[key]}
+                onChange={(event) => setStatusFilters((current) => ({
+                  ...current, [key]: event.target.value as StatusFilter,
+                }))}
+                className="h-10 w-full border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="all">All</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+          ))}
+          {Object.values(statusFilters).some((filter) => filter !== "all") && (
+            <button type="button" onClick={() => setStatusFilters(allStatuses)} className="h-10 px-2 text-sm underline">
+              Clear status filters
+            </button>
+          )}
+          {Object.keys(pendingStatuses).length > 0 && (
+            <p role="status" className="py-2 text-sm text-muted-foreground">Saving status…</p>
+          )}
+        </fieldset>
+
+        <section aria-label="Filtered item totals" className="mb-6">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="eyebrow">
+              {vendorFilters.length === 1 ? `${vendorFilters[0]} totals` : "Filtered item totals"}
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              {orderableVisibleItems.length} {orderableVisibleItems.length !== total ? "orderable " : ""}
+              {orderableVisibleItems.length === 1 ? "item" : "items"}
+            </span>
+          </div>
+          {productPricing}
+        </section>
+
         <div className="mobile-card-scroll border border-border">
           <table className="w-full text-sm">
             <thead>
@@ -756,7 +850,9 @@ function ProcurementPage() {
               {visibleItems.length === 0 && (
                 <tr>
                   <td colSpan={11} className="py-20 text-center text-sm text-muted-foreground">
-                    No procurement items for this view yet. Add products to a room to populate.
+                    {projectItems.length > 0
+                      ? "No items match these filters."
+                      : "No procurement items for this view yet. Add products to a room to populate."}
                   </td>
                 </tr>
               )}
@@ -920,7 +1016,12 @@ function ProcurementPage() {
                       <td key={k} className="px-3 py-3">
                         <div className="flex justify-center">
                           <button
-                            disabled={needsReselection}
+                            type="button"
+                            role="checkbox"
+                            aria-label={`${procurementStatuses[k]} for ${clientName}`}
+                            aria-checked={Boolean(item[k])}
+                            aria-busy={pendingStatuses[m?.id ?? ""]?.[k] !== undefined}
+                            disabled={needsReselection || !m?.id || pendingStatuses[m?.id ?? ""]?.[k] !== undefined}
                             onClick={() => m?.id && toggle(m.id, k, !item[k])}
                             className={cn(
                               "w-6 h-6 border flex items-center justify-center transition-colors",
@@ -930,7 +1031,9 @@ function ProcurementPage() {
                                 : "border-border hover:border-ink",
                             )}
                           >
-                            {item[k] && <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                            {pendingStatuses[m?.id ?? ""]?.[k] !== undefined
+                              ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                              : item[k] && <Check className="w-3.5 h-3.5" strokeWidth={2.5} />}
                           </button>
                         </div>
                       </td>

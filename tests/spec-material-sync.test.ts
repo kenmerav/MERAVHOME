@@ -26,6 +26,23 @@ beforeEach(() => {
   state.response = { data: { id: "material-1" }, error: null };
 });
 
+describe("Procurement status saves", () => {
+  it.each(["ordered", "received", "installed"] as const)("confirms the saved %s field on the material row", async (key) => {
+    state.response = { data: { id: "material-1", [key]: false, updated_at: "2026-11-25" }, error: null };
+    expect(await db.updateProcurement("material-1", { [key]: false })).toEqual(state.response.data);
+    expect(state.writes).toEqual([{
+      table: "material_items", id: "material-1", patch: { [key]: false },
+    }]);
+  });
+
+  it("reports a rejected save and an update that changed no matching row", async () => {
+    state.response = { data: null, error: { message: "Permission denied" } };
+    await expect(db.updateProcurement("material-1", { ordered: true })).rejects.toThrow("Permission denied");
+    state.response = { data: null, error: null };
+    await expect(db.updateProcurement("missing", { received: true })).rejects.toThrow("could not be updated");
+  });
+});
+
 describe("Spec Book saves to Materials", () => {
   it("saves the category to the matching material item", async () => {
     await db.updateSpecMaterialItem("material-1", { category: "Tile & Stone" });

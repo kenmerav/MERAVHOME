@@ -1171,9 +1171,9 @@ export const db = {
         return {
           id: legacy?.id ?? material.id,
           room_product_id: roomProduct.id,
-          ordered: Boolean(material.ordered || legacy?.ordered),
-          received: Boolean(material.received || legacy?.received),
-          installed: Boolean(material.installed || legacy?.installed),
+          ordered: Boolean(material.ordered ?? legacy?.ordered),
+          received: Boolean(material.received ?? legacy?.received),
+          installed: Boolean(material.installed ?? legacy?.installed),
           notes: material.procurement_notes ?? legacy?.notes ?? null,
           updated_at: material.updated_at,
           material,
@@ -1210,15 +1210,19 @@ export const db = {
     >;
   },
   updateProcurement: async (materialItemId: string, p: Partial<ProcurementItem>) => {
-    const patch: Record<string, unknown> = {};
+    const patch: Partial<Pick<MaterialItem, "ordered" | "received" | "installed" | "procurement_notes">> = {};
     if ("ordered" in p) patch.ordered = p.ordered;
     if ("received" in p) patch.received = p.received;
     if ("installed" in p) patch.installed = p.installed;
     if ("notes" in p) patch.procurement_notes = p.notes;
-    return supabase
-      .from("material_items" as any)
+    const result = await supabase
+      .from("material_items")
       .update(patch)
-      .eq("id", materialItemId);
+      .eq("id", materialItemId)
+      .select("id, ordered, received, installed, updated_at")
+      .maybeSingle();
+    requireSavedSpecMaterial(result);
+    return result.data!;
   },
 
   /* MATERIAL ITEMS (guided checklist) */

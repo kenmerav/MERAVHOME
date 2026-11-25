@@ -308,11 +308,14 @@ export type Database = {
           id: string
           image_url: string | null
           is_required: boolean
+          installed: boolean
           item_label: string
           not_needed: boolean
           notes: string | null
           ordered: boolean
           ordered_by: string | null
+          procurement_notes: string | null
+          received: boolean
           product_id: string | null
           product_url: string | null
           project_id: string
@@ -346,11 +349,14 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_required?: boolean
+          installed?: boolean
           item_label: string
           not_needed?: boolean
           notes?: string | null
           ordered?: boolean
           ordered_by?: string | null
+          procurement_notes?: string | null
+          received?: boolean
           product_id?: string | null
           product_url?: string | null
           project_id: string
@@ -384,11 +390,14 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_required?: boolean
+          installed?: boolean
           item_label?: string
           not_needed?: boolean
           notes?: string | null
           ordered?: boolean
           ordered_by?: string | null
+          procurement_notes?: string | null
+          received?: boolean
           product_id?: string | null
           product_url?: string | null
           project_id?: string

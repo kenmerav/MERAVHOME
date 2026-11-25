@@ -82,7 +82,7 @@ describe("Materials flowing into Procurement", () => {
 
   it("preserves product-invoice source IDs, quantities and tracking for existing catalog selections", async () => {
     const product = { id: "product", name: "Toilet", price: "$250" };
-    state.materials = [material("existing", { product_id: product.id, product, quantity: 4 })];
+    state.materials = [material("existing", { product_id: product.id, product, quantity: 4, ordered: true, received: true })];
     state.legacy = [
       {
         id: "invoice-source",
@@ -107,6 +107,24 @@ describe("Materials flowing into Procurement", () => {
       room_product: { product, approval_status: "approved" },
     });
     expect(state.materials[0].quantity).toBe(4);
+  });
+
+  it("keeps unchecked Materials statuses even if the legacy row is still checked", async () => {
+    const product = { id: "product", name: "Lamp" };
+    state.materials = [material("current", {
+      product_id: product.id, product, ordered: false, received: false, installed: false,
+    })];
+    state.legacy = [{
+      id: "legacy", ordered: true, received: true, installed: true,
+      room_product: { product_id: product.id, room_id: room.id, product, room },
+    }];
+    expect((await db.listProcurement())[0]).toMatchObject({
+      id: "legacy", material: { id: "current" }, ordered: false, received: false, installed: false,
+    });
+    Object.assign(state.materials[0], { ordered: undefined, received: undefined, installed: undefined });
+    expect((await db.listProcurement())[0]).toMatchObject({
+      ordered: true, received: true, installed: true,
+    });
   });
 
   it("includes a newly added item beyond the first database page", async () => {
